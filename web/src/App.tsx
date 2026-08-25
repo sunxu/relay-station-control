@@ -1,36 +1,39 @@
-import { Alert, Card, Flex, Typography } from "antd";
-import { useGetHealthz } from "./api/generated/control";
+import { lazy, Suspense } from "react";
+import { Alert, Card, Spin } from "antd";
+import type { AuthApi } from "./api/auth-api";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 
-const { Title, Paragraph, Text } = Typography;
+const BootstrapPage = lazy(() => import("./pages/BootstrapPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const ActivationPage = lazy(() => import("./pages/ActivationPage"));
+const ManagementPage = lazy(() => import("./pages/ManagementPage"));
+const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 
-export default function App() {
-  const health = useGetHealthz({
-    query: {
-      refetchInterval: 30_000,
-      retry: 1,
-    },
-  });
+function AuthShell() {
+  const auth = useAuth();
+
+  if (auth.route === "loading") {
+    return <main className="centered-page" data-testid="auth-loading"><Spin size="large" tip="正在读取安全状态" /></main>;
+  }
+  if (auth.route === "unavailable") {
+    return (
+      <main className="centered-page" data-testid="auth-unavailable">
+        <Card className="auth-card"><Alert type="error" showIcon message="Control 认证服务暂时不可用" description="管理面已安全关闭；请检查 Control 与 PostgreSQL 状态。" /></Card>
+      </main>
+    );
+  }
 
   return (
-    <main className="page">
-      <Card className="status-card">
-        <Flex vertical gap={16}>
-          <div>
-            <Title level={2}>Relay Station Control</Title>
-            <Paragraph type="secondary">单环境管控中心技术验证</Paragraph>
-          </div>
-          {health.isPending && <Alert type="info" message="正在检查 Control 状态" showIcon />}
-          {health.isError && <Alert type="error" message="Control API 不可用" showIcon />}
-          {health.data && (
-            <Alert
-              type="success"
-              message="Control API 正常"
-              description={<Text>版本：{health.data.data.version}</Text>}
-              showIcon
-            />
-          )}
-        </Flex>
-      </Card>
-    </main>
+    <Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" /></main>}>
+      {auth.route === "bootstrap" && <BootstrapPage />}
+      {auth.route === "login" && <LoginPage />}
+      {auth.route === "activation" && <ActivationPage />}
+      {auth.route === "management" && <ManagementPage />}
+      {auth.route === "one-time" && <OneTimeMaterialPage />}
+    </Suspense>
   );
+}
+
+export default function App({ api }: { api?: AuthApi }) {
+  return <AuthProvider api={api}><AuthShell /></AuthProvider>;
 }

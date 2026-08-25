@@ -16,14 +16,75 @@ body {
   min-height: 100vh;
 }
 
-.page {
+.centered-page {
   display: grid;
   min-height: 100vh;
   place-items: center;
   padding: 24px;
 }
 
-.status-card {
-  width: min(100%, 560px);
+.auth-card {
+  width: min(100%, 620px);
   box-shadow: 0 12px 36px rgb(24 39 75 / 8%);
+}
+
+.one-time-card {
+  width: min(100%, 720px);
+}
+
+.form-alert {
+  margin-bottom: 20px;
+}
+
+.secret-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-wrap: anywhere;
+  padding: 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.secret-list {
+  margin: 20px 0;
+}
+
+.secret-list .ant-list-item {
+  justify-content: center;
+}
+
+.management-page {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 64px;
+}
+
+.management-header {
+  margin-bottom: 24px;
+}
+
+.management-header h2 {
+  margin-bottom: 4px;
+}
+
+.form-column {
+  max-width: 620px;
+}
+
+@media (max-width: 640px) {
+  .centered-page {
+    align-items: start;
+    padding: 12px;
+  }
+
+  .auth-card {
+    margin-top: 20px;
+  }
+
+  .management-page {
+    width: calc(100% - 20px);
+    padding-top: 18px;
+  }
 }
