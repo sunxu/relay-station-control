@@ -19,4 +19,23 @@ CREATE ROLE relay_control_app_dev
     NOBYPASSRLS
     IN ROLE relay_control_runtime;
 
+CREATE ROLE relay_control_asset_registrar
+    NOLOGIN
+    NOSUPERUSER
+    NOCREATEDB
+    NOCREATEROLE
+    NOREPLICATION
+    NOBYPASSRLS;
+
+CREATE ROLE relay_control_asset_registrar_dev
+    LOGIN
+    PASSWORD 'relay_control_asset_registrar_dev_only'
+    NOSUPERUSER
+    NOCREATEDB
+    NOCREATEROLE
+    NOREPLICATION
+    NOBYPASSRLS
+    IN ROLE relay_control_asset_registrar;
+
 GRANT CONNECT ON DATABASE relay_station_control TO relay_control_app_dev;
+GRANT CONNECT ON DATABASE relay_station_control TO relay_control_asset_registrar_dev;
