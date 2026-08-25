@@ -1,0 +1,33 @@
+openapi: 3.1.0
+info:
+  title: Relay Station Control API
+  version: 0.1.0
+  description: Internal API for the single-environment Relay Station Control.
+paths:
+  /api/healthz:
+    get:
+      operationId: getHealthz
+      summary: Report process health
+      security: []
+      responses:
+        "200":
+          description: Control is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - version
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        version:
+          type: string
