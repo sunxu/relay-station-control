@@ -3,19 +3,28 @@
  * Do not edit manually.
  * Relay Station Control API
  * Internal API for the single-environment Relay Station Control.
- * OpenAPI spec version: 0.1.0
+ *
+ * Except for operations that explicitly set `security: []`, requests require an
+ * enabled `super_admin` session that satisfies the environment MFA policy. Unsafe
+ * methods additionally require the session-bound `X-CSRF-Token` header.
+ *
+ * OpenAPI spec version: 0.2.0
  */
 import {
+  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -31,6 +40,441 @@ export interface HealthResponse {
   status: HealthResponseStatus;
   version: string;
 }
+
+export type BootstrapState = typeof BootstrapState[keyof typeof BootstrapState];
+
+
+export const BootstrapState = {
+  required: 'required',
+  in_progress: 'in_progress',
+  completed: 'completed',
+} as const;
+
+export interface BootstrapStatusResponse {
+  status: BootstrapState;
+}
+
+/**
+ * @minLength 3
+ * @maxLength 64
+ * @pattern ^[a-z0-9._-]+$
+ */
+export type LoginName = string;
+
+/**
+ * @minLength 1
+ * @maxLength 100
+ * @pattern ^\S(?:.*\S)?$|^\S$
+ */
+export type DisplayName = string;
+
+/**
+ * @minLength 14
+ * @maxLength 128
+ */
+export type NewPassword = string;
+
+export interface BootstrapStartRequest {
+  login_name: LoginName;
+  display_name: DisplayName;
+  password: NewPassword;
+}
+
+export type BootstrapStartResponseStatus = typeof BootstrapStartResponseStatus[keyof typeof BootstrapStartResponseStatus];
+
+
+export const BootstrapStartResponseStatus = {
+  in_progress: 'in_progress',
+} as const;
+
+export type TotpEnrollmentAlgorithm = typeof TotpEnrollmentAlgorithm[keyof typeof TotpEnrollmentAlgorithm];
+
+
+export const TotpEnrollmentAlgorithm = {
+  SHA1: 'SHA1',
+} as const;
+
+export type TotpEnrollmentDigits = typeof TotpEnrollmentDigits[keyof typeof TotpEnrollmentDigits];
+
+
+export const TotpEnrollmentDigits = {
+  NUMBER_6: 6,
+} as const;
+
+export type TotpEnrollmentPeriodSeconds = typeof TotpEnrollmentPeriodSeconds[keyof typeof TotpEnrollmentPeriodSeconds];
+
+
+export const TotpEnrollmentPeriodSeconds = {
+  NUMBER_30: 30,
+} as const;
+
+export interface TotpEnrollment {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^otpauth://totp/
+     */
+  otpauth_uri: string;
+  algorithm: TotpEnrollmentAlgorithm;
+  digits: TotpEnrollmentDigits;
+  period_seconds: TotpEnrollmentPeriodSeconds;
+}
+
+export interface BootstrapStartResponse {
+  status: BootstrapStartResponseStatus;
+  totp_enrollment: TotpEnrollment;
+}
+
+export type BootstrapCompleteResponseStatus = typeof BootstrapCompleteResponseStatus[keyof typeof BootstrapCompleteResponseStatus];
+
+
+export const BootstrapCompleteResponseStatus = {
+  completed: 'completed',
+} as const;
+
+export type SessionResponseState = typeof SessionResponseState[keyof typeof SessionResponseState];
+
+
+export const SessionResponseState = {
+  authenticated: 'authenticated',
+} as const;
+
+export type AdministratorAuthSource = typeof AdministratorAuthSource[keyof typeof AdministratorAuthSource];
+
+
+export const AdministratorAuthSource = {
+  local: 'local',
+} as const;
+
+export type AdministratorRole = typeof AdministratorRole[keyof typeof AdministratorRole];
+
+
+export const AdministratorRole = {
+  super_admin: 'super_admin',
+} as const;
+
+export type AdministratorStatus = typeof AdministratorStatus[keyof typeof AdministratorStatus];
+
+
+export const AdministratorStatus = {
+  pending: 'pending',
+  enabled: 'enabled',
+  disabled: 'disabled',
+} as const;
+
+export interface Administrator {
+  id: string;
+  login_name: LoginName;
+  display_name: DisplayName;
+  auth_source: AdministratorAuthSource;
+  role: AdministratorRole;
+  status: AdministratorStatus;
+  created_at: string;
+  updated_at: string;
+  /** @nullable */
+  activated_at?: string | null;
+  /** @nullable */
+  disabled_at?: string | null;
+  /** @nullable */
+  last_login_at?: string | null;
+}
+
+export type MfaMethod = typeof MfaMethod[keyof typeof MfaMethod];
+
+
+export const MfaMethod = {
+  totp: 'totp',
+  recovery_code: 'recovery_code',
+} as const;
+
+export interface SessionMfaAssurance {
+  required: boolean;
+  completed: boolean;
+  method?: MfaMethod | null;
+}
+
+export interface SessionResponse {
+  state: SessionResponseState;
+  administrator: Administrator;
+  mfa: SessionMfaAssurance;
+  /** @minLength 32 */
+  csrf_token: string;
+  created_at: string;
+  last_activity_at: string;
+  idle_expires_at: string;
+  absolute_expires_at: string;
+  /** @nullable */
+  reauthenticated_until?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  recovery_codes_remaining: number;
+}
+
+/**
+ * @minItems 10
+ * @maxItems 10
+ * @items.minLength 16
+ * @items.maxLength 128
+ */
+export type RecoveryCodes = string[];
+
+export interface BootstrapCompleteResponse {
+  status: BootstrapCompleteResponseStatus;
+  session: SessionResponse;
+  recovery_codes: RecoveryCodes;
+}
+
+export interface LoginRequest {
+  login_name: LoginName;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  password: string;
+}
+
+export type MfaChallengeResponseState = typeof MfaChallengeResponseState[keyof typeof MfaChallengeResponseState];
+
+
+export const MfaChallengeResponseState = {
+  mfa_required: 'mfa_required',
+} as const;
+
+export interface MfaChallengeResponse {
+  state: MfaChallengeResponseState;
+  expires_at: string;
+  /** @minItems 1 */
+  methods: MfaMethod[];
+}
+
+export type LoginResponse = MfaChallengeResponse | SessionResponse;
+
+export interface MfaChallengeRequest {
+  method: MfaMethod;
+  /**
+     * @minLength 6
+     * @maxLength 128
+     */
+  code: string;
+}
+
+export interface ReauthenticateRequest {
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  password: string;
+  mfa_method?: MfaMethod;
+  /**
+     * @minLength 6
+     * @maxLength 128
+     */
+  mfa_code?: string;
+}
+
+export interface ChangePasswordRequest {
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  current_password: string;
+  new_password: NewPassword;
+  mfa_method?: MfaMethod;
+  /**
+     * @minLength 6
+     * @maxLength 128
+     */
+  mfa_code?: string;
+}
+
+/**
+ * @pattern ^[0-9]{6}$
+ */
+export type TotpCode = string;
+
+export interface TotpConfirmationRequest {
+  totp_code: TotpCode;
+}
+
+export type AdministratorActivationStartRequestStage = typeof AdministratorActivationStartRequestStage[keyof typeof AdministratorActivationStartRequestStage];
+
+
+export const AdministratorActivationStartRequestStage = {
+  start: 'start',
+} as const;
+
+/**
+ * @minLength 32
+ * @maxLength 512
+ */
+export type ActivationToken = string;
+
+export interface AdministratorActivationStartRequest {
+  stage: AdministratorActivationStartRequestStage;
+  activation_token: ActivationToken;
+}
+
+export type AdministratorActivationCompleteRequestStage = typeof AdministratorActivationCompleteRequestStage[keyof typeof AdministratorActivationCompleteRequestStage];
+
+
+export const AdministratorActivationCompleteRequestStage = {
+  complete: 'complete',
+} as const;
+
+export interface AdministratorActivationCompleteRequest {
+  stage: AdministratorActivationCompleteRequestStage;
+  activation_token: ActivationToken;
+  password: NewPassword;
+  totp_code: TotpCode;
+}
+
+export type AdministratorActivationRequest = AdministratorActivationStartRequest | AdministratorActivationCompleteRequest;
+
+export type AdministratorActivationEnrollmentResponseState = typeof AdministratorActivationEnrollmentResponseState[keyof typeof AdministratorActivationEnrollmentResponseState];
+
+
+export const AdministratorActivationEnrollmentResponseState = {
+  enrollment_required: 'enrollment_required',
+} as const;
+
+export interface AdministratorActivationEnrollmentResponse {
+  state: AdministratorActivationEnrollmentResponseState;
+  totp_enrollment: TotpEnrollment;
+}
+
+export type AdministratorActivationCompleteResponseState = typeof AdministratorActivationCompleteResponseState[keyof typeof AdministratorActivationCompleteResponseState];
+
+
+export const AdministratorActivationCompleteResponseState = {
+  activated: 'activated',
+} as const;
+
+export interface AdministratorActivationCompleteResponse {
+  state: AdministratorActivationCompleteResponseState;
+  session: SessionResponse;
+  recovery_codes: RecoveryCodes;
+}
+
+export type AdministratorActivationResponse = AdministratorActivationEnrollmentResponse | AdministratorActivationCompleteResponse;
+
+/**
+ * @minLength 10
+ * @maxLength 500
+ */
+export type OperationReason = string;
+
+export interface CreateAdministratorRequest {
+  login_name: LoginName;
+  display_name: DisplayName;
+  reason: OperationReason;
+}
+
+export interface AdministratorActivationTokenResponse {
+  administrator: Administrator;
+  activation_token: ActivationToken;
+  expires_at: string;
+}
+
+export interface ReasonRequest {
+  reason: OperationReason;
+}
+
+export type RecoveryCodesResponseRemaining = typeof RecoveryCodesResponseRemaining[keyof typeof RecoveryCodesResponseRemaining];
+
+
+export const RecoveryCodesResponseRemaining = {
+  NUMBER_10: 10,
+} as const;
+
+export interface RecoveryCodesResponse {
+  recovery_codes: RecoveryCodes;
+  remaining: RecoveryCodesResponseRemaining;
+}
+
+export interface AdministratorListResponse {
+  items: Administrator[];
+  /**
+     * @maxLength 512
+     * @nullable
+     */
+  next_cursor?: string | null;
+}
+
+export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
+
+
+export const ErrorCode = {
+  authentication_failed: 'authentication_failed',
+  mfa_required: 'mfa_required',
+  challenge_expired: 'challenge_expired',
+  rate_limited: 'rate_limited',
+  unauthorized: 'unauthorized',
+  forbidden: 'forbidden',
+  csrf_invalid: 'csrf_invalid',
+  validation_failed: 'validation_failed',
+  conflict: 'conflict',
+  bootstrap_unavailable: 'bootstrap_unavailable',
+  reauthentication_required: 'reauthentication_required',
+  last_administrator_protected: 'last_administrator_protected',
+  administrator_self_disable_forbidden: 'administrator_self_disable_forbidden',
+  internal_error: 'internal_error',
+  temporarily_unavailable: 'temporarily_unavailable',
+} as const;
+
+export interface ErrorResponse {
+  code: ErrorCode;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  message: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  request_id: string;
+  /**
+     * @minimum 1
+     * @maximum 86400
+     */
+  retry_after_seconds?: number;
+}
+
+/**
+ * Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
+ */
+export type BootstrapSecretParameter = string;
+
+/**
+ * Random proof bound to the current administrator session.
+ */
+export type CsrfTokenParameter = string;
+
+/**
+ * Required only when logout receives a parseable administrator session cookie.
+ */
+export type OptionalCsrfTokenParameter = string;
+
+export type PageLimitParameter = number;
+
+export type PageCursorParameter = string;
+
+export type ListAdministratorsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: PageLimitParameter;
+/**
+ * @minLength 1
+ * @maxLength 512
+ */
+cursor?: PageCursorParameter;
+status?: AdministratorStatus;
+};
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -160,3 +604,2134 @@ export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TE
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export type getBootstrapStatusResponse200 = {
+  data: BootstrapStatusResponse
+  status: 200
+}
+
+export type getBootstrapStatusResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getBootstrapStatusResponseSuccess = (getBootstrapStatusResponse200) & {
+  headers: Headers;
+};
+export type getBootstrapStatusResponseError = (getBootstrapStatusResponse503) & {
+  headers: Headers;
+};
+
+export type getBootstrapStatusResponse = (getBootstrapStatusResponseSuccess | getBootstrapStatusResponseError)
+
+export const getGetBootstrapStatusUrl = () => {
+
+
+
+
+  return `/api/bootstrap/status`
+}
+
+/**
+ * Returns only the environment bootstrap state and never administrator details.
+ * @summary Read the one-time bootstrap state
+ */
+export const getBootstrapStatus = async ( options?: RequestInit): Promise<getBootstrapStatusResponse> => {
+
+  const res = await fetch(getGetBootstrapStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getBootstrapStatusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getBootstrapStatusResponse
+}
+
+
+
+
+
+export const getGetBootstrapStatusQueryKey = () => {
+    return [
+    `/api/bootstrap/status`
+    ] as const;
+    }
+
+
+export const getGetBootstrapStatusQueryOptions = <TData = Awaited<ReturnType<typeof getBootstrapStatus>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getBootstrapStatus>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBootstrapStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBootstrapStatus>>> = ({ signal }) => getBootstrapStatus({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBootstrapStatus>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetBootstrapStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getBootstrapStatus>>>
+export type GetBootstrapStatusQueryError = ErrorResponse
+
+
+export function useGetBootstrapStatus<TData = Awaited<ReturnType<typeof getBootstrapStatus>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getBootstrapStatus>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getBootstrapStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getBootstrapStatus>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetBootstrapStatus<TData = Awaited<ReturnType<typeof getBootstrapStatus>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getBootstrapStatus>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getBootstrapStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getBootstrapStatus>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetBootstrapStatus<TData = Awaited<ReturnType<typeof getBootstrapStatus>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getBootstrapStatus>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the one-time bootstrap state
+ */
+
+export function useGetBootstrapStatus<TData = Awaited<ReturnType<typeof getBootstrapStatus>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getBootstrapStatus>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetBootstrapStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type startBootstrapResponse200 = {
+  data: BootstrapStartResponse
+  status: 200
+}
+
+export type startBootstrapResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type startBootstrapResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type startBootstrapResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type startBootstrapResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type startBootstrapResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type startBootstrapResponseSuccess = (startBootstrapResponse200) & {
+  headers: Headers;
+};
+export type startBootstrapResponseError = (startBootstrapResponse400 | startBootstrapResponse403 | startBootstrapResponse409 | startBootstrapResponse429 | startBootstrapResponse503) & {
+  headers: Headers;
+};
+
+export type startBootstrapResponse = (startBootstrapResponseSuccess | startBootstrapResponseError)
+
+export const getStartBootstrapUrl = () => {
+
+
+
+
+  return `/api/bootstrap/start`
+}
+
+/**
+ * Requires the runtime bootstrap secret. The secret is accepted only in the
+ * dedicated header and is never returned or persisted. A successful response
+ * contains a one-time TOTP enrollment URI and must not be cached.
+ * @summary Start or resume creation of the first administrator
+ */
+export const startBootstrap = async (bootstrapStartRequest: BootstrapStartRequest, options?: RequestInit): Promise<startBootstrapResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getStartBootstrapUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(bootstrapStartRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: startBootstrapResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as startBootstrapResponse
+}
+
+
+
+
+
+export const getStartBootstrapMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startBootstrap>>, TError,StartBootstrapMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof startBootstrap>>, TError,StartBootstrapMutationVariables, TContext> => {
+
+const mutationKey = ['startBootstrap'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startBootstrap>>, StartBootstrapMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  startBootstrap(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartBootstrapMutationResult = NonNullable<Awaited<ReturnType<typeof startBootstrap>>>
+    export type StartBootstrapMutationBody = BootstrapStartRequest
+    export type StartBootstrapMutationError = ErrorResponse
+    export type StartBootstrapMutationVariables = {data: BootstrapStartRequest}
+
+    /**
+ * @summary Start or resume creation of the first administrator
+ */
+export const useStartBootstrap = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startBootstrap>>, TError,StartBootstrapMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startBootstrap>>,
+        TError,
+        StartBootstrapMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartBootstrapMutationOptions(options), queryClient);
+    }
+
+export type completeBootstrapResponse200 = {
+  data: BootstrapCompleteResponse
+  status: 200
+}
+
+export type completeBootstrapResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type completeBootstrapResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type completeBootstrapResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type completeBootstrapResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type completeBootstrapResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type completeBootstrapResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type completeBootstrapResponseSuccess = (completeBootstrapResponse200) & {
+  headers: Headers;
+};
+export type completeBootstrapResponseError = (completeBootstrapResponse400 | completeBootstrapResponse401 | completeBootstrapResponse403 | completeBootstrapResponse409 | completeBootstrapResponse429 | completeBootstrapResponse503) & {
+  headers: Headers;
+};
+
+export type completeBootstrapResponse = (completeBootstrapResponseSuccess | completeBootstrapResponseError)
+
+export const getCompleteBootstrapUrl = () => {
+
+
+
+
+  return `/api/bootstrap/complete`
+}
+
+/**
+ * @summary Confirm TOTP and permanently complete bootstrap
+ */
+export const completeBootstrap = async (totpConfirmationRequest: TotpConfirmationRequest, options?: RequestInit): Promise<completeBootstrapResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCompleteBootstrapUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(totpConfirmationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: completeBootstrapResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as completeBootstrapResponse
+}
+
+
+
+
+
+export const getCompleteBootstrapMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeBootstrap>>, TError,CompleteBootstrapMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof completeBootstrap>>, TError,CompleteBootstrapMutationVariables, TContext> => {
+
+const mutationKey = ['completeBootstrap'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeBootstrap>>, CompleteBootstrapMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeBootstrap(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteBootstrapMutationResult = NonNullable<Awaited<ReturnType<typeof completeBootstrap>>>
+    export type CompleteBootstrapMutationBody = TotpConfirmationRequest
+    export type CompleteBootstrapMutationError = ErrorResponse
+    export type CompleteBootstrapMutationVariables = {data: TotpConfirmationRequest}
+
+    /**
+ * @summary Confirm TOTP and permanently complete bootstrap
+ */
+export const useCompleteBootstrap = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeBootstrap>>, TError,CompleteBootstrapMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof completeBootstrap>>,
+        TError,
+        CompleteBootstrapMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCompleteBootstrapMutationOptions(options), queryClient);
+    }
+
+export type resetPendingBootstrapResponse200 = {
+  data: BootstrapStatusResponse
+  status: 200
+}
+
+export type resetPendingBootstrapResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type resetPendingBootstrapResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type resetPendingBootstrapResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type resetPendingBootstrapResponseSuccess = (resetPendingBootstrapResponse200) & {
+  headers: Headers;
+};
+export type resetPendingBootstrapResponseError = (resetPendingBootstrapResponse403 | resetPendingBootstrapResponse409 | resetPendingBootstrapResponse503) & {
+  headers: Headers;
+};
+
+export type resetPendingBootstrapResponse = (resetPendingBootstrapResponseSuccess | resetPendingBootstrapResponseError)
+
+export const getResetPendingBootstrapUrl = () => {
+
+
+
+
+  return `/api/bootstrap/reset-pending`
+}
+
+/**
+ * A completed bootstrap can never be reset through this operation.
+ * @summary Reset only an unfinished bootstrap flow
+ */
+export const resetPendingBootstrap = async ( options?: RequestInit): Promise<resetPendingBootstrapResponse> => {
+
+  const res = await fetch(getResetPendingBootstrapUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resetPendingBootstrapResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resetPendingBootstrapResponse
+}
+
+
+
+
+
+export const getResetPendingBootstrapMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetPendingBootstrap>>, TError,void, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof resetPendingBootstrap>>, TError,void, TContext> => {
+
+const mutationKey = ['resetPendingBootstrap'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetPendingBootstrap>>, void> = () => {
+
+
+          return  resetPendingBootstrap(fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetPendingBootstrapMutationResult = NonNullable<Awaited<ReturnType<typeof resetPendingBootstrap>>>
+
+    export type ResetPendingBootstrapMutationError = ErrorResponse
+
+
+    /**
+ * @summary Reset only an unfinished bootstrap flow
+ */
+export const useResetPendingBootstrap = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetPendingBootstrap>>, TError,void, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resetPendingBootstrap>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResetPendingBootstrapMutationOptions(options), queryClient);
+    }
+
+export type loginResponse200 = {
+  data: LoginResponse
+  status: 200
+}
+
+export type loginResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type loginResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type loginResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type loginResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type loginResponseSuccess = (loginResponse200) & {
+  headers: Headers;
+};
+export type loginResponseError = (loginResponse400 | loginResponse401 | loginResponse429 | loginResponse503) & {
+  headers: Headers;
+};
+
+export type loginResponse = (loginResponseSuccess | loginResponseError)
+
+export const getLoginUrl = () => {
+
+
+
+
+  return `/api/auth/login`
+}
+
+/**
+ * Authentication failures use the same response shape regardless of whether an
+ * account exists, is disabled, has an incorrect password, or has an MFA state
+ * that cannot proceed. Production returns a five-minute MFA challenge. An
+ * explicitly configured non-production environment may return a full session.
+ * @summary Verify local administrator credentials
+ */
+export const login = async (loginRequest: LoginRequest, options?: RequestInit): Promise<loginResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLoginUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(loginRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: loginResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as loginResponse
+}
+
+
+
+
+
+export const getLoginMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof login>>, TError,LoginMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof login>>, TError,LoginMutationVariables, TContext> => {
+
+const mutationKey = ['login'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof login>>, LoginMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  login(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LoginMutationResult = NonNullable<Awaited<ReturnType<typeof login>>>
+    export type LoginMutationBody = LoginRequest
+    export type LoginMutationError = ErrorResponse
+    export type LoginMutationVariables = {data: LoginRequest}
+
+    /**
+ * @summary Verify local administrator credentials
+ */
+export const useLogin = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof login>>, TError,LoginMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof login>>,
+        TError,
+        LoginMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLoginMutationOptions(options), queryClient);
+    }
+
+export type completeLoginMfaResponse200 = {
+  data: SessionResponse
+  status: 200
+}
+
+export type completeLoginMfaResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type completeLoginMfaResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type completeLoginMfaResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type completeLoginMfaResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type completeLoginMfaResponseSuccess = (completeLoginMfaResponse200) & {
+  headers: Headers;
+};
+export type completeLoginMfaResponseError = (completeLoginMfaResponse400 | completeLoginMfaResponse401 | completeLoginMfaResponse429 | completeLoginMfaResponse503) & {
+  headers: Headers;
+};
+
+export type completeLoginMfaResponse = (completeLoginMfaResponseSuccess | completeLoginMfaResponseError)
+
+export const getCompleteLoginMfaUrl = () => {
+
+
+
+
+  return `/api/auth/mfa`
+}
+
+/**
+ * Uses the short-lived HttpOnly MFA challenge cookie. The challenge cookie is
+ * not an administrator session and cannot authorize any management operation.
+ * @summary Complete a password-login MFA challenge
+ */
+export const completeLoginMfa = async (mfaChallengeRequest: MfaChallengeRequest, options?: RequestInit): Promise<completeLoginMfaResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCompleteLoginMfaUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(mfaChallengeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: completeLoginMfaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as completeLoginMfaResponse
+}
+
+
+
+
+
+export const getCompleteLoginMfaMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeLoginMfa>>, TError,CompleteLoginMfaMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof completeLoginMfa>>, TError,CompleteLoginMfaMutationVariables, TContext> => {
+
+const mutationKey = ['completeLoginMfa'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeLoginMfa>>, CompleteLoginMfaMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeLoginMfa(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteLoginMfaMutationResult = NonNullable<Awaited<ReturnType<typeof completeLoginMfa>>>
+    export type CompleteLoginMfaMutationBody = MfaChallengeRequest
+    export type CompleteLoginMfaMutationError = ErrorResponse
+    export type CompleteLoginMfaMutationVariables = {data: MfaChallengeRequest}
+
+    /**
+ * @summary Complete a password-login MFA challenge
+ */
+export const useCompleteLoginMfa = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeLoginMfa>>, TError,CompleteLoginMfaMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof completeLoginMfa>>,
+        TError,
+        CompleteLoginMfaMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCompleteLoginMfaMutationOptions(options), queryClient);
+    }
+
+export type logoutResponse204 = {
+  data: void
+  status: 204
+}
+
+export type logoutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type logoutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type logoutResponseSuccess = (logoutResponse204) & {
+  headers: Headers;
+};
+export type logoutResponseError = (logoutResponse403 | logoutResponse503) & {
+  headers: Headers;
+};
+
+export type logoutResponse = (logoutResponseSuccess | logoutResponseError)
+
+export const getLogoutUrl = () => {
+
+
+
+
+  return `/api/auth/logout`
+}
+
+/**
+ * Idempotent when the session cookie is absent, expired, or already revoked.
+ * When a parseable session cookie is present, `X-CSRF-Token` is required and
+ * must be bound to that session before the server revokes it.
+ * @summary Revoke the current session
+ */
+export const logout = async ( options?: RequestInit): Promise<logoutResponse> => {
+
+  const res = await fetch(getLogoutUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: logoutResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as logoutResponse
+}
+
+
+
+
+
+export const getLogoutMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext> => {
+
+const mutationKey = ['logout'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logout>>, void> = () => {
+
+
+          return  logout(fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogoutMutationResult = NonNullable<Awaited<ReturnType<typeof logout>>>
+
+    export type LogoutMutationError = ErrorResponse
+
+
+    /**
+ * @summary Revoke the current session
+ */
+export const useLogout = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof logout>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLogoutMutationOptions(options), queryClient);
+    }
+
+export type getSessionResponse200 = {
+  data: SessionResponse
+  status: 200
+}
+
+export type getSessionResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getSessionResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getSessionResponseSuccess = (getSessionResponse200) & {
+  headers: Headers;
+};
+export type getSessionResponseError = (getSessionResponse401 | getSessionResponse503) & {
+  headers: Headers;
+};
+
+export type getSessionResponse = (getSessionResponseSuccess | getSessionResponseError)
+
+export const getGetSessionUrl = () => {
+
+
+
+
+  return `/api/auth/session`
+}
+
+/**
+ * @summary Read the current administrator session and CSRF proof
+ */
+export const getSession = async ( options?: RequestInit): Promise<getSessionResponse> => {
+
+  const res = await fetch(getGetSessionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSessionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSessionResponse
+}
+
+
+
+
+
+export const getGetSessionQueryKey = () => {
+    return [
+    `/api/auth/session`
+    ] as const;
+    }
+
+
+export const getGetSessionQueryOptions = <TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSessionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSession>>> = ({ signal }) => getSession({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getSession>>>
+export type GetSessionQueryError = ErrorResponse
+
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSession>>,
+          TError,
+          Awaited<ReturnType<typeof getSession>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSession>>,
+          TError,
+          Awaited<ReturnType<typeof getSession>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the current administrator session and CSRF proof
+ */
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSessionQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type reauthenticateResponse200 = {
+  data: SessionResponse
+  status: 200
+}
+
+export type reauthenticateResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type reauthenticateResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type reauthenticateResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type reauthenticateResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type reauthenticateResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type reauthenticateResponseSuccess = (reauthenticateResponse200) & {
+  headers: Headers;
+};
+export type reauthenticateResponseError = (reauthenticateResponse400 | reauthenticateResponse401 | reauthenticateResponse403 | reauthenticateResponse429 | reauthenticateResponse503) & {
+  headers: Headers;
+};
+
+export type reauthenticateResponse = (reauthenticateResponseSuccess | reauthenticateResponseError)
+
+export const getReauthenticateUrl = () => {
+
+
+
+
+  return `/api/auth/reauthenticate`
+}
+
+/**
+ * @summary Reverify password and current MFA for high-risk operations
+ */
+export const reauthenticate = async (reauthenticateRequest: ReauthenticateRequest, options?: RequestInit): Promise<reauthenticateResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReauthenticateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reauthenticateRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reauthenticateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reauthenticateResponse
+}
+
+
+
+
+
+export const getReauthenticateMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reauthenticate>>, TError,ReauthenticateMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof reauthenticate>>, TError,ReauthenticateMutationVariables, TContext> => {
+
+const mutationKey = ['reauthenticate'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reauthenticate>>, ReauthenticateMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  reauthenticate(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReauthenticateMutationResult = NonNullable<Awaited<ReturnType<typeof reauthenticate>>>
+    export type ReauthenticateMutationBody = ReauthenticateRequest
+    export type ReauthenticateMutationError = ErrorResponse
+    export type ReauthenticateMutationVariables = {data: ReauthenticateRequest}
+
+    /**
+ * @summary Reverify password and current MFA for high-risk operations
+ */
+export const useReauthenticate = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reauthenticate>>, TError,ReauthenticateMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof reauthenticate>>,
+        TError,
+        ReauthenticateMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReauthenticateMutationOptions(options), queryClient);
+    }
+
+export type changePasswordResponse200 = {
+  data: SessionResponse
+  status: 200
+}
+
+export type changePasswordResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type changePasswordResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type changePasswordResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type changePasswordResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type changePasswordResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type changePasswordResponseSuccess = (changePasswordResponse200) & {
+  headers: Headers;
+};
+export type changePasswordResponseError = (changePasswordResponse400 | changePasswordResponse401 | changePasswordResponse403 | changePasswordResponse429 | changePasswordResponse503) & {
+  headers: Headers;
+};
+
+export type changePasswordResponse = (changePasswordResponseSuccess | changePasswordResponseError)
+
+export const getChangePasswordUrl = () => {
+
+
+
+
+  return `/api/auth/password`
+}
+
+/**
+ * Current MFA may be omitted only when the session has a valid reauthentication proof.
+ * @summary Change the current administrator password
+ */
+export const changePassword = async (changePasswordRequest: ChangePasswordRequest, options?: RequestInit): Promise<changePasswordResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangePasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changePasswordRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changePasswordResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changePasswordResponse
+}
+
+
+
+
+
+export const getChangePasswordMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changePassword>>, TError,ChangePasswordMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof changePassword>>, TError,ChangePasswordMutationVariables, TContext> => {
+
+const mutationKey = ['changePassword'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof changePassword>>, ChangePasswordMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  changePassword(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ChangePasswordMutationResult = NonNullable<Awaited<ReturnType<typeof changePassword>>>
+    export type ChangePasswordMutationBody = ChangePasswordRequest
+    export type ChangePasswordMutationError = ErrorResponse
+    export type ChangePasswordMutationVariables = {data: ChangePasswordRequest}
+
+    /**
+ * @summary Change the current administrator password
+ */
+export const useChangePassword = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changePassword>>, TError,ChangePasswordMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof changePassword>>,
+        TError,
+        ChangePasswordMutationVariables,
+        TContext
+      > => {
+      return useMutation(getChangePasswordMutationOptions(options), queryClient);
+    }
+
+export type regenerateRecoveryCodesResponse200 = {
+  data: RecoveryCodesResponse
+  status: 200
+}
+
+export type regenerateRecoveryCodesResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type regenerateRecoveryCodesResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type regenerateRecoveryCodesResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type regenerateRecoveryCodesResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type regenerateRecoveryCodesResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type regenerateRecoveryCodesResponseSuccess = (regenerateRecoveryCodesResponse200) & {
+  headers: Headers;
+};
+export type regenerateRecoveryCodesResponseError = (regenerateRecoveryCodesResponse400 | regenerateRecoveryCodesResponse401 | regenerateRecoveryCodesResponse403 | regenerateRecoveryCodesResponse409 | regenerateRecoveryCodesResponse503) & {
+  headers: Headers;
+};
+
+export type regenerateRecoveryCodesResponse = (regenerateRecoveryCodesResponseSuccess | regenerateRecoveryCodesResponseError)
+
+export const getRegenerateRecoveryCodesUrl = () => {
+
+
+
+
+  return `/api/auth/recovery-codes/regenerate`
+}
+
+/**
+ * Requires a current reauthentication proof and a reason.
+ * @summary Replace all recovery codes for the current administrator
+ */
+export const regenerateRecoveryCodes = async (reasonRequest: ReasonRequest, options?: RequestInit): Promise<regenerateRecoveryCodesResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRegenerateRecoveryCodesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reasonRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: regenerateRecoveryCodesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as regenerateRecoveryCodesResponse
+}
+
+
+
+
+
+export const getRegenerateRecoveryCodesMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateRecoveryCodes>>, TError,RegenerateRecoveryCodesMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateRecoveryCodes>>, TError,RegenerateRecoveryCodesMutationVariables, TContext> => {
+
+const mutationKey = ['regenerateRecoveryCodes'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateRecoveryCodes>>, RegenerateRecoveryCodesMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  regenerateRecoveryCodes(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateRecoveryCodesMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateRecoveryCodes>>>
+    export type RegenerateRecoveryCodesMutationBody = ReasonRequest
+    export type RegenerateRecoveryCodesMutationError = ErrorResponse
+    export type RegenerateRecoveryCodesMutationVariables = {data: ReasonRequest}
+
+    /**
+ * @summary Replace all recovery codes for the current administrator
+ */
+export const useRegenerateRecoveryCodes = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateRecoveryCodes>>, TError,RegenerateRecoveryCodesMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateRecoveryCodes>>,
+        TError,
+        RegenerateRecoveryCodesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRegenerateRecoveryCodesMutationOptions(options), queryClient);
+    }
+
+export type completeAdministratorActivationResponse200 = {
+  data: AdministratorActivationResponse
+  status: 200
+}
+
+export type completeAdministratorActivationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type completeAdministratorActivationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type completeAdministratorActivationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type completeAdministratorActivationResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type completeAdministratorActivationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type completeAdministratorActivationResponseSuccess = (completeAdministratorActivationResponse200) & {
+  headers: Headers;
+};
+export type completeAdministratorActivationResponseError = (completeAdministratorActivationResponse400 | completeAdministratorActivationResponse401 | completeAdministratorActivationResponse409 | completeAdministratorActivationResponse429 | completeAdministratorActivationResponse503) & {
+  headers: Headers;
+};
+
+export type completeAdministratorActivationResponse = (completeAdministratorActivationResponseSuccess | completeAdministratorActivationResponseError)
+
+export const getCompleteAdministratorActivationUrl = () => {
+
+
+
+
+  return `/api/admin-activations/complete`
+}
+
+/**
+ * This anonymous activation state machine has two stages on one endpoint. The
+ * `start` stage exchanges an activation token for a pending TOTP enrollment URI
+ * without enabling the administrator. The `complete` stage atomically sets the
+ * password, confirms TOTP when required, consumes the token, creates recovery
+ * codes, enables the administrator, and creates a session.
+ * @summary Enroll TOTP or complete administrator activation
+ */
+export const completeAdministratorActivation = async (administratorActivationRequest: AdministratorActivationRequest, options?: RequestInit): Promise<completeAdministratorActivationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCompleteAdministratorActivationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(administratorActivationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: completeAdministratorActivationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as completeAdministratorActivationResponse
+}
+
+
+
+
+
+export const getCompleteAdministratorActivationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeAdministratorActivation>>, TError,CompleteAdministratorActivationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof completeAdministratorActivation>>, TError,CompleteAdministratorActivationMutationVariables, TContext> => {
+
+const mutationKey = ['completeAdministratorActivation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeAdministratorActivation>>, CompleteAdministratorActivationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeAdministratorActivation(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteAdministratorActivationMutationResult = NonNullable<Awaited<ReturnType<typeof completeAdministratorActivation>>>
+    export type CompleteAdministratorActivationMutationBody = AdministratorActivationRequest
+    export type CompleteAdministratorActivationMutationError = ErrorResponse
+    export type CompleteAdministratorActivationMutationVariables = {data: AdministratorActivationRequest}
+
+    /**
+ * @summary Enroll TOTP or complete administrator activation
+ */
+export const useCompleteAdministratorActivation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeAdministratorActivation>>, TError,CompleteAdministratorActivationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof completeAdministratorActivation>>,
+        TError,
+        CompleteAdministratorActivationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCompleteAdministratorActivationMutationOptions(options), queryClient);
+    }
+
+export type listAdministratorsResponse200 = {
+  data: AdministratorListResponse
+  status: 200
+}
+
+export type listAdministratorsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listAdministratorsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listAdministratorsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listAdministratorsResponseSuccess = (listAdministratorsResponse200) & {
+  headers: Headers;
+};
+export type listAdministratorsResponseError = (listAdministratorsResponse400 | listAdministratorsResponse401 | listAdministratorsResponse503) & {
+  headers: Headers;
+};
+
+export type listAdministratorsResponse = (listAdministratorsResponseSuccess | listAdministratorsResponseError)
+
+export const getListAdministratorsUrl = (params?: ListAdministratorsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admins?${stringifiedParams}` : `/api/admins`
+}
+
+/**
+ * @summary List local administrators
+ */
+export const listAdministrators = async (params?: ListAdministratorsParams, options?: RequestInit): Promise<listAdministratorsResponse> => {
+
+  const res = await fetch(getListAdministratorsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listAdministratorsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listAdministratorsResponse
+}
+
+
+
+
+
+export const getListAdministratorsQueryKey = (params?: ListAdministratorsParams,) => {
+    return [
+    `/api/admins`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAdministratorsQueryOptions = <TData = Awaited<ReturnType<typeof listAdministrators>>, TError = ErrorResponse>(params?: ListAdministratorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdministrators>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdministratorsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdministrators>>> = ({ signal }) => listAdministrators(params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdministrators>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListAdministratorsQueryResult = NonNullable<Awaited<ReturnType<typeof listAdministrators>>>
+export type ListAdministratorsQueryError = ErrorResponse
+
+
+export function useListAdministrators<TData = Awaited<ReturnType<typeof listAdministrators>>, TError = ErrorResponse>(
+ params: undefined |  ListAdministratorsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdministrators>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listAdministrators>>,
+          TError,
+          Awaited<ReturnType<typeof listAdministrators>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAdministrators<TData = Awaited<ReturnType<typeof listAdministrators>>, TError = ErrorResponse>(
+ params?: ListAdministratorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdministrators>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listAdministrators>>,
+          TError,
+          Awaited<ReturnType<typeof listAdministrators>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAdministrators<TData = Awaited<ReturnType<typeof listAdministrators>>, TError = ErrorResponse>(
+ params?: ListAdministratorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdministrators>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List local administrators
+ */
+
+export function useListAdministrators<TData = Awaited<ReturnType<typeof listAdministrators>>, TError = ErrorResponse>(
+ params?: ListAdministratorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdministrators>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListAdministratorsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type createAdministratorResponse201 = {
+  data: AdministratorActivationTokenResponse
+  status: 201
+}
+
+export type createAdministratorResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createAdministratorResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createAdministratorResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createAdministratorResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createAdministratorResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createAdministratorResponseSuccess = (createAdministratorResponse201) & {
+  headers: Headers;
+};
+export type createAdministratorResponseError = (createAdministratorResponse400 | createAdministratorResponse401 | createAdministratorResponse403 | createAdministratorResponse409 | createAdministratorResponse503) & {
+  headers: Headers;
+};
+
+export type createAdministratorResponse = (createAdministratorResponseSuccess | createAdministratorResponseError)
+
+export const getCreateAdministratorUrl = () => {
+
+
+
+
+  return `/api/admins`
+}
+
+/**
+ * Requires a current reauthentication proof and a reason.
+ * @summary Create a pending super administrator and one-time activation token
+ */
+export const createAdministrator = async (createAdministratorRequest: CreateAdministratorRequest, options?: RequestInit): Promise<createAdministratorResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateAdministratorUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createAdministratorRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createAdministratorResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createAdministratorResponse
+}
+
+
+
+
+
+export const getCreateAdministratorMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAdministrator>>, TError,CreateAdministratorMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof createAdministrator>>, TError,CreateAdministratorMutationVariables, TContext> => {
+
+const mutationKey = ['createAdministrator'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAdministrator>>, CreateAdministratorMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAdministrator(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAdministratorMutationResult = NonNullable<Awaited<ReturnType<typeof createAdministrator>>>
+    export type CreateAdministratorMutationBody = CreateAdministratorRequest
+    export type CreateAdministratorMutationError = ErrorResponse
+    export type CreateAdministratorMutationVariables = {data: CreateAdministratorRequest}
+
+    /**
+ * @summary Create a pending super administrator and one-time activation token
+ */
+export const useCreateAdministrator = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAdministrator>>, TError,CreateAdministratorMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createAdministrator>>,
+        TError,
+        CreateAdministratorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateAdministratorMutationOptions(options), queryClient);
+    }
+
+export type disableAdministratorResponse200 = {
+  data: Administrator
+  status: 200
+}
+
+export type disableAdministratorResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableAdministratorResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableAdministratorResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableAdministratorResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableAdministratorResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableAdministratorResponseSuccess = (disableAdministratorResponse200) & {
+  headers: Headers;
+};
+export type disableAdministratorResponseError = (disableAdministratorResponse400 | disableAdministratorResponse401 | disableAdministratorResponse403 | disableAdministratorResponse409 | disableAdministratorResponse503) & {
+  headers: Headers;
+};
+
+export type disableAdministratorResponse = (disableAdministratorResponseSuccess | disableAdministratorResponseError)
+
+export const getDisableAdministratorUrl = (id: string,) => {
+
+
+
+
+  return `/api/admins/${id}/disable`
+}
+
+/**
+ * Requires a current reauthentication proof and a reason.
+ * @summary Disable another administrator and revoke their access
+ */
+export const disableAdministrator = async (id: string,
+    reasonRequest: ReasonRequest, options?: RequestInit): Promise<disableAdministratorResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDisableAdministratorUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reasonRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableAdministratorResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableAdministratorResponse
+}
+
+
+
+
+
+export const getDisableAdministratorMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableAdministrator>>, TError,DisableAdministratorMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof disableAdministrator>>, TError,DisableAdministratorMutationVariables, TContext> => {
+
+const mutationKey = ['disableAdministrator'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disableAdministrator>>, DisableAdministratorMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  disableAdministrator(id,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisableAdministratorMutationResult = NonNullable<Awaited<ReturnType<typeof disableAdministrator>>>
+    export type DisableAdministratorMutationBody = ReasonRequest
+    export type DisableAdministratorMutationError = ErrorResponse
+    export type DisableAdministratorMutationVariables = {id: string;data: ReasonRequest}
+
+    /**
+ * @summary Disable another administrator and revoke their access
+ */
+export const useDisableAdministrator = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableAdministrator>>, TError,DisableAdministratorMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof disableAdministrator>>,
+        TError,
+        DisableAdministratorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDisableAdministratorMutationOptions(options), queryClient);
+    }
+
+export type regenerateAdministratorActivationTokenResponse200 = {
+  data: AdministratorActivationTokenResponse
+  status: 200
+}
+
+export type regenerateAdministratorActivationTokenResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type regenerateAdministratorActivationTokenResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type regenerateAdministratorActivationTokenResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type regenerateAdministratorActivationTokenResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type regenerateAdministratorActivationTokenResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type regenerateAdministratorActivationTokenResponseSuccess = (regenerateAdministratorActivationTokenResponse200) & {
+  headers: Headers;
+};
+export type regenerateAdministratorActivationTokenResponseError = (regenerateAdministratorActivationTokenResponse400 | regenerateAdministratorActivationTokenResponse401 | regenerateAdministratorActivationTokenResponse403 | regenerateAdministratorActivationTokenResponse409 | regenerateAdministratorActivationTokenResponse503) & {
+  headers: Headers;
+};
+
+export type regenerateAdministratorActivationTokenResponse = (regenerateAdministratorActivationTokenResponseSuccess | regenerateAdministratorActivationTokenResponseError)
+
+export const getRegenerateAdministratorActivationTokenUrl = (id: string,) => {
+
+
+
+
+  return `/api/admins/${id}/activation-token`
+}
+
+/**
+ * Requires a current reauthentication proof and a reason.
+ * @summary Revoke and replace a pending administrator activation token
+ */
+export const regenerateAdministratorActivationToken = async (id: string,
+    reasonRequest: ReasonRequest, options?: RequestInit): Promise<regenerateAdministratorActivationTokenResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRegenerateAdministratorActivationTokenUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reasonRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: regenerateAdministratorActivationTokenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as regenerateAdministratorActivationTokenResponse
+}
+
+
+
+
+
+export const getRegenerateAdministratorActivationTokenMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateAdministratorActivationToken>>, TError,RegenerateAdministratorActivationTokenMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateAdministratorActivationToken>>, TError,RegenerateAdministratorActivationTokenMutationVariables, TContext> => {
+
+const mutationKey = ['regenerateAdministratorActivationToken'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateAdministratorActivationToken>>, RegenerateAdministratorActivationTokenMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  regenerateAdministratorActivationToken(id,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateAdministratorActivationTokenMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateAdministratorActivationToken>>>
+    export type RegenerateAdministratorActivationTokenMutationBody = ReasonRequest
+    export type RegenerateAdministratorActivationTokenMutationError = ErrorResponse
+    export type RegenerateAdministratorActivationTokenMutationVariables = {id: string;data: ReasonRequest}
+
+    /**
+ * @summary Revoke and replace a pending administrator activation token
+ */
+export const useRegenerateAdministratorActivationToken = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateAdministratorActivationToken>>, TError,RegenerateAdministratorActivationTokenMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateAdministratorActivationToken>>,
+        TError,
+        RegenerateAdministratorActivationTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRegenerateAdministratorActivationTokenMutationOptions(options), queryClient);
+    }
+
+export type resetAdministratorMfaResponse200 = {
+  data: AdministratorActivationTokenResponse
+  status: 200
+}
+
+export type resetAdministratorMfaResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type resetAdministratorMfaResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type resetAdministratorMfaResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type resetAdministratorMfaResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type resetAdministratorMfaResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type resetAdministratorMfaResponseSuccess = (resetAdministratorMfaResponse200) & {
+  headers: Headers;
+};
+export type resetAdministratorMfaResponseError = (resetAdministratorMfaResponse400 | resetAdministratorMfaResponse401 | resetAdministratorMfaResponse403 | resetAdministratorMfaResponse409 | resetAdministratorMfaResponse503) & {
+  headers: Headers;
+};
+
+export type resetAdministratorMfaResponse = (resetAdministratorMfaResponseSuccess | resetAdministratorMfaResponseError)
+
+export const getResetAdministratorMfaUrl = (id: string,) => {
+
+
+
+
+  return `/api/admins/${id}/mfa-reset`
+}
+
+/**
+ * Requires a current reauthentication proof and a reason.
+ * @summary Reset another administrator MFA and return them to pending activation
+ */
+export const resetAdministratorMfa = async (id: string,
+    reasonRequest: ReasonRequest, options?: RequestInit): Promise<resetAdministratorMfaResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResetAdministratorMfaUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reasonRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resetAdministratorMfaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resetAdministratorMfaResponse
+}
+
+
+
+
+
+export const getResetAdministratorMfaMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetAdministratorMfa>>, TError,ResetAdministratorMfaMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof resetAdministratorMfa>>, TError,ResetAdministratorMfaMutationVariables, TContext> => {
+
+const mutationKey = ['resetAdministratorMfa'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetAdministratorMfa>>, ResetAdministratorMfaMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resetAdministratorMfa(id,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetAdministratorMfaMutationResult = NonNullable<Awaited<ReturnType<typeof resetAdministratorMfa>>>
+    export type ResetAdministratorMfaMutationBody = ReasonRequest
+    export type ResetAdministratorMfaMutationError = ErrorResponse
+    export type ResetAdministratorMfaMutationVariables = {id: string;data: ReasonRequest}
+
+    /**
+ * @summary Reset another administrator MFA and return them to pending activation
+ */
+export const useResetAdministratorMfa = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetAdministratorMfa>>, TError,ResetAdministratorMfaMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resetAdministratorMfa>>,
+        TError,
+        ResetAdministratorMfaMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResetAdministratorMfaMutationOptions(options), queryClient);
+    }

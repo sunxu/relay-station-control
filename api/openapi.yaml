@@ -1,33 +1,1260 @@
 openapi: 3.1.0
 info:
   title: Relay Station Control API
-  version: 0.1.0
-  description: Internal API for the single-environment Relay Station Control.
+  version: 0.2.0
+  description: |
+    Internal API for the single-environment Relay Station Control.
+
+    Except for operations that explicitly set `security: []`, requests require an
+    enabled `super_admin` session that satisfies the environment MFA policy. Unsafe
+    methods additionally require the session-bound `X-CSRF-Token` header.
+security:
+  - SessionCookie: []
+tags:
+  - name: health
+  - name: bootstrap
+  - name: authentication
+  - name: administrators
 paths:
   /api/healthz:
     get:
       operationId: getHealthz
       summary: Report process health
+      tags: [health]
       security: []
       responses:
         "200":
           description: Control is running.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+
+  /api/bootstrap/status:
+    get:
+      operationId: getBootstrapStatus
+      summary: Read the one-time bootstrap state
+      description: Returns only the environment bootstrap state and never administrator details.
+      tags: [bootstrap]
+      security: []
+      responses:
+        "200":
+          description: Current bootstrap state.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatusResponse"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/bootstrap/start:
+    post:
+      operationId: startBootstrap
+      summary: Start or resume creation of the first administrator
+      description: |
+        Requires the runtime bootstrap secret. The secret is accepted only in the
+        dedicated header and is never returned or persisted. A successful response
+        contains a one-time TOTP enrollment URI and must not be cached.
+      tags: [bootstrap]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BootstrapSecret"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapStartRequest"
+      responses:
+        "200":
+          description: Bootstrap is in progress and ready for TOTP confirmation.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStartResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/bootstrap/complete:
+    post:
+      operationId: completeBootstrap
+      summary: Confirm TOTP and permanently complete bootstrap
+      tags: [bootstrap]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BootstrapSecret"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpConfirmationRequest"
+      responses:
+        "200":
+          description: Bootstrap completed; recovery codes are shown exactly once.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/SessionSetCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapCompleteResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/bootstrap/reset-pending:
+    post:
+      operationId: resetPendingBootstrap
+      summary: Reset only an unfinished bootstrap flow
+      description: A completed bootstrap can never be reset through this operation.
+      tags: [bootstrap]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/BootstrapSecret"
+      responses:
+        "200":
+          description: Pending bootstrap state was removed and returned to required.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatusResponse"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/login:
+    post:
+      operationId: login
+      summary: Verify local administrator credentials
+      description: |
+        Authentication failures use the same response shape regardless of whether an
+        account exists, is disabled, has an incorrect password, or has an MFA state
+        that cannot proceed. Production returns a five-minute MFA challenge. An
+        explicitly configured non-production environment may return a full session.
+      tags: [authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Password accepted; MFA is required or a non-production session was created.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/AuthenticationSetCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mfa:
+    post:
+      operationId: completeLoginMfa
+      summary: Complete a password-login MFA challenge
+      description: |
+        Uses the short-lived HttpOnly MFA challenge cookie. The challenge cookie is
+        not an administrator session and cannot authorize any management operation.
+      tags: [authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaChallengeRequest"
+      responses:
+        "200":
+          description: MFA completed and a full administrator session was created.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/SessionSetCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke the current session
+      description: |
+        Idempotent when the session cookie is absent, expired, or already revoked.
+        When a parseable session cookie is present, `X-CSRF-Token` is required and
+        must be bound to that session before the server revokes it.
+      tags: [authentication]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OptionalCsrfToken"
+      responses:
+        "204":
+          description: The session is revoked or was already absent.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/SessionClearCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/session:
+    get:
+      operationId: getSession
+      summary: Read the current administrator session and CSRF proof
+      tags: [authentication]
+      responses:
+        "200":
+          description: Current authenticated session.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/reauthenticate:
+    post:
+      operationId: reauthenticate
+      summary: Reverify password and current MFA for high-risk operations
+      tags: [authentication]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReauthenticateRequest"
+      responses:
+        "200":
+          description: Reauthentication succeeded and the rotated session carries a five-minute proof.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/SessionSetCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/password:
+    post:
+      operationId: changePassword
+      summary: Change the current administrator password
+      description: Current MFA may be omitted only when the session has a valid reauthentication proof.
+      tags: [authentication]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Password changed and the current session was rotated.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/SessionSetCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/recovery-codes/regenerate:
+    post:
+      operationId: regenerateRecoveryCodes
+      summary: Replace all recovery codes for the current administrator
+      description: Requires a current reauthentication proof and a reason.
+      tags: [authentication]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+      responses:
+        "200":
+          description: New recovery codes are shown exactly once and all previous codes are revoked.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/admin-activations/complete:
+    post:
+      operationId: completeAdministratorActivation
+      summary: Enroll TOTP or complete administrator activation
+      description: |
+        This anonymous activation state machine has two stages on one endpoint. The
+        `start` stage exchanges an activation token for a pending TOTP enrollment URI
+        without enabling the administrator. The `complete` stage atomically sets the
+        password, confirms TOTP when required, consumes the token, creates recovery
+        codes, enables the administrator, and creates a session.
+      tags: [administrators]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdministratorActivationRequest"
+      responses:
+        "200":
+          description: TOTP enrollment started or activation completed.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            Set-Cookie:
+              $ref: "#/components/headers/OptionalSessionSetCookie"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdministratorActivationResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/admins:
+    get:
+      operationId: listAdministrators
+      summary: List local administrators
+      tags: [administrators]
+      parameters:
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AdministratorStatus"
+      responses:
+        "200":
+          description: Administrator page.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdministratorListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createAdministrator
+      summary: Create a pending super administrator and one-time activation token
+      description: Requires a current reauthentication proof and a reason.
+      tags: [administrators]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdministratorRequest"
+      responses:
+        "201":
+          description: Pending administrator created; the activation token is shown exactly once.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdministratorActivationTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/admins/{id}/disable:
+    post:
+      operationId: disableAdministrator
+      summary: Disable another administrator and revoke their access
+      description: Requires a current reauthentication proof and a reason.
+      tags: [administrators]
+      parameters:
+        - $ref: "#/components/parameters/AdministratorId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+      responses:
+        "200":
+          description: Administrator disabled and all sessions and unused activation tokens revoked.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Administrator"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/admins/{id}/activation-token:
+    post:
+      operationId: regenerateAdministratorActivationToken
+      summary: Revoke and replace a pending administrator activation token
+      description: Requires a current reauthentication proof and a reason.
+      tags: [administrators]
+      parameters:
+        - $ref: "#/components/parameters/AdministratorId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+      responses:
+        "200":
+          description: Replacement activation token is shown exactly once.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdministratorActivationTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/admins/{id}/mfa-reset:
+    post:
+      operationId: resetAdministratorMfa
+      summary: Reset another administrator MFA and return them to pending activation
+      description: Requires a current reauthentication proof and a reason.
+      tags: [administrators]
+      parameters:
+        - $ref: "#/components/parameters/AdministratorId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+      responses:
+        "200":
+          description: MFA, recovery codes, challenges, and sessions were revoked.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdministratorActivationTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
 components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-relay_control_session
+      description: |
+        Opaque administrator session cookie. In production it is set with Secure,
+        HttpOnly, SameSite=Strict, Path=/, no Domain, a 30-minute idle timeout, and a
+        12-hour absolute timeout. It is never a bearer token for service identities.
+
+  parameters:
+    AdministratorId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BootstrapSecret:
+      name: X-Bootstrap-Secret
+      in: header
+      required: true
+      description: Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
+      schema:
+        type: string
+        minLength: 32
+        writeOnly: true
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: Random proof bound to the current administrator session.
+      schema:
+        type: string
+        minLength: 32
+        writeOnly: true
+    OptionalCsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: false
+      description: Required only when logout receives a parseable administrator session cookie.
+      schema:
+        type: string
+        minLength: 32
+        writeOnly: true
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+
+  headers:
+    AuthenticationSetCookie:
+      description: |
+        Sets either the MFA challenge cookie or, only when non-production MFA is
+        explicitly disabled, the full session cookie. Both are HttpOnly and
+        SameSite=Strict; production cookies are Secure and have no Domain.
+      schema:
+        type: string
+    NoStore:
+      description: Sensitive authentication and administrator responses are never cacheable.
+      required: true
+      schema:
+        type: string
+        enum:
+          - no-store
+    OptionalSessionSetCookie:
+      description: Present only when activation is completed; clears activation state and sets the session cookie.
+      schema:
+        type: string
+    RequestId:
+      description: Stable request correlation identifier safe to show to an administrator.
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+    SessionClearCookie:
+      description: Expires the administrator session cookie after server-side revocation.
+      schema:
+        type: string
+    SessionSetCookie:
+      description: |
+        Sets the opaque administrator session cookie and clears any MFA challenge
+        cookie. Production uses __Host-relay_control_session with Secure, HttpOnly,
+        SameSite=Strict, Path=/, and no Domain.
+      schema:
+        type: string
+
+  responses:
+    Error:
+      description: Request rejected using the uniform error envelope.
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+        Retry-After:
+          description: Present for a rate-limited request, in seconds.
+          schema:
+            type: integer
+            minimum: 1
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   schemas:
     HealthResponse:
       type: object
       additionalProperties: false
-      required:
-        - status
-        - version
+      required: [status, version]
       properties:
         status:
           type: string
-          enum:
-            - ok
+          enum: [ok]
         version:
           type: string
+
+    BootstrapState:
+      type: string
+      enum: [required, in_progress, completed]
+
+    BootstrapStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/BootstrapState"
+
+    BootstrapStartRequest:
+      type: object
+      additionalProperties: false
+      required: [login_name, display_name, password]
+      properties:
+        login_name:
+          $ref: "#/components/schemas/LoginName"
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        password:
+          $ref: "#/components/schemas/NewPassword"
+
+    BootstrapStartResponse:
+      type: object
+      additionalProperties: false
+      required: [status, totp_enrollment]
+      properties:
+        status:
+          type: string
+          enum: [in_progress]
+        totp_enrollment:
+          $ref: "#/components/schemas/TotpEnrollment"
+
+    BootstrapCompleteResponse:
+      type: object
+      additionalProperties: false
+      required: [status, session, recovery_codes]
+      properties:
+        status:
+          type: string
+          enum: [completed]
+        session:
+          $ref: "#/components/schemas/SessionResponse"
+        recovery_codes:
+          $ref: "#/components/schemas/RecoveryCodes"
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [login_name, password]
+      properties:
+        login_name:
+          $ref: "#/components/schemas/LoginName"
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+
+    LoginResponse:
+      oneOf:
+        - $ref: "#/components/schemas/MfaChallengeResponse"
+        - $ref: "#/components/schemas/SessionResponse"
+      discriminator:
+        propertyName: state
+        mapping:
+          mfa_required: "#/components/schemas/MfaChallengeResponse"
+          authenticated: "#/components/schemas/SessionResponse"
+
+    MfaChallengeResponse:
+      type: object
+      additionalProperties: false
+      required: [state, expires_at, methods]
+      properties:
+        state:
+          type: string
+          enum: [mfa_required]
+        expires_at:
+          type: string
+          format: date-time
+        methods:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/MfaMethod"
+
+    MfaChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [method, code]
+      properties:
+        method:
+          $ref: "#/components/schemas/MfaMethod"
+        code:
+          type: string
+          minLength: 6
+          maxLength: 128
+          writeOnly: true
+
+    ReauthenticateRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+        mfa_method:
+          $ref: "#/components/schemas/MfaMethod"
+        mfa_code:
+          type: string
+          minLength: 6
+          maxLength: 128
+          writeOnly: true
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+        new_password:
+          $ref: "#/components/schemas/NewPassword"
+        mfa_method:
+          $ref: "#/components/schemas/MfaMethod"
+        mfa_code:
+          type: string
+          minLength: 6
+          maxLength: 128
+          writeOnly: true
+
+    TotpConfirmationRequest:
+      type: object
+      additionalProperties: false
+      required: [totp_code]
+      properties:
+        totp_code:
+          $ref: "#/components/schemas/TotpCode"
+
+    TotpEnrollment:
+      type: object
+      additionalProperties: false
+      required: [otpauth_uri, algorithm, digits, period_seconds]
+      properties:
+        otpauth_uri:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          pattern: "^otpauth://totp/"
+          writeOnly: true
+        algorithm:
+          type: string
+          enum: [SHA1]
+        digits:
+          type: integer
+          enum: [6]
+        period_seconds:
+          type: integer
+          enum: [30]
+
+    TotpCode:
+      type: string
+      pattern: "^[0-9]{6}$"
+      writeOnly: true
+
+    MfaMethod:
+      type: string
+      enum: [totp, recovery_code]
+
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - administrator
+        - mfa
+        - csrf_token
+        - created_at
+        - last_activity_at
+        - idle_expires_at
+        - absolute_expires_at
+        - recovery_codes_remaining
+      properties:
+        state:
+          type: string
+          enum: [authenticated]
+        administrator:
+          $ref: "#/components/schemas/Administrator"
+        mfa:
+          $ref: "#/components/schemas/SessionMfaAssurance"
+        csrf_token:
+          type: string
+          minLength: 32
+          writeOnly: true
+        created_at:
+          type: string
+          format: date-time
+        last_activity_at:
+          type: string
+          format: date-time
+        idle_expires_at:
+          type: string
+          format: date-time
+        absolute_expires_at:
+          type: string
+          format: date-time
+        reauthenticated_until:
+          type: [string, "null"]
+          format: date-time
+        recovery_codes_remaining:
+          type: integer
+          minimum: 0
+          maximum: 10
+
+    SessionMfaAssurance:
+      type: object
+      additionalProperties: false
+      required: [required, completed]
+      properties:
+        required:
+          type: boolean
+        completed:
+          type: boolean
+        method:
+          oneOf:
+            - $ref: "#/components/schemas/MfaMethod"
+            - type: "null"
+
+    AdministratorActivationRequest:
+      oneOf:
+        - $ref: "#/components/schemas/AdministratorActivationStartRequest"
+        - $ref: "#/components/schemas/AdministratorActivationCompleteRequest"
+      discriminator:
+        propertyName: stage
+        mapping:
+          start: "#/components/schemas/AdministratorActivationStartRequest"
+          complete: "#/components/schemas/AdministratorActivationCompleteRequest"
+
+    AdministratorActivationStartRequest:
+      type: object
+      additionalProperties: false
+      required: [stage, activation_token]
+      properties:
+        stage:
+          type: string
+          enum: [start]
+        activation_token:
+          $ref: "#/components/schemas/ActivationToken"
+
+    AdministratorActivationCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [stage, activation_token, password, totp_code]
+      properties:
+        stage:
+          type: string
+          enum: [complete]
+        activation_token:
+          $ref: "#/components/schemas/ActivationToken"
+        password:
+          $ref: "#/components/schemas/NewPassword"
+        totp_code:
+          $ref: "#/components/schemas/TotpCode"
+
+    AdministratorActivationResponse:
+      oneOf:
+        - $ref: "#/components/schemas/AdministratorActivationEnrollmentResponse"
+        - $ref: "#/components/schemas/AdministratorActivationCompleteResponse"
+      discriminator:
+        propertyName: state
+        mapping:
+          enrollment_required: "#/components/schemas/AdministratorActivationEnrollmentResponse"
+          activated: "#/components/schemas/AdministratorActivationCompleteResponse"
+
+    AdministratorActivationEnrollmentResponse:
+      type: object
+      additionalProperties: false
+      required: [state, totp_enrollment]
+      properties:
+        state:
+          type: string
+          enum: [enrollment_required]
+        totp_enrollment:
+          $ref: "#/components/schemas/TotpEnrollment"
+
+    AdministratorActivationCompleteResponse:
+      type: object
+      additionalProperties: false
+      required: [state, session, recovery_codes]
+      properties:
+        state:
+          type: string
+          enum: [activated]
+        session:
+          $ref: "#/components/schemas/SessionResponse"
+        recovery_codes:
+          $ref: "#/components/schemas/RecoveryCodes"
+
+    CreateAdministratorRequest:
+      type: object
+      additionalProperties: false
+      required: [login_name, display_name, reason]
+      properties:
+        login_name:
+          $ref: "#/components/schemas/LoginName"
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        reason:
+          $ref: "#/components/schemas/OperationReason"
+
+    AdministratorActivationTokenResponse:
+      type: object
+      additionalProperties: false
+      required: [administrator, activation_token, expires_at]
+      properties:
+        administrator:
+          $ref: "#/components/schemas/Administrator"
+        activation_token:
+          $ref: "#/components/schemas/ActivationToken"
+        expires_at:
+          type: string
+          format: date-time
+
+    ActivationToken:
+      type: string
+      minLength: 32
+      maxLength: 512
+      writeOnly: true
+
+    ReasonRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          $ref: "#/components/schemas/OperationReason"
+
+    OperationReason:
+      type: string
+      minLength: 10
+      maxLength: 500
+
+    RecoveryCodesResponse:
+      type: object
+      additionalProperties: false
+      required: [recovery_codes, remaining]
+      properties:
+        recovery_codes:
+          $ref: "#/components/schemas/RecoveryCodes"
+        remaining:
+          type: integer
+          enum: [10]
+
+    RecoveryCodes:
+      type: array
+      minItems: 10
+      maxItems: 10
+      uniqueItems: true
+      writeOnly: true
+      items:
+        type: string
+        minLength: 16
+        maxLength: 128
+
+    AdministratorListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Administrator"
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 512
+
+    Administrator:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - login_name
+        - display_name
+        - auth_source
+        - role
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        login_name:
+          $ref: "#/components/schemas/LoginName"
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        auth_source:
+          type: string
+          enum: [local]
+        role:
+          type: string
+          enum: [super_admin]
+        status:
+          $ref: "#/components/schemas/AdministratorStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        activated_at:
+          type: [string, "null"]
+          format: date-time
+        disabled_at:
+          type: [string, "null"]
+          format: date-time
+        last_login_at:
+          type: [string, "null"]
+          format: date-time
+
+    AdministratorStatus:
+      type: string
+      enum: [pending, enabled, disabled]
+
+    LoginName:
+      type: string
+      minLength: 3
+      maxLength: 64
+      pattern: "^[a-z0-9._-]+$"
+
+    DisplayName:
+      type: string
+      minLength: 1
+      maxLength: 100
+      pattern: "^\\S(?:.*\\S)?$|^\\S$"
+
+    NewPassword:
+      type: string
+      format: password
+      minLength: 14
+      maxLength: 128
+      writeOnly: true
+
+    ErrorCode:
+      type: string
+      enum:
+        - authentication_failed
+        - mfa_required
+        - challenge_expired
+        - rate_limited
+        - unauthorized
+        - forbidden
+        - csrf_invalid
+        - validation_failed
+        - conflict
+        - bootstrap_unavailable
+        - reauthentication_required
+        - last_administrator_protected
+        - administrator_self_disable_forbidden
+        - internal_error
+        - temporarily_unavailable
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message, request_id]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 256
+        request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: "^[A-Za-z0-9._:-]+$"
+        retry_after_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400

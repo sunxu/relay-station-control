@@ -4,11 +4,235 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for AdministratorAuthSource.
+const (
+	Local AdministratorAuthSource = "local"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorAuthSource enum.
+func (e AdministratorAuthSource) Valid() bool {
+	switch e {
+	case Local:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdministratorRole.
+const (
+	SuperAdmin AdministratorRole = "super_admin"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorRole enum.
+func (e AdministratorRole) Valid() bool {
+	switch e {
+	case SuperAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdministratorActivationCompleteRequestStage.
+const (
+	Complete AdministratorActivationCompleteRequestStage = "complete"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorActivationCompleteRequestStage enum.
+func (e AdministratorActivationCompleteRequestStage) Valid() bool {
+	switch e {
+	case Complete:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdministratorActivationCompleteResponseState.
+const (
+	Activated AdministratorActivationCompleteResponseState = "activated"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorActivationCompleteResponseState enum.
+func (e AdministratorActivationCompleteResponseState) Valid() bool {
+	switch e {
+	case Activated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdministratorActivationEnrollmentResponseState.
+const (
+	EnrollmentRequired AdministratorActivationEnrollmentResponseState = "enrollment_required"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorActivationEnrollmentResponseState enum.
+func (e AdministratorActivationEnrollmentResponseState) Valid() bool {
+	switch e {
+	case EnrollmentRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdministratorActivationStartRequestStage.
+const (
+	Start AdministratorActivationStartRequestStage = "start"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorActivationStartRequestStage enum.
+func (e AdministratorActivationStartRequestStage) Valid() bool {
+	switch e {
+	case Start:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdministratorStatus.
+const (
+	Disabled AdministratorStatus = "disabled"
+	Enabled  AdministratorStatus = "enabled"
+	Pending  AdministratorStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AdministratorStatus enum.
+func (e AdministratorStatus) Valid() bool {
+	switch e {
+	case Disabled:
+		return true
+	case Enabled:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BootstrapCompleteResponseStatus.
+const (
+	BootstrapCompleteResponseStatusCompleted BootstrapCompleteResponseStatus = "completed"
+)
+
+// Valid indicates whether the value is a known member of the BootstrapCompleteResponseStatus enum.
+func (e BootstrapCompleteResponseStatus) Valid() bool {
+	switch e {
+	case BootstrapCompleteResponseStatusCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BootstrapStartResponseStatus.
+const (
+	BootstrapStartResponseStatusInProgress BootstrapStartResponseStatus = "in_progress"
+)
+
+// Valid indicates whether the value is a known member of the BootstrapStartResponseStatus enum.
+func (e BootstrapStartResponseStatus) Valid() bool {
+	switch e {
+	case BootstrapStartResponseStatusInProgress:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BootstrapState.
+const (
+	BootstrapStateCompleted  BootstrapState = "completed"
+	BootstrapStateInProgress BootstrapState = "in_progress"
+	BootstrapStateRequired   BootstrapState = "required"
+)
+
+// Valid indicates whether the value is a known member of the BootstrapState enum.
+func (e BootstrapState) Valid() bool {
+	switch e {
+	case BootstrapStateCompleted:
+		return true
+	case BootstrapStateInProgress:
+		return true
+	case BootstrapStateRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorCode.
+const (
+	ErrorCodeAdministratorSelfDisableForbidden ErrorCode = "administrator_self_disable_forbidden"
+	ErrorCodeAuthenticationFailed              ErrorCode = "authentication_failed"
+	ErrorCodeBootstrapUnavailable              ErrorCode = "bootstrap_unavailable"
+	ErrorCodeChallengeExpired                  ErrorCode = "challenge_expired"
+	ErrorCodeConflict                          ErrorCode = "conflict"
+	ErrorCodeCsrfInvalid                       ErrorCode = "csrf_invalid"
+	ErrorCodeForbidden                         ErrorCode = "forbidden"
+	ErrorCodeInternalError                     ErrorCode = "internal_error"
+	ErrorCodeLastAdministratorProtected        ErrorCode = "last_administrator_protected"
+	ErrorCodeMfaRequired                       ErrorCode = "mfa_required"
+	ErrorCodeRateLimited                       ErrorCode = "rate_limited"
+	ErrorCodeReauthenticationRequired          ErrorCode = "reauthentication_required"
+	ErrorCodeTemporarilyUnavailable            ErrorCode = "temporarily_unavailable"
+	ErrorCodeUnauthorized                      ErrorCode = "unauthorized"
+	ErrorCodeValidationFailed                  ErrorCode = "validation_failed"
+)
+
+// Valid indicates whether the value is a known member of the ErrorCode enum.
+func (e ErrorCode) Valid() bool {
+	switch e {
+	case ErrorCodeAdministratorSelfDisableForbidden:
+		return true
+	case ErrorCodeAuthenticationFailed:
+		return true
+	case ErrorCodeBootstrapUnavailable:
+		return true
+	case ErrorCodeChallengeExpired:
+		return true
+	case ErrorCodeConflict:
+		return true
+	case ErrorCodeCsrfInvalid:
+		return true
+	case ErrorCodeForbidden:
+		return true
+	case ErrorCodeInternalError:
+		return true
+	case ErrorCodeLastAdministratorProtected:
+		return true
+	case ErrorCodeMfaRequired:
+		return true
+	case ErrorCodeRateLimited:
+		return true
+	case ErrorCodeReauthenticationRequired:
+		return true
+	case ErrorCodeTemporarilyUnavailable:
+		return true
+	case ErrorCodeUnauthorized:
+		return true
+	case ErrorCodeValidationFailed:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthResponseStatus.
 const (
@@ -25,6 +249,266 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for MfaChallengeResponseState.
+const (
+	MfaChallengeResponseStateMfaRequired MfaChallengeResponseState = "mfa_required"
+)
+
+// Valid indicates whether the value is a known member of the MfaChallengeResponseState enum.
+func (e MfaChallengeResponseState) Valid() bool {
+	switch e {
+	case MfaChallengeResponseStateMfaRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MfaMethod.
+const (
+	RecoveryCode MfaMethod = "recovery_code"
+	Totp         MfaMethod = "totp"
+)
+
+// Valid indicates whether the value is a known member of the MfaMethod enum.
+func (e MfaMethod) Valid() bool {
+	switch e {
+	case RecoveryCode:
+		return true
+	case Totp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecoveryCodesResponseRemaining.
+const (
+	N10 RecoveryCodesResponseRemaining = 10
+)
+
+// Valid indicates whether the value is a known member of the RecoveryCodesResponseRemaining enum.
+func (e RecoveryCodesResponseRemaining) Valid() bool {
+	switch e {
+	case N10:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SessionResponseState.
+const (
+	Authenticated SessionResponseState = "authenticated"
+)
+
+// Valid indicates whether the value is a known member of the SessionResponseState enum.
+func (e SessionResponseState) Valid() bool {
+	switch e {
+	case Authenticated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TotpEnrollmentAlgorithm.
+const (
+	SHA1 TotpEnrollmentAlgorithm = "SHA1"
+)
+
+// Valid indicates whether the value is a known member of the TotpEnrollmentAlgorithm enum.
+func (e TotpEnrollmentAlgorithm) Valid() bool {
+	switch e {
+	case SHA1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TotpEnrollmentDigits.
+const (
+	N6 TotpEnrollmentDigits = 6
+)
+
+// Valid indicates whether the value is a known member of the TotpEnrollmentDigits enum.
+func (e TotpEnrollmentDigits) Valid() bool {
+	switch e {
+	case N6:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TotpEnrollmentPeriodSeconds.
+const (
+	N30 TotpEnrollmentPeriodSeconds = 30
+)
+
+// Valid indicates whether the value is a known member of the TotpEnrollmentPeriodSeconds enum.
+func (e TotpEnrollmentPeriodSeconds) Valid() bool {
+	switch e {
+	case N30:
+		return true
+	default:
+		return false
+	}
+}
+
+// ActivationToken defines model for ActivationToken.
+type ActivationToken = string
+
+// Administrator defines model for Administrator.
+type Administrator struct {
+	ActivatedAt *time.Time              `json:"activated_at,omitempty"`
+	AuthSource  AdministratorAuthSource `json:"auth_source"`
+	CreatedAt   time.Time               `json:"created_at"`
+	DisabledAt  *time.Time              `json:"disabled_at,omitempty"`
+	DisplayName DisplayName             `json:"display_name"`
+	Id          openapi_types.UUID      `json:"id"`
+	LastLoginAt *time.Time              `json:"last_login_at,omitempty"`
+	LoginName   LoginName               `json:"login_name"`
+	Role        AdministratorRole       `json:"role"`
+	Status      AdministratorStatus     `json:"status"`
+	UpdatedAt   time.Time               `json:"updated_at"`
+}
+
+// AdministratorAuthSource defines model for Administrator.AuthSource.
+type AdministratorAuthSource string
+
+// AdministratorRole defines model for Administrator.Role.
+type AdministratorRole string
+
+// AdministratorActivationCompleteRequest defines model for AdministratorActivationCompleteRequest.
+type AdministratorActivationCompleteRequest struct {
+	ActivationToken *ActivationToken                            `json:"activation_token,omitempty"`
+	Password        *NewPassword                                `json:"password,omitempty"`
+	Stage           AdministratorActivationCompleteRequestStage `json:"stage"`
+	TotpCode        *TotpCode                                   `json:"totp_code,omitempty"`
+}
+
+// AdministratorActivationCompleteRequestStage defines model for AdministratorActivationCompleteRequest.Stage.
+type AdministratorActivationCompleteRequestStage string
+
+// AdministratorActivationCompleteResponse defines model for AdministratorActivationCompleteResponse.
+type AdministratorActivationCompleteResponse struct {
+	RecoveryCodes *RecoveryCodes                               `json:"recovery_codes,omitempty"`
+	Session       SessionResponse                              `json:"session"`
+	State         AdministratorActivationCompleteResponseState `json:"state"`
+}
+
+// AdministratorActivationCompleteResponseState defines model for AdministratorActivationCompleteResponse.State.
+type AdministratorActivationCompleteResponseState string
+
+// AdministratorActivationEnrollmentResponse defines model for AdministratorActivationEnrollmentResponse.
+type AdministratorActivationEnrollmentResponse struct {
+	State          AdministratorActivationEnrollmentResponseState `json:"state"`
+	TotpEnrollment TotpEnrollment                                 `json:"totp_enrollment"`
+}
+
+// AdministratorActivationEnrollmentResponseState defines model for AdministratorActivationEnrollmentResponse.State.
+type AdministratorActivationEnrollmentResponseState string
+
+// AdministratorActivationRequest defines model for AdministratorActivationRequest.
+type AdministratorActivationRequest struct {
+	union json.RawMessage
+}
+
+// AdministratorActivationResponse defines model for AdministratorActivationResponse.
+type AdministratorActivationResponse struct {
+	union json.RawMessage
+}
+
+// AdministratorActivationStartRequest defines model for AdministratorActivationStartRequest.
+type AdministratorActivationStartRequest struct {
+	ActivationToken *ActivationToken                         `json:"activation_token,omitempty"`
+	Stage           AdministratorActivationStartRequestStage `json:"stage"`
+}
+
+// AdministratorActivationStartRequestStage defines model for AdministratorActivationStartRequest.Stage.
+type AdministratorActivationStartRequestStage string
+
+// AdministratorActivationTokenResponse defines model for AdministratorActivationTokenResponse.
+type AdministratorActivationTokenResponse struct {
+	ActivationToken *ActivationToken `json:"activation_token,omitempty"`
+	Administrator   Administrator    `json:"administrator"`
+	ExpiresAt       time.Time        `json:"expires_at"`
+}
+
+// AdministratorListResponse defines model for AdministratorListResponse.
+type AdministratorListResponse struct {
+	Items      []Administrator `json:"items"`
+	NextCursor *string         `json:"next_cursor,omitempty"`
+}
+
+// AdministratorStatus defines model for AdministratorStatus.
+type AdministratorStatus string
+
+// BootstrapCompleteResponse defines model for BootstrapCompleteResponse.
+type BootstrapCompleteResponse struct {
+	RecoveryCodes *RecoveryCodes                  `json:"recovery_codes,omitempty"`
+	Session       SessionResponse                 `json:"session"`
+	Status        BootstrapCompleteResponseStatus `json:"status"`
+}
+
+// BootstrapCompleteResponseStatus defines model for BootstrapCompleteResponse.Status.
+type BootstrapCompleteResponseStatus string
+
+// BootstrapStartRequest defines model for BootstrapStartRequest.
+type BootstrapStartRequest struct {
+	DisplayName DisplayName  `json:"display_name"`
+	LoginName   LoginName    `json:"login_name"`
+	Password    *NewPassword `json:"password,omitempty"`
+}
+
+// BootstrapStartResponse defines model for BootstrapStartResponse.
+type BootstrapStartResponse struct {
+	Status         BootstrapStartResponseStatus `json:"status"`
+	TotpEnrollment TotpEnrollment               `json:"totp_enrollment"`
+}
+
+// BootstrapStartResponseStatus defines model for BootstrapStartResponse.Status.
+type BootstrapStartResponseStatus string
+
+// BootstrapState defines model for BootstrapState.
+type BootstrapState string
+
+// BootstrapStatusResponse defines model for BootstrapStatusResponse.
+type BootstrapStatusResponse struct {
+	Status BootstrapState `json:"status"`
+}
+
+// ChangePasswordRequest defines model for ChangePasswordRequest.
+type ChangePasswordRequest struct {
+	CurrentPassword *string      `json:"current_password,omitempty"`
+	MfaCode         *string      `json:"mfa_code,omitempty"`
+	MfaMethod       *MfaMethod   `json:"mfa_method,omitempty"`
+	NewPassword     *NewPassword `json:"new_password,omitempty"`
+}
+
+// CreateAdministratorRequest defines model for CreateAdministratorRequest.
+type CreateAdministratorRequest struct {
+	DisplayName DisplayName     `json:"display_name"`
+	LoginName   LoginName       `json:"login_name"`
+	Reason      OperationReason `json:"reason"`
+}
+
+// DisplayName defines model for DisplayName.
+type DisplayName = string
+
+// ErrorCode defines model for ErrorCode.
+type ErrorCode string
+
+// ErrorResponse defines model for ErrorResponse.
+type ErrorResponse struct {
+	Code              ErrorCode `json:"code"`
+	Message           string    `json:"message"`
+	RequestId         string    `json:"request_id"`
+	RetryAfterSeconds *int      `json:"retry_after_seconds,omitempty"`
+}
+
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
 	Status  HealthResponseStatus `json:"status"`
@@ -34,8 +518,604 @@ type HealthResponse struct {
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
 
+// LoginName defines model for LoginName.
+type LoginName = string
+
+// LoginRequest defines model for LoginRequest.
+type LoginRequest struct {
+	LoginName LoginName `json:"login_name"`
+	Password  *string   `json:"password,omitempty"`
+}
+
+// LoginResponse defines model for LoginResponse.
+type LoginResponse struct {
+	union json.RawMessage
+}
+
+// MfaChallengeRequest defines model for MfaChallengeRequest.
+type MfaChallengeRequest struct {
+	Code   *string   `json:"code,omitempty"`
+	Method MfaMethod `json:"method"`
+}
+
+// MfaChallengeResponse defines model for MfaChallengeResponse.
+type MfaChallengeResponse struct {
+	ExpiresAt time.Time                 `json:"expires_at"`
+	Methods   []MfaMethod               `json:"methods"`
+	State     MfaChallengeResponseState `json:"state"`
+}
+
+// MfaChallengeResponseState defines model for MfaChallengeResponse.State.
+type MfaChallengeResponseState string
+
+// MfaMethod defines model for MfaMethod.
+type MfaMethod string
+
+// NewPassword defines model for NewPassword.
+type NewPassword = string
+
+// OperationReason defines model for OperationReason.
+type OperationReason = string
+
+// ReasonRequest defines model for ReasonRequest.
+type ReasonRequest struct {
+	Reason OperationReason `json:"reason"`
+}
+
+// ReauthenticateRequest defines model for ReauthenticateRequest.
+type ReauthenticateRequest struct {
+	MfaCode   *string    `json:"mfa_code,omitempty"`
+	MfaMethod *MfaMethod `json:"mfa_method,omitempty"`
+	Password  *string    `json:"password,omitempty"`
+}
+
+// RecoveryCodes defines model for RecoveryCodes.
+type RecoveryCodes = []string
+
+// RecoveryCodesResponse defines model for RecoveryCodesResponse.
+type RecoveryCodesResponse struct {
+	RecoveryCodes *RecoveryCodes                 `json:"recovery_codes,omitempty"`
+	Remaining     RecoveryCodesResponseRemaining `json:"remaining"`
+}
+
+// RecoveryCodesResponseRemaining defines model for RecoveryCodesResponse.Remaining.
+type RecoveryCodesResponseRemaining int
+
+// SessionMfaAssurance defines model for SessionMfaAssurance.
+type SessionMfaAssurance struct {
+	Completed bool       `json:"completed"`
+	Method    *MfaMethod `json:"method,omitempty"`
+	Required  bool       `json:"required"`
+}
+
+// SessionResponse defines model for SessionResponse.
+type SessionResponse struct {
+	AbsoluteExpiresAt      time.Time            `json:"absolute_expires_at"`
+	Administrator          Administrator        `json:"administrator"`
+	CreatedAt              time.Time            `json:"created_at"`
+	CsrfToken              *string              `json:"csrf_token,omitempty"`
+	IdleExpiresAt          time.Time            `json:"idle_expires_at"`
+	LastActivityAt         time.Time            `json:"last_activity_at"`
+	Mfa                    SessionMfaAssurance  `json:"mfa"`
+	ReauthenticatedUntil   *time.Time           `json:"reauthenticated_until,omitempty"`
+	RecoveryCodesRemaining int                  `json:"recovery_codes_remaining"`
+	State                  SessionResponseState `json:"state"`
+}
+
+// SessionResponseState defines model for SessionResponse.State.
+type SessionResponseState string
+
+// TotpCode defines model for TotpCode.
+type TotpCode = string
+
+// TotpConfirmationRequest defines model for TotpConfirmationRequest.
+type TotpConfirmationRequest struct {
+	TotpCode *TotpCode `json:"totp_code,omitempty"`
+}
+
+// TotpEnrollment defines model for TotpEnrollment.
+type TotpEnrollment struct {
+	Algorithm     TotpEnrollmentAlgorithm     `json:"algorithm"`
+	Digits        TotpEnrollmentDigits        `json:"digits"`
+	OtpauthUri    *string                     `json:"otpauth_uri,omitempty"`
+	PeriodSeconds TotpEnrollmentPeriodSeconds `json:"period_seconds"`
+}
+
+// TotpEnrollmentAlgorithm defines model for TotpEnrollment.Algorithm.
+type TotpEnrollmentAlgorithm string
+
+// TotpEnrollmentDigits defines model for TotpEnrollment.Digits.
+type TotpEnrollmentDigits int
+
+// TotpEnrollmentPeriodSeconds defines model for TotpEnrollment.PeriodSeconds.
+type TotpEnrollmentPeriodSeconds int
+
+// AdministratorId defines model for AdministratorId.
+type AdministratorId = openapi_types.UUID
+
+// BootstrapSecret defines model for BootstrapSecret.
+type BootstrapSecret = string
+
+// CsrfToken defines model for CsrfToken.
+type CsrfToken = string
+
+// OptionalCsrfToken defines model for OptionalCsrfToken.
+type OptionalCsrfToken = string
+
+// PageCursor defines model for PageCursor.
+type PageCursor = string
+
+// PageLimit defines model for PageLimit.
+type PageLimit = int
+
+// Error defines model for Error.
+type Error = ErrorResponse
+
+// ListAdministratorsParams defines parameters for ListAdministrators.
+type ListAdministratorsParams struct {
+	Limit  *PageLimit           `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *PageCursor          `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Status *AdministratorStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// CreateAdministratorParams defines parameters for CreateAdministrator.
+type CreateAdministratorParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RegenerateAdministratorActivationTokenParams defines parameters for RegenerateAdministratorActivationToken.
+type RegenerateAdministratorActivationTokenParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// DisableAdministratorParams defines parameters for DisableAdministrator.
+type DisableAdministratorParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ResetAdministratorMfaParams defines parameters for ResetAdministratorMfa.
+type ResetAdministratorMfaParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// LogoutParams defines parameters for Logout.
+type LogoutParams struct {
+	// XCSRFToken Required only when logout receives a parseable administrator session cookie.
+	XCSRFToken *OptionalCsrfToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// ChangePasswordParams defines parameters for ChangePassword.
+type ChangePasswordParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ReauthenticateParams defines parameters for Reauthenticate.
+type ReauthenticateParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RegenerateRecoveryCodesParams defines parameters for RegenerateRecoveryCodes.
+type RegenerateRecoveryCodesParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// CompleteBootstrapParams defines parameters for CompleteBootstrap.
+type CompleteBootstrapParams struct {
+	// XBootstrapSecret Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
+	XBootstrapSecret BootstrapSecret `json:"X-Bootstrap-Secret"`
+}
+
+// ResetPendingBootstrapParams defines parameters for ResetPendingBootstrap.
+type ResetPendingBootstrapParams struct {
+	// XBootstrapSecret Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
+	XBootstrapSecret BootstrapSecret `json:"X-Bootstrap-Secret"`
+}
+
+// StartBootstrapParams defines parameters for StartBootstrap.
+type StartBootstrapParams struct {
+	// XBootstrapSecret Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
+	XBootstrapSecret BootstrapSecret `json:"X-Bootstrap-Secret"`
+}
+
+// CompleteAdministratorActivationJSONRequestBody defines body for CompleteAdministratorActivation for application/json ContentType.
+type CompleteAdministratorActivationJSONRequestBody = AdministratorActivationRequest
+
+// CreateAdministratorJSONRequestBody defines body for CreateAdministrator for application/json ContentType.
+type CreateAdministratorJSONRequestBody = CreateAdministratorRequest
+
+// RegenerateAdministratorActivationTokenJSONRequestBody defines body for RegenerateAdministratorActivationToken for application/json ContentType.
+type RegenerateAdministratorActivationTokenJSONRequestBody = ReasonRequest
+
+// DisableAdministratorJSONRequestBody defines body for DisableAdministrator for application/json ContentType.
+type DisableAdministratorJSONRequestBody = ReasonRequest
+
+// ResetAdministratorMfaJSONRequestBody defines body for ResetAdministratorMfa for application/json ContentType.
+type ResetAdministratorMfaJSONRequestBody = ReasonRequest
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginRequest
+
+// CompleteLoginMfaJSONRequestBody defines body for CompleteLoginMfa for application/json ContentType.
+type CompleteLoginMfaJSONRequestBody = MfaChallengeRequest
+
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody = ChangePasswordRequest
+
+// ReauthenticateJSONRequestBody defines body for Reauthenticate for application/json ContentType.
+type ReauthenticateJSONRequestBody = ReauthenticateRequest
+
+// RegenerateRecoveryCodesJSONRequestBody defines body for RegenerateRecoveryCodes for application/json ContentType.
+type RegenerateRecoveryCodesJSONRequestBody = ReasonRequest
+
+// CompleteBootstrapJSONRequestBody defines body for CompleteBootstrap for application/json ContentType.
+type CompleteBootstrapJSONRequestBody = TotpConfirmationRequest
+
+// StartBootstrapJSONRequestBody defines body for StartBootstrap for application/json ContentType.
+type StartBootstrapJSONRequestBody = BootstrapStartRequest
+
+// AsAdministratorActivationStartRequest returns the union data inside the AdministratorActivationRequest as a AdministratorActivationStartRequest
+func (t AdministratorActivationRequest) AsAdministratorActivationStartRequest() (AdministratorActivationStartRequest, error) {
+	var body AdministratorActivationStartRequest
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAdministratorActivationStartRequest overwrites any union data inside the AdministratorActivationRequest as the provided AdministratorActivationStartRequest
+func (t *AdministratorActivationRequest) FromAdministratorActivationStartRequest(v AdministratorActivationStartRequest) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"stage":"start"}`))
+	t.union = b
+	return err
+}
+
+// MergeAdministratorActivationStartRequest performs a merge with any union data inside the AdministratorActivationRequest, using the provided AdministratorActivationStartRequest
+func (t *AdministratorActivationRequest) MergeAdministratorActivationStartRequest(v AdministratorActivationStartRequest) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"stage":"start"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAdministratorActivationCompleteRequest returns the union data inside the AdministratorActivationRequest as a AdministratorActivationCompleteRequest
+func (t AdministratorActivationRequest) AsAdministratorActivationCompleteRequest() (AdministratorActivationCompleteRequest, error) {
+	var body AdministratorActivationCompleteRequest
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAdministratorActivationCompleteRequest overwrites any union data inside the AdministratorActivationRequest as the provided AdministratorActivationCompleteRequest
+func (t *AdministratorActivationRequest) FromAdministratorActivationCompleteRequest(v AdministratorActivationCompleteRequest) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"stage":"complete"}`))
+	t.union = b
+	return err
+}
+
+// MergeAdministratorActivationCompleteRequest performs a merge with any union data inside the AdministratorActivationRequest, using the provided AdministratorActivationCompleteRequest
+func (t *AdministratorActivationRequest) MergeAdministratorActivationCompleteRequest(v AdministratorActivationCompleteRequest) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"stage":"complete"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t AdministratorActivationRequest) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"stage"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t AdministratorActivationRequest) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "complete":
+		return t.AsAdministratorActivationCompleteRequest()
+	case "start":
+		return t.AsAdministratorActivationStartRequest()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t AdministratorActivationRequest) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *AdministratorActivationRequest) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsAdministratorActivationEnrollmentResponse returns the union data inside the AdministratorActivationResponse as a AdministratorActivationEnrollmentResponse
+func (t AdministratorActivationResponse) AsAdministratorActivationEnrollmentResponse() (AdministratorActivationEnrollmentResponse, error) {
+	var body AdministratorActivationEnrollmentResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAdministratorActivationEnrollmentResponse overwrites any union data inside the AdministratorActivationResponse as the provided AdministratorActivationEnrollmentResponse
+func (t *AdministratorActivationResponse) FromAdministratorActivationEnrollmentResponse(v AdministratorActivationEnrollmentResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"enrollment_required"}`))
+	t.union = b
+	return err
+}
+
+// MergeAdministratorActivationEnrollmentResponse performs a merge with any union data inside the AdministratorActivationResponse, using the provided AdministratorActivationEnrollmentResponse
+func (t *AdministratorActivationResponse) MergeAdministratorActivationEnrollmentResponse(v AdministratorActivationEnrollmentResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"enrollment_required"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAdministratorActivationCompleteResponse returns the union data inside the AdministratorActivationResponse as a AdministratorActivationCompleteResponse
+func (t AdministratorActivationResponse) AsAdministratorActivationCompleteResponse() (AdministratorActivationCompleteResponse, error) {
+	var body AdministratorActivationCompleteResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAdministratorActivationCompleteResponse overwrites any union data inside the AdministratorActivationResponse as the provided AdministratorActivationCompleteResponse
+func (t *AdministratorActivationResponse) FromAdministratorActivationCompleteResponse(v AdministratorActivationCompleteResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"activated"}`))
+	t.union = b
+	return err
+}
+
+// MergeAdministratorActivationCompleteResponse performs a merge with any union data inside the AdministratorActivationResponse, using the provided AdministratorActivationCompleteResponse
+func (t *AdministratorActivationResponse) MergeAdministratorActivationCompleteResponse(v AdministratorActivationCompleteResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"activated"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t AdministratorActivationResponse) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"state"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t AdministratorActivationResponse) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "activated":
+		return t.AsAdministratorActivationCompleteResponse()
+	case "enrollment_required":
+		return t.AsAdministratorActivationEnrollmentResponse()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t AdministratorActivationResponse) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *AdministratorActivationResponse) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsMfaChallengeResponse returns the union data inside the LoginResponse as a MfaChallengeResponse
+func (t LoginResponse) AsMfaChallengeResponse() (MfaChallengeResponse, error) {
+	var body MfaChallengeResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromMfaChallengeResponse overwrites any union data inside the LoginResponse as the provided MfaChallengeResponse
+func (t *LoginResponse) FromMfaChallengeResponse(v MfaChallengeResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"mfa_required"}`))
+	t.union = b
+	return err
+}
+
+// MergeMfaChallengeResponse performs a merge with any union data inside the LoginResponse, using the provided MfaChallengeResponse
+func (t *LoginResponse) MergeMfaChallengeResponse(v MfaChallengeResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"mfa_required"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSessionResponse returns the union data inside the LoginResponse as a SessionResponse
+func (t LoginResponse) AsSessionResponse() (SessionResponse, error) {
+	var body SessionResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSessionResponse overwrites any union data inside the LoginResponse as the provided SessionResponse
+func (t *LoginResponse) FromSessionResponse(v SessionResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"authenticated"}`))
+	t.union = b
+	return err
+}
+
+// MergeSessionResponse performs a merge with any union data inside the LoginResponse, using the provided SessionResponse
+func (t *LoginResponse) MergeSessionResponse(v SessionResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"state":"authenticated"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t LoginResponse) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"state"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t LoginResponse) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "authenticated":
+		return t.AsSessionResponse()
+	case "mfa_required":
+		return t.AsMfaChallengeResponse()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t LoginResponse) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *LoginResponse) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CompleteAdministratorActivation Enroll TOTP or complete administrator activation
+	// (POST /api/admin-activations/complete)
+	CompleteAdministratorActivation(w http.ResponseWriter, r *http.Request)
+	// ListAdministrators List local administrators
+	// (GET /api/admins)
+	ListAdministrators(w http.ResponseWriter, r *http.Request, params ListAdministratorsParams)
+	// CreateAdministrator Create a pending super administrator and one-time activation token
+	// (POST /api/admins)
+	CreateAdministrator(w http.ResponseWriter, r *http.Request, params CreateAdministratorParams)
+	// RegenerateAdministratorActivationToken Revoke and replace a pending administrator activation token
+	// (POST /api/admins/{id}/activation-token)
+	RegenerateAdministratorActivationToken(w http.ResponseWriter, r *http.Request, id AdministratorId, params RegenerateAdministratorActivationTokenParams)
+	// DisableAdministrator Disable another administrator and revoke their access
+	// (POST /api/admins/{id}/disable)
+	DisableAdministrator(w http.ResponseWriter, r *http.Request, id AdministratorId, params DisableAdministratorParams)
+	// ResetAdministratorMfa Reset another administrator MFA and return them to pending activation
+	// (POST /api/admins/{id}/mfa-reset)
+	ResetAdministratorMfa(w http.ResponseWriter, r *http.Request, id AdministratorId, params ResetAdministratorMfaParams)
+	// Login Verify local administrator credentials
+	// (POST /api/auth/login)
+	Login(w http.ResponseWriter, r *http.Request)
+	// Logout Revoke the current session
+	// (POST /api/auth/logout)
+	Logout(w http.ResponseWriter, r *http.Request, params LogoutParams)
+	// CompleteLoginMfa Complete a password-login MFA challenge
+	// (POST /api/auth/mfa)
+	CompleteLoginMfa(w http.ResponseWriter, r *http.Request)
+	// ChangePassword Change the current administrator password
+	// (POST /api/auth/password)
+	ChangePassword(w http.ResponseWriter, r *http.Request, params ChangePasswordParams)
+	// Reauthenticate Reverify password and current MFA for high-risk operations
+	// (POST /api/auth/reauthenticate)
+	Reauthenticate(w http.ResponseWriter, r *http.Request, params ReauthenticateParams)
+	// RegenerateRecoveryCodes Replace all recovery codes for the current administrator
+	// (POST /api/auth/recovery-codes/regenerate)
+	RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request, params RegenerateRecoveryCodesParams)
+	// GetSession Read the current administrator session and CSRF proof
+	// (GET /api/auth/session)
+	GetSession(w http.ResponseWriter, r *http.Request)
+	// CompleteBootstrap Confirm TOTP and permanently complete bootstrap
+	// (POST /api/bootstrap/complete)
+	CompleteBootstrap(w http.ResponseWriter, r *http.Request, params CompleteBootstrapParams)
+	// ResetPendingBootstrap Reset only an unfinished bootstrap flow
+	// (POST /api/bootstrap/reset-pending)
+	ResetPendingBootstrap(w http.ResponseWriter, r *http.Request, params ResetPendingBootstrapParams)
+	// StartBootstrap Start or resume creation of the first administrator
+	// (POST /api/bootstrap/start)
+	StartBootstrap(w http.ResponseWriter, r *http.Request, params StartBootstrapParams)
+	// GetBootstrapStatus Read the one-time bootstrap state
+	// (GET /api/bootstrap/status)
+	GetBootstrapStatus(w http.ResponseWriter, r *http.Request)
 	// GetHealthz Report process health
 	// (GET /api/healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -44,6 +1124,108 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// CompleteAdministratorActivation Enroll TOTP or complete administrator activation
+// (POST /api/admin-activations/complete)
+func (_ Unimplemented) CompleteAdministratorActivation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListAdministrators List local administrators
+// (GET /api/admins)
+func (_ Unimplemented) ListAdministrators(w http.ResponseWriter, r *http.Request, params ListAdministratorsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateAdministrator Create a pending super administrator and one-time activation token
+// (POST /api/admins)
+func (_ Unimplemented) CreateAdministrator(w http.ResponseWriter, r *http.Request, params CreateAdministratorParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RegenerateAdministratorActivationToken Revoke and replace a pending administrator activation token
+// (POST /api/admins/{id}/activation-token)
+func (_ Unimplemented) RegenerateAdministratorActivationToken(w http.ResponseWriter, r *http.Request, id AdministratorId, params RegenerateAdministratorActivationTokenParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DisableAdministrator Disable another administrator and revoke their access
+// (POST /api/admins/{id}/disable)
+func (_ Unimplemented) DisableAdministrator(w http.ResponseWriter, r *http.Request, id AdministratorId, params DisableAdministratorParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ResetAdministratorMfa Reset another administrator MFA and return them to pending activation
+// (POST /api/admins/{id}/mfa-reset)
+func (_ Unimplemented) ResetAdministratorMfa(w http.ResponseWriter, r *http.Request, id AdministratorId, params ResetAdministratorMfaParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Login Verify local administrator credentials
+// (POST /api/auth/login)
+func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Logout Revoke the current session
+// (POST /api/auth/logout)
+func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request, params LogoutParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CompleteLoginMfa Complete a password-login MFA challenge
+// (POST /api/auth/mfa)
+func (_ Unimplemented) CompleteLoginMfa(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ChangePassword Change the current administrator password
+// (POST /api/auth/password)
+func (_ Unimplemented) ChangePassword(w http.ResponseWriter, r *http.Request, params ChangePasswordParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reauthenticate Reverify password and current MFA for high-risk operations
+// (POST /api/auth/reauthenticate)
+func (_ Unimplemented) Reauthenticate(w http.ResponseWriter, r *http.Request, params ReauthenticateParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RegenerateRecoveryCodes Replace all recovery codes for the current administrator
+// (POST /api/auth/recovery-codes/regenerate)
+func (_ Unimplemented) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request, params RegenerateRecoveryCodesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSession Read the current administrator session and CSRF proof
+// (GET /api/auth/session)
+func (_ Unimplemented) GetSession(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CompleteBootstrap Confirm TOTP and permanently complete bootstrap
+// (POST /api/bootstrap/complete)
+func (_ Unimplemented) CompleteBootstrap(w http.ResponseWriter, r *http.Request, params CompleteBootstrapParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ResetPendingBootstrap Reset only an unfinished bootstrap flow
+// (POST /api/bootstrap/reset-pending)
+func (_ Unimplemented) ResetPendingBootstrap(w http.ResponseWriter, r *http.Request, params ResetPendingBootstrapParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StartBootstrap Start or resume creation of the first administrator
+// (POST /api/bootstrap/start)
+func (_ Unimplemented) StartBootstrap(w http.ResponseWriter, r *http.Request, params StartBootstrapParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetBootstrapStatus Read the one-time bootstrap state
+// (GET /api/bootstrap/status)
+func (_ Unimplemented) GetBootstrapStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // GetHealthz Report process health
 // (GET /api/healthz)
@@ -59,6 +1241,653 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// CompleteAdministratorActivation operation middleware
+func (siw *ServerInterfaceWrapper) CompleteAdministratorActivation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteAdministratorActivation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAdministrators operation middleware
+func (siw *ServerInterfaceWrapper) ListAdministrators(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdministratorsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdministrators(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAdministrator operation middleware
+func (siw *ServerInterfaceWrapper) CreateAdministrator(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAdministratorParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAdministrator(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateAdministratorActivationToken operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateAdministratorActivationToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AdministratorId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RegenerateAdministratorActivationTokenParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateAdministratorActivationToken(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableAdministrator operation middleware
+func (siw *ServerInterfaceWrapper) DisableAdministrator(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AdministratorId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DisableAdministratorParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableAdministrator(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetAdministratorMfa operation middleware
+func (siw *ServerInterfaceWrapper) ResetAdministratorMfa(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AdministratorId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ResetAdministratorMfaParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetAdministratorMfa(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Login operation middleware
+func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LogoutParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken OptionalCsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Logout(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteLoginMfa operation middleware
+func (siw *ServerInterfaceWrapper) CompleteLoginMfa(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteLoginMfa(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangePassword operation middleware
+func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ChangePasswordParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangePassword(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Reauthenticate operation middleware
+func (siw *ServerInterfaceWrapper) Reauthenticate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReauthenticateParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Reauthenticate(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateRecoveryCodes operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RegenerateRecoveryCodesParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateRecoveryCodes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSession operation middleware
+func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteBootstrap operation middleware
+func (siw *ServerInterfaceWrapper) CompleteBootstrap(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CompleteBootstrapParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Bootstrap-Secret" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Bootstrap-Secret")]; found {
+		var XBootstrapSecret BootstrapSecret
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Bootstrap-Secret", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Bootstrap-Secret", valueList[0], &XBootstrapSecret, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Bootstrap-Secret", Err: err})
+			return
+		}
+
+		params.XBootstrapSecret = XBootstrapSecret
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Bootstrap-Secret is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Bootstrap-Secret", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteBootstrap(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetPendingBootstrap operation middleware
+func (siw *ServerInterfaceWrapper) ResetPendingBootstrap(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ResetPendingBootstrapParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Bootstrap-Secret" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Bootstrap-Secret")]; found {
+		var XBootstrapSecret BootstrapSecret
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Bootstrap-Secret", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Bootstrap-Secret", valueList[0], &XBootstrapSecret, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Bootstrap-Secret", Err: err})
+			return
+		}
+
+		params.XBootstrapSecret = XBootstrapSecret
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Bootstrap-Secret is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Bootstrap-Secret", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetPendingBootstrap(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartBootstrap operation middleware
+func (siw *ServerInterfaceWrapper) StartBootstrap(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StartBootstrapParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Bootstrap-Secret" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Bootstrap-Secret")]; found {
+		var XBootstrapSecret BootstrapSecret
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Bootstrap-Secret", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Bootstrap-Secret", valueList[0], &XBootstrapSecret, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Bootstrap-Secret", Err: err})
+			return
+		}
+
+		params.XBootstrapSecret = XBootstrapSecret
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Bootstrap-Secret is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Bootstrap-Secret", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartBootstrap(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBootstrapStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetBootstrapStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBootstrapStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +2018,57 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/healthz", wrapper.GetHealthz)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/bootstrap/status", wrapper.GetBootstrapStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/bootstrap/start", wrapper.StartBootstrap)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/bootstrap/complete", wrapper.CompleteBootstrap)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/bootstrap/reset-pending", wrapper.ResetPendingBootstrap)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/login", wrapper.Login)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/mfa", wrapper.CompleteLoginMfa)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/logout", wrapper.Logout)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/auth/session", wrapper.GetSession)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/reauthenticate", wrapper.Reauthenticate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/password", wrapper.ChangePassword)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/recovery-codes/regenerate", wrapper.RegenerateRecoveryCodes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/admin-activations/complete", wrapper.CompleteAdministratorActivation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/admins", wrapper.ListAdministrators)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/admins", wrapper.CreateAdministrator)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/admins/{id}/disable", wrapper.DisableAdministrator)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/admins/{id}/activation-token", wrapper.RegenerateAdministratorActivationToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/admins/{id}/mfa-reset", wrapper.ResetAdministratorMfa)
 	})
 
 	return r
