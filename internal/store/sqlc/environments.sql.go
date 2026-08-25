@@ -9,32 +9,6 @@ import (
 	"context"
 )
 
-const createEnvironment = `-- name: CreateEnvironment :one
-INSERT INTO environments (environment_id, name, environment_type)
-VALUES ($1, $2, $3)
-RETURNING singleton_id, environment_id, name, environment_type, created_at, updated_at
-`
-
-type CreateEnvironmentParams struct {
-	EnvironmentID   string `json:"environment_id"`
-	Name            string `json:"name"`
-	EnvironmentType string `json:"environment_type"`
-}
-
-func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentParams) (Environment, error) {
-	row := q.db.QueryRow(ctx, createEnvironment, arg.EnvironmentID, arg.Name, arg.EnvironmentType)
-	var i Environment
-	err := row.Scan(
-		&i.SingletonID,
-		&i.EnvironmentID,
-		&i.Name,
-		&i.EnvironmentType,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getEnvironment = `-- name: GetEnvironment :one
 SELECT singleton_id, environment_id, name, environment_type, created_at, updated_at
 FROM environments

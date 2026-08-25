@@ -74,6 +74,7 @@ services:
       - /tmp:mode=0700,uid=65532,gid=65532
     environment:
       CONTROL_HTTP_ADDR: 0.0.0.0:8080
+      CONTROL_ENVIRONMENT_ID: development
       CONTROL_ENVIRONMENT: production
       CONTROL_COOKIE_SECURE: "true"
       CONTROL_MFA_REQUIRED: "true"

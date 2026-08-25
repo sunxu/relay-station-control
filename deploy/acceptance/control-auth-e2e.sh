@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONTROL_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 WORKSPACE_DIR="$(cd -- "${CONTROL_DIR}/.." && pwd)"
@@ -130,12 +132,12 @@ expect_start_failure() {
   local label="$1"
   shift
   local output exit_code=0
-  output="$(docker run --rm --user 65532:65532 "$@" "$CONTROL_E2E_IMAGE" 2>&1)" || exit_code=$?
+  output="$(docker run --rm --user 65532:65532 -e CONTROL_ENVIRONMENT_ID=development "$@" "$CONTROL_E2E_IMAGE" 2>&1)" || exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     echo "FAIL: $label unexpectedly started" >&2
     return 1
   fi
-  if printf '%s' "$output" | grep -Eq 'bootstrap|keyring|secret|cookie|configuration'; then
+  if printf '%s' "$output" | grep -Eq 'bootstrap|keyring|secret|cookie|configuration|environment'; then
     echo "PASS: $label rejected without printing secret material"
   else
     echo "FAIL: $label did not return the bounded configuration error" >&2
@@ -199,11 +201,29 @@ run_negative_configuration_tests() {
   expect_start_failure "insecure production cookies" \
     -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
     -e CONTROL_COOKIE_SECURE=false -e CONTROL_MFA_REQUIRED=true
+
+  expect_start_failure "environment ID mismatch" \
+    --network "${CONTROL_E2E_PROJECT}_default" \
+    -e CONTROL_ENVIRONMENT_ID=wrong-environment \
+    -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
+    -e CONTROL_COOKIE_SECURE=true -e CONTROL_MFA_REQUIRED=true \
+    -e CONTROL_AUTH_KEYRING_FILE=/run/secrets/auth-keyring.json \
+    -e CONTROL_BOOTSTRAP_SECRET_FILE=/run/secrets/bootstrap-secret \
+    -e "DATABASE_URL=postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable" \
+    -v "$secret_volume:/run/secrets:ro"
+  curl --noproxy '*' --silent --show-error --fail "http://localhost:${CONTROL_E2E_PORT}/api/healthz" >/dev/null
+  echo "PASS: corrected environment identity remains available after mismatch rejection"
 }
 
 migrate_up() {
   DATABASE_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${CONTROL_E2E_DB_PORT}/relay_station_control?sslmode=disable" \
     make --silent -C "$CONTROL_DIR" migrate-up
+}
+
+seed_environment() {
+  compose exec -T postgres psql --set ON_ERROR_STOP=1 \
+    --username relay_control_migrator --dbname relay_station_control \
+    --command "INSERT INTO environments (environment_id, name, environment_type) VALUES ('development', 'Synthetic acceptance', 'production') ON CONFLICT (singleton_id) DO NOTHING"
 }
 
 build_and_start() {
@@ -216,6 +236,7 @@ build_and_start() {
     "$CONTROL_DIR"
   compose up -d --wait postgres
   migrate_up
+  seed_environment
   compose up -d secret-init
   compose up -d control
   wait_for_http
@@ -259,6 +280,7 @@ run_data_plane_smoke() {
   # The acceptance PostgreSQL uses tmpfs, which is intentionally empty after a
   # container stop/start. Re-apply migrations before restoring the test Control.
   migrate_up
+  seed_environment
   compose up -d control
   compose up -d tls
   wait_for_http
