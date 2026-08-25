@@ -1,0 +1,112 @@
+name: ${CONTROL_E2E_PROJECT:-relay-control-auth-e2e}
+
+services:
+  postgres:
+    image: postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    environment:
+      POSTGRES_DB: relay_station_control
+      POSTGRES_USER: relay_control_migrator
+      POSTGRES_PASSWORD: relay_control_migrator_dev_only
+      TZ: UTC
+      PGTZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay_control_migrator -d relay_station_control"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports:
+      - 127.0.0.1:${CONTROL_E2E_DB_PORT:-55433}:5432
+    tmpfs:
+      - /var/lib/postgresql
+    volumes:
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro
+
+  secret-init:
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        install -d -o 65532 -g 65532 -m 0500 /run/control-secrets
+        install -o 65532 -g 65532 -m 0400 /input/bootstrap-secret /run/control-secrets/bootstrap-secret
+        install -o 65532 -g 65532 -m 0400 /input/auth-keyring.json /run/control-secrets/auth-keyring.json
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${CONTROL_E2E_RUNTIME_DIR:?set CONTROL_E2E_RUNTIME_DIR}:/input:ro
+      - control-secrets:/run/control-secrets
+
+  tls-init:
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        install -d -o 65532 -g 65532 -m 0500 /run/control-tls
+        install -o 65532 -g 65532 -m 0400 /input/tls.key /run/control-tls/tls.key
+        install -o 65532 -g 65532 -m 0444 /input/tls.crt /run/control-tls/tls.crt
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${CONTROL_E2E_RUNTIME_DIR:?set CONTROL_E2E_RUNTIME_DIR}:/input:ro
+      - control-tls:/run/control-tls
+
+  control:
+    image: ${CONTROL_E2E_IMAGE:-relay-station/control:auth-e2e}
+    container_name: ${CONTROL_E2E_CONTAINER:-relay-control-auth-e2e}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secret-init:
+        condition: service_completed_successfully
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=0700,uid=65532,gid=65532
+    environment:
+      CONTROL_HTTP_ADDR: 0.0.0.0:8080
+      CONTROL_ENVIRONMENT: production
+      CONTROL_COOKIE_SECURE: "true"
+      CONTROL_MFA_REQUIRED: "true"
+      CONTROL_BOOTSTRAP_SECRET_FILE: /run/control-secrets/bootstrap-secret
+      CONTROL_AUTH_KEYRING_FILE: /run/control-secrets/auth-keyring.json
+      DATABASE_URL: postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable
+    ports:
+      - 127.0.0.1:${CONTROL_E2E_PORT:-18080}:8080
+    volumes:
+      - control-secrets:/run/control-secrets:ro
+
+  tls:
+    image: nginx:1.31.0-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7
+    depends_on:
+      control:
+        condition: service_started
+      tls-init:
+        condition: service_completed_successfully
+    entrypoint: ["nginx"]
+    command: ["-c", "/etc/nginx/e2e.conf", "-g", "daemon off;"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=0700,uid=65532,gid=65532
+    ports:
+      - 127.0.0.1:${CONTROL_E2E_TLS_PORT:-18443}:8443
+    volumes:
+      - ./nginx.conf:/etc/nginx/e2e.conf:ro
+      - control-tls:/run/control-tls:ro
+
+volumes:
+  control-secrets:
+  control-tls:
