@@ -29,6 +29,171 @@ import type {
   UseQueryResult
 } from '@tanstack/react-query';
 
+export type EnvironmentAssetEnvironmentType = typeof EnvironmentAssetEnvironmentType[keyof typeof EnvironmentAssetEnvironmentType];
+
+
+export const EnvironmentAssetEnvironmentType = {
+  dev: 'dev',
+  staging: 'staging',
+  production: 'production',
+} as const;
+
+export interface EnvironmentAsset {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  environment_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  environment_type: EnvironmentAssetEnvironmentType;
+}
+
+export type GatewayAssetResponseStatus = typeof GatewayAssetResponseStatus[keyof typeof GatewayAssetResponseStatus];
+
+
+export const GatewayAssetResponseStatus = {
+  registered: 'registered',
+  not_registered: 'not_registered',
+} as const;
+
+/**
+ * @minLength 1
+ * @maxLength 100
+ * @pattern ^\S(?:.*\S)?$|^\S$
+ */
+export type DisplayName = string;
+
+/**
+ * @minLength 8
+ * @maxLength 2048
+ * @pattern ^https?://[^/?#]+(?:/[^?#]*)?$
+ */
+export type ManagementEndpoint = string;
+
+export interface GatewayAsset {
+  instance_id: string;
+  display_name: DisplayName;
+  management_endpoint: ManagementEndpoint;
+  secret_configured: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GatewayAssetResponse {
+  status: GatewayAssetResponseStatus;
+  gateway?: GatewayAsset;
+}
+
+/**
+ * @minLength 2
+ * @maxLength 64
+ * @pattern ^[a-z0-9][a-z0-9._-]*$
+ */
+export type NodeType = string;
+
+/**
+ * @minLength 1
+ * @maxLength 64
+ * @pattern ^[a-z0-9][a-z0-9._-]*$
+ */
+export type DriverContractVersion = string;
+
+export type NodeCapability = typeof NodeCapability[keyof typeof NodeCapability];
+
+
+export const NodeCapability = {
+  management_health_read: 'management_health_read',
+  management_account_inventory_read: 'management_account_inventory_read',
+} as const;
+
+export interface NodeMonitoringStatus {
+  active: boolean;
+  /** @nullable */
+  effective_from?: string | null;
+  /** @nullable */
+  effective_to?: string | null;
+}
+
+export interface NodeAsset {
+  instance_id: string;
+  display_name: DisplayName;
+  node_type: NodeType;
+  driver_contract_version: DriverContractVersion;
+  management_endpoint: ManagementEndpoint;
+  secret_configured: boolean;
+  capabilities: NodeCapability[];
+  monitoring: NodeMonitoringStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NodeAssetListResponse {
+  items: NodeAsset[];
+  /**
+     * @maxLength 512
+     * @nullable
+     */
+  next_cursor?: string | null;
+}
+
+export type NodeDriverLifecycleStatus = typeof NodeDriverLifecycleStatus[keyof typeof NodeDriverLifecycleStatus];
+
+
+export const NodeDriverLifecycleStatus = {
+  active: 'active',
+  deprecated: 'deprecated',
+  retired: 'retired',
+} as const;
+
+export interface NodeDriver {
+  node_type: NodeType;
+  driver_contract_version: DriverContractVersion;
+  display_name: DisplayName;
+  lifecycle_status: NodeDriverLifecycleStatus;
+  capabilities: NodeCapability[];
+  created_at: string;
+}
+
+export interface NodeDriverListResponse {
+  items: NodeDriver[];
+}
+
+export type CurrentProviderInventoryPolicyResponseStatus = typeof CurrentProviderInventoryPolicyResponseStatus[keyof typeof CurrentProviderInventoryPolicyResponseStatus];
+
+
+export const CurrentProviderInventoryPolicyResponseStatus = {
+  configured: 'configured',
+  not_configured: 'not_configured',
+} as const;
+
+/**
+ * @minLength 1
+ * @maxLength 64
+ * @pattern ^[a-z0-9][a-z0-9._-]*$
+ */
+export type ProviderName = string;
+
+export interface ProviderInventoryPolicy {
+  version_id: string;
+  active_providers: ProviderName[];
+  out_of_scope_providers: ProviderName[];
+  effective_from: string;
+  /** @nullable */
+  effective_to?: string | null;
+  created_at: string;
+}
+
+export interface CurrentProviderInventoryPolicyResponse {
+  status: CurrentProviderInventoryPolicyResponseStatus;
+  node_type: NodeType;
+  driver_contract_version: DriverContractVersion;
+  policy?: ProviderInventoryPolicy;
+}
+
 export type HealthResponseStatus = typeof HealthResponseStatus[keyof typeof HealthResponseStatus];
 
 
@@ -60,13 +225,6 @@ export interface BootstrapStatusResponse {
  * @pattern ^[a-z0-9._-]+$
  */
 export type LoginName = string;
-
-/**
- * @minLength 1
- * @maxLength 100
- * @pattern ^\S(?:.*\S)?$|^\S$
- */
-export type DisplayName = string;
 
 /**
  * @minLength 14
@@ -419,6 +577,7 @@ export const ErrorCode = {
   reauthentication_required: 'reauthentication_required',
   last_administrator_protected: 'last_administrator_protected',
   administrator_self_disable_forbidden: 'administrator_self_disable_forbidden',
+  not_found: 'not_found',
   internal_error: 'internal_error',
   temporarily_unavailable: 'temporarily_unavailable',
 } as const;
@@ -462,6 +621,8 @@ export type PageLimitParameter = number;
 
 export type PageCursorParameter = string;
 
+export type AssetPageLimitParameter = number;
+
 export type ListAdministratorsParams = {
 /**
  * @minimum 1
@@ -474,6 +635,27 @@ limit?: PageLimitParameter;
  */
 cursor?: PageCursorParameter;
 status?: AdministratorStatus;
+};
+
+export type ListNodeAssetsParams = {
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: AssetPageLimitParameter;
+/**
+ * @minLength 1
+ * @maxLength 512
+ */
+cursor?: PageCursorParameter;
+node_type?: NodeType;
+capability?: NodeCapability;
+monitoring_active?: boolean;
+};
+
+export type GetCurrentProviderInventoryPolicyParams = {
+node_type: NodeType;
+driver_contract_version: DriverContractVersion;
 };
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -2735,3 +2917,823 @@ export const useResetAdministratorMfa = <TError = ErrorResponse,
       > => {
       return useMutation(getResetAdministratorMfaMutationOptions(options), queryClient);
     }
+
+export type getEnvironmentResponse200 = {
+  data: EnvironmentAsset
+  status: 200
+}
+
+export type getEnvironmentResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getEnvironmentResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getEnvironmentResponseSuccess = (getEnvironmentResponse200) & {
+  headers: Headers;
+};
+export type getEnvironmentResponseError = (getEnvironmentResponse401 | getEnvironmentResponse503) & {
+  headers: Headers;
+};
+
+export type getEnvironmentResponse = (getEnvironmentResponseSuccess | getEnvironmentResponseError)
+
+export const getGetEnvironmentUrl = () => {
+
+
+
+
+  return `/api/environment`
+}
+
+/**
+ * @summary Read the bound Control environment
+ */
+export const getEnvironment = async ( options?: RequestInit): Promise<getEnvironmentResponse> => {
+
+  const res = await fetch(getGetEnvironmentUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getEnvironmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getEnvironmentResponse
+}
+
+
+
+
+
+export const getGetEnvironmentQueryKey = () => {
+    return [
+    `/api/environment`
+    ] as const;
+    }
+
+
+export const getGetEnvironmentQueryOptions = <TData = Awaited<ReturnType<typeof getEnvironment>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getEnvironment>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEnvironmentQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEnvironment>>> = ({ signal }) => getEnvironment({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEnvironment>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetEnvironmentQueryResult = NonNullable<Awaited<ReturnType<typeof getEnvironment>>>
+export type GetEnvironmentQueryError = ErrorResponse
+
+
+export function useGetEnvironment<TData = Awaited<ReturnType<typeof getEnvironment>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getEnvironment>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getEnvironment>>,
+          TError,
+          Awaited<ReturnType<typeof getEnvironment>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetEnvironment<TData = Awaited<ReturnType<typeof getEnvironment>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getEnvironment>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getEnvironment>>,
+          TError,
+          Awaited<ReturnType<typeof getEnvironment>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetEnvironment<TData = Awaited<ReturnType<typeof getEnvironment>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getEnvironment>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the bound Control environment
+ */
+
+export function useGetEnvironment<TData = Awaited<ReturnType<typeof getEnvironment>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getEnvironment>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetEnvironmentQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getGatewayAssetResponse200 = {
+  data: GatewayAssetResponse
+  status: 200
+}
+
+export type getGatewayAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getGatewayAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getGatewayAssetResponseSuccess = (getGatewayAssetResponse200) & {
+  headers: Headers;
+};
+export type getGatewayAssetResponseError = (getGatewayAssetResponse401 | getGatewayAssetResponse503) & {
+  headers: Headers;
+};
+
+export type getGatewayAssetResponse = (getGatewayAssetResponseSuccess | getGatewayAssetResponseError)
+
+export const getGetGatewayAssetUrl = () => {
+
+
+
+
+  return `/api/assets/gateway`
+}
+
+/**
+ * @summary Read the single registered Gateway
+ */
+export const getGatewayAsset = async ( options?: RequestInit): Promise<getGatewayAssetResponse> => {
+
+  const res = await fetch(getGetGatewayAssetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getGatewayAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getGatewayAssetResponse
+}
+
+
+
+
+
+export const getGetGatewayAssetQueryKey = () => {
+    return [
+    `/api/assets/gateway`
+    ] as const;
+    }
+
+
+export const getGetGatewayAssetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayAsset>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAsset>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGatewayAssetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGatewayAsset>>> = ({ signal }) => getGatewayAsset({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGatewayAsset>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGatewayAssetQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayAsset>>>
+export type GetGatewayAssetQueryError = ErrorResponse
+
+
+export function useGetGatewayAsset<TData = Awaited<ReturnType<typeof getGatewayAsset>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAsset>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayAsset>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayAsset>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayAsset<TData = Awaited<ReturnType<typeof getGatewayAsset>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAsset>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayAsset>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayAsset>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayAsset<TData = Awaited<ReturnType<typeof getGatewayAsset>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAsset>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the single registered Gateway
+ */
+
+export function useGetGatewayAsset<TData = Awaited<ReturnType<typeof getGatewayAsset>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAsset>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGatewayAssetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listNodeAssetsResponse200 = {
+  data: NodeAssetListResponse
+  status: 200
+}
+
+export type listNodeAssetsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listNodeAssetsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listNodeAssetsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listNodeAssetsResponseSuccess = (listNodeAssetsResponse200) & {
+  headers: Headers;
+};
+export type listNodeAssetsResponseError = (listNodeAssetsResponse400 | listNodeAssetsResponse401 | listNodeAssetsResponse503) & {
+  headers: Headers;
+};
+
+export type listNodeAssetsResponse = (listNodeAssetsResponseSuccess | listNodeAssetsResponseError)
+
+export const getListNodeAssetsUrl = (params?: ListNodeAssetsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assets/nodes?${stringifiedParams}` : `/api/assets/nodes`
+}
+
+/**
+ * @summary List registered Relay Nodes
+ */
+export const listNodeAssets = async (params?: ListNodeAssetsParams, options?: RequestInit): Promise<listNodeAssetsResponse> => {
+
+  const res = await fetch(getListNodeAssetsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listNodeAssetsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listNodeAssetsResponse
+}
+
+
+
+
+
+export const getListNodeAssetsQueryKey = (params?: ListNodeAssetsParams,) => {
+    return [
+    `/api/assets/nodes`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListNodeAssetsQueryOptions = <TData = Awaited<ReturnType<typeof listNodeAssets>>, TError = ErrorResponse>(params?: ListNodeAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAssets>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodeAssetsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodeAssets>>> = ({ signal }) => listNodeAssets(params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodeAssets>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNodeAssetsQueryResult = NonNullable<Awaited<ReturnType<typeof listNodeAssets>>>
+export type ListNodeAssetsQueryError = ErrorResponse
+
+
+export function useListNodeAssets<TData = Awaited<ReturnType<typeof listNodeAssets>>, TError = ErrorResponse>(
+ params: undefined |  ListNodeAssetsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAssets>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAssets>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAssets>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAssets<TData = Awaited<ReturnType<typeof listNodeAssets>>, TError = ErrorResponse>(
+ params?: ListNodeAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAssets>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAssets>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAssets>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAssets<TData = Awaited<ReturnType<typeof listNodeAssets>>, TError = ErrorResponse>(
+ params?: ListNodeAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAssets>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List registered Relay Nodes
+ */
+
+export function useListNodeAssets<TData = Awaited<ReturnType<typeof listNodeAssets>>, TError = ErrorResponse>(
+ params?: ListNodeAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAssets>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNodeAssetsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getNodeAssetResponse200 = {
+  data: NodeAsset
+  status: 200
+}
+
+export type getNodeAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getNodeAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getNodeAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getNodeAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getNodeAssetResponseSuccess = (getNodeAssetResponse200) & {
+  headers: Headers;
+};
+export type getNodeAssetResponseError = (getNodeAssetResponse400 | getNodeAssetResponse401 | getNodeAssetResponse404 | getNodeAssetResponse503) & {
+  headers: Headers;
+};
+
+export type getNodeAssetResponse = (getNodeAssetResponseSuccess | getNodeAssetResponseError)
+
+export const getGetNodeAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}`
+}
+
+/**
+ * @summary Read one registered Relay Node
+ */
+export const getNodeAsset = async (instanceId: string, options?: RequestInit): Promise<getNodeAssetResponse> => {
+
+  const res = await fetch(getGetNodeAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNodeAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNodeAssetResponse
+}
+
+
+
+
+
+export const getGetNodeAssetQueryKey = (instanceId: string,) => {
+    return [
+    `/api/assets/nodes/${instanceId}`
+    ] as const;
+    }
+
+
+export const getGetNodeAssetQueryOptions = <TData = Awaited<ReturnType<typeof getNodeAsset>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAsset>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeAssetQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeAsset>>> = ({ signal }) => getNodeAsset(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeAsset>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNodeAssetQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeAsset>>>
+export type GetNodeAssetQueryError = ErrorResponse
+
+
+export function useGetNodeAsset<TData = Awaited<ReturnType<typeof getNodeAsset>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAsset>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeAsset>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeAsset>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeAsset<TData = Awaited<ReturnType<typeof getNodeAsset>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAsset>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeAsset>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeAsset>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeAsset<TData = Awaited<ReturnType<typeof getNodeAsset>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAsset>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one registered Relay Node
+ */
+
+export function useGetNodeAsset<TData = Awaited<ReturnType<typeof getNodeAsset>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAsset>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNodeAssetQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listNodeDriversResponse200 = {
+  data: NodeDriverListResponse
+  status: 200
+}
+
+export type listNodeDriversResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listNodeDriversResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listNodeDriversResponseSuccess = (listNodeDriversResponse200) & {
+  headers: Headers;
+};
+export type listNodeDriversResponseError = (listNodeDriversResponse401 | listNodeDriversResponse503) & {
+  headers: Headers;
+};
+
+export type listNodeDriversResponse = (listNodeDriversResponseSuccess | listNodeDriversResponseError)
+
+export const getListNodeDriversUrl = () => {
+
+
+
+
+  return `/api/assets/drivers`
+}
+
+/**
+ * @summary List registered Node Driver contracts and capabilities
+ */
+export const listNodeDrivers = async ( options?: RequestInit): Promise<listNodeDriversResponse> => {
+
+  const res = await fetch(getListNodeDriversUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listNodeDriversResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listNodeDriversResponse
+}
+
+
+
+
+
+export const getListNodeDriversQueryKey = () => {
+    return [
+    `/api/assets/drivers`
+    ] as const;
+    }
+
+
+export const getListNodeDriversQueryOptions = <TData = Awaited<ReturnType<typeof listNodeDrivers>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDrivers>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodeDriversQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodeDrivers>>> = ({ signal }) => listNodeDrivers({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodeDrivers>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNodeDriversQueryResult = NonNullable<Awaited<ReturnType<typeof listNodeDrivers>>>
+export type ListNodeDriversQueryError = ErrorResponse
+
+
+export function useListNodeDrivers<TData = Awaited<ReturnType<typeof listNodeDrivers>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDrivers>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeDrivers>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeDrivers>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeDrivers<TData = Awaited<ReturnType<typeof listNodeDrivers>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDrivers>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeDrivers>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeDrivers>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeDrivers<TData = Awaited<ReturnType<typeof listNodeDrivers>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDrivers>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List registered Node Driver contracts and capabilities
+ */
+
+export function useListNodeDrivers<TData = Awaited<ReturnType<typeof listNodeDrivers>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDrivers>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNodeDriversQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getCurrentProviderInventoryPolicyResponse200 = {
+  data: CurrentProviderInventoryPolicyResponse
+  status: 200
+}
+
+export type getCurrentProviderInventoryPolicyResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getCurrentProviderInventoryPolicyResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getCurrentProviderInventoryPolicyResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getCurrentProviderInventoryPolicyResponseSuccess = (getCurrentProviderInventoryPolicyResponse200) & {
+  headers: Headers;
+};
+export type getCurrentProviderInventoryPolicyResponseError = (getCurrentProviderInventoryPolicyResponse400 | getCurrentProviderInventoryPolicyResponse401 | getCurrentProviderInventoryPolicyResponse503) & {
+  headers: Headers;
+};
+
+export type getCurrentProviderInventoryPolicyResponse = (getCurrentProviderInventoryPolicyResponseSuccess | getCurrentProviderInventoryPolicyResponseError)
+
+export const getGetCurrentProviderInventoryPolicyUrl = (params: GetCurrentProviderInventoryPolicyParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assets/provider-policies/current?${stringifiedParams}` : `/api/assets/provider-policies/current`
+}
+
+/**
+ * @summary Read the current Provider inventory policy for one Driver scope
+ */
+export const getCurrentProviderInventoryPolicy = async (params: GetCurrentProviderInventoryPolicyParams, options?: RequestInit): Promise<getCurrentProviderInventoryPolicyResponse> => {
+
+  const res = await fetch(getGetCurrentProviderInventoryPolicyUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getCurrentProviderInventoryPolicyResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getCurrentProviderInventoryPolicyResponse
+}
+
+
+
+
+
+export const getGetCurrentProviderInventoryPolicyQueryKey = (params?: GetCurrentProviderInventoryPolicyParams,) => {
+    return [
+    `/api/assets/provider-policies/current`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCurrentProviderInventoryPolicyQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError = ErrorResponse>(params: GetCurrentProviderInventoryPolicyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentProviderInventoryPolicyQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>> = ({ signal }) => getCurrentProviderInventoryPolicy(params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCurrentProviderInventoryPolicyQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>>
+export type GetCurrentProviderInventoryPolicyQueryError = ErrorResponse
+
+
+export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError = ErrorResponse>(
+ params: GetCurrentProviderInventoryPolicyParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError = ErrorResponse>(
+ params: GetCurrentProviderInventoryPolicyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError = ErrorResponse>(
+ params: GetCurrentProviderInventoryPolicyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the current Provider inventory policy for one Driver scope
+ */
+
+export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError = ErrorResponse>(
+ params: GetCurrentProviderInventoryPolicyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentProviderInventoryPolicy>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCurrentProviderInventoryPolicyQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

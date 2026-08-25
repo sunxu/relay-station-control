@@ -177,6 +177,45 @@ func (e BootstrapState) Valid() bool {
 	}
 }
 
+// Defines values for CurrentProviderInventoryPolicyResponseStatus.
+const (
+	Configured    CurrentProviderInventoryPolicyResponseStatus = "configured"
+	NotConfigured CurrentProviderInventoryPolicyResponseStatus = "not_configured"
+)
+
+// Valid indicates whether the value is a known member of the CurrentProviderInventoryPolicyResponseStatus enum.
+func (e CurrentProviderInventoryPolicyResponseStatus) Valid() bool {
+	switch e {
+	case Configured:
+		return true
+	case NotConfigured:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EnvironmentAssetEnvironmentType.
+const (
+	Dev        EnvironmentAssetEnvironmentType = "dev"
+	Production EnvironmentAssetEnvironmentType = "production"
+	Staging    EnvironmentAssetEnvironmentType = "staging"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentAssetEnvironmentType enum.
+func (e EnvironmentAssetEnvironmentType) Valid() bool {
+	switch e {
+	case Dev:
+		return true
+	case Production:
+		return true
+	case Staging:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ErrorCode.
 const (
 	ErrorCodeAdministratorSelfDisableForbidden ErrorCode = "administrator_self_disable_forbidden"
@@ -189,6 +228,7 @@ const (
 	ErrorCodeInternalError                     ErrorCode = "internal_error"
 	ErrorCodeLastAdministratorProtected        ErrorCode = "last_administrator_protected"
 	ErrorCodeMfaRequired                       ErrorCode = "mfa_required"
+	ErrorCodeNotFound                          ErrorCode = "not_found"
 	ErrorCodeRateLimited                       ErrorCode = "rate_limited"
 	ErrorCodeReauthenticationRequired          ErrorCode = "reauthentication_required"
 	ErrorCodeTemporarilyUnavailable            ErrorCode = "temporarily_unavailable"
@@ -219,6 +259,8 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeMfaRequired:
 		return true
+	case ErrorCodeNotFound:
+		return true
 	case ErrorCodeRateLimited:
 		return true
 	case ErrorCodeReauthenticationRequired:
@@ -228,6 +270,24 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeUnauthorized:
 		return true
 	case ErrorCodeValidationFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayAssetResponseStatus.
+const (
+	NotRegistered GatewayAssetResponseStatus = "not_registered"
+	Registered    GatewayAssetResponseStatus = "registered"
+)
+
+// Valid indicates whether the value is a known member of the GatewayAssetResponseStatus enum.
+func (e GatewayAssetResponseStatus) Valid() bool {
+	switch e {
+	case NotRegistered:
+		return true
+	case Registered:
 		return true
 	default:
 		return false
@@ -276,6 +336,45 @@ func (e MfaMethod) Valid() bool {
 	case RecoveryCode:
 		return true
 	case Totp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeCapability.
+const (
+	ManagementAccountInventoryRead NodeCapability = "management_account_inventory_read"
+	ManagementHealthRead           NodeCapability = "management_health_read"
+)
+
+// Valid indicates whether the value is a known member of the NodeCapability enum.
+func (e NodeCapability) Valid() bool {
+	switch e {
+	case ManagementAccountInventoryRead:
+		return true
+	case ManagementHealthRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeDriverLifecycleStatus.
+const (
+	Active     NodeDriverLifecycleStatus = "active"
+	Deprecated NodeDriverLifecycleStatus = "deprecated"
+	Retired    NodeDriverLifecycleStatus = "retired"
+)
+
+// Valid indicates whether the value is a known member of the NodeDriverLifecycleStatus enum.
+func (e NodeDriverLifecycleStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Deprecated:
+		return true
+	case Retired:
 		return true
 	default:
 		return false
@@ -495,8 +594,32 @@ type CreateAdministratorRequest struct {
 	Reason      OperationReason `json:"reason"`
 }
 
+// CurrentProviderInventoryPolicyResponse defines model for CurrentProviderInventoryPolicyResponse.
+type CurrentProviderInventoryPolicyResponse struct {
+	DriverContractVersion DriverContractVersion                        `json:"driver_contract_version"`
+	NodeType              NodeType                                     `json:"node_type"`
+	Policy                *ProviderInventoryPolicy                     `json:"policy,omitempty"`
+	Status                CurrentProviderInventoryPolicyResponseStatus `json:"status"`
+}
+
+// CurrentProviderInventoryPolicyResponseStatus defines model for CurrentProviderInventoryPolicyResponse.Status.
+type CurrentProviderInventoryPolicyResponseStatus string
+
 // DisplayName defines model for DisplayName.
 type DisplayName = string
+
+// DriverContractVersion defines model for DriverContractVersion.
+type DriverContractVersion = string
+
+// EnvironmentAsset defines model for EnvironmentAsset.
+type EnvironmentAsset struct {
+	EnvironmentId   string                          `json:"environment_id"`
+	EnvironmentType EnvironmentAssetEnvironmentType `json:"environment_type"`
+	Name            string                          `json:"name"`
+}
+
+// EnvironmentAssetEnvironmentType defines model for EnvironmentAsset.EnvironmentType.
+type EnvironmentAssetEnvironmentType string
 
 // ErrorCode defines model for ErrorCode.
 type ErrorCode string
@@ -508,6 +631,25 @@ type ErrorResponse struct {
 	RequestId         string    `json:"request_id"`
 	RetryAfterSeconds *int      `json:"retry_after_seconds,omitempty"`
 }
+
+// GatewayAsset defines model for GatewayAsset.
+type GatewayAsset struct {
+	CreatedAt          time.Time          `json:"created_at"`
+	DisplayName        DisplayName        `json:"display_name"`
+	InstanceId         openapi_types.UUID `json:"instance_id"`
+	ManagementEndpoint ManagementEndpoint `json:"management_endpoint"`
+	SecretConfigured   bool               `json:"secret_configured"`
+	UpdatedAt          time.Time          `json:"updated_at"`
+}
+
+// GatewayAssetResponse defines model for GatewayAssetResponse.
+type GatewayAssetResponse struct {
+	Gateway *GatewayAsset              `json:"gateway,omitempty"`
+	Status  GatewayAssetResponseStatus `json:"status"`
+}
+
+// GatewayAssetResponseStatus defines model for GatewayAssetResponse.Status.
+type GatewayAssetResponseStatus string
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
@@ -532,6 +674,9 @@ type LoginResponse struct {
 	union json.RawMessage
 }
 
+// ManagementEndpoint defines model for ManagementEndpoint.
+type ManagementEndpoint = string
+
 // MfaChallengeRequest defines model for MfaChallengeRequest.
 type MfaChallengeRequest struct {
 	Code   *string   `json:"code,omitempty"`
@@ -554,8 +699,72 @@ type MfaMethod string
 // NewPassword defines model for NewPassword.
 type NewPassword = string
 
+// NodeAsset defines model for NodeAsset.
+type NodeAsset struct {
+	Capabilities          []NodeCapability      `json:"capabilities"`
+	CreatedAt             time.Time             `json:"created_at"`
+	DisplayName           DisplayName           `json:"display_name"`
+	DriverContractVersion DriverContractVersion `json:"driver_contract_version"`
+	InstanceId            openapi_types.UUID    `json:"instance_id"`
+	ManagementEndpoint    ManagementEndpoint    `json:"management_endpoint"`
+	Monitoring            NodeMonitoringStatus  `json:"monitoring"`
+	NodeType              NodeType              `json:"node_type"`
+	SecretConfigured      bool                  `json:"secret_configured"`
+	UpdatedAt             time.Time             `json:"updated_at"`
+}
+
+// NodeAssetListResponse defines model for NodeAssetListResponse.
+type NodeAssetListResponse struct {
+	Items      []NodeAsset `json:"items"`
+	NextCursor *string     `json:"next_cursor,omitempty"`
+}
+
+// NodeCapability defines model for NodeCapability.
+type NodeCapability string
+
+// NodeDriver defines model for NodeDriver.
+type NodeDriver struct {
+	Capabilities          []NodeCapability          `json:"capabilities"`
+	CreatedAt             time.Time                 `json:"created_at"`
+	DisplayName           DisplayName               `json:"display_name"`
+	DriverContractVersion DriverContractVersion     `json:"driver_contract_version"`
+	LifecycleStatus       NodeDriverLifecycleStatus `json:"lifecycle_status"`
+	NodeType              NodeType                  `json:"node_type"`
+}
+
+// NodeDriverLifecycleStatus defines model for NodeDriver.LifecycleStatus.
+type NodeDriverLifecycleStatus string
+
+// NodeDriverListResponse defines model for NodeDriverListResponse.
+type NodeDriverListResponse struct {
+	Items []NodeDriver `json:"items"`
+}
+
+// NodeMonitoringStatus defines model for NodeMonitoringStatus.
+type NodeMonitoringStatus struct {
+	Active        bool       `json:"active"`
+	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
+}
+
+// NodeType defines model for NodeType.
+type NodeType = string
+
 // OperationReason defines model for OperationReason.
 type OperationReason = string
+
+// ProviderInventoryPolicy defines model for ProviderInventoryPolicy.
+type ProviderInventoryPolicy struct {
+	ActiveProviders     []ProviderName     `json:"active_providers"`
+	CreatedAt           time.Time          `json:"created_at"`
+	EffectiveFrom       time.Time          `json:"effective_from"`
+	EffectiveTo         *time.Time         `json:"effective_to,omitempty"`
+	OutOfScopeProviders []ProviderName     `json:"out_of_scope_providers"`
+	VersionId           openapi_types.UUID `json:"version_id"`
+}
+
+// ProviderName defines model for ProviderName.
+type ProviderName = string
 
 // ReasonRequest defines model for ReasonRequest.
 type ReasonRequest struct {
@@ -633,11 +842,17 @@ type TotpEnrollmentPeriodSeconds int
 // AdministratorId defines model for AdministratorId.
 type AdministratorId = openapi_types.UUID
 
+// AssetPageLimit defines model for AssetPageLimit.
+type AssetPageLimit = int
+
 // BootstrapSecret defines model for BootstrapSecret.
 type BootstrapSecret = string
 
 // CsrfToken defines model for CsrfToken.
 type CsrfToken = string
+
+// NodeInstanceId defines model for NodeInstanceId.
+type NodeInstanceId = openapi_types.UUID
 
 // OptionalCsrfToken defines model for OptionalCsrfToken.
 type OptionalCsrfToken = string
@@ -680,6 +895,21 @@ type DisableAdministratorParams struct {
 type ResetAdministratorMfaParams struct {
 	// XCSRFToken Random proof bound to the current administrator session.
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ListNodeAssetsParams defines parameters for ListNodeAssets.
+type ListNodeAssetsParams struct {
+	Limit            *AssetPageLimit `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor           *PageCursor     `form:"cursor,omitempty" json:"cursor,omitempty"`
+	NodeType         *NodeType       `form:"node_type,omitempty" json:"node_type,omitempty"`
+	Capability       *NodeCapability `form:"capability,omitempty" json:"capability,omitempty"`
+	MonitoringActive *bool           `form:"monitoring_active,omitempty" json:"monitoring_active,omitempty"`
+}
+
+// GetCurrentProviderInventoryPolicyParams defines parameters for GetCurrentProviderInventoryPolicy.
+type GetCurrentProviderInventoryPolicyParams struct {
+	NodeType              NodeType              `form:"node_type" json:"node_type"`
+	DriverContractVersion DriverContractVersion `form:"driver_contract_version" json:"driver_contract_version"`
 }
 
 // LogoutParams defines parameters for Logout.
@@ -1083,6 +1313,21 @@ type ServerInterface interface {
 	// ResetAdministratorMfa Reset another administrator MFA and return them to pending activation
 	// (POST /api/admins/{id}/mfa-reset)
 	ResetAdministratorMfa(w http.ResponseWriter, r *http.Request, id AdministratorId, params ResetAdministratorMfaParams)
+	// ListNodeDrivers List registered Node Driver contracts and capabilities
+	// (GET /api/assets/drivers)
+	ListNodeDrivers(w http.ResponseWriter, r *http.Request)
+	// GetGatewayAsset Read the single registered Gateway
+	// (GET /api/assets/gateway)
+	GetGatewayAsset(w http.ResponseWriter, r *http.Request)
+	// ListNodeAssets List registered Relay Nodes
+	// (GET /api/assets/nodes)
+	ListNodeAssets(w http.ResponseWriter, r *http.Request, params ListNodeAssetsParams)
+	// GetNodeAsset Read one registered Relay Node
+	// (GET /api/assets/nodes/{instance_id})
+	GetNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId)
+	// GetCurrentProviderInventoryPolicy Read the current Provider inventory policy for one Driver scope
+	// (GET /api/assets/provider-policies/current)
+	GetCurrentProviderInventoryPolicy(w http.ResponseWriter, r *http.Request, params GetCurrentProviderInventoryPolicyParams)
 	// Login Verify local administrator credentials
 	// (POST /api/auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -1116,6 +1361,9 @@ type ServerInterface interface {
 	// GetBootstrapStatus Read the one-time bootstrap state
 	// (GET /api/bootstrap/status)
 	GetBootstrapStatus(w http.ResponseWriter, r *http.Request)
+	// GetEnvironment Read the bound Control environment
+	// (GET /api/environment)
+	GetEnvironment(w http.ResponseWriter, r *http.Request)
 	// GetHealthz Report process health
 	// (GET /api/healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -1158,6 +1406,36 @@ func (_ Unimplemented) DisableAdministrator(w http.ResponseWriter, r *http.Reque
 // ResetAdministratorMfa Reset another administrator MFA and return them to pending activation
 // (POST /api/admins/{id}/mfa-reset)
 func (_ Unimplemented) ResetAdministratorMfa(w http.ResponseWriter, r *http.Request, id AdministratorId, params ResetAdministratorMfaParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListNodeDrivers List registered Node Driver contracts and capabilities
+// (GET /api/assets/drivers)
+func (_ Unimplemented) ListNodeDrivers(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGatewayAsset Read the single registered Gateway
+// (GET /api/assets/gateway)
+func (_ Unimplemented) GetGatewayAsset(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListNodeAssets List registered Relay Nodes
+// (GET /api/assets/nodes)
+func (_ Unimplemented) ListNodeAssets(w http.ResponseWriter, r *http.Request, params ListNodeAssetsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetNodeAsset Read one registered Relay Node
+// (GET /api/assets/nodes/{instance_id})
+func (_ Unimplemented) GetNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetCurrentProviderInventoryPolicy Read the current Provider inventory policy for one Driver scope
+// (GET /api/assets/provider-policies/current)
+func (_ Unimplemented) GetCurrentProviderInventoryPolicy(w http.ResponseWriter, r *http.Request, params GetCurrentProviderInventoryPolicyParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1224,6 +1502,12 @@ func (_ Unimplemented) StartBootstrap(w http.ResponseWriter, r *http.Request, pa
 // GetBootstrapStatus Read the one-time bootstrap state
 // (GET /api/bootstrap/status)
 func (_ Unimplemented) GetBootstrapStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetEnvironment Read the bound Control environment
+// (GET /api/environment)
+func (_ Unimplemented) GetEnvironment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1513,6 +1797,191 @@ func (siw *ServerInterfaceWrapper) ResetAdministratorMfa(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ResetAdministratorMfa(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListNodeDrivers operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeDrivers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeDrivers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGatewayAsset operation middleware
+func (siw *ServerInterfaceWrapper) GetGatewayAsset(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGatewayAsset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListNodeAssets operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeAssets(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListNodeAssetsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "node_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "node_type", r.URL.Query(), &params.NodeType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "node_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "node_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "capability" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "capability", r.URL.Query(), &params.Capability, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "capability"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "capability", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "monitoring_active" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "monitoring_active", r.URL.Query(), &params.MonitoringActive, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "monitoring_active"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "monitoring_active", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeAssets(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetNodeAsset operation middleware
+func (siw *ServerInterfaceWrapper) GetNodeAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetNodeAsset(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentProviderInventoryPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentProviderInventoryPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCurrentProviderInventoryPolicyParams
+
+	// ------------- Required query parameter "node_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "node_type", r.URL.Query(), &params.NodeType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "node_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "node_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "driver_contract_version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "driver_contract_version", r.URL.Query(), &params.DriverContractVersion, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "driver_contract_version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "driver_contract_version", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentProviderInventoryPolicy(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1889,6 +2358,20 @@ func (siw *ServerInterfaceWrapper) GetBootstrapStatus(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// GetEnvironment operation middleware
+func (siw *ServerInterfaceWrapper) GetEnvironment(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEnvironment(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
 
@@ -2069,6 +2552,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/admins/{id}/mfa-reset", wrapper.ResetAdministratorMfa)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/environment", wrapper.GetEnvironment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/gateway", wrapper.GetGatewayAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/nodes", wrapper.ListNodeAssets)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/nodes/{instance_id}", wrapper.GetNodeAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/drivers", wrapper.ListNodeDrivers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/provider-policies/current", wrapper.GetCurrentProviderInventoryPolicy)
 	})
 
 	return r

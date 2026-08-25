@@ -15,6 +15,7 @@ tags:
   - name: bootstrap
   - name: authentication
   - name: administrators
+  - name: assets
 paths:
   /api/healthz:
     get:
@@ -630,6 +631,177 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/environment:
+    get:
+      operationId: getEnvironment
+      summary: Read the bound Control environment
+      tags: [assets]
+      responses:
+        "200":
+          description: The database-backed environment identity and display metadata.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentAsset"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/assets/gateway:
+    get:
+      operationId: getGatewayAsset
+      summary: Read the single registered Gateway
+      tags: [assets]
+      responses:
+        "200":
+          description: The registered Gateway or an explicit not-registered state.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayAssetResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/assets/nodes:
+    get:
+      operationId: listNodeAssets
+      summary: List registered Relay Nodes
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/AssetPageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - name: node_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/NodeType"
+        - name: capability
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/NodeCapability"
+        - name: monitoring_active
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: A stable instance-ID ordered page from one database snapshot.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeAssetListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/assets/nodes/{instance_id}:
+    get:
+      operationId: getNodeAsset
+      summary: Read one registered Relay Node
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+      responses:
+        "200":
+          description: The requested Relay Node.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeAsset"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/assets/drivers:
+    get:
+      operationId: listNodeDrivers
+      summary: List registered Node Driver contracts and capabilities
+      tags: [assets]
+      responses:
+        "200":
+          description: The complete registered Driver contract catalog.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeDriverListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/assets/provider-policies/current:
+    get:
+      operationId: getCurrentProviderInventoryPolicy
+      summary: Read the current Provider inventory policy for one Driver scope
+      tags: [assets]
+      parameters:
+        - name: node_type
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/NodeType"
+        - name: driver_contract_version
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/DriverContractVersion"
+      responses:
+        "200":
+          description: The currently effective policy or an explicit not-configured state.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentProviderInventoryPolicyResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     SessionCookie:
@@ -693,6 +865,22 @@ components:
         type: string
         minLength: 1
         maxLength: 512
+    AssetPageLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    NodeInstanceId:
+      name: instance_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
 
   headers:
     AuthenticationSetCookie:
@@ -752,6 +940,229 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    EnvironmentAsset:
+      type: object
+      additionalProperties: false
+      required: [environment_id, name, environment_type]
+      properties:
+        environment_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        environment_type:
+          type: string
+          enum: [dev, staging, production]
+
+    GatewayAssetResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [registered, not_registered]
+        gateway:
+          $ref: "#/components/schemas/GatewayAsset"
+
+    GatewayAsset:
+      type: object
+      additionalProperties: false
+      required: [instance_id, display_name, management_endpoint, secret_configured, created_at, updated_at]
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        management_endpoint:
+          $ref: "#/components/schemas/ManagementEndpoint"
+        secret_configured:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NodeAssetListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeAsset"
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 512
+
+    NodeAsset:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - display_name
+        - node_type
+        - driver_contract_version
+        - management_endpoint
+        - secret_configured
+        - capabilities
+        - monitoring
+        - created_at
+        - updated_at
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        node_type:
+          $ref: "#/components/schemas/NodeType"
+        driver_contract_version:
+          $ref: "#/components/schemas/DriverContractVersion"
+        management_endpoint:
+          $ref: "#/components/schemas/ManagementEndpoint"
+        secret_configured:
+          type: boolean
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/NodeCapability"
+        monitoring:
+          $ref: "#/components/schemas/NodeMonitoringStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NodeMonitoringStatus:
+      type: object
+      additionalProperties: false
+      required: [active]
+      properties:
+        active:
+          type: boolean
+        effective_from:
+          type: [string, "null"]
+          format: date-time
+        effective_to:
+          type: [string, "null"]
+          format: date-time
+
+    NodeDriverListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeDriver"
+
+    NodeDriver:
+      type: object
+      additionalProperties: false
+      required: [node_type, driver_contract_version, display_name, lifecycle_status, capabilities, created_at]
+      properties:
+        node_type:
+          $ref: "#/components/schemas/NodeType"
+        driver_contract_version:
+          $ref: "#/components/schemas/DriverContractVersion"
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        lifecycle_status:
+          type: string
+          enum: [active, deprecated, retired]
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/NodeCapability"
+        created_at:
+          type: string
+          format: date-time
+
+    CurrentProviderInventoryPolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [status, node_type, driver_contract_version]
+      properties:
+        status:
+          type: string
+          enum: [configured, not_configured]
+        node_type:
+          $ref: "#/components/schemas/NodeType"
+        driver_contract_version:
+          $ref: "#/components/schemas/DriverContractVersion"
+        policy:
+          $ref: "#/components/schemas/ProviderInventoryPolicy"
+
+    ProviderInventoryPolicy:
+      type: object
+      additionalProperties: false
+      required: [version_id, active_providers, out_of_scope_providers, effective_from, created_at]
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        active_providers:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ProviderName"
+        out_of_scope_providers:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ProviderName"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    NodeType:
+      type: string
+      minLength: 2
+      maxLength: 64
+      pattern: "^[a-z0-9][a-z0-9._-]*$"
+
+    DriverContractVersion:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: "^[a-z0-9][a-z0-9._-]*$"
+
+    NodeCapability:
+      type: string
+      enum: [management_health_read, management_account_inventory_read]
+
+    ProviderName:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: "^[a-z0-9][a-z0-9._-]*$"
+
+    ManagementEndpoint:
+      type: string
+      format: uri
+      minLength: 8
+      maxLength: 2048
+      pattern: "^https?://[^/?#]+(?:/[^?#]*)?$"
+
     HealthResponse:
       type: object
       additionalProperties: false
@@ -1235,6 +1646,7 @@ components:
         - reauthentication_required
         - last_administrator_protected
         - administrator_self_disable_forbidden
+        - not_found
         - internal_error
         - temporarily_unavailable
 

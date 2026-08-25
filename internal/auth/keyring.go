@@ -31,13 +31,15 @@ const (
 	DomainSourceFingerprint   KeyDomain = "source-fingerprint"
 	DomainCSRFDigest          KeyDomain = "csrf-digest"
 	DomainBootstrapComparison KeyDomain = "bootstrap-comparison"
+	DomainAssetCursorDigest   KeyDomain = "asset-cursor-digest"
 )
 
 func (v KeyDomain) Valid() bool {
 	switch v {
 	case DomainTOTPEncryption, DomainSessionDigest, DomainChallengeDigest,
 		DomainActivationDigest, DomainRecoveryCodeDigest, DomainLoginFingerprint,
-		DomainSourceFingerprint, DomainCSRFDigest, DomainBootstrapComparison:
+		DomainSourceFingerprint, DomainCSRFDigest, DomainBootstrapComparison,
+		DomainAssetCursorDigest:
 		return true
 	default:
 		return false

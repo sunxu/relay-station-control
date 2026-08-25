@@ -134,6 +134,13 @@ type ControlBootstrapState struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type DriverCapability struct {
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	Capability            string             `json:"capability"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
 // Singleton identity for this Control deployment and its independent database.
 type Environment struct {
 	SingletonID     int16              `json:"singleton_id"`
@@ -142,4 +149,88 @@ type Environment struct {
 	EnvironmentType string             `json:"environment_type"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type GatewayInstance struct {
+	SingletonID            int16              `json:"singleton_id"`
+	InstanceID             pgtype.UUID        `json:"instance_id"`
+	DisplayName            string             `json:"display_name"`
+	ManagementEndpoint     string             `json:"management_endpoint"`
+	ReaderSecretRef        pgtype.Text        `json:"reader_secret_ref"`
+	ReaderSecretConfigured pgtype.Bool        `json:"reader_secret_configured"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
+type NodeCapability struct {
+	InstanceID            pgtype.UUID        `json:"instance_id"`
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	Capability            string             `json:"capability"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type NodeDriver struct {
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	DisplayName           string             `json:"display_name"`
+	LifecycleStatus       string             `json:"lifecycle_status"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type ProviderInventoryPolicyActivation struct {
+	ActivationID          pgtype.UUID                      `json:"activation_id"`
+	NodeType              string                           `json:"node_type"`
+	DriverContractVersion string                           `json:"driver_contract_version"`
+	PolicyVersionID       pgtype.UUID                      `json:"policy_version_id"`
+	EffectiveFrom         pgtype.Timestamptz               `json:"effective_from"`
+	EffectiveTo           pgtype.Timestamptz               `json:"effective_to"`
+	ActiveRange           pgtype.Range[pgtype.Timestamptz] `json:"active_range"`
+	ActivatedBy           string                           `json:"activated_by"`
+	CreatedAt             pgtype.Timestamptz               `json:"created_at"`
+}
+
+type ProviderInventoryPolicyBinding struct {
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	PolicyVersionID       pgtype.UUID        `json:"policy_version_id"`
+	BoundBy               string             `json:"bound_by"`
+	BoundAt               pgtype.Timestamptz `json:"bound_at"`
+}
+
+type ProviderInventoryPolicyVersion struct {
+	PolicyVersionID       pgtype.UUID        `json:"policy_version_id"`
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	ActiveProviders       []string           `json:"active_providers"`
+	OutOfScopeProviders   []string           `json:"out_of_scope_providers"`
+	ContentHash           []byte             `json:"content_hash"`
+	CreatedBy             string             `json:"created_by"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type RelayNodeAsset struct {
+	InstanceID             pgtype.UUID        `json:"instance_id"`
+	DisplayName            string             `json:"display_name"`
+	NodeType               string             `json:"node_type"`
+	DriverContractVersion  string             `json:"driver_contract_version"`
+	ManagementEndpoint     string             `json:"management_endpoint"`
+	ReaderSecretRef        pgtype.Text        `json:"reader_secret_ref"`
+	ReaderSecretConfigured pgtype.Bool        `json:"reader_secret_configured"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RelayNodeInventoryMonitoringActivation struct {
+	MonitoringActivationID pgtype.UUID                      `json:"monitoring_activation_id"`
+	InstanceID             pgtype.UUID                      `json:"instance_id"`
+	EffectiveFrom          pgtype.Timestamptz               `json:"effective_from"`
+	EffectiveTo            pgtype.Timestamptz               `json:"effective_to"`
+	ActiveRange            pgtype.Range[pgtype.Timestamptz] `json:"active_range"`
+	Reason                 string                           `json:"reason"`
+	Actor                  string                           `json:"actor"`
+	EndReason              pgtype.Text                      `json:"end_reason"`
+	EndActor               pgtype.Text                      `json:"end_actor"`
+	EndRecordedAt          pgtype.Timestamptz               `json:"end_recorded_at"`
+	CreatedAt              pgtype.Timestamptz               `json:"created_at"`
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"go.yaml.in/yaml/v3"
 )
 
 const openAPIPath = "../api/openapi.yaml"
@@ -15,6 +17,62 @@ const openAPIPath = "../api/openapi.yaml"
 type operationKey struct {
 	method string
 	path   string
+}
+
+func validateUniqueYAMLMappingKeys(node *yaml.Node, path string) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.MappingNode {
+		seen := make(map[string]int, len(node.Content)/2)
+		for index := 0; index < len(node.Content); index += 2 {
+			key := node.Content[index]
+			if key.Kind != yaml.ScalarNode {
+				return fmt.Errorf("%s contains a non-scalar mapping key at line %d", path, key.Line)
+			}
+			if firstLine, exists := seen[key.Value]; exists {
+				return fmt.Errorf("%s repeats mapping key %q at lines %d and %d", path, key.Value, firstLine, key.Line)
+			}
+			seen[key.Value] = key.Line
+			if err := validateUniqueYAMLMappingKeys(node.Content[index+1], path+"."+key.Value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, child := range node.Content {
+		if err := validateUniqueYAMLMappingKeys(child, path); err != nil {
+			return err
+		}
+	}
+	if node.Kind == yaml.AliasNode {
+		return validateUniqueYAMLMappingKeys(node.Alias, path)
+	}
+	return nil
+}
+
+func TestOpenAPIYAMLMappingsHaveUniqueKeys(t *testing.T) {
+	contents, err := os.ReadFile(openAPIPath)
+	if err != nil {
+		t.Fatalf("read OpenAPI document: %v", err)
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(contents, &document); err != nil {
+		t.Fatalf("parse OpenAPI YAML: %v", err)
+	}
+	if err := validateUniqueYAMLMappingKeys(&document, "openapi"); err != nil {
+		t.Fatal(err)
+	}
+
+	duplicate := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
+		{Kind: yaml.ScalarNode, Value: "name", Line: 1},
+		{Kind: yaml.ScalarNode, Value: "first", Line: 1},
+		{Kind: yaml.ScalarNode, Value: "name", Line: 2},
+		{Kind: yaml.ScalarNode, Value: "second", Line: 2},
+	}}
+	if err := validateUniqueYAMLMappingKeys(duplicate, "fixture"); err == nil {
+		t.Fatal("duplicate YAML mapping key fixture was accepted")
+	}
 }
 
 func loadDocument(t *testing.T) *openapi3.T {
@@ -46,24 +104,30 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 	operations := allOperations(document)
 
 	expected := map[operationKey]string{
-		{http.MethodGet, "/api/healthz"}:                         "getHealthz",
-		{http.MethodGet, "/api/bootstrap/status"}:                "getBootstrapStatus",
-		{http.MethodPost, "/api/bootstrap/start"}:                "startBootstrap",
-		{http.MethodPost, "/api/bootstrap/complete"}:             "completeBootstrap",
-		{http.MethodPost, "/api/bootstrap/reset-pending"}:        "resetPendingBootstrap",
-		{http.MethodPost, "/api/auth/login"}:                     "login",
-		{http.MethodPost, "/api/auth/mfa"}:                       "completeLoginMfa",
-		{http.MethodPost, "/api/auth/logout"}:                    "logout",
-		{http.MethodGet, "/api/auth/session"}:                    "getSession",
-		{http.MethodPost, "/api/auth/reauthenticate"}:            "reauthenticate",
-		{http.MethodPost, "/api/auth/password"}:                  "changePassword",
-		{http.MethodPost, "/api/auth/recovery-codes/regenerate"}: "regenerateRecoveryCodes",
-		{http.MethodPost, "/api/admin-activations/complete"}:     "completeAdministratorActivation",
-		{http.MethodGet, "/api/admins"}:                          "listAdministrators",
-		{http.MethodPost, "/api/admins"}:                         "createAdministrator",
-		{http.MethodPost, "/api/admins/{id}/disable"}:            "disableAdministrator",
-		{http.MethodPost, "/api/admins/{id}/activation-token"}:   "regenerateAdministratorActivationToken",
-		{http.MethodPost, "/api/admins/{id}/mfa-reset"}:          "resetAdministratorMfa",
+		{http.MethodGet, "/api/healthz"}:                          "getHealthz",
+		{http.MethodGet, "/api/bootstrap/status"}:                 "getBootstrapStatus",
+		{http.MethodPost, "/api/bootstrap/start"}:                 "startBootstrap",
+		{http.MethodPost, "/api/bootstrap/complete"}:              "completeBootstrap",
+		{http.MethodPost, "/api/bootstrap/reset-pending"}:         "resetPendingBootstrap",
+		{http.MethodPost, "/api/auth/login"}:                      "login",
+		{http.MethodPost, "/api/auth/mfa"}:                        "completeLoginMfa",
+		{http.MethodPost, "/api/auth/logout"}:                     "logout",
+		{http.MethodGet, "/api/auth/session"}:                     "getSession",
+		{http.MethodPost, "/api/auth/reauthenticate"}:             "reauthenticate",
+		{http.MethodPost, "/api/auth/password"}:                   "changePassword",
+		{http.MethodPost, "/api/auth/recovery-codes/regenerate"}:  "regenerateRecoveryCodes",
+		{http.MethodPost, "/api/admin-activations/complete"}:      "completeAdministratorActivation",
+		{http.MethodGet, "/api/admins"}:                           "listAdministrators",
+		{http.MethodPost, "/api/admins"}:                          "createAdministrator",
+		{http.MethodPost, "/api/admins/{id}/disable"}:             "disableAdministrator",
+		{http.MethodPost, "/api/admins/{id}/activation-token"}:    "regenerateAdministratorActivationToken",
+		{http.MethodPost, "/api/admins/{id}/mfa-reset"}:           "resetAdministratorMfa",
+		{http.MethodGet, "/api/environment"}:                      "getEnvironment",
+		{http.MethodGet, "/api/assets/gateway"}:                   "getGatewayAsset",
+		{http.MethodGet, "/api/assets/nodes"}:                     "listNodeAssets",
+		{http.MethodGet, "/api/assets/nodes/{instance_id}"}:       "getNodeAsset",
+		{http.MethodGet, "/api/assets/drivers"}:                   "listNodeDrivers",
+		{http.MethodGet, "/api/assets/provider-policies/current"}: "getCurrentProviderInventoryPolicy",
 	}
 
 	if len(operations) != len(expected) {
@@ -77,6 +141,72 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		}
 		if operation.OperationID != operationID {
 			t.Errorf("%s %s operationId = %q, want %q", key.method, key.path, operation.OperationID, operationID)
+		}
+	}
+}
+
+func TestOpenAPIAssetRegistryIsProtectedReadOnlyAndSecretFree(t *testing.T) {
+	document := loadDocument(t)
+	assets := map[string]string{
+		"/api/environment":                      "#/components/schemas/EnvironmentAsset",
+		"/api/assets/gateway":                   "#/components/schemas/GatewayAssetResponse",
+		"/api/assets/nodes":                     "#/components/schemas/NodeAssetListResponse",
+		"/api/assets/nodes/{instance_id}":       "#/components/schemas/NodeAsset",
+		"/api/assets/drivers":                   "#/components/schemas/NodeDriverListResponse",
+		"/api/assets/provider-policies/current": "#/components/schemas/CurrentProviderInventoryPolicyResponse",
+	}
+	for path, schemaRef := range assets {
+		item := document.Paths.Find(path)
+		if item == nil || item.Get == nil {
+			t.Errorf("missing asset GET %s", path)
+			continue
+		}
+		if len(item.Operations()) != 1 {
+			t.Errorf("asset path %s declares non-GET operations", path)
+		}
+		if item.Get.Security != nil {
+			t.Errorf("asset GET %s must inherit administrator session security", path)
+		}
+		for _, status := range []int{http.StatusUnauthorized, http.StatusServiceUnavailable} {
+			if item.Get.Responses.Status(status) == nil {
+				t.Errorf("asset GET %s lacks %d response", path, status)
+			}
+		}
+		response := item.Get.Responses.Status(http.StatusOK)
+		if response == nil || response.Value == nil {
+			t.Errorf("asset GET %s lacks 200 response", path)
+			continue
+		}
+		media := response.Value.Content.Get("application/json")
+		if media == nil || media.Schema == nil || media.Schema.Ref != schemaRef {
+			t.Errorf("asset GET %s schema = %#v, want %s", path, media, schemaRef)
+		}
+	}
+
+	for _, schemaName := range []string{"GatewayAsset", "NodeAsset"} {
+		schema := document.Components.Schemas[schemaName]
+		if schema == nil || schema.Value == nil {
+			t.Fatalf("missing schema %s", schemaName)
+		}
+		if _, ok := schema.Value.Properties["reader_secret_ref"]; ok {
+			t.Errorf("schema %s exposes reader_secret_ref", schemaName)
+		}
+		if _, ok := schema.Value.Properties["secret_configured"]; !ok {
+			t.Errorf("schema %s lacks secret_configured boolean", schemaName)
+		}
+	}
+	canonicalStrings := map[string]struct {
+		min     uint64
+		pattern string
+	}{
+		"NodeType":              {min: 2, pattern: "^[a-z0-9][a-z0-9._-]*$"},
+		"DriverContractVersion": {min: 1, pattern: "^[a-z0-9][a-z0-9._-]*$"},
+		"ProviderName":          {min: 1, pattern: "^[a-z0-9][a-z0-9._-]*$"},
+	}
+	for schemaName, expected := range canonicalStrings {
+		schema := document.Components.Schemas[schemaName]
+		if schema == nil || schema.Value == nil || schema.Value.MinLength != expected.min || schema.Value.Pattern != expected.pattern {
+			t.Errorf("schema %s canonical constraint = %#v, want min=%d pattern=%q", schemaName, schema, expected.min, expected.pattern)
 		}
 	}
 }

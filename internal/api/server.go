@@ -11,14 +11,18 @@ import (
 	"time"
 
 	authn "github.com/sunxu/relay-station-control/internal/auth"
+	assetstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 const authenticationResponseFloor = 250 * time.Millisecond
 
 type Server struct {
-	version  string
-	service  *authn.Service
-	resolver *authn.SourceResolver
+	version      string
+	service      *authn.Service
+	resolver     *authn.SourceResolver
+	assets       assetstore.AssetReader
+	assetMetrics *AssetMetrics
+	nodeCursor   *assetstore.NodeCursorCodec
 }
 
 type requestIDContextKey struct{}
@@ -35,6 +39,24 @@ func NewAuthenticatedServer(version string, service *authn.Service) *Server {
 		server.resolver = authn.NewSourceResolver(service.Config().TrustedProxies)
 	}
 	return server
+}
+
+func NewAuthenticatedServerWithAssets(version string, service *authn.Service, assets assetstore.AssetReader, metrics *AssetMetrics) (*Server, error) {
+	server := NewAuthenticatedServer(version, service)
+	if service == nil || assets == nil {
+		return nil, errors.New("api: asset registry is unavailable")
+	}
+	codec, err := assetstore.NewNodeCursorCodec(service.Config().Keyring)
+	if err != nil {
+		return nil, errors.New("api: asset cursor initialization failed")
+	}
+	if metrics == nil {
+		metrics = NewAssetMetrics()
+	}
+	server.assets = assets
+	server.assetMetrics = metrics
+	server.nodeCursor = codec
+	return server, nil
 }
 
 func (s *Server) GetHealthz(w http.ResponseWriter, r *http.Request) {
