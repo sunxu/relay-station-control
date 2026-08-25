@@ -1,0 +1,32 @@
+{
+  "name": "relay-station-control-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "generate:api": "orval --config orval.config.ts",
+    "build": "npm run generate:api && tsc -b && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@ant-design/icons": "latest",
+    "@tanstack/react-query": "latest",
+    "antd": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "jsdom": "latest",
+    "orval": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}

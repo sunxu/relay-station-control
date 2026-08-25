@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Go
+/bin/
+/coverage.out
+
+# Frontend
+/web/node_modules/
+/web/dist/
+/web/*.tsbuildinfo
+/internal/webui/dist/*
+!/internal/webui/dist/.keep
