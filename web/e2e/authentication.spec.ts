@@ -172,6 +172,92 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await expect(primary.getByTestId("management-page")).toBeVisible();
   console.log("[e2e] recovery-code login completed");
 
+  const browserAssetRequests: Array<{ method: string; url: string }> = [];
+  const externalAssetRequests: string[] = [];
+  const assetPaths = new Set([
+    "/api/environment",
+    "/api/assets/gateway",
+    "/api/assets/nodes",
+    "/api/assets/drivers",
+    "/api/assets/provider-policies/current",
+  ]);
+  const assetRoute = (url: URL) => assetPaths.has(url.pathname);
+  primary.on("request", (request) => {
+    const requestedURL = new URL(request.url());
+    if (assetPaths.has(requestedURL.pathname)) browserAssetRequests.push({ method: request.method(), url: request.url() });
+    if (requestedURL.hostname === "gateway.invalid" || requestedURL.hostname === "node.invalid") externalAssetRequests.push(request.url());
+  });
+  await primary.route(assetRoute, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const fixtures: Record<string, object> = {
+      "/api/environment": { environment_id: "development", environment_type: "production", name: "E2E Phase 1" },
+      "/api/assets/gateway": {
+        status: "registered",
+        gateway: {
+          instance_id: "00000000-0000-4000-8000-000000000001",
+          display_name: "E2E Gateway",
+          management_endpoint: "https://gateway.invalid:8443",
+          secret_configured: true,
+          reader_secret_ref: "vault://test-only/CANARY-GATEWAY-REF",
+          created_at: "2026-08-25T00:00:00Z",
+          updated_at: "2026-08-25T00:00:00Z",
+        },
+      },
+      "/api/assets/nodes": {
+        items: [{
+          instance_id: "00000000-0000-4000-8000-000000000101",
+          display_name: "E2E Node",
+          node_type: "cliproxyapi",
+          driver_contract_version: "v1",
+          management_endpoint: "https://node.invalid:8317",
+          secret_configured: true,
+          reader_secret_ref: "vault://test-only/CANARY-NODE-REF",
+          capabilities: ["management_health_read"],
+          monitoring: { active: true, effective_from: "2026-08-25T00:00:00Z", effective_to: null },
+          created_at: "2026-08-25T00:00:00Z",
+          updated_at: "2026-08-25T00:00:00Z",
+        }],
+        next_cursor: null,
+      },
+      "/api/assets/drivers": {
+        items: [{
+          node_type: "cliproxyapi",
+          driver_contract_version: "v1",
+          display_name: "E2E Driver",
+          lifecycle_status: "active",
+          capabilities: ["management_health_read"],
+          created_at: "2026-08-25T00:00:00Z",
+        }],
+      },
+      "/api/assets/provider-policies/current": {
+        status: "not_configured",
+        node_type: "cliproxyapi",
+        driver_contract_version: "v1",
+      },
+    };
+    await route.fulfill({
+      status: 200,
+      headers: { "Cache-Control": "no-store", "Content-Type": "application/json" },
+      body: JSON.stringify(fixtures[path]),
+    });
+  });
+
+  await primary.getByRole("button", { name: "资产注册表" }).click();
+  await expect(primary.getByTestId("assets-page")).toBeVisible();
+  await expect(primary.getByText("E2E Gateway")).toBeVisible();
+  await expect(primary.getByText("E2E Node")).toBeVisible();
+  await expect(primary.getByText("尚未配置当前 Provider 策略")).toBeVisible();
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  const controlOrigin = new URL(baseURL!).origin;
+  expect(browserAssetRequests.every((request) => request.method === "GET" && new URL(request.url).origin === controlOrigin)).toBe(true);
+  expect(await primary.locator('a[href^="https://gateway.invalid"], a[href^="https://node.invalid"]').count()).toBe(0);
+  expect(await primary.getByText(/CANARY-(GATEWAY|NODE)-REF/).count()).toBe(0);
+  expect(externalAssetRequests).toEqual([]);
+  await primary.getByRole("button", { name: "管理员控制台" }).click();
+  await expect(primary.getByTestId("management-page")).toBeVisible();
+  await primary.unrouteAll({ behavior: "wait" });
+  console.log("[e2e] assets page stayed on same-origin read APIs and omitted Secret references");
+
   let current = await sameOriginJSON(primary, "/api/auth/session", "GET");
   expect(current.status).toBe(200);
   expect(current.cacheControl).toBe("no-store");

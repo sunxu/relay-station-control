@@ -73,6 +73,22 @@ body {
   max-width: 620px;
 }
 
+.asset-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 20px;
+}
+
+.asset-loading {
+  min-height: 96px;
+  align-items: center;
+}
+
+.asset-endpoint {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media (max-width: 640px) {
   .centered-page {
     align-items: start;

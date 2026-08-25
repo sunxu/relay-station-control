@@ -166,7 +166,10 @@ export default function ManagementPage() {
           <Title level={2}>Relay Station Control</Title>
           <Text type="secondary">{session.administrator.display_name} · {session.administrator.login_name}</Text>
         </div>
-        <Button danger loading={busy} onClick={() => void logout()}>注销</Button>
+        <Space wrap>
+          <Button onClick={() => auth.navigate("assets")}>资产注册表</Button>
+          <Button danger loading={busy} onClick={() => void logout()}>注销</Button>
+        </Space>
       </Flex>
       {error && <Alert type="error" showIcon message={error} className="form-alert" />}
       {notice && <Alert type="success" showIcon message={notice} className="form-alert" />}

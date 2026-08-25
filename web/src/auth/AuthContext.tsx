@@ -11,7 +11,13 @@ import type {
 import { AuthApiError, generatedAuthApi } from "../api/auth-api";
 import type { AuthApi } from "../api/auth-api";
 
-export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "management" | "one-time" | "unavailable";
+export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "management" | "assets" | "one-time" | "unavailable";
+
+type AuthenticatedRoute = Extract<AuthRoute, "management" | "assets">;
+
+function authenticatedRouteFromLocation(): AuthenticatedRoute {
+  return window.location.pathname === "/assets" ? "assets" : "management";
+}
 
 export interface OneTimeMaterial {
   kind: "recovery_codes" | "activation_token";
@@ -48,6 +54,7 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
   const [oneTime, setOneTime] = useState<OneTimeMaterial | null>(null);
   const oneTimeRef = useRef<OneTimeMaterial | null>(null);
   const sessionRefreshRef = useRef<Promise<SessionResponse | null> | null>(null);
+  const authenticatedRouteRef = useRef<AuthenticatedRoute>(authenticatedRouteFromLocation());
 
   const wipeOneTime = useCallback(() => {
     const material = oneTimeRef.current;
@@ -68,7 +75,7 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
 
     const request = api.session().then((current) => {
       setSession(current);
-      if (current) setRoute("management");
+      if (current) setRoute(authenticatedRouteRef.current);
       else setRoute("login");
       return current;
     });
@@ -94,7 +101,7 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
         const current = await api.session();
         if (!active) return;
         setSession(current);
-        setRoute(current ? "management" : "login");
+        setRoute(current ? authenticatedRouteRef.current : "login");
       } catch {
         if (active) setRoute("unavailable");
       }
@@ -106,13 +113,29 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
 
   const navigate = useCallback((next: AuthRoute) => {
     wipeOneTime();
+    if (next === "assets" || next === "management") {
+      authenticatedRouteRef.current = next;
+      window.history.pushState(null, "", next === "assets" ? "/assets" : "/");
+    }
     setRoute(next);
   }, [wipeOneTime]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (!session) return;
+      const next = authenticatedRouteFromLocation();
+      authenticatedRouteRef.current = next;
+      wipeOneTime();
+      setRoute(next);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [session, wipeOneTime]);
 
   const acceptSession = useCallback((next: SessionResponse) => {
     setSession(next);
     setChallenge(null);
-    setRoute("management");
+    setRoute(authenticatedRouteRef.current);
   }, []);
 
   const acceptLogin = useCallback((response: LoginResponse) => {
