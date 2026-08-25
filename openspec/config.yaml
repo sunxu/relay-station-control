@@ -1,0 +1,48 @@
+schema: spec-driven
+
+context: |
+  Language: zh-CN
+  All artifacts must be written in zh-CN.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Project: Relay Station Control, a single-environment management and observability service.
+  Stack: Go 1.27, React 19, PostgreSQL 18, OpenAPI 3.1, Goose, sqlc, Docker Compose.
+  Architecture: modular monolith; Control is never in the request data plane.
+  System boundaries and phase acceptance criteria are defined by ../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md v1.0.
+  Technology decisions are defined by ../ops/docs/adr/0001-control-technology-stack.md.
+  API source of truth: api/openapi.yaml. Database source of truth: immutable forward Goose migrations.
+  Generated Go and TypeScript clients must be refreshed with make generate and must not be hand-edited.
+  Control must not persist or expose upstream credentials, Node Management Keys, Gateway admin credentials, or raw response bodies.
+  Metrics and alerts must not use raw email labels; account identity metrics use an environment-specific HMAC identifier.
+  Use Conventional Commits. Keep changes scoped to one independently reviewable capability.
+
+rules:
+  proposal:
+    - State the phase, user or operator outcome, affected repositories, and explicit non-goals.
+    - "Identify affected truth sources: OpenAPI, Migration, sqlc, generated clients, metrics, audit, UI, and Runbook."
+    - Call out compatibility, security, migration, rollback, and data-plane isolation impact.
+    - Reference relevant v1.0 design sections instead of copying the complete system design.
+  specs:
+    - Express externally observable behavior with SHALL or MUST and testable scenarios.
+    - Include negative, authorization, degraded-state, restart, and recovery scenarios when applicable.
+    - Do not use specifications to hide undecided product or security policy.
+  design:
+    - Document transaction boundaries, invariants, failure recovery, concurrency, idempotency, and UTC time behavior.
+    - Describe Secret handling, redaction, audit, metrics cardinality, rollout, and rollback where relevant.
+    - Explain every OpenAPI or database Migration impact and how generated code stays reproducible.
+  tasks:
+    - Keep tasks small, ordered, independently verifiable, and normally no larger than two hours.
+    - Include generation, Migration, integration, security-negative, recovery, and frontend tests required by the change.
+    - End with evidence capture, documentation reconciliation, and clean-worktree checks.
+
+operations:
+  apply:
+    guidance:
+      - Read the relevant v1.0 design and ADR sections before changing code.
+      - Implement only approved tasks; record newly discovered scope as an OpenSpec update.
+      - Run make generate and make test, then the change-specific PostgreSQL and container checks.
+      - Never commit Secret values, real account data, local runtime data, or unsanitized external responses.
+  archive:
+    guidance:
+      - Archive only after tasks, acceptance scenarios, migrations, tests, and implementation evidence are complete.
+      - Reconcile durable decisions into the appropriate truth source before archiving.
+      - Confirm generated files are current and the Git worktree is clean.
