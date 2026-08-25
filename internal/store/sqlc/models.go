@@ -8,6 +8,132 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuditLog struct {
+	AuditID           pgtype.UUID        `json:"audit_id"`
+	OccurredAt        pgtype.Timestamptz `json:"occurred_at"`
+	Category          string             `json:"category"`
+	Action            string             `json:"action"`
+	Result            string             `json:"result"`
+	ActorAdminID      pgtype.UUID        `json:"actor_admin_id"`
+	TargetAdminID     pgtype.UUID        `json:"target_admin_id"`
+	ActorFingerprint  []byte             `json:"actor_fingerprint"`
+	SourceFingerprint []byte             `json:"source_fingerprint"`
+	Reason            pgtype.Text        `json:"reason"`
+	RequestID         string             `json:"request_id"`
+	Details           []byte             `json:"details"`
+}
+
+type ControlAdminActivationToken struct {
+	ActivationTokenID pgtype.UUID        `json:"activation_token_id"`
+	AdminID           pgtype.UUID        `json:"admin_id"`
+	CreatedByAdminID  pgtype.UUID        `json:"created_by_admin_id"`
+	TokenDigest       []byte             `json:"token_digest"`
+	KeyVersion        int32              `json:"key_version"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type ControlAdminPassword struct {
+	AdminID          pgtype.UUID        `json:"admin_id"`
+	PasswordPhc      string             `json:"password_phc"`
+	ParameterVersion int32              `json:"parameter_version"`
+	ChangedAt        pgtype.Timestamptz `json:"changed_at"`
+}
+
+type ControlAdminRecoveryCode struct {
+	RecoveryCodeID pgtype.UUID        `json:"recovery_code_id"`
+	AdminID        pgtype.UUID        `json:"admin_id"`
+	BatchID        pgtype.UUID        `json:"batch_id"`
+	CodeDigest     []byte             `json:"code_digest"`
+	KeyVersion     int32              `json:"key_version"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ConsumedAt     pgtype.Timestamptz `json:"consumed_at"`
+	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type ControlAdminSafetyGuard struct {
+	SingletonID int16 `json:"singleton_id"`
+}
+
+type ControlAdminSession struct {
+	SessionID         pgtype.UUID        `json:"session_id"`
+	AdminID           pgtype.UUID        `json:"admin_id"`
+	TokenDigest       []byte             `json:"token_digest"`
+	CsrfDigest        []byte             `json:"csrf_digest"`
+	KeyVersion        int32              `json:"key_version"`
+	MfaMethod         string             `json:"mfa_method"`
+	MfaCompletedAt    pgtype.Timestamptz `json:"mfa_completed_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	LastActivityAt    pgtype.Timestamptz `json:"last_activity_at"`
+	AbsoluteExpiresAt pgtype.Timestamptz `json:"absolute_expires_at"`
+	ReauthenticatedAt pgtype.Timestamptz `json:"reauthenticated_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokeReason      pgtype.Text        `json:"revoke_reason"`
+}
+
+type ControlAdminTotp struct {
+	AdminID         pgtype.UUID        `json:"admin_id"`
+	EncryptedSecret []byte             `json:"encrypted_secret"`
+	Nonce           []byte             `json:"nonce"`
+	KeyVersion      int32              `json:"key_version"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ConfirmedAt     pgtype.Timestamptz `json:"confirmed_at"`
+	LastUsedStep    pgtype.Int8        `json:"last_used_step"`
+}
+
+type ControlAdminUser struct {
+	AdminID     pgtype.UUID        `json:"admin_id"`
+	LoginName   string             `json:"login_name"`
+	DisplayName string             `json:"display_name"`
+	AuthSource  string             `json:"auth_source"`
+	Role        string             `json:"role"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ActivatedAt pgtype.Timestamptz `json:"activated_at"`
+	DisabledAt  pgtype.Timestamptz `json:"disabled_at"`
+	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
+}
+
+type ControlAuthChallenge struct {
+	ChallengeID       pgtype.UUID        `json:"challenge_id"`
+	AdminID           pgtype.UUID        `json:"admin_id"`
+	TokenDigest       []byte             `json:"token_digest"`
+	KeyVersion        int32              `json:"key_version"`
+	SourceFingerprint []byte             `json:"source_fingerprint"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type ControlAuthFailureEvent struct {
+	FailureEventID     int64              `json:"failure_event_id"`
+	Dimension          string             `json:"dimension"`
+	KeyVersion         int32              `json:"key_version"`
+	SubjectFingerprint []byte             `json:"subject_fingerprint"`
+	OccurredAt         pgtype.Timestamptz `json:"occurred_at"`
+}
+
+type ControlAuthFailureWindow struct {
+	Dimension          string             `json:"dimension"`
+	KeyVersion         int32              `json:"key_version"`
+	SubjectFingerprint []byte             `json:"subject_fingerprint"`
+	BlockedUntil       pgtype.Timestamptz `json:"blocked_until"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ControlBootstrapState struct {
+	SingletonID    int16              `json:"singleton_id"`
+	State          string             `json:"state"`
+	PendingAdminID pgtype.UUID        `json:"pending_admin_id"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Singleton identity for this Control deployment and its independent database.
 type Environment struct {
 	SingletonID     int16              `json:"singleton_id"`
