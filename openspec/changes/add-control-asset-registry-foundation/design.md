@@ -52,23 +52,23 @@ Secret 列只保存秘密管理系统的 opaque 引用。sqlc 的 API 查询不�
 
 替代方案是返回脱敏引用尾部以帮助排障。尾部仍可关联部署拓扑，且管理员可通过配置系统排查，所以不返回任何片段。
 
-### 4. Provider 策略采用不可变版本、当前绑定和独立激活历史
+### 4. Provider 策略采用不可变版本、作用域绑定和独立激活历史
 
 新增三张表：
 
 - `provider_inventory_policy_versions`：UUID 版本 ID，作用域 `(node_type, driver_contract_version)`，规范化 `active_providers`、`out_of_scope_providers`，SHA-256 内容哈希、创建者和创建时间。集合在写入时排序去重，数据库约束/触发器保证非空元素、集合不交叠、同作用域哈希唯一；不可变触发器拒绝 `UPDATE`/`DELETE`。
-- `provider_inventory_policy_bindings`：每个作用域至多一行，指向同作用域的当前版本。复合外键阻止跨作用域绑定。
+- `provider_inventory_policy_bindings`：每个作用域至多一行，指向同作用域最新登记选择的版本，并作为并发变更的行锁对象；它允许提前指向未来生效版本，但不单独决定数据库当前时间的有效策略。复合外键阻止跨作用域绑定。
 - `provider_inventory_policy_activations`：记录版本的 `[effective_from, effective_to)`，使用 `tstzrange` 生成列和 GiST exclusion constraint 禁止同作用域重叠；复合外键保证版本作用域一致。
 
-登记新版本、关闭当前区间、写入新区间及切换当前绑定必须在一个 `SERIALIZABLE` 事务中完成，并对作用域绑定行加锁。生效时间由数据库 `clock_timestamp()` 校验为当前或未来，应用传入过去时间会失败；所有边界保存为 UTC，同一时间点先结束旧半开区间再开始新区间，不产生双重激活。冲突事务重试整个事务，不能部分重放。此 change 只提供 schema 与只读查询，运行时角色不获得这些表的写权限；受控部署工具遵守上述事务协议，未来写 API 必须另开 change 才能授予权限。
+登记新版本、关闭届时有效的区间、写入新区间及把作用域绑定更新到最新登记选择必须在一个 `SERIALIZABLE` 事务中完成，并对作用域绑定行加锁。生效时间由数据库 `clock_timestamp()` 校验为当前或未来，应用传入过去时间会失败；所有边界保存为 UTC，同一时间点先结束旧半开区间再开始新区间，不产生双重激活。冲突事务重试整个事务，不能部分重放。此 change 只提供 schema 与只读查询，运行时角色不获得这些表的写权限；受控部署工具遵守上述事务协议，未来写 API 必须另开 change 才能授予权限。
 
-当前读取以 binding 为入口并验证当前激活区间；无绑定时返回显式 `not_configured`，绝不回退到别的作用域或最近历史。阶段 0 的 `provider-inventory-policy-v1.yaml` 是首个部署输入，但 Migration 不硬编码具体环境资产或策略记录，避免把开发基线自动灌入其他环境。
+当前读取以数据库时间命中的 activation history 为唯一入口，并通过复合外键验证版本作用域；binding 只承担串行化和“最新登记选择”指针，因此预约未来版本后，边界前仍返回旧激活区间、边界后自动返回新区间，无需 Worker 改写指针。没有命中区间时返回显式 `not_configured`，绝不回退到别的作用域或最近历史。阶段 0 的 `provider-inventory-policy-v1.yaml` 是首个部署输入，但 Migration 不硬编码具体环境资产或策略记录，避免把开发基线自动灌入其他环境。
 
 替代方案是只保存一行可变当前策略。该模型无法审计历史或可靠回滚；将时间区间存 JSON 又无法防止并发重叠，因此不采用。
 
 ### 5. Node 监控启停同样使用数据库时间的半开区间
 
-`relay_node_inventory_monitoring_activations` 以 UUID 为主键并引用 Node，保存 `[effective_from, effective_to)`、固定 reason、actor 和创建时间。`tstzrange` GiST exclusion constraint 禁止同一 Node 区间重叠，检查约束保证结束晚于开始；受控操作以数据库当前时间或未来时间为边界，在单事务和 Node 行锁内关闭旧区间/开启新区间。
+`relay_node_inventory_monitoring_activations` 以 UUID 为主键并引用 Node，保存 `[effective_from, effective_to)`、固定启用 reason/actor 和创建时间；有限区间还保存独立的关闭 reason/actor 与数据库登记时间，避免关闭操作丢失实名审计语义。`tstzrange` GiST exclusion constraint 禁止同一 Node 区间重叠，检查约束保证结束晚于开始并强制启用/关闭 reason 分组；受控操作以数据库当前时间或未来时间为边界，在单事务和 Node 行锁内关闭旧区间/开启新区间。
 
 当前监控状态直接用数据库 `CURRENT_TIMESTAMP <@ active_range` 查询，不缓存，也不从 Gateway、Compose、endpoint 可达性或未来采集结果推断。这样重启、多个 Control 实例或时钟轻微偏差不会产生不同真相；应用进程只负责展示数据库判定。
 
