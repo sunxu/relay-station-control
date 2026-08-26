@@ -7,6 +7,10 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
+
+	controljobs "github.com/sunxu/relay-station-control/internal/jobs"
+	assetstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 func TestNewDatabasePoolRejectsInvalidURLWithoutLeaking(t *testing.T) {
@@ -16,6 +20,73 @@ func TestNewDatabasePoolRejectsInvalidURLWithoutLeaking(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "postgres://") {
 		t.Fatalf("database configuration error leaked URL: %v", err)
+	}
+}
+
+func TestLoadJobRuntimeConfigDefaultsAndBounds(t *testing.T) {
+	for _, name := range []string{
+		"CONTROL_JOB_WORKER_CONCURRENCY", "CONTROL_JOB_RECONCILER_CONCURRENCY",
+		"CONTROL_JOB_POLL_INTERVAL", "CONTROL_JOB_RECONCILE_INTERVAL",
+		"CONTROL_JOB_DATABASE_BACKOFF", "CONTROL_JOB_SHUTDOWN_GRACE",
+	} {
+		t.Setenv(name, "")
+	}
+	config, err := loadJobRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.workerConcurrency != 4 || config.reconcilerConcurrency != 2 ||
+		config.pollInterval != time.Second || config.reconcileInterval != 5*time.Second ||
+		config.databaseBackoff != 5*time.Second || config.shutdownGrace != 8*time.Second {
+		t.Fatalf("unexpected durable job defaults: %+v", config)
+	}
+
+	t.Setenv("CONTROL_JOB_WORKER_CONCURRENCY", "33")
+	if _, err = loadJobRuntimeConfig(); err == nil {
+		t.Fatal("worker concurrency above the closed maximum was accepted")
+	}
+	t.Setenv("CONTROL_JOB_WORKER_CONCURRENCY", "4")
+	t.Setenv("CONTROL_JOB_POLL_INTERVAL", "99ms")
+	if _, err = loadJobRuntimeConfig(); err == nil {
+		t.Fatal("poll interval below the safe minimum was accepted")
+	}
+}
+
+func TestJobCatalogMatchesEveryPersistedPolicyField(t *testing.T) {
+	database := []assetstore.JobKindPolicy{{
+		JobKind: "z.test", PayloadSchemaVersion: 2, Timeout: 10 * time.Second,
+		LeaseDuration: 20 * time.Second, HeartbeatInterval: 5 * time.Second,
+		MaxAttempts: 3, MaxVerificationAttempts: 4, ReplaySafe: true, RollbackAllowed: true,
+	}}
+	runtime := []controljobs.CatalogEntry{{
+		Kind: "z.test", SchemaVersion: 2, Timeout: 10 * time.Second,
+		LeaseDuration: 20 * time.Second, HeartbeatInterval: 5 * time.Second,
+		MaxAttempts: 3, MaxVerifyAttempts: 4, ReplaySafe: true, AllowRollback: true,
+	}}
+	if !jobCatalogMatches(database, runtime) {
+		t.Fatal("identical catalogs did not match")
+	}
+
+	mismatches := []func(*assetstore.JobKindPolicy){
+		func(policy *assetstore.JobKindPolicy) { policy.JobKind = "a.test" },
+		func(policy *assetstore.JobKindPolicy) { policy.PayloadSchemaVersion++ },
+		func(policy *assetstore.JobKindPolicy) { policy.Timeout++ },
+		func(policy *assetstore.JobKindPolicy) { policy.LeaseDuration++ },
+		func(policy *assetstore.JobKindPolicy) { policy.HeartbeatInterval++ },
+		func(policy *assetstore.JobKindPolicy) { policy.MaxAttempts++ },
+		func(policy *assetstore.JobKindPolicy) { policy.MaxVerificationAttempts++ },
+		func(policy *assetstore.JobKindPolicy) { policy.ReplaySafe = false },
+		func(policy *assetstore.JobKindPolicy) { policy.RollbackAllowed = false },
+	}
+	for index, mutate := range mismatches {
+		copy := append([]assetstore.JobKindPolicy(nil), database...)
+		mutate(&copy[0])
+		if jobCatalogMatches(copy, runtime) {
+			t.Fatalf("catalog mismatch %d was accepted", index)
+		}
+	}
+	if jobCatalogMatches(nil, runtime) || jobCatalogMatches(database, nil) {
+		t.Fatal("catalog cardinality mismatch was accepted")
 	}
 }
 

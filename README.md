@@ -38,3 +38,11 @@ Run the Control process with the restricted `relay_control_app_dev` URL. Product
 must pre-provision the fixed `relay_control_runtime` NOLOGIN capability role and grant
 it to an environment-specific LOGIN before migration; the product must never receive
 the migration-owner credential.
+
+## Durable job foundation
+
+The phase-1 durable job runtime uses PostgreSQL as its only source of truth. Its
+Worker and Reconciler start with an empty production executor registry; Redis and
+external publishers are not required or enabled. Runtime concurrency and polling
+can be tuned with the bounded `CONTROL_JOB_*` variables documented in
+[`docs/runbooks/durable-jobs.md`](docs/runbooks/durable-jobs.md).

@@ -7,13 +7,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,12 +25,93 @@ import (
 	controlapi "github.com/sunxu/relay-station-control/internal/api"
 	controlauth "github.com/sunxu/relay-station-control/internal/auth"
 	controlenv "github.com/sunxu/relay-station-control/internal/environment"
+	controljobs "github.com/sunxu/relay-station-control/internal/jobs"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
 	generatedstore "github.com/sunxu/relay-station-control/internal/store/sqlc"
 	"github.com/sunxu/relay-station-control/internal/webui"
 )
 
 var version = "dev"
+
+type jobRuntimeConfig struct {
+	workerConcurrency     int
+	reconcilerConcurrency int
+	pollInterval          time.Duration
+	reconcileInterval     time.Duration
+	databaseBackoff       time.Duration
+	shutdownGrace         time.Duration
+}
+
+type jobSlogLogger struct{ logger *slog.Logger }
+
+func (adapter jobSlogLogger) Log(ctx context.Context, record controljobs.LogRecord) {
+	if adapter.logger == nil {
+		return
+	}
+	adapter.logger.LogAttrs(ctx, slog.LevelInfo, "durable job lifecycle",
+		slog.String("component", string(record.Component)),
+		slog.String("action", string(record.Action)),
+		slog.String("result", string(record.Result)),
+		slog.String("job_kind", record.JobKind),
+		slog.String("error_code", record.ErrorCode),
+	)
+}
+
+func jobCatalogMatches(database []assetstore.JobKindPolicy, runtime []controljobs.CatalogEntry) bool {
+	if len(database) != len(runtime) {
+		return false
+	}
+	database = append([]assetstore.JobKindPolicy(nil), database...)
+	sort.Slice(database, func(left, right int) bool {
+		if database[left].JobKind != database[right].JobKind {
+			return database[left].JobKind < database[right].JobKind
+		}
+		return database[left].PayloadSchemaVersion < database[right].PayloadSchemaVersion
+	})
+	for index, policy := range database {
+		entry := runtime[index]
+		if policy.JobKind != entry.Kind || policy.PayloadSchemaVersion != entry.SchemaVersion ||
+			policy.Timeout != entry.Timeout || policy.LeaseDuration != entry.LeaseDuration ||
+			policy.HeartbeatInterval != entry.HeartbeatInterval || policy.MaxAttempts != entry.MaxAttempts ||
+			policy.MaxVerificationAttempts != entry.MaxVerifyAttempts || policy.ReplaySafe != entry.ReplaySafe ||
+			policy.RollbackAllowed != entry.AllowRollback {
+			return false
+		}
+	}
+	return true
+}
+
+func loadJobRuntimeConfig() (jobRuntimeConfig, error) {
+	workerConcurrency, err := envIntBounded("CONTROL_JOB_WORKER_CONCURRENCY", 4, 1, controljobs.MaxConcurrency)
+	if err != nil {
+		return jobRuntimeConfig{}, err
+	}
+	reconcilerConcurrency, err := envIntBounded("CONTROL_JOB_RECONCILER_CONCURRENCY", 2, 1, controljobs.MaxConcurrency)
+	if err != nil {
+		return jobRuntimeConfig{}, err
+	}
+	pollInterval, err := envDurationBounded("CONTROL_JOB_POLL_INTERVAL", time.Second, 100*time.Millisecond, time.Minute)
+	if err != nil {
+		return jobRuntimeConfig{}, err
+	}
+	reconcileInterval, err := envDurationBounded("CONTROL_JOB_RECONCILE_INTERVAL", 5*time.Second, time.Second, time.Minute)
+	if err != nil {
+		return jobRuntimeConfig{}, err
+	}
+	databaseBackoff, err := envDurationBounded("CONTROL_JOB_DATABASE_BACKOFF", 5*time.Second, time.Second, time.Minute)
+	if err != nil {
+		return jobRuntimeConfig{}, err
+	}
+	shutdownGrace, err := envDurationBounded("CONTROL_JOB_SHUTDOWN_GRACE", 8*time.Second, time.Second, 30*time.Second)
+	if err != nil {
+		return jobRuntimeConfig{}, err
+	}
+	return jobRuntimeConfig{
+		workerConcurrency: workerConcurrency, reconcilerConcurrency: reconcilerConcurrency,
+		pollInterval: pollInterval, reconcileInterval: reconcileInterval,
+		databaseBackoff: databaseBackoff, shutdownGrace: shutdownGrace,
+	}, nil
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -49,6 +133,11 @@ func main() {
 	mfaRequired, err := envBool("CONTROL_MFA_REQUIRED", false)
 	if err != nil {
 		logger.Error("invalid control configuration", "component", "auth")
+		os.Exit(1)
+	}
+	jobConfig, err := loadJobRuntimeConfig()
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "jobs", "reason", "invalid_runtime_config")
 		os.Exit(1)
 	}
 	config, err := (controlauth.Config{
@@ -94,6 +183,45 @@ func main() {
 		os.Exit(1)
 	}
 	assetMetrics := controlapi.NewAssetMetrics()
+	jobRepository, err := assetstore.NewJobRepository(pool)
+	if err != nil {
+		logger.Error("durable job initialization failed", "component", "jobs")
+		os.Exit(1)
+	}
+	jobKinds, err := jobRepository.JobKinds(context.Background())
+	if err != nil {
+		logger.Error("durable job catalog unavailable", "component", "jobs")
+		os.Exit(1)
+	}
+	jobRegistry := controljobs.NewProductionRegistry()
+	if !jobCatalogMatches(jobKinds, jobRegistry.Catalog()) {
+		logger.Error("durable job catalog mismatch", "component", "jobs", "reason", "registry_mismatch")
+		os.Exit(1)
+	}
+	bootID := uuid.NewString()
+	jobLogger := jobSlogLogger{logger: logger}
+	worker, err := controljobs.NewWorker(jobRepository, jobRegistry, controljobs.WorkerConfig{
+		Owner: "control-worker-" + bootID, Concurrency: jobConfig.workerConcurrency,
+		PollInterval: jobConfig.pollInterval, DatabaseBackoff: jobConfig.databaseBackoff,
+		ShutdownGrace: jobConfig.shutdownGrace,
+		Retry:         controljobs.NewBackoffPolicy(time.Second, time.Minute),
+		Logger:        jobLogger,
+	})
+	if err != nil {
+		logger.Error("durable job worker initialization failed", "component", "jobs")
+		os.Exit(1)
+	}
+	reconciler, err := controljobs.NewReconciler(jobRepository, jobRegistry, controljobs.ReconcilerConfig{
+		Owner: "control-reconciler-" + bootID, Concurrency: jobConfig.reconcilerConcurrency,
+		PollInterval: jobConfig.reconcileInterval, DatabaseBackoff: jobConfig.databaseBackoff,
+		ShutdownGrace: jobConfig.shutdownGrace,
+		Retry:         controljobs.NewBackoffPolicy(time.Second, time.Minute),
+		Logger:        jobLogger,
+	})
+	if err != nil {
+		logger.Error("durable job reconciler initialization failed", "component", "jobs")
+		os.Exit(1)
+	}
 
 	router := chi.NewRouter()
 	router.Use(middleware.Recoverer)
@@ -101,9 +229,15 @@ func main() {
 	metricsRegistry := prometheus.NewRegistry()
 	metricsRegistry.MustRegister(controlauth.NewPrometheusCollector(authService.Metrics()))
 	metricsRegistry.MustRegister(controlapi.NewAssetPrometheusCollector(assetMetrics))
+	jobCollector, err := controljobs.NewCollector(jobRepository)
+	if err != nil {
+		logger.Error("durable job metrics initialization failed", "component", "jobs")
+		os.Exit(1)
+	}
+	metricsRegistry.MustRegister(jobCollector)
 	router.Handle("/metrics", promhttp.HandlerFor(metricsRegistry, promhttp.HandlerOpts{}))
 
-	apiServer, err := controlapi.NewAuthenticatedServerWithAssets(version, authService, assetRepository, assetMetrics)
+	apiServer, err := controlapi.NewAuthenticatedServerWithAssetsAndJobs(version, authService, assetRepository, assetMetrics, jobRepository)
 	if err != nil {
 		logger.Error("asset API initialization failed", "component", "assets")
 		os.Exit(1)
@@ -128,6 +262,20 @@ func main() {
 
 	shutdownContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	var jobLoops sync.WaitGroup
+	jobLoops.Add(2)
+	go func() {
+		defer jobLoops.Done()
+		if runErr := worker.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
+			logger.Error("durable job worker stopped", "component", "jobs", "reason", "worker_stopped")
+		}
+	}()
+	go func() {
+		defer jobLoops.Done()
+		if runErr := reconciler.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
+			logger.Error("durable job reconciler stopped", "component", "jobs", "reason", "reconciler_stopped")
+		}
+	}()
 
 	go func() {
 		<-shutdownContext.Done()
@@ -139,8 +287,11 @@ func main() {
 	}()
 
 	logger.Info("control starting", "address", httpServer.Addr, "version", version)
-	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("control stopped unexpectedly", "error", err)
+	serveErr := httpServer.ListenAndServe()
+	stop()
+	jobLoops.Wait()
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		logger.Error("control stopped unexpectedly", "error", serveErr)
 		os.Exit(1)
 	}
 }
@@ -163,6 +314,30 @@ func envBool(name string, fallback bool) (bool, error) {
 		return fallback, nil
 	}
 	return strconv.ParseBool(value)
+}
+
+func envIntBounded(name string, fallback, minimum, maximum int) (int, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return 0, errors.New("configuration integer is out of range")
+	}
+	return parsed, nil
+}
+
+func envDurationBounded(name string, fallback, minimum, maximum time.Duration) (time.Duration, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return 0, errors.New("configuration duration is out of range")
+	}
+	return parsed, nil
 }
 
 func splitCSV(value string) []string {
