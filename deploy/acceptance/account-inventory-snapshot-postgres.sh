@@ -142,7 +142,7 @@ main() {
   "$harness" prepare
   run_interrupted_finalize
   "$harness" outage
-  compose start --wait postgres >/dev/null 2>&1 || fixed_failure 'postgres_restart_failed'
+  compose start postgres >/dev/null 2>&1 || fixed_failure 'postgres_restart_failed'
   wait_for_postgres
   set_database_urls
   "$harness" wait
@@ -151,7 +151,7 @@ main() {
   "$harness" exhaustion
 
   compose stop --timeout 1 postgres >/dev/null 2>&1 || fixed_failure 'postgres_second_stop_failed'
-  compose start --wait postgres >/dev/null 2>&1 || fixed_failure 'postgres_second_restart_failed'
+  compose start postgres >/dev/null 2>&1 || fixed_failure 'postgres_second_restart_failed'
   wait_for_postgres
   set_database_urls
   "$harness" wait
