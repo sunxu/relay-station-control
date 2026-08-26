@@ -103,7 +103,9 @@ account_inventory_snapshot_official_runtime=success image_version=v7.2.141 mode=
 
 This second gate records the production runtime-to-promotion path against the isolated PostgreSQL 18 Store. It is not a reinterpretation of the earlier disk-fallback response. The two accepted gate outputs account for two management reads, exactly one in each separately locked run, with a completed 10-second cooldown after each. No real-Node mode, Node modification, Probe, Gateway or management write was invoked.
 
-During commissioning of the runtime runner, two earlier bounded runs reached the same sole read and completed their 10-second cooldown, but were rejected after fenced finalize by overly specific local snapshot-item assertions. They are not counted as acceptance passes; they performed no additional Node operation and retained no fixture or response material. Including those disclosed commissioning attempts, the runtime work issued three serialized reads and the earlier disk gate issued one.
+During local commissioning of the runtime runner, two earlier bounded runs reached the same sole read and completed their 10-second cooldown, but were rejected after fenced finalize by overly specific local snapshot-item assertions. They are not counted as acceptance passes; they performed no additional Node operation and retained no fixture or response material. Including those disclosed commissioning attempts, the local runtime acceptance session issued three serialized reads and the earlier local disk gate issued one.
+
+The independent `Official CLIProxyAPI snapshot promotion acceptance` CI job repeats the accepted runtime gate once per workflow run, so its single serialized read and cooldown are accounted for by that run rather than folded into the static local total above. The first passing enforcement run was GitHub Actions run `32972025790` at commit `961923b`; future CI executions follow the same one-read contract.
 
 ## Verification commands
 
@@ -130,7 +132,7 @@ npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 git diff --check
 ```
 
-Final evidence records only exit status, bounded aggregate cases, one request in each accepted mutually exclusive gate, the two bounded commissioning attempts disclosed above and the 10-second cooldown completed after every request. It must not include raw test failures, connection strings, SQL parameters, identifiers, snapshot rows or canary values.
+Final evidence records only exit status, bounded aggregate cases, one request in each accepted mutually exclusive gate, the two bounded local commissioning attempts disclosed above, per-run CI accounting and the 10-second cooldown completed after every request. It must not include raw test failures, connection strings, SQL parameters, identifiers, snapshot rows or canary values.
 
 ## Explicit limits
 
