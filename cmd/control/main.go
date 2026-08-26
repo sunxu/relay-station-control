@@ -140,6 +140,11 @@ func main() {
 		logger.Error("invalid control configuration", "component", "jobs", "reason", "invalid_runtime_config")
 		os.Exit(1)
 	}
+	inventoryPollConfig, err := loadAccountInventoryPollRuntimeConfig()
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "account_inventory_poll", "reason", "invalid_runtime_config")
+		os.Exit(1)
+	}
 	config, err := (controlauth.Config{
 		Environment:         controlauth.Environment(environmentIdentity.Type),
 		BindAddress:         address,
@@ -188,6 +193,11 @@ func main() {
 		os.Exit(1)
 	}
 	assetMetrics := controlapi.NewAssetMetrics()
+	inventoryPollRuntime, err := newAccountInventoryPollRuntime(pool, nodeDrivers, inventoryPollConfig, logger)
+	if err != nil {
+		logger.Error("account inventory poll initialization failed", "component", "account_inventory_poll", "reason", "initialization_failed")
+		os.Exit(1)
+	}
 	jobRepository, err := assetstore.NewJobRepository(pool)
 	if err != nil {
 		logger.Error("durable job initialization failed", "component", "jobs")
@@ -235,6 +245,7 @@ func main() {
 	metricsRegistry.MustRegister(controlauth.NewPrometheusCollector(authService.Metrics()))
 	metricsRegistry.MustRegister(controlapi.NewAssetPrometheusCollector(assetMetrics))
 	metricsRegistry.MustRegister(nodeDrivers.metrics)
+	metricsRegistry.MustRegister(inventoryPollRuntime.collector)
 	jobCollector, err := controljobs.NewCollector(jobRepository)
 	if err != nil {
 		logger.Error("durable job metrics initialization failed", "component", "jobs")
@@ -268,20 +279,29 @@ func main() {
 
 	shutdownContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	var jobLoops sync.WaitGroup
-	jobLoops.Add(2)
+	var controlLoops sync.WaitGroup
+	controlLoops.Add(2)
 	go func() {
-		defer jobLoops.Done()
+		defer controlLoops.Done()
 		if runErr := worker.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
 			logger.Error("durable job worker stopped", "component", "jobs", "reason", "worker_stopped")
 		}
 	}()
 	go func() {
-		defer jobLoops.Done()
+		defer controlLoops.Done()
 		if runErr := reconciler.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
 			logger.Error("durable job reconciler stopped", "component", "jobs", "reason", "reconciler_stopped")
 		}
 	}()
+	if inventoryPollRuntime.enabled {
+		controlLoops.Add(1)
+		go func() {
+			defer controlLoops.Done()
+			if runErr := inventoryPollRuntime.service.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
+				logger.Error("account inventory poll stopped", "component", "account_inventory_poll", "reason", "runtime_stopped")
+			}
+		}()
+	}
 
 	go func() {
 		<-shutdownContext.Done()
@@ -295,7 +315,7 @@ func main() {
 	logger.Info("control starting", "address", httpServer.Addr, "version", version)
 	serveErr := httpServer.ListenAndServe()
 	stop()
-	jobLoops.Wait()
+	controlLoops.Wait()
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		logger.Error("control stopped unexpectedly", "error", serveErr)
 		os.Exit(1)
