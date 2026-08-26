@@ -153,7 +153,7 @@ func (worker *Worker) execute(parent context.Context, claim ClaimedRun) {
 		}
 	}
 	_ = driverErr // The fixed observation is authoritative; raw errors are never persisted or logged.
-	node, providers, err := projectObservation(claim.ProviderPolicy, observation)
+	node, providers, snapshotItems, duplicates, err := projectObservation(claim.ProviderPolicy, observation)
 	if err != nil {
 		return
 	}
@@ -161,7 +161,7 @@ func (worker *Worker) execute(parent context.Context, claim ClaimedRun) {
 	defer cancelFinalize()
 	finalizeErr := worker.repository.FinalizeFenced(finalizeContext, FinalizeRequest{
 		PollRunID: claim.PollRunID, FencingToken: claim.FencingToken,
-		Node: node, Providers: providers,
+		Node: node, Providers: providers, SnapshotItems: snapshotItems, Duplicates: duplicates,
 	})
 	result, reason, state := EventResultSuccess, ControlReasonNone, StatusFinalized
 	if errors.Is(finalizeErr, ErrLostLease) {

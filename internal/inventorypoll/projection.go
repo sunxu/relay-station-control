@@ -2,12 +2,25 @@ package inventorypoll
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/sunxu/relay-station-control/internal/drivers"
+)
+
+const (
+	maximumProviderBytes   = 64
+	maximumEmailBytes      = 320
+	maximumSnapshotCounter = uint64(1<<63 - 1)
+	minimumSourceUnix      = int64(1)
+	maximumSourceUnix      = int64(253402300799)
+	maximumSnapshotRecords = uint64(drivers.DefaultInventoryRecords)
+	maximumUint32          = ^uint32(0)
 )
 
 var (
@@ -29,7 +42,7 @@ func validateClaim(claim *ClaimedRun) error {
 		!hasInventoryCapability(claim.Target.Capabilities) {
 		return ErrInvalidRepositoryResult
 	}
-	if _, err := activeProviderSet(claim.ProviderPolicy.ActiveProviders); err != nil {
+	if _, _, err := providerSets(claim.ProviderPolicy); err != nil {
 		return err
 	}
 	return nil
@@ -68,8 +81,63 @@ func activeProviderSet(providers []string) (map[string]struct{}, error) {
 	return result, nil
 }
 
-func projectObservation(policy drivers.ProviderPolicySnapshot, observation drivers.InventoryObservation) (NodeEvidence, []ProviderEvidence, error) {
+func providerSets(policy drivers.ProviderPolicySnapshot) (map[string]struct{}, map[string]struct{}, error) {
 	active, err := activeProviderSet(policy.ActiveProviders)
+	if err != nil {
+		return nil, nil, err
+	}
+	outOfScope, err := activeProviderSet(policy.OutOfScopeProviders)
+	if err != nil {
+		return nil, nil, err
+	}
+	for provider := range outOfScope {
+		if _, overlap := active[provider]; overlap {
+			return nil, nil, ErrInvalidRepositoryResult
+		}
+	}
+	return active, outOfScope, nil
+}
+
+// normalizeProvider applies only the version-one deterministic provider rule.
+// It never guesses from any non-identity field or consults an external source.
+func normalizeProvider(value string) (string, error) {
+	if !utf8.ValidString(value) || len(value) > maximumProviderBytes || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+		return "", ErrInvalidObservation
+	}
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" || len(normalized) > maximumProviderBytes || !providerPattern.MatchString(normalized) {
+		return "", ErrInvalidObservation
+	}
+	return normalized, nil
+}
+
+// normalizeEmail deliberately does not parse an RFC address, remove plus tags,
+// fold domain aliases or otherwise infer identity beyond trim-and-lowercase.
+func normalizeEmail(value string) (string, error) {
+	if !utf8.ValidString(value) || len(value) > maximumEmailBytes || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+		return "", ErrInvalidObservation
+	}
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" || len(normalized) > maximumEmailBytes {
+		return "", ErrInvalidObservation
+	}
+	return normalized, nil
+}
+
+func normalizeAccountIdentity(provider, email string) (string, string, string, error) {
+	normalizedProvider, err := normalizeProvider(provider)
+	if err != nil {
+		return "", "", "", ErrInvalidObservation
+	}
+	normalizedEmail, err := normalizeEmail(email)
+	if err != nil {
+		return "", "", "", ErrInvalidObservation
+	}
+	return normalizedProvider, normalizedEmail, normalizedProvider + ":" + normalizedEmail, nil
+}
+
+func projectObservation(policy drivers.ProviderPolicySnapshot, observation drivers.InventoryObservation) (NodeEvidence, []ProviderEvidence, []SnapshotCandidate, []DuplicateEvidence, error) {
+	active, _, err := providerSets(policy)
 	version := observation.Version
 	if version == "" {
 		version = "unknown"
@@ -81,20 +149,20 @@ func projectObservation(policy drivers.ProviderPolicySnapshot, observation drive
 	if err != nil || policy.VersionID == uuid.Nil || !validDriverResult(observation.Result) ||
 		!validDriverReason(observation.Reason) || !versionPattern.MatchString(version) ||
 		!commitPattern.MatchString(commit) {
-		return NodeEvidence{}, nil, ErrInvalidObservation
+		return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 	}
 	if !observation.TransportSuccess && (observation.ResponseShapeValid || observation.ContractValid) {
-		return NodeEvidence{}, nil, ErrInvalidObservation
+		return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 	}
 	if !observation.ResponseShapeValid && observation.ContractValid {
-		return NodeEvidence{}, nil, ErrInvalidObservation
+		return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 	}
 	if observation.ContractValid {
 		if observation.Mode != drivers.InventoryModeRuntime && observation.Mode != drivers.InventoryModeDiskFallback {
-			return NodeEvidence{}, nil, ErrInvalidObservation
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 		}
 	} else if observation.Mode != "" {
-		return NodeEvidence{}, nil, ErrInvalidObservation
+		return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 	}
 
 	node := NodeEvidence{
@@ -109,7 +177,7 @@ func projectObservation(policy drivers.ProviderPolicySnapshot, observation drive
 	}
 	if !observation.ContractValid {
 		if len(observation.Providers) != 0 {
-			return NodeEvidence{}, nil, ErrInvalidObservation
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 		}
 		reason := ProviderReasonContractInvalid
 		if !observation.TransportSuccess {
@@ -117,42 +185,57 @@ func projectObservation(policy drivers.ProviderPolicySnapshot, observation drive
 		}
 		providers := incompleteProviders(policy.ActiveProviders, reason)
 		node.Degraded = true
-		return node, providers, nil
+		return node, providers, nil, nil, nil
 	}
 
 	byProvider := make(map[string]drivers.ProviderObservation, len(observation.Providers))
 	for _, provider := range observation.Providers {
-		if _, expected := active[provider.Provider]; !expected {
-			return NodeEvidence{}, nil, ErrInvalidObservation
+		normalized, normalizeErr := normalizeProvider(provider.Provider)
+		if normalizeErr != nil {
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 		}
-		if _, duplicate := byProvider[provider.Provider]; duplicate {
-			return NodeEvidence{}, nil, ErrInvalidObservation
+		if _, expected := active[normalized]; !expected {
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 		}
-		byProvider[provider.Provider] = provider
+		if _, duplicate := byProvider[normalized]; duplicate {
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
+		}
+		provider.Provider = normalized
+		byProvider[normalized] = provider
 	}
 	if len(byProvider) != len(active) {
-		return NodeEvidence{}, nil, ErrInvalidObservation
+		return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 	}
 
 	providerEvidence := make([]ProviderEvidence, 0, len(policy.ActiveProviders))
+	allCandidates := make([]SnapshotCandidate, 0)
+	allDuplicates := make([]DuplicateEvidence, 0)
 	allComplete := observation.Mode == drivers.InventoryModeRuntime && observation.NodeIdentityComplete
 	var recognized uint64
 	for _, providerName := range policy.ActiveProviders {
 		provider := byProvider[providerName]
-		providerRecognized := uint64(len(provider.Accounts))
-		for _, account := range provider.Accounts {
-			if account.Provider != providerName || account.OccurrenceCount < 1 {
-				return NodeEvidence{}, nil, ErrInvalidObservation
-			}
+		projection, projectErr := projectProvider(providerName, provider)
+		if projectErr != nil {
+			return NodeEvidence{}, nil, nil, nil, projectErr
 		}
-		recognized += providerRecognized
-		if providerRecognized > uint64(^uint32(0)) || recognized > uint64(^uint32(0)) {
-			return NodeEvidence{}, nil, ErrInvalidObservation
+		if uint64(projection.recognized)+uint64(projection.missing) > maximumSnapshotRecords {
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 		}
-		identityComplete := observation.NodeIdentityComplete && provider.MissingIdentityCount == 0 && provider.DuplicateIdentityCount == 0
-		if provider.SnapshotComplete && (!identityComplete || observation.Mode != drivers.InventoryModeRuntime) {
-			return NodeEvidence{}, nil, ErrInvalidObservation
+		if uint64(node.UnidentifiedRecordCount)+uint64(projection.additionalMissing) > uint64(maximumUint32) {
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 		}
+		node.UnidentifiedRecordCount += projection.additionalMissing
+		recognized += uint64(projection.recognized)
+		if recognized > maximumSnapshotRecords {
+			return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
+		}
+
+		// Provider identity completeness is local to the Provider and must stay
+		// equivalent to its persisted missing/duplicate counts. Node-wide
+		// identity completeness participates in snapshot promotion separately.
+		identityComplete := projection.missing == 0 && len(projection.duplicates) == 0
+		snapshotComplete := provider.SnapshotComplete && identityComplete &&
+			observation.NodeIdentityComplete && observation.Mode == drivers.InventoryModeRuntime
 		reason := ProviderReasonComplete
 		switch {
 		case observation.Mode == drivers.InventoryModeDiskFallback:
@@ -162,28 +245,170 @@ func projectObservation(policy drivers.ProviderPolicySnapshot, observation drive
 		case !identityComplete || !provider.SnapshotComplete:
 			reason = ProviderReasonIdentityIncomplete
 		}
-		degraded := provider.Degraded || !provider.SnapshotComplete || observation.Mode == drivers.InventoryModeDiskFallback
-		if !provider.SnapshotComplete {
+		// Driver ProviderObservation.Degraded may include Node-wide degradation
+		// such as an unsupported or out-of-scope record. Promotion is Provider
+		// independent: a complete active Provider remains non-degraded even when
+		// the Node aggregate is degraded for evidence outside that Provider.
+		degraded := !snapshotComplete
+		if !snapshotComplete {
 			allComplete = false
 		}
+		// Pass every valid unique candidate to the fenced finalize so PostgreSQL
+		// can close identifiable counts even for an incomplete Provider. The
+		// database inserts candidates only when that Provider is promoted.
+		allCandidates = append(allCandidates, projection.candidates...)
+		allDuplicates = append(allDuplicates, projection.duplicates...)
 		providerEvidence = append(providerEvidence, ProviderEvidence{
-			Provider: providerName, RecognizedRecordCount: uint32(providerRecognized),
-			MissingIdentityCount:   provider.MissingIdentityCount,
-			DuplicateIdentityCount: provider.DuplicateIdentityCount,
-			IdentityComplete:       identityComplete, SnapshotComplete: provider.SnapshotComplete,
+			Provider: providerName, RecognizedRecordCount: projection.recognized,
+			MissingIdentityCount: projection.missing, DuplicateIdentityCount: uint32(len(projection.duplicates)),
+			IdentityComplete: identityComplete, SnapshotComplete: snapshotComplete,
 			Degraded: degraded, Reason: reason,
 		})
+	}
+	sort.Slice(allCandidates, func(i, j int) bool { return allCandidates[i].AccountKey < allCandidates[j].AccountKey })
+	sort.Slice(allDuplicates, func(i, j int) bool { return allDuplicates[i].AccountKey < allDuplicates[j].AccountKey })
+	if recognized+uint64(node.UnidentifiedRecordCount)+uint64(node.UnsupportedProviderCount)+uint64(node.OutOfScopeProviderCount) > maximumSnapshotRecords {
+		return NodeEvidence{}, nil, nil, nil, ErrInvalidObservation
 	}
 	node.RecognizedRecordCount = uint32(recognized)
 	node.SnapshotComplete = allComplete
 	node.Degraded = observation.Result == drivers.ResultDegraded || !allComplete || observation.Mode == drivers.InventoryModeDiskFallback
-	return node, providerEvidence, nil
+	return node, providerEvidence, allCandidates, allDuplicates, nil
+}
+
+type providerProjection struct {
+	recognized        uint32
+	missing           uint32
+	additionalMissing uint32
+	candidates        []SnapshotCandidate
+	duplicates        []DuplicateEvidence
+}
+
+type groupedAccount struct {
+	email   string
+	records []drivers.AccountObservation
+}
+
+func projectProvider(providerName string, provider drivers.ProviderObservation) (providerProjection, error) {
+	projection := providerProjection{missing: provider.MissingIdentityCount}
+	groups := make(map[string]*groupedAccount, len(provider.Accounts))
+	for _, account := range provider.Accounts {
+		normalizedProvider, providerErr := normalizeProvider(account.Provider)
+		if providerErr != nil {
+			if projection.missing == maximumUint32 || projection.additionalMissing == maximumUint32 {
+				return providerProjection{}, ErrInvalidObservation
+			}
+			projection.missing++
+			projection.additionalMissing++
+			continue
+		}
+		if normalizedProvider != providerName {
+			return providerProjection{}, ErrInvalidObservation
+		}
+		_, normalizedEmail, key, emailErr := normalizeAccountIdentity(normalizedProvider, account.Email)
+		if emailErr != nil {
+			if projection.missing == maximumUint32 || projection.additionalMissing == maximumUint32 {
+				return providerProjection{}, ErrInvalidObservation
+			}
+			projection.missing++
+			projection.additionalMissing++
+			continue
+		}
+		if !validAccountState(account.State) || account.OccurrenceCount == 0 ||
+			account.OccurrenceCount > uint32(drivers.DefaultInventoryRecords) ||
+			account.SuccessCount > maximumSnapshotCounter || account.FailedCount > maximumSnapshotCounter ||
+			account.RecentRequestCount > maximumSnapshotRecords || !validSourceUnix(account.LastRefreshUnix) ||
+			!validSourceUnix(account.NextRetryUnix) || !validSourceUnix(account.UpdatedAtUnix) {
+			return providerProjection{}, ErrInvalidObservation
+		}
+		group := groups[key]
+		if group == nil {
+			group = &groupedAccount{email: normalizedEmail}
+			groups[key] = group
+		}
+		account.Provider = normalizedProvider
+		account.Email = normalizedEmail
+		group.records = append(group.records, account)
+	}
+
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		group := groups[key]
+		occurrences, occurrenceErr := groupOccurrenceCount(group.records)
+		if occurrenceErr != nil || uint64(projection.recognized)+uint64(occurrences) > maximumSnapshotRecords {
+			return providerProjection{}, ErrInvalidObservation
+		}
+		projection.recognized += occurrences
+		if occurrences > 1 {
+			projection.duplicates = append(projection.duplicates, DuplicateEvidence{
+				Provider: providerName, AccountKey: key, OccurrenceCount: occurrences,
+			})
+			continue
+		}
+		account := group.records[0]
+		projection.candidates = append(projection.candidates, SnapshotCandidate{
+			Provider: providerName, AccountKey: key, Email: group.email, BasicStatus: account.State,
+			SuccessCount: account.SuccessCount, FailedCount: account.FailedCount,
+			RecentRequestCount: account.RecentRequestCount,
+			LastRefreshUnix:    nullableSourceUnix(account.LastRefreshUnix),
+			NextRetryUnix:      nullableSourceUnix(account.NextRetryUnix),
+			UpdatedAtUnix:      nullableSourceUnix(account.UpdatedAtUnix),
+		})
+	}
+	return projection, nil
+}
+
+func groupOccurrenceCount(records []drivers.AccountObservation) (uint32, error) {
+	if len(records) == 0 || len(records) > drivers.DefaultInventoryRecords {
+		return 0, ErrInvalidObservation
+	}
+	if len(records) == 1 {
+		return records[0].OccurrenceCount, nil
+	}
+	want := uint32(len(records))
+	allOne, allGrouped := true, true
+	for _, record := range records {
+		allOne = allOne && record.OccurrenceCount == 1
+		allGrouped = allGrouped && record.OccurrenceCount == want
+	}
+	if !allOne && !allGrouped {
+		return 0, ErrInvalidObservation
+	}
+	return want, nil
+}
+
+func validAccountState(state drivers.AccountState) bool {
+	switch state {
+	case drivers.AccountStateDisabled, drivers.AccountStateUnavailable, drivers.AccountStateError,
+		drivers.AccountStateActive, drivers.AccountStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSourceUnix(value int64) bool {
+	return value == 0 || value >= minimumSourceUnix && value <= maximumSourceUnix
+}
+
+func nullableSourceUnix(value int64) *int64 {
+	if value == 0 {
+		return nil
+	}
+	result := value
+	return &result
 }
 
 func incompleteProviders(active []string, reason ProviderReason) []ProviderEvidence {
 	providers := make([]ProviderEvidence, 0, len(active))
 	for _, provider := range active {
-		providers = append(providers, ProviderEvidence{Provider: provider, Degraded: true, Reason: reason})
+		providers = append(providers, ProviderEvidence{
+			Provider: provider, IdentityComplete: true, Degraded: true, Reason: reason,
+		})
 	}
 	return providers
 }

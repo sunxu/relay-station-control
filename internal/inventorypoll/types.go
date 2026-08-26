@@ -6,6 +6,7 @@ package inventorypoll
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -179,10 +180,53 @@ type ClaimedRun struct {
 }
 
 type FinalizeRequest struct {
-	PollRunID    uuid.UUID
-	FencingToken uuid.UUID
-	Node         NodeEvidence
-	Providers    []ProviderEvidence
+	PollRunID     uuid.UUID
+	FencingToken  uuid.UUID
+	Node          NodeEvidence
+	Providers     []ProviderEvidence
+	SnapshotItems []SnapshotCandidate
+	Duplicates    []DuplicateEvidence
+}
+
+// Format prevents the account-bearing finalize payload from being projected
+// through any fmt/log verb. Repository implementations must select only the
+// allowlisted fields when constructing database parameters.
+func (FinalizeRequest) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED FinalizeRequest]"))
+}
+
+// SnapshotCandidate is the complete account-level persistence allowlist. Email
+// and AccountKey are sensitive identity data and may only enter the protected
+// snapshot columns. A nil source time represents SQL NULL; observed/promotion
+// times are supplied exclusively by PostgreSQL.
+type SnapshotCandidate struct {
+	Provider           string
+	AccountKey         string
+	Email              string
+	BasicStatus        drivers.AccountState
+	SuccessCount       uint64
+	FailedCount        uint64
+	RecentRequestCount uint64
+	LastRefreshUnix    *int64
+	NextRetryUnix      *int64
+	UpdatedAtUnix      *int64
+}
+
+func (SnapshotCandidate) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED SnapshotCandidate]"))
+}
+
+// DuplicateEvidence contains only the minimum identity needed for protected
+// duplicate evidence. It deliberately excludes conflicting account state,
+// counters, source times and raw records.
+type DuplicateEvidence struct {
+	Provider        string
+	AccountKey      string
+	OccurrenceCount uint32
+}
+
+func (DuplicateEvidence) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED DuplicateEvidence]"))
 }
 
 // NodeEvidence is the complete persistence allowlist. It cannot carry account
