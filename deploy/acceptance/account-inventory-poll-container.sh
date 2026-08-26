@@ -12,17 +12,38 @@ script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 official_image='eceasy/cli-proxy-api:v7.2.141'
 official_digest='eceasy/cli-proxy-api@sha256:7f598ce64478a8a5f90ed76875e0e9b0e7d77b80e17184b13df18c3d5bdb3def'
-runtime_directory="$(mktemp -d "${TMPDIR:-/tmp}/relay-control-poll-container.XXXXXX")"
+runtime_directory=''
 suffix="$$"
 network_name="relay-control-poll-${suffix}"
 node_name="relay-control-poll-node-${suffix}"
+lock_directory="${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}"
+lock_releasable=false
+
+umask 077
+if ! mkdir "$lock_directory" 2>/dev/null; then
+  echo 'account_inventory_poll_container=failed reason=concurrent_or_stale_global_lock' >&2
+  exit 1
+fi
 
 cleanup() {
+  local exit_code=$?
+  trap - EXIT HUP INT TERM
   docker rm -f "$node_name" >/dev/null 2>&1 || true
   docker network rm "$network_name" >/dev/null 2>&1 || true
-  rm -rf "$runtime_directory"
+  case "$runtime_directory" in
+    /tmp/relay-control-poll-container.*|/private/tmp/relay-control-poll-container.*)
+      rm -rf -- "$runtime_directory"
+      ;;
+  esac
+  if [ "$lock_releasable" = true ]; then
+    rmdir "$lock_directory" 2>/dev/null || true
+  fi
+  return "$exit_code"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
+
+runtime_directory="$(mktemp -d /tmp/relay-control-poll-container.XXXXXX)"
 
 case "$(docker image inspect "$official_image" --format '{{json .RepoDigests}}')" in
   *"$official_digest"*) ;;
@@ -32,7 +53,6 @@ case "$(docker image inspect "$official_image" --format '{{json .RepoDigests}}')
     ;;
 esac
 
-umask 077
 printf '%s\n' \
   'host: "0.0.0.0"' \
   'port: 8317' \
@@ -61,7 +81,7 @@ docker run -d \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   -v "$runtime_directory/config.yaml:/CLIProxyAPI/poll-config.yaml:ro" \
-  "$official_image" ./CLIProxyAPI -config /CLIProxyAPI/poll-config.yaml -local-model >/dev/null
+  "$official_digest" ./CLIProxyAPI -config /CLIProxyAPI/poll-config.yaml -local-model >/dev/null
 
 ready=false
 for _ in $(seq 1 60); do
@@ -116,4 +136,5 @@ docker run --rm \
   golang:1.27.0-alpine \
   go run ./deploy/acceptance/account-inventory-poll-smoke
 
+lock_releasable=true
 echo 'account_inventory_poll_container=success image_version=v7.2.141 request_count=1 request_wait_seconds=10'

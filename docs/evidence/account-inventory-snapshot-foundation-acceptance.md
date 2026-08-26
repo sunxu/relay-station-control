@@ -80,19 +80,30 @@ The isolated PostgreSQL capacity gate recorded `0/1/1000`-candidate finalizes in
 
 ### Official image and request-rate boundary
 
-- The official-image acceptance uses the unmodified `eceasy/cli-proxy-api:v7.2.141` image at its existing pinned digest, an internal Docker network and a synthetic empty auth directory.
-- The production Driver performs exactly one fixed auth-files read. The serial gate waits 10 seconds after success or failure, including after the final request. Snapshot promotion adds no Node operation.
-- The official empty-directory response is classified as disk fallback and does not promote. Runtime/policy/duplicate/pointer cases use fake fixtures and isolated PostgreSQL rather than another management request.
+- The official-image acceptance comprises two isolated, mutually exclusive fixture gates using the unmodified `eceasy/cli-proxy-api:v7.2.141` image at its existing pinned digest and an internal Docker network: a synthetic empty auth directory for disk fallback and a de-identified synthetic runtime fixture for runtime promotion.
+- In each gate the production Driver performs exactly one fixed auth-files read. Each serial gate waits 10 seconds after that request succeeds or fails, including after its final request. Snapshot promotion adds no Node operation, and no single response is claimed to cover both modes.
+- The official empty-directory observation directly proves disk-fallback mode; together with the PostgreSQL/Worker gate it proves that mode does not promote. In a separate run, the official runtime observation passes through the production Driver/Worker and an isolated PostgreSQL 18 Store/fenced finalize, producing one snapshot item, one Provider current state and an applied promotion.
+- Neither gate modifies the Node or calls Probe, Gateway or a management write interface. The fixtures contain no real account identity or production credential, and the evidence retains no fixture or response material.
 - Real-Node mode remains fail closed with `request_count=0`.
 
-The official-image container gate was executed exactly once on 2026-08-26 after clearing all local proxy variables. It completed with exit code `0` and produced only this bounded classification:
+The official-image disk-fallback gate was executed once on 2026-08-26 after clearing all local proxy variables. It completed with exit code `0` and produced only this bounded classification:
 
 ```text
 operation=account_inventory result=degraded reason=none mode=disk_fallback account_count=0 request_count=1 request_wait_seconds=10
 snapshot_operation=auth_files_readonly image_version=v7.2.141 request_count=1 request_wait_seconds=10
 ```
 
-The pinned-digest check passed before container start. The request count remained one, the final 10-second cooldown completed, and real-Node mode was not invoked. Post-run read-only checks found no matching temporary container, Docker network or runtime directory. This records only the official disk-fallback path; it does not mark the fake runtime, PostgreSQL, capacity or repository-wide gates below as complete.
+The pinned-digest check passed before container start. The request count remained one, the final 10-second cooldown completed, and real-Node mode was not invoked. Post-run read-only checks found no matching temporary container, Docker network or runtime directory. This records only the official disk-fallback path.
+
+The mutually exclusive official-image runtime/promotion gate was then executed separately on 2026-08-26. It also completed with exit code `0`, made one fixed read followed by its own final 10-second cooldown and emitted only this bounded classification:
+
+```text
+account_inventory_snapshot_official_runtime=success image_version=v7.2.141 mode=runtime request_count=1 request_wait_seconds=10 snapshot_items=1 provider_states=1 promotion_applied=1 management_writes=0 probe_requests=0 gateway_requests=0
+```
+
+This second gate records the production runtime-to-promotion path against the isolated PostgreSQL 18 Store. It is not a reinterpretation of the earlier disk-fallback response. The two accepted gate outputs account for two management reads, exactly one in each separately locked run, with a completed 10-second cooldown after each. No real-Node mode, Node modification, Probe, Gateway or management write was invoked.
+
+During commissioning of the runtime runner, two earlier bounded runs reached the same sole read and completed their 10-second cooldown, but were rejected after fenced finalize by overly specific local snapshot-item assertions. They are not counted as acceptance passes; they performed no additional Node operation and retained no fixture or response material. Including those disclosed commissioning attempts, the runtime work issued three serialized reads and the earlier disk gate issued one.
 
 ## Verification commands
 
@@ -113,13 +124,13 @@ deploy/acceptance/account-inventory-snapshot-run.sh scan
 deploy/acceptance/account-inventory-snapshot-run.sh container
 deploy/acceptance/account-inventory-snapshot-run.sh postgres
 
-npx --yes @fission-ai/openspec@latest validate \
+npx --yes @fission-ai/openspec@1.10.0 validate \
   add-control-account-inventory-snapshot-foundation --strict
-npx --yes @fission-ai/openspec@latest validate --all --strict
+npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 git diff --check
 ```
 
-Final evidence records only exit status, bounded aggregate cases, one official-image request and its 10-second cooldown. It must not include raw test failures, connection strings, SQL parameters, identifiers, snapshot rows or canary values.
+Final evidence records only exit status, bounded aggregate cases, one request in each accepted mutually exclusive gate, the two bounded commissioning attempts disclosed above and the 10-second cooldown completed after every request. It must not include raw test failures, connection strings, SQL parameters, identifiers, snapshot rows or canary values.
 
 ## Explicit limits
 

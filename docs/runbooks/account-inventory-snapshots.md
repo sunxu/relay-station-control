@@ -115,13 +115,15 @@ deploy/acceptance/account-inventory-snapshot-run.sh scan
 
 ## 6. 官方容器与真实 Node
 
-官方容器模式先取得与既有只读 smoke 共用的全局跨进程 lock，再委托给 poll-run 验收。它固定使用未修改的 CLIProxyAPI `v7.2.141` pinned digest、内部 Docker 网络和合成空 auth 目录，只执行一次固定 auth-files GET，并在该最后一次请求成功或失败后等待 10 秒；快照逻辑不新增第二次请求：
+官方镜像验收由两个隔离且互斥的观测组成：既有 disk-fallback gate 使用合成空 auth 目录；runtime/promotion gate 使用脱敏的合成 runtime fixture、生产 Driver/Worker 和隔离 PostgreSQL 18 Store/fenced finalize。两个 gate 都先取得与既有只读 smoke 共用的全局跨进程 lock，固定运行未修改的 CLIProxyAPI `v7.2.141` pinned digest 和内部 Docker 网络。每个 gate 各自只执行一次固定 auth-files GET，并在该次请求成功或失败后（包括各自最后一次请求）等待 10 秒；快照 finalize/promotion 不新增 Node 请求。两个 mode 来自不同运行，不以同一响应同时证明 runtime 和 disk fallback。
+
+当前容器入口执行 runtime/promotion gate：
 
 ```sh
 deploy/acceptance/account-inventory-snapshot-run.sh container
 ```
 
-该路径验证官方镜像 disk-fallback 会跳过 promotion。runtime、空快照、多 Provider 独立 promotion、policy race、重复、fencing、指针单调和事务崩溃由 fake Driver 与 PostgreSQL 18 集成测试覆盖。不要把合成 fixture 的 raw body写入报告。
+既有独立 gate 直接验证官方镜像的 disk-fallback mode，并与 PostgreSQL/Worker 门禁组合证明该 mode 跳过 promotion；当前 gate 验证官方 runtime 观测通过真实 Store/fenced finalize 原子写入 snapshot item、Provider state 并应用 promotion。两者都只使用合成 fixture，不含真实账号身份或生产凭证，也不修改 Node、不调用 Probe、Gateway 或管理写接口。空 runtime 快照、多 Provider 独立 promotion、policy race、重复、fencing、指针单调和事务崩溃等其他分支继续由 fake Driver 与 PostgreSQL 18 集成测试覆盖。不要把合成 fixture 的 raw body 写入报告。
 
 `real-node` 当前明确 fail closed并保持 `request_count=0`。本 change 不接线真实 Node。未来若阶段 0 另行批准，仍必须复用全局跨进程锁，最多两个登记 Node，所有 management 请求串行，每次成功或失败后以及最后一次后等待至少 10 秒，并且只运行同一个固定只读 GET。
 
@@ -141,8 +143,8 @@ make build
 go test ./...
 go test -race ./...
 go vet ./...
-npx --yes @fission-ai/openspec@latest validate add-control-account-inventory-snapshot-foundation --strict
-npx --yes @fission-ai/openspec@latest validate --all --strict
+npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-snapshot-foundation --strict
+npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 git diff --check
 ```
 

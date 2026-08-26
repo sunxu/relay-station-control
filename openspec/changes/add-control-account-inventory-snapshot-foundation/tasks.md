@@ -50,7 +50,7 @@
 
 - [x] 7.1 用 fake Driver 覆盖 runtime 完整/空、disk fallback、transport/contract 失败、缺 identity、duplicate、unsupported/out-of-scope 和多 Provider 独立 promotion
 - [x] 7.2 使用 1/10/50 Node 与现有 15 秒最坏模型验证扩展 finalize 的事务/锁/WAL 开销仍满足 120 秒 dispatch grace、30 秒 lease 与并发至少 10 的边界
-- [ ] 7.3 用官方 CLIProxyAPI v7.2.141 原版镜像和脱敏 runtime/disk fixtures 验证 snapshot/promotion；不修改 Node，不调用 Probe/Gateway/写接口（本次唯一一次官方容器验收只覆盖 synthetic disk fallback；runtime 使用真实 Driver + synthetic HTTP fixture）
+- [x] 7.3 用官方 CLIProxyAPI v7.2.141 原版镜像和脱敏 runtime/disk fixtures 验证 snapshot/promotion；不修改 Node，不调用 Probe/Gateway/写接口（disk fallback 与 runtime/promotion 是两次独立且互斥的隔离观测，各自只执行一次 GET 并在成功或失败后等待 10 秒；runtime 通过生产 Driver/Worker 与隔离 PostgreSQL 18 Store/fenced finalize 完成，未访问真实 Node）
 - [ ] 7.4 如运行阶段 0 两个真实测试 Node，继续全局串行且每次成功/失败后与最后一次后等待至少 10 秒；只记录脱敏计数和 promotion 分类（本 change 未访问真实 Node，real-node adapter 保持 request_count=0 fail closed）
 - [x] 7.5 验证 Control/PostgreSQL/poll 停止只暂停快照提升，模拟 Gateway/Relay Node 数据面持续成功；网络计数仍只有固定账号清单只读 GET
 - [x] 7.6 编写 snapshot Runbook 与脱敏 evidence，覆盖启停、policy_changed、空快照、指针回退保护、数据库恢复、应用回滚和 forward Migration 保留

@@ -27,7 +27,7 @@ case "$mode" in
     "$script_directory/account-inventory-poll-container.sh"
     ;;
   real-node)
-    lock_directory="${CONTROL_POLL_ACCEPTANCE_LOCK_DIR:-${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}}"
+    lock_directory="${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}"
     umask 077
     if ! mkdir "$lock_directory" 2>/dev/null; then
       echo 'account_inventory_poll_acceptance=failed reason=concurrent_or_stale_global_lock' >&2
