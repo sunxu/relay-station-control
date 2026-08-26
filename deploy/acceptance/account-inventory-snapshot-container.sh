@@ -207,6 +207,7 @@ main() {
   if ! docker run -d \
     --name "$node_name" \
     --network "$network_name" \
+    --user "$(id -u):$(id -g)" \
     --read-only \
     --tmpfs /tmp:rw,noexec,nosuid,size=16m \
     --cap-drop ALL \
