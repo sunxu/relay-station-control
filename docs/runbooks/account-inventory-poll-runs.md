@@ -27,7 +27,7 @@ running ---------------------> abandoned
 
 ## 3. 运行配置与容量门禁
 
-Control 已接入以下固定配置契约。`CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED` 默认为 `false`；只有它和 `CONTROL_CLIPROXYAPI_DRIVER_ENABLED` 都显式启用且全部配置通过校验时，poll service 才启动网络采集。不得把“表已存在”或只启用 Driver 当作 poll service 已启用。
+Control 已接入以下固定配置契约。`CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED` 默认为 `false`；生命周期 foundation 部署后，启用 poll 还必须同时显式设置 `CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED=true`，并通过数据库新函数与权限兼容检查。只有 lifecycle、poll 和 `CONTROL_CLIPROXYAPI_DRIVER_ENABLED` 都显式启用且全部配置通过校验时，poll service 才启动网络采集。不得把“表已存在”、只启用 Driver 或只启用 lifecycle 当作 poll service 已启用。紧急回滚必须先同时关闭 poll 与 Provider policy mutation，再运行旧二进制并保留 forward Migration。
 
 | 配置 | 初始值 | 安全要求 |
 |---|---:|---|
