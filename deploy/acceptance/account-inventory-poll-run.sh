@@ -28,16 +28,26 @@ case "$mode" in
     ;;
   real-node)
     lock_directory="${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}"
+    lock_acquired=false
+    lock_releasable=false
     umask 077
     if ! mkdir "$lock_directory" 2>/dev/null; then
       echo 'account_inventory_poll_acceptance=failed reason=concurrent_or_stale_global_lock' >&2
       exit 1
     fi
+    lock_acquired=true
     cleanup() {
-      rmdir "$lock_directory" 2>/dev/null || true
+      local exit_code=$?
+      trap - EXIT HUP INT TERM
+      if [ "$lock_acquired" = true ] && [ "$lock_releasable" = true ]; then
+        rmdir "$lock_directory" 2>/dev/null || true
+      fi
+      return "$exit_code"
     }
-    trap cleanup EXIT HUP INT TERM
+    trap cleanup EXIT
+    trap 'exit 130' HUP INT TERM
     go run ./deploy/acceptance/account-inventory-poll-smoke
+    lock_releasable=true
     ;;
   *)
     echo 'account_inventory_poll_acceptance=failed reason=invalid_mode' >&2

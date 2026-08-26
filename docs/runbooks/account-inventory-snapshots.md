@@ -125,7 +125,16 @@ deploy/acceptance/account-inventory-snapshot-run.sh container
 
 既有独立 gate 直接验证官方镜像的 disk-fallback mode，并与 PostgreSQL/Worker 门禁组合证明该 mode 跳过 promotion；当前 gate 验证官方 runtime 观测通过真实 Store/fenced finalize 原子写入 snapshot item、Provider state 并应用 promotion。两者都只使用合成 fixture，不含真实账号身份或生产凭证，也不修改 Node、不调用 Probe、Gateway 或管理写接口。空 runtime 快照、多 Provider 独立 promotion、policy race、重复、fencing、指针单调和事务崩溃等其他分支继续由 fake Driver 与 PostgreSQL 18 集成测试覆盖。不要把合成 fixture 的 raw body 写入报告。
 
-`real-node` 当前明确 fail closed并保持 `request_count=0`。本 change 不接线真实 Node。未来若阶段 0 另行批准，仍必须复用全局跨进程锁，最多两个登记 Node，所有 management 请求串行，每次成功或失败后以及最后一次后等待至少 10 秒，并且只运行同一个固定只读 GET。
+阶段 0 的两个已登记测试 Node 可通过专用入口验收；该入口不接受任意 URL、容器名、Provider 或 Secret 值，只接受仓库外受保护 runtime 根目录。它固定核验两个 Node 的镜像、本机端口边界和共同 private bridge，通过精确 DNS/CIDR allowlist 使用生产 Driver，随后由单并发 Worker 和一次性隔离 PostgreSQL 18 Store 执行 fenced finalize：
+
+```sh
+PHASE0_RUNTIME_DIR=/absolute/private/phase0 \
+  deploy/acceptance/account-inventory-snapshot-run.sh real-node
+```
+
+两个 Node 各执行一次相同的账号清单只读 GET，严格串行，并在每次成功或失败后（包括最后一次）等待至少 10 秒；不调用 Probe、Gateway 或管理写接口。管理密钥只通过 `0600` 文件只读挂载和 opaque mapping 引用，不进入命令参数、环境值或输出。真实 identity 只短暂进入一次性 PostgreSQL 的受保护 snapshot/duplicate 列；验收必须先核验删除 Secret mount、数据库容器、internal network、identity-bearing volume 和临时目录，再释放同宿主共享的全局跨进程 lock，最后才输出固定聚合计数与 promotion 分类。
+
+失败或信号中断会保留 stale lock，禁止立即重跑。只有确认无验收进程、无临时资源且最后一个请求（若存在）已结束至少 10 秒后，operator 才可删除该空 lock；不得靠改 `CONTROL_DRIVER_SMOKE_LOCK_DIR` 绕过。该 lock 只提供同宿主串行保证，不是跨主机分布式锁。
 
 ## 7. 发布门禁
 
@@ -148,4 +157,4 @@ npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 git diff --check
 ```
 
-最后确认运行时角色不能直接读写删改受保护表、只能调用有界内部当前快照函数，并确认无新增产品 API/UI、无真实 Node 请求、工作树没有 runtime cache、数据库 dump、账号 identity、Secret 或原始响应。
+最后确认运行时角色不能直接读写删改受保护表、只能调用有界内部当前快照函数，并确认无新增产品 API/UI、真实 Node 请求严格等于已批准的两次固定 GET，且工作树没有 runtime cache、数据库 dump、账号 identity、Secret 或原始响应。

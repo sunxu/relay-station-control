@@ -18,7 +18,7 @@ mode="${1:-static}"
 cd "$repository_root"
 case "$mode" in
   static)
-    go test -race ./cmd/control ./internal/drivers/cliproxyapi ./internal/inventorypoll ./internal/pollobservability ./internal/store ./deploy/acceptance/poll-canary-scan ./deploy/acceptance/account-inventory-poll-smoke ./deploy/acceptance/account-inventory-snapshot-container -count=1
+    go test -race ./cmd/control ./internal/drivers/cliproxyapi ./internal/inventorypoll ./internal/pollobservability ./internal/store ./deploy/acceptance/poll-canary-scan ./deploy/acceptance/account-inventory-poll-smoke ./deploy/acceptance/account-inventory-snapshot-container ./deploy/acceptance/account-inventory-snapshot-real-node -count=1
     ;;
   scan)
     for variable_name in \
@@ -40,8 +40,7 @@ case "$mode" in
     "$script_directory/account-inventory-snapshot-postgres.sh"
     ;;
   real-node)
-    echo 'account_inventory_snapshot_acceptance=failed reason=real_node_adapter_not_wired request_count=0' >&2
-    exit 2
+    "$script_directory/account-inventory-snapshot-real-node.sh"
     ;;
   *)
     echo 'account_inventory_snapshot_acceptance=failed reason=invalid_mode' >&2

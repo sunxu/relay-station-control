@@ -6,7 +6,7 @@ Change: `add-control-account-inventory-snapshot-foundation`
 
 Status: change-scoped acceptance complete. The repository-wide PostgreSQL Store run retains four previously accepted asset/auth baseline failures; all snapshot-specific PostgreSQL and repository release gates pass.
 
-Scope: synthetic PostgreSQL 18, fake Drivers and the isolated official CLIProxyAPI image only. No real Relay Node, production database, real account or production credential is permitted.
+Scope: synthetic and one-time isolated PostgreSQL 18, fake Drivers, the isolated official CLIProxyAPI image, and the two approved phase-0 test Nodes. No production database or production credential is permitted. Phase-0 management Secrets and real account identities remain protected inputs and are never retained in this evidence.
 
 This record contains only fixed classifications, bounded counts and tool exit status. It omits database connection strings and parameters, poll/policy identifiers, Node endpoints and IPs, Secret references and values, management keys, provider account identities and email addresses, account keys, Node version/commit, request/response material, raw errors and local runtime paths.
 
@@ -84,7 +84,7 @@ The isolated PostgreSQL capacity gate recorded `0/1/1000`-candidate finalizes in
 - In each gate the production Driver performs exactly one fixed auth-files read. Each serial gate waits 10 seconds after that request succeeds or fails, including after its final request. Snapshot promotion adds no Node operation, and no single response is claimed to cover both modes.
 - The official empty-directory observation directly proves disk-fallback mode; together with the PostgreSQL/Worker gate it proves that mode does not promote. In a separate run, the official runtime observation passes through the production Driver/Worker and an isolated PostgreSQL 18 Store/fenced finalize, producing one snapshot item, one Provider current state and an applied promotion.
 - Neither gate modifies the Node or calls Probe, Gateway or a management write interface. The fixtures contain no real account identity or production credential, and the evidence retains no fixture or response material.
-- Real-Node mode remains fail closed with `request_count=0`.
+- The phase-0 real-Node gate fixes two registered container targets, uses production Driver/Worker/Store/fenced finalize, and permits exactly one inventory GET per Node under the same-host global lock. It does not accept arbitrary targets or expose the temporary PostgreSQL network to either Node.
 
 The official-image disk-fallback gate was executed once on 2026-08-26 after clearing all local proxy variables. It completed with exit code `0` and produced only this bounded classification:
 
@@ -101,7 +101,17 @@ The mutually exclusive official-image runtime/promotion gate was then executed s
 account_inventory_snapshot_official_runtime=success image_version=v7.2.141 mode=runtime request_count=1 request_wait_seconds=10 snapshot_items=1 provider_states=1 promotion_applied=1 management_writes=0 probe_requests=0 gateway_requests=0
 ```
 
-This second gate records the production runtime-to-promotion path against the isolated PostgreSQL 18 Store. It is not a reinterpretation of the earlier disk-fallback response. The two accepted gate outputs account for two management reads, exactly one in each separately locked run, with a completed 10-second cooldown after each. No real-Node mode, Node modification, Probe, Gateway or management write was invoked.
+This second gate records the production runtime-to-promotion path against the isolated PostgreSQL 18 Store. It is not a reinterpretation of the earlier disk-fallback response. The two accepted synthetic gate outputs account for two management reads, exactly one in each separately locked run, with a completed 10-second cooldown after each. They performed no real-Node request, Node modification, Probe, Gateway or management write.
+
+The separately approved phase-0 gate was then executed once successfully on 2026-08-26. Its production Driver issued exactly one fixed inventory GET to each of the two registered test Nodes, with concurrency one and a completed 10-second cooldown after each request including the final request. Production Worker projection and an isolated PostgreSQL 18 Store/fenced finalize produced six protected snapshot items, two Provider results and two applied promotions. The sole retained output was:
+
+```text
+account_inventory_snapshot_real_node=success node_count=2 request_count=2 request_wait_seconds=10 runtime_mode_count=2 disk_fallback_mode_count=0 snapshot_items=6 provider_results=2 promotion_applied=2 promotion_skipped=0 management_writes=0 probe_requests=0 gateway_requests=0
+```
+
+The gate removed its Secret-bearing harness, PostgreSQL container, internal network, identity-bearing volume and temporary directory before releasing the lock and emitting success. A post-run read-only inventory found no matching temporary Docker resource and the global lock was absent. It did not modify either Node or retain account identity, Secret, endpoint, response, version/commit or database material.
+
+Two earlier real-Node commissioning attempts were rejected at the isolated database seed checkpoint before Driver construction, so both retained `request_count=0`; the schema-invalid empty Provider set was replaced by the existing fixed non-active classification. They did not contact a Node and left no temporary Docker resource. The second attempt added a fixed checkpoint classifier; the first attempt's equivalent pre-request failure is inferred from the unchanged deterministic seed path.
 
 During local commissioning of the runtime runner, two earlier bounded runs reached the same sole read and completed their 10-second cooldown, but were rejected after fenced finalize by overly specific local snapshot-item assertions. They are not counted as acceptance passes; they performed no additional Node operation and retained no fixture or response material. Including those disclosed commissioning attempts, the local runtime acceptance session issued three serialized reads and the earlier local disk gate issued one.
 
@@ -125,6 +135,8 @@ deploy/acceptance/account-inventory-snapshot-run.sh static
 deploy/acceptance/account-inventory-snapshot-run.sh scan
 deploy/acceptance/account-inventory-snapshot-run.sh container
 deploy/acceptance/account-inventory-snapshot-run.sh postgres
+PHASE0_RUNTIME_DIR=/absolute/private/phase0 \
+  deploy/acceptance/account-inventory-snapshot-run.sh real-node
 
 npx --yes @fission-ai/openspec@1.10.0 validate \
   add-control-account-inventory-snapshot-foundation --strict
@@ -132,7 +144,7 @@ npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 git diff --check
 ```
 
-Final evidence records only exit status, bounded aggregate cases, one request in each accepted mutually exclusive gate, the two bounded local commissioning attempts disclosed above, per-run CI accounting and the 10-second cooldown completed after every request. It must not include raw test failures, connection strings, SQL parameters, identifiers, snapshot rows or canary values.
+Final evidence records only exit status, bounded aggregate cases, one request in each accepted mutually exclusive synthetic gate, two requests in the accepted phase-0 gate, two disclosed one-request synthetic runtime commissioning failures, two disclosed zero-request real-Node seed failures, per-run CI accounting and the 10-second cooldown completed after every issued request. It must not include raw test failures, connection strings, SQL parameters, identifiers, snapshot rows or canary values.
 
 ## Explicit limits
 

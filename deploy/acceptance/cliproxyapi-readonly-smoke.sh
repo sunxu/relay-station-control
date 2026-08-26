@@ -12,16 +12,26 @@ export GOPROXY="${CONTROL_DRIVER_SMOKE_GOPROXY:-https://goproxy.cn,direct}"
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 lock_directory="${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}"
+lock_acquired=false
+lock_releasable=false
 
 umask 077
 if ! mkdir "$lock_directory" 2>/dev/null; then
   echo 'cliproxyapi_readonly_smoke=failed reason=concurrent_or_stale_lock' >&2
   exit 1
 fi
+lock_acquired=true
 cleanup() {
-  rmdir "$lock_directory" 2>/dev/null || true
+  local exit_code=$?
+  trap - EXIT HUP INT TERM
+  if [ "$lock_acquired" = true ] && [ "$lock_releasable" = true ]; then
+    rmdir "$lock_directory" 2>/dev/null || true
+  fi
+  return "$exit_code"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 
 cd "$repository_root"
 go run ./deploy/acceptance/cliproxyapi-smoke
+lock_releasable=true
