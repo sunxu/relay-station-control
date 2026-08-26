@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "provider": "antigravity",
+      "email": "account-002@example.invalid",
+      "disabled": false,
+      "status": "active"
+    }
+  ]
+}

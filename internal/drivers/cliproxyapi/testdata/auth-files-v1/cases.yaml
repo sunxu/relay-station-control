@@ -1,0 +1,68 @@
+schema_version: 1
+node_release: v7.2.141
+node_commit: dc3c3b1ec3ed04bb0917e76451eaf98c6842674d
+cases:
+  - id: runtime_valid
+    status: 200
+    headers: {X-CPA-VERSION: 7.2.141, X-CPA-COMMIT: dc3c3b1ec3ed04bb0917e76451eaf98c6842674d}
+    body: runtime-valid.json
+    expected: {transport_success: true, contract_valid: true, inventory_mode: runtime}
+  - id: disk_fallback
+    status: 200
+    headers: {X-CPA-VERSION: 7.2.141, X-CPA-COMMIT: dc3c3b1ec3ed04bb0917e76451eaf98c6842674d}
+    body: disk-fallback.json
+    expected: {transport_success: true, contract_valid: true, inventory_mode: disk_fallback, degraded: true}
+  - id: empty_files
+    status: 200
+    body: empty.json
+    expected: {transport_success: true, contract_valid: true, inventory_mode: disk_fallback, degraded: true}
+  - id: invalid_json
+    status: 200
+    body: invalid-json.txt
+    expected: {transport_success: true, contract_valid: false}
+  - id: invalid_files
+    status: 200
+    body: invalid-files.json
+    expected: {transport_success: true, contract_valid: false}
+  - id: missing_files
+    status: 200
+    body: missing-files.json
+    expected: {transport_success: true, contract_valid: false}
+  - id: http_non_200
+    status: 503
+    body: http-error.json
+    expected: {transport_success: false, contract_valid: false}
+  - id: identity_errors
+    status: 200
+    body: identity-errors.json
+    expected: {transport_success: true, contract_valid: true, node_identity_complete: false, unidentifiable_count: 3}
+  - id: provider_scope
+    status: 200
+    body: provider-scope.json
+    policy_override: {out_of_scope: [legacy-provider]}
+    expected: {unsupported_provider_count: 1, out_of_scope_provider_count: 1}
+  - id: node_duplicate
+    status: 200
+    body: node-duplicate.json
+    expected: {provider_snapshot_complete: false, duplicate_group_count: 1}
+  - id: cross_node_a
+    status: 200
+    body: cross-node-a.json
+  - id: cross_node_b
+    status: 200
+    body: cross-node-b.json
+    expected_cross_node_duplicate_with: cross_node_a
+  - id: unknown_fields
+    status: 200
+    body: unknown-fields.json
+    expected: {contract_valid: true, unknown_fields_persisted: false}
+  - id: unknown_source_shape
+    status: 200
+    body: unknown-source.json
+    expected: {transport_success: true, contract_valid: false}
+  - id: response_body_over_limit
+    generated_fixture: repeat runtime-valid record until encoded body exceeds 5 MiB
+    expected: {transport_success: true, contract_valid: false}
+  - id: record_count_over_limit
+    generated_fixture: create 1001 synthetic runtime records with unique example.invalid emails
+    expected: {transport_success: true, contract_valid: false}

@@ -1,0 +1,16 @@
+{
+  "files": [
+    {
+      "provider": "antigravity",
+      "email": "account-001@example.invalid",
+      "source": "file",
+      "runtime_only": false,
+      "disabled": false,
+      "unavailable": false,
+      "status": "active",
+      "success": 8,
+      "failed": 1,
+      "recent_requests": []
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "provider": "antigravity",
+      "email": "account-005@example.invalid",
+      "source": "file",
+      "status": "error",
+      "status_message": "synthetic message that must be discarded",
+      "future_optional_field": {"nested": true}
+    }
+  ],
+  "future_top_level_field": true
+}

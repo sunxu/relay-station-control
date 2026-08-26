@@ -1,0 +1,5 @@
+{
+  "files": [
+    {"provider": "antigravity", "email": "cross-node@example.invalid", "source": "file", "status": "active"}
+  ]
+}

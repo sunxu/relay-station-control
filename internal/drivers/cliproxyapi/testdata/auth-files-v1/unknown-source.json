@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "provider": "antigravity",
+      "email": "account-006@example.invalid",
+      "source": "future-runtime-source",
+      "status": "active"
+    }
+  ]
+}

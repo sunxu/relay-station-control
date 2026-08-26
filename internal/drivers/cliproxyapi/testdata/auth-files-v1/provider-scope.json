@@ -1,0 +1,6 @@
+{
+  "files": [
+    {"provider": "future-provider", "email": "future-001@example.invalid", "source": "file", "status": "active"},
+    {"provider": "legacy-provider", "email": "legacy-001@example.invalid", "source": "file", "status": "active"}
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "files": [
+    {"provider": "Antigravity", "email": "Duplicate@example.invalid ", "source": "file", "status": "active"},
+    {"provider": " antigravity ", "email": " duplicate@example.invalid", "source": "file", "status": "active"}
+  ]
+}
