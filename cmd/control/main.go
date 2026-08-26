@@ -153,6 +153,11 @@ func main() {
 		logger.Error("invalid control configuration", "component", "auth")
 		os.Exit(1)
 	}
+	nodeDrivers, err := loadNodeDriverRuntime(logger)
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "node_driver", "reason", "invalid_runtime_config")
+		os.Exit(1)
+	}
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		logger.Error("database configuration is required", "component", "auth")
@@ -229,6 +234,7 @@ func main() {
 	metricsRegistry := prometheus.NewRegistry()
 	metricsRegistry.MustRegister(controlauth.NewPrometheusCollector(authService.Metrics()))
 	metricsRegistry.MustRegister(controlapi.NewAssetPrometheusCollector(assetMetrics))
+	metricsRegistry.MustRegister(nodeDrivers.metrics)
 	jobCollector, err := controljobs.NewCollector(jobRepository)
 	if err != nil {
 		logger.Error("durable job metrics initialization failed", "component", "jobs")
