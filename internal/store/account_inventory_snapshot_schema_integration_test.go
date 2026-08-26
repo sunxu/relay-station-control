@@ -33,6 +33,9 @@ func TestAccountInventorySnapshotStoreDTOsRedactIdentity(t *testing.T) {
 		generated.FinalizeAccountInventoryPollRunParams{
 			SnapshotItems: []byte(canary), DuplicateEvidence: []byte(canary),
 		},
+		generated.FinalizeAccountInventoryPollRunWithLifecycleParams{
+			SnapshotItems: []byte(canary), DuplicateEvidence: []byte(canary),
+		},
 	}
 	for _, value := range values {
 		for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
@@ -1001,15 +1004,22 @@ func TestAccountInventorySnapshotRuntimeRoleCannotWriteEvidence(t *testing.T) {
 			t.Fatalf("runtime direct %s unexpectedly succeeded", name)
 		}
 	}
-	var oldFinalizeAllowed bool
-	if err := database.runtime.QueryRow(ctx, `SELECT has_function_privilege(
-		current_user,
-		'public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb)',
-		'EXECUTE')`).Scan(&oldFinalizeAllowed); err != nil {
+	var legacyV5Allowed, legacyV6Allowed, lifecycleAllowed bool
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		has_function_privilege(current_user,
+			'public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb)',
+			'EXECUTE'),
+		has_function_privilege(current_user,
+			'public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)',
+			'EXECUTE'),
+		has_function_privilege(current_user,
+			'public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)',
+			'EXECUTE')`).Scan(&legacyV5Allowed, &legacyV6Allowed, &lifecycleAllowed); err != nil {
 		t.Fatal(err)
 	}
-	if oldFinalizeAllowed {
-		t.Fatal("runtime retained EXECUTE on legacy v1 poll finalize")
+	if legacyV5Allowed || legacyV6Allowed || !lifecycleAllowed {
+		t.Fatalf("runtime finalize privilege matrix = legacy_v5:%t legacy_v6:%t lifecycle:%t",
+			legacyV5Allowed, legacyV6Allowed, lifecycleAllowed)
 	}
 }
 
@@ -1040,6 +1050,9 @@ func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testin
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatalf("lifecycle compatibility down before snapshot protection: %v", err)
+	}
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
 		t.Fatal("snapshot migration down unexpectedly removed promotion evidence")
 	}
@@ -1056,8 +1069,10 @@ func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testin
 func TestAccountInventorySnapshotLegacyV5UpgradePreservesUnevaluatedPromotion(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	fixture := insertSnapshotPollFixture(t, ctx, database)
 	repository, err := pollstore.NewInventoryPollRepository(database.runtime)
@@ -1123,7 +1138,7 @@ func callRawSnapshotFinalize(
 ) error {
 	var affected int
 	return database.runtime.QueryRow(ctx, `SELECT count(*) FROM
-		public.control_finalize_account_inventory_poll_run(
+		public.control_finalize_account_inventory_poll_run_with_lifecycle(
 		$1,$2,true,true,true,'runtime',true,true,false,'success','none',
 		$3,$4,$5,0,0,'unknown','unknown',$6::jsonb,$7::jsonb,$8::jsonb
 	)`, fixture.pollRunID, token, sourceCount, identifiableCount, unidentifiedCount,
@@ -1198,7 +1213,7 @@ func TestInventorySnapshotDatabaseRejectsUnclosedIncompleteProviderCounts(t *tes
 	}]`
 	var affected int
 	err = database.runtime.QueryRow(ctx, `SELECT count(*) FROM
-		public.control_finalize_account_inventory_poll_run(
+		public.control_finalize_account_inventory_poll_run_with_lifecycle(
 		$1,$2,true,true,true,'runtime',true,false,true,'degraded','none',
 		1000,1000,0,0,0,'unknown','unknown',$3::jsonb,'[]'::jsonb,$4::jsonb
 	)`, fixture.pollRunID, token, providers, duplicates).Scan(&affected)
@@ -1242,7 +1257,7 @@ func TestInventorySnapshotDatabaseRejectsProviderMissingAboveNodeUnidentified(t 
 	}]`
 	var affected int
 	err = database.runtime.QueryRow(ctx, `SELECT count(*) FROM
-		public.control_finalize_account_inventory_poll_run(
+		public.control_finalize_account_inventory_poll_run_with_lifecycle(
 		$1,$2,true,true,true,'runtime',true,false,true,'degraded','none',
 		0,0,0,0,0,'unknown','unknown',$3::jsonb,'[]'::jsonb,'[]'::jsonb
 	)`, fixture.pollRunID, token, providers).Scan(&affected)

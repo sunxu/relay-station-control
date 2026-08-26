@@ -136,6 +136,47 @@ type PollProviderMetric struct {
 	PromotionSkippedReason string
 }
 
+type AccountInventoryLifecycle string
+
+const (
+	AccountInventoryPresent          AccountInventoryLifecycle = "present"
+	AccountInventorySuspectedMissing AccountInventoryLifecycle = "suspected_missing"
+	AccountInventoryMissing          AccountInventoryLifecycle = "missing"
+	AccountInventoryOutOfScope       AccountInventoryLifecycle = "out_of_scope"
+)
+
+type AccountInventoryLifecycleMetric struct {
+	InstanceID uuid.UUID
+	Provider   string
+	Lifecycle  AccountInventoryLifecycle
+	Count      uint64
+}
+
+type CurrentAccountInventoryLifecycleItem struct {
+	Provider                string
+	AccountKey              string
+	NormalizedEmail         string
+	BasicStatus             drivers.AccountState
+	SuccessCount            uint64
+	FailedCount             uint64
+	RecentRequestCount      uint64
+	LastRefreshAt           *time.Time
+	NextRetryAt             *time.Time
+	SourceUpdatedAt         *time.Time
+	Lifecycle               AccountInventoryLifecycle
+	ConsecutiveMissingCount int
+	MissingSince            *time.Time
+	OutOfScopeSince         *time.Time
+	FirstSeenAt             time.Time
+	LastSeenAt              time.Time
+	CurrentPollRunID        *uuid.UUID
+	CurrentScheduledAt      time.Time
+	SourceObservedAt        time.Time
+	SourceNodeVersion       string
+	SourceNodeCommit        string
+	UpdatedAt               time.Time
+}
+
 type CurrentAccountInventorySnapshotItem struct {
 	AccountKey         string
 	NormalizedEmail    string
@@ -155,6 +196,10 @@ func (FinalizePollRunInput) Format(state fmt.State, _ rune) {
 
 func (CurrentAccountInventorySnapshotItem) Format(state fmt.State, _ rune) {
 	_, _ = state.Write([]byte("[REDACTED CurrentAccountInventorySnapshotItem]"))
+}
+
+func (CurrentAccountInventoryLifecycleItem) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED CurrentAccountInventoryLifecycleItem]"))
 }
 
 type pollSnapshotItem struct {
@@ -422,8 +467,8 @@ func (repository *InventoryPollRepository) finalize(
 		mode = pgtype.Text{String: string(input.Observation.InventoryMode), Valid: true}
 	}
 	observation := input.Observation
-	row, err := repository.queries.FinalizeAccountInventoryPollRun(ctx,
-		generated.FinalizeAccountInventoryPollRunParams{
+	row, err := repository.queries.FinalizeAccountInventoryPollRunWithLifecycle(ctx,
+		generated.FinalizeAccountInventoryPollRunWithLifecycleParams{
 			PollRunID: nullableUUID(input.PollRunID), LeaseFencingToken: nullableUUID(input.LeaseFencingToken),
 			TransportSuccess: observation.TransportSuccess, ResponseShapeValid: observation.ResponseShapeValid,
 			ContractValid: observation.ContractValid, InventoryMode: mode,
@@ -477,13 +522,33 @@ func (repository *InventoryPollRepository) ProviderResults(
 }
 
 func (repository *InventoryPollRepository) Metrics(ctx context.Context) ([]PollRunMetric, []PollProviderMetric, error) {
+	runs, providers, _, err := repository.metrics(ctx, false)
+	return runs, providers, err
+}
+
+func (repository *InventoryPollRepository) MetricsWithLifecycle(
+	ctx context.Context, includeLifecycle bool,
+) ([]PollRunMetric, []PollProviderMetric, []AccountInventoryLifecycleMetric, error) {
+	return repository.metrics(ctx, includeLifecycle)
+}
+
+func (repository *InventoryPollRepository) metrics(
+	ctx context.Context, includeLifecycle bool,
+) ([]PollRunMetric, []PollProviderMetric, []AccountInventoryLifecycleMetric, error) {
 	runs, err := repository.queries.ListAccountInventoryPollRunMetrics(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	providers, err := repository.queries.ListAccountInventoryProviderMetrics(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	var lifecycles []generated.ListAccountInventoryLifecycleMetricsRow
+	if includeLifecycle {
+		lifecycles, err = repository.queries.ListAccountInventoryLifecycleMetrics(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	runMetrics := make([]PollRunMetric, 0, len(runs))
 	for _, row := range runs {
@@ -496,14 +561,14 @@ func (repository *InventoryPollRepository) Metrics(ctx context.Context) ([]PollR
 			TransportSuccess: boolPointer(row.TransportSuccess), ContractValid: boolPointer(row.ContractValid),
 		}
 		if metric.InstanceID == uuid.Nil || !validPollRunStatus(metric.Status) || metric.ScheduledAt.IsZero() {
-			return nil, nil, ErrPollRunInconsistent
+			return nil, nil, nil, ErrPollRunInconsistent
 		}
 		runMetrics = append(runMetrics, metric)
 	}
 	providerMetrics := make([]PollProviderMetric, 0, len(providers))
 	for _, row := range providers {
 		if uuidFromPG(row.InstanceID) == uuid.Nil || !validProviderName(row.Provider) {
-			return nil, nil, ErrPollRunInconsistent
+			return nil, nil, nil, ErrPollRunInconsistent
 		}
 		providerMetrics = append(providerMetrics, PollProviderMetric{
 			InstanceID: uuidFromPG(row.InstanceID), Provider: row.Provider,
@@ -512,7 +577,71 @@ func (repository *InventoryPollRepository) Metrics(ctx context.Context) ([]PollR
 			PromotionSkippedReason: nullableTextValue(row.PromotionSkippedReason),
 		})
 	}
-	return runMetrics, providerMetrics, nil
+	lifecycleMetrics := make([]AccountInventoryLifecycleMetric, 0, len(lifecycles))
+	for _, row := range lifecycles {
+		metric := AccountInventoryLifecycleMetric{
+			InstanceID: uuidFromPG(row.InstanceID), Provider: row.Provider,
+			Lifecycle: AccountInventoryLifecycle(row.Lifecycle),
+		}
+		if row.AccountCount < 0 || metric.InstanceID == uuid.Nil || !validProviderName(metric.Provider) ||
+			!validAccountInventoryLifecycle(metric.Lifecycle) {
+			return nil, nil, nil, ErrPollRunInconsistent
+		}
+		metric.Count = uint64(row.AccountCount)
+		lifecycleMetrics = append(lifecycleMetrics, metric)
+	}
+	return runMetrics, providerMetrics, lifecycleMetrics, nil
+}
+
+func (repository *InventoryPollRepository) CheckLifecycleCompatibility(ctx context.Context) error {
+	compatible, err := repository.queries.CheckAccountInventoryLifecycleCompatibility(ctx)
+	if err != nil || !compatible {
+		return errors.New("store: account inventory lifecycle database is incompatible")
+	}
+	return nil
+}
+
+func (repository *InventoryPollRepository) CurrentLifecycle(
+	ctx context.Context, instanceID uuid.UUID, provider string, lifecycle AccountInventoryLifecycle,
+	afterAccountKey string, limit int,
+) ([]CurrentAccountInventoryLifecycleItem, error) {
+	if instanceID == uuid.Nil || provider != "" && !validProviderName(provider) ||
+		lifecycle != "" && !validAccountInventoryLifecycle(lifecycle) ||
+		len(afterAccountKey) > 385 || limit < 1 || limit > 200 {
+		return nil, ErrInvalidPollRunInput
+	}
+	rows, err := repository.queries.ListCurrentAccountInventoryLifecycle(ctx,
+		generated.ListCurrentAccountInventoryLifecycleParams{
+			InstanceID: nullableUUID(instanceID), Provider: provider, Lifecycle: string(lifecycle),
+			AfterAccountKey: afterAccountKey, PageLimit: int32(limit),
+		})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]CurrentAccountInventoryLifecycleItem, 0, len(rows))
+	for _, row := range rows {
+		item := CurrentAccountInventoryLifecycleItem{
+			Provider: row.Provider, AccountKey: row.AccountKey, NormalizedEmail: row.NormalizedEmail,
+			BasicStatus:             drivers.AccountState(row.BasicStatus),
+			Lifecycle:               AccountInventoryLifecycle(row.Lifecycle),
+			ConsecutiveMissingCount: int(row.ConsecutiveMissingCount),
+			SuccessCount:            uint64(row.SuccessCount), FailedCount: uint64(row.FailedCount),
+			RecentRequestCount: uint64(row.RecentRequestCount),
+			LastRefreshAt:      nullableTime(row.LastRefreshAt), NextRetryAt: nullableTime(row.NextRetryAt),
+			SourceUpdatedAt: nullableTime(row.SourceUpdatedAt), MissingSince: nullableTime(row.MissingSince),
+			OutOfScopeSince: nullableTime(row.OutOfScopeSince), FirstSeenAt: row.FirstSeenAt.Time.UTC(),
+			LastSeenAt: row.LastSeenAt.Time.UTC(), CurrentPollRunID: nullableUUIDPointer(row.CurrentPollRunID),
+			CurrentScheduledAt: row.CurrentScheduledAt.Time.UTC(), SourceObservedAt: row.SourceObservedAt.Time.UTC(),
+			SourceNodeVersion: row.SourceNodeVersion, SourceNodeCommit: row.SourceNodeCommit,
+			UpdatedAt: row.UpdatedAt.Time.UTC(),
+		}
+		if row.SuccessCount < 0 || row.FailedCount < 0 || row.RecentRequestCount < 0 ||
+			!validCurrentLifecycleItem(item) {
+			return nil, ErrPollRunInconsistent
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (repository *InventoryPollRepository) CurrentProviderSnapshot(
@@ -771,6 +900,49 @@ func validCurrentSnapshotItem(provider string, item CurrentAccountInventorySnaps
 	}
 }
 
+func validCurrentLifecycleItem(item CurrentAccountInventoryLifecycleItem) bool {
+	if !validProviderName(item.Provider) || !validNormalizedIdentity(item.NormalizedEmail, 320) ||
+		item.NormalizedEmail != strings.ToLower(strings.TrimSpace(item.NormalizedEmail)) ||
+		item.AccountKey != item.Provider+":"+item.NormalizedEmail ||
+		item.SuccessCount > math.MaxInt64 || item.FailedCount > math.MaxInt64 ||
+		item.RecentRequestCount > 1000 || item.FirstSeenAt.IsZero() || item.LastSeenAt.IsZero() ||
+		item.CurrentScheduledAt.IsZero() || item.SourceObservedAt.IsZero() || item.UpdatedAt.IsZero() ||
+		item.FirstSeenAt.After(item.LastSeenAt) || item.LastSeenAt.After(item.UpdatedAt) ||
+		!item.SourceObservedAt.Equal(item.LastSeenAt) || item.CurrentScheduledAt.Unix()%300 != 0 ||
+		!validNormalizedIdentity(item.SourceNodeVersion, 64) || !validNormalizedIdentity(item.SourceNodeCommit, 64) ||
+		item.MissingSince != nil && !item.MissingSince.After(item.LastSeenAt) ||
+		item.OutOfScopeSince != nil && item.OutOfScopeSince.Before(item.LastSeenAt) {
+		return false
+	}
+	switch item.BasicStatus {
+	case drivers.AccountStateDisabled, drivers.AccountStateUnavailable, drivers.AccountStateError,
+		drivers.AccountStateActive, drivers.AccountStateUnknown:
+	default:
+		return false
+	}
+	switch item.Lifecycle {
+	case AccountInventoryPresent:
+		return item.ConsecutiveMissingCount == 0 && item.MissingSince == nil && item.OutOfScopeSince == nil
+	case AccountInventorySuspectedMissing:
+		return item.ConsecutiveMissingCount == 1 && item.MissingSince == nil && item.OutOfScopeSince == nil
+	case AccountInventoryMissing:
+		return item.ConsecutiveMissingCount == 2 && item.MissingSince != nil && item.OutOfScopeSince == nil
+	case AccountInventoryOutOfScope:
+		return item.ConsecutiveMissingCount == 0 && item.MissingSince == nil && item.OutOfScopeSince != nil
+	default:
+		return false
+	}
+}
+
+func validAccountInventoryLifecycle(value AccountInventoryLifecycle) bool {
+	switch value {
+	case AccountInventoryPresent, AccountInventorySuspectedMissing, AccountInventoryMissing, AccountInventoryOutOfScope:
+		return true
+	default:
+		return false
+	}
+}
+
 func validProviderName(value string) bool {
 	if len(value) < 1 || len(value) > 64 {
 		return false
@@ -819,6 +991,14 @@ func nullableTextValue(value pgtype.Text) string {
 		return ""
 	}
 	return value.String
+}
+
+func nullableUUIDPointer(value pgtype.UUID) *uuid.UUID {
+	if !value.Valid {
+		return nil
+	}
+	result := uuidFromPG(value)
+	return &result
 }
 
 func boolPointer(value pgtype.Bool) *bool {

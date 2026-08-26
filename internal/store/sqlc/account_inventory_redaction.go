@@ -19,3 +19,15 @@ func (ListCurrentAccountInventorySnapshotRow) Format(state fmt.State, _ rune) {
 func (FinalizeAccountInventoryPollRunParams) Format(state fmt.State, _ rune) {
 	_, _ = state.Write([]byte("[REDACTED FinalizeAccountInventoryPollRunParams]"))
 }
+
+func (AccountInventory) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED AccountInventory]"))
+}
+
+func (ListCurrentAccountInventoryLifecycleRow) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED ListCurrentAccountInventoryLifecycleRow]"))
+}
+
+func (FinalizeAccountInventoryPollRunWithLifecycleParams) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED FinalizeAccountInventoryPollRunWithLifecycleParams]"))
+}

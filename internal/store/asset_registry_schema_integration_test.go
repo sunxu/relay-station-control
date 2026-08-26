@@ -71,6 +71,12 @@ func TestAssetRegistryIdentityEndpointAndSecretConstraints(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	if _, err := tx.Exec(ctx, `INSERT INTO environments(
+		singleton_id,environment_id,name,environment_type
+	) VALUES (1,'asset-registry-test','Asset Registry Test','dev')
+	ON CONFLICT (singleton_id) DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
 
 	valid := map[string]string{
 		"http://a":                    "http://a",
@@ -686,7 +692,8 @@ func TestAssetRegistryDeploymentTemplatesProtectSecretsAndTransactions(t *testin
 		if !strings.Contains(string(body), "SET LOCAL TIME ZONE 'UTC'") {
 			t.Fatalf("%s does not pin timestamp parsing to UTC", name)
 		}
-		if !strings.Contains(string(body), "offset-qualified RFC3339") {
+		if !strings.Contains(string(body), "effective_at_valid") ||
+			!strings.Contains(string(body), "(Z|[+-][0-9]{2}:[0-9]{2})") {
 			t.Fatalf("%s does not reject offset-free effective_at values", name)
 		}
 	}
@@ -707,6 +714,12 @@ func TestAssetRegistrarCanOnlyUseControlledWriteAndReconciliationFunctions(t *te
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	if _, err := tx.Exec(ctx, `INSERT INTO environments(
+		singleton_id,environment_id,name,environment_type
+	) VALUES (1,'asset-registrar-test','Asset Registrar Test','dev')
+	ON CONFLICT (singleton_id) DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := tx.Exec(ctx, `SET LOCAL ROLE relay_control_asset_registrar`); err != nil {
 		t.Fatalf("assume registrar role: %v", err)
@@ -727,8 +740,9 @@ func TestAssetRegistrarCanOnlyUseControlledWriteAndReconciliationFunctions(t *te
 	)`, nodeID, nodeType, assetHealthCapability); err != nil {
 		t.Fatalf("registrar controlled node registration: %v", err)
 	}
-	if _, err := tx.Exec(ctx, `SELECT public.control_activate_provider_policy(
-		$1, 'v1', ARRAY['openai'], ARRAY['other'], 'registrar-test', NULL
+	if _, err := tx.Exec(ctx, `SELECT public.control_activate_provider_policy_with_lifecycle(
+		$1, 'v1', ARRAY['openai'], ARRAY['other'], 'registrar-test',
+		'initial registrar policy activation', NULL
 	)`, nodeType); err != nil {
 		t.Fatalf("registrar controlled policy activation: %v", err)
 	}

@@ -155,6 +155,36 @@ func TestSnapshotFakeDriverFinalizesClosedSuccessAndFailureMatrixOnce(t *testing
 	}
 }
 
+func TestAccountInventoryLifecycleProductionWorkerKeepsSingleRequestBoundary(t *testing.T) {
+	repository := &fakeRepository{}
+	driver := &fakeDriver{invoke: func(_ context.Context, request drivers.InventoryRequest) (drivers.InventoryObservation, error) {
+		observation := successfulObservation(request.ProviderPolicy.ActiveProviders)
+		for index := range observation.Providers {
+			observation.Providers[index].Accounts = []drivers.AccountObservation{{
+				Provider: observation.Providers[index].Provider,
+				Email:    observation.Providers[index].Provider + "@example.invalid",
+				State:    drivers.AccountStateActive, OccurrenceCount: 1,
+			}}
+		}
+		return observation, nil
+	}}
+	configuration, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newWorker(repository, driver, configuration).execute(
+		context.Background(), testClaim("antigravity", "codex"),
+	)
+	finalizes := repository.finalizeSnapshot()
+	if driver.calls.Load() != 1 || len(finalizes) != 1 {
+		t.Fatalf("driver_calls=%d finalize_count=%d", driver.calls.Load(), len(finalizes))
+	}
+	if len(finalizes[0].Providers) != 2 || len(finalizes[0].SnapshotItems) != 2 ||
+		!finalizes[0].Providers[0].SnapshotComplete || !finalizes[0].Providers[1].SnapshotComplete {
+		t.Fatalf("lifecycle finalize candidates were not projected atomically")
+	}
+}
+
 func TestSnapshotCapacityOneTenFiftyUsesApprovedWorstCaseModel(t *testing.T) {
 	tests := []struct {
 		nodes       int

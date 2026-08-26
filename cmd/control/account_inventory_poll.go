@@ -16,8 +16,9 @@ import (
 )
 
 type accountInventoryPollRuntimeConfig struct {
-	enabled bool
-	poll    controlpoll.Config
+	enabled          bool
+	lifecycleEnabled bool
+	poll             controlpoll.Config
 }
 
 type accountInventoryPollRuntime struct {
@@ -27,11 +28,15 @@ type accountInventoryPollRuntime struct {
 }
 
 type accountInventoryPollMetricsStore interface {
-	Metrics(context.Context) ([]controlstore.PollRunMetric, []controlstore.PollProviderMetric, error)
+	MetricsWithLifecycle(context.Context, bool) (
+		[]controlstore.PollRunMetric, []controlstore.PollProviderMetric,
+		[]controlstore.AccountInventoryLifecycleMetric, error,
+	)
 }
 
 type accountInventoryPollMetricsProvider struct {
-	store accountInventoryPollMetricsStore
+	store            accountInventoryPollMetricsStore
+	lifecycleEnabled bool
 }
 
 type accountInventoryPollLogObserver struct {
@@ -60,6 +65,10 @@ func loadAccountInventoryPollRuntimeConfig() (accountInventoryPollRuntimeConfig,
 	}
 	enabled, err := envBool("CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED", false)
 	if err != nil {
+		return invalid()
+	}
+	lifecycleEnabled, err := envBool("CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED", false)
+	if err != nil || enabled && !lifecycleEnabled {
 		return invalid()
 	}
 	maxNodes, err := envIntBounded("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES", controlpoll.DefaultMaxMonitoredNodes, 1, controlpoll.MaximumMonitoredNodes)
@@ -123,7 +132,7 @@ func loadAccountInventoryPollRuntimeConfig() (accountInventoryPollRuntimeConfig,
 	if _, err = poll.Validate(); err != nil {
 		return invalid()
 	}
-	return accountInventoryPollRuntimeConfig{enabled: enabled, poll: poll}, nil
+	return accountInventoryPollRuntimeConfig{enabled: enabled, lifecycleEnabled: lifecycleEnabled, poll: poll}, nil
 }
 
 func newAccountInventoryPollRuntime(
@@ -136,8 +145,16 @@ func newAccountInventoryPollRuntime(
 	if err != nil {
 		return accountInventoryPollRuntime{}, err
 	}
+	if configuration.lifecycleEnabled {
+		compatibilityContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = repository.CheckLifecycleCompatibility(compatibilityContext)
+		cancel()
+		if err != nil {
+			return accountInventoryPollRuntime{}, errors.New("account inventory lifecycle database is incompatible")
+		}
+	}
 	collector, err := controlpollobs.NewCollector(
-		accountInventoryPollMetricsProvider{store: repository},
+		accountInventoryPollMetricsProvider{store: repository, lifecycleEnabled: configuration.lifecycleEnabled},
 		configuration.poll.ConfiguredMaxMonitoredNodes(),
 	)
 	if err != nil {
@@ -165,7 +182,7 @@ func (provider accountInventoryPollMetricsProvider) AccountInventoryPollMetricsS
 	if provider.store == nil {
 		return controlpollobs.Snapshot{}, errors.New("account inventory poll metrics unavailable")
 	}
-	runs, providers, err := provider.store.Metrics(ctx)
+	runs, providers, lifecycles, err := provider.store.MetricsWithLifecycle(ctx, provider.lifecycleEnabled)
 	if err != nil {
 		return controlpollobs.Snapshot{}, errors.New("account inventory poll metrics unavailable")
 	}
@@ -201,6 +218,13 @@ func (provider accountInventoryPollMetricsProvider) AccountInventoryPollMetricsS
 			),
 		})
 	}
+	for _, metric := range lifecycles {
+		allowed[metric.Provider] = struct{}{}
+		snapshot.Lifecycles = append(snapshot.Lifecycles, controlpollobs.LifecycleSnapshot{
+			InstanceID: metric.InstanceID, Provider: metric.Provider,
+			Lifecycle: controlpollobs.AccountLifecycle(metric.Lifecycle), Count: metric.Count,
+		})
+	}
 	for providerName := range allowed {
 		snapshot.AllowedProviders = append(snapshot.AllowedProviders, providerName)
 	}
@@ -210,6 +234,15 @@ func (provider accountInventoryPollMetricsProvider) AccountInventoryPollMetricsS
 			return snapshot.Instances[index].Providers[left].Provider < snapshot.Instances[index].Providers[right].Provider
 		})
 	}
+	sort.Slice(snapshot.Lifecycles, func(left, right int) bool {
+		if snapshot.Lifecycles[left].InstanceID != snapshot.Lifecycles[right].InstanceID {
+			return snapshot.Lifecycles[left].InstanceID.String() < snapshot.Lifecycles[right].InstanceID.String()
+		}
+		if snapshot.Lifecycles[left].Provider != snapshot.Lifecycles[right].Provider {
+			return snapshot.Lifecycles[left].Provider < snapshot.Lifecycles[right].Provider
+		}
+		return snapshot.Lifecycles[left].Lifecycle < snapshot.Lifecycles[right].Lifecycle
+	})
 	return snapshot, nil
 }
 

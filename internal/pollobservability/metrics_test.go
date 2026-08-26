@@ -35,6 +35,9 @@ func TestCollectorExportsOnlyPersistentAggregateAllowlist(t *testing.T) {
 				{Provider: "geminicli", SnapshotComplete: false, PromotionEvaluated: true, PromotionSkippedReason: PromotionSkippedPolicyChanged},
 			},
 		}},
+		Lifecycles: []LifecycleSnapshot{{
+			InstanceID: instanceID, Provider: "antigravity", Lifecycle: AccountLifecyclePresent, Count: 3,
+		}},
 	}}
 	collector, err := NewCollector(provider, 50)
 	if err != nil {
@@ -56,6 +59,7 @@ func TestCollectorExportsOnlyPersistentAggregateAllowlist(t *testing.T) {
 		"relay_control_account_inventory_provider_snapshot_complete": {"instance_id": {}, "provider": {}},
 		"relay_control_account_inventory_provider_promotion_applied": {"instance_id": {}, "provider": {}},
 		"relay_control_account_inventory_provider_promotion_skipped": {"instance_id": {}, "provider": {}, "reason": {}},
+		"relay_control_account_inventory_lifecycle_total":            {"instance_id": {}, "provider": {}, "lifecycle": {}},
 	}
 	if len(families) != len(wantLabels) {
 		t.Fatalf("metric families = %d, want %d", len(families), len(wantLabels))
@@ -139,12 +143,42 @@ func TestCollectorKeepsPreSnapshotFinalizedRowsObservableWithoutSyntheticPromoti
 	}
 }
 
+func TestCollectorAllowsLifecycleOnlyInstanceAndChurnAboveSinglePollBound(t *testing.T) {
+	instanceID := uuid.New()
+	collector, err := NewCollector(staticSnapshotProvider{snapshot: Snapshot{
+		AllowedProviders: []string{"openai"},
+		Lifecycles: []LifecycleSnapshot{{
+			InstanceID: instanceID, Provider: "openai", Lifecycle: AccountLifecycleMissing, Count: 1001,
+		}},
+	}}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := prometheus.NewPedanticRegistry()
+	registry.MustRegister(collector)
+	families, err := registry.Gather()
+	if err != nil || len(families) != 1 || families[0].GetName() != "relay_control_account_inventory_lifecycle_total" ||
+		len(families[0].Metric) != 1 || families[0].Metric[0].GetGauge().GetValue() != 1001 {
+		t.Fatalf("lifecycle-only gather = %+v/%v", families, err)
+	}
+}
+
 func TestCollectorRejectsUncontrolledDimensionsWithoutLeakingCanaries(t *testing.T) {
 	canary := "endpoint-secret-email-body-header-error-canary"
 	tests := []staticSnapshotProvider{
 		{err: errors.New(canary)},
 		{snapshot: Snapshot{AllowedProviders: []string{canary + "@example.invalid"}}},
 		{snapshot: Snapshot{Instances: []InstanceSnapshot{{InstanceID: uuid.New(), State: State(canary)}}}},
+		{snapshot: Snapshot{
+			AllowedProviders: []string{"openai"},
+			Instances:        []InstanceSnapshot{{InstanceID: uuid.New(), State: StateFinalized}},
+			Lifecycles:       []LifecycleSnapshot{{InstanceID: uuid.Nil, Provider: "openai", Lifecycle: AccountLifecyclePresent}},
+		}},
+		{snapshot: Snapshot{
+			AllowedProviders: []string{"openai"},
+			Instances:        []InstanceSnapshot{{InstanceID: uuid.New(), State: StateFinalized}},
+			Lifecycles:       []LifecycleSnapshot{{Provider: "openai", Lifecycle: AccountLifecycle(canary)}},
+		}},
 	}
 	for _, provider := range tests {
 		collector, err := NewCollector(provider, 50)
@@ -163,6 +197,7 @@ func TestCollectorRejectsUncontrolledDimensionsWithoutLeakingCanaries(t *testing
 		Snapshot{AllowedProviders: []string{canary}},
 		InstanceSnapshot{State: State(canary)},
 		ProviderSnapshot{Provider: canary},
+		LifecycleSnapshot{Provider: canary, Lifecycle: AccountLifecycle(canary)},
 	}
 	for _, value := range formatted {
 		if projected := strings.ToLower(formatAny(value)); strings.Contains(projected, strings.ToLower(canary)) {
@@ -187,6 +222,23 @@ func TestCollectorEnforcesAssetCardinalityLimit(t *testing.T) {
 	registry.MustRegister(collector)
 	if _, err := registry.Gather(); err == nil {
 		t.Fatal("collector emitted a snapshot above the configured asset limit")
+	}
+	lifecycles := make([]LifecycleSnapshot, maximumInstances+1)
+	for index := range lifecycles {
+		lifecycles[index] = LifecycleSnapshot{
+			InstanceID: uuid.New(), Provider: "openai", Lifecycle: AccountLifecyclePresent,
+		}
+	}
+	lifecycleCollector, err := NewCollector(staticSnapshotProvider{snapshot: Snapshot{
+		AllowedProviders: []string{"openai"}, Lifecycles: lifecycles,
+	}}, maximumInstances)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleRegistry := prometheus.NewRegistry()
+	lifecycleRegistry.MustRegister(lifecycleCollector)
+	if _, err := lifecycleRegistry.Gather(); err == nil {
+		t.Fatal("collector emitted lifecycle-only instances above the asset limit")
 	}
 }
 

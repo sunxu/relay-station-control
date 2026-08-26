@@ -30,6 +30,8 @@ type State string
 // reserved for an applied promotion and is never exported as a label.
 type PromotionSkippedReason string
 
+type AccountLifecycle string
+
 const (
 	StatePending   State = "pending"
 	StateRunning   State = "running"
@@ -44,11 +46,25 @@ const (
 	PromotionSkippedProviderIdentityIncomplete PromotionSkippedReason = "provider_identity_incomplete"
 	PromotionSkippedProviderDuplicate          PromotionSkippedReason = "provider_duplicate"
 	PromotionSkippedStalePoll                  PromotionSkippedReason = "stale_poll"
+
+	AccountLifecyclePresent          AccountLifecycle = "present"
+	AccountLifecycleSuspectedMissing AccountLifecycle = "suspected_missing"
+	AccountLifecycleMissing          AccountLifecycle = "missing"
+	AccountLifecycleOutOfScope       AccountLifecycle = "out_of_scope"
 )
 
 func (state State) Valid() bool {
 	switch state {
 	case StatePending, StateRunning, StateRetryWait, StateFinalized, StateAbandoned:
+		return true
+	default:
+		return false
+	}
+}
+
+func (lifecycle AccountLifecycle) Valid() bool {
+	switch lifecycle {
+	case AccountLifecyclePresent, AccountLifecycleSuspectedMissing, AccountLifecycleMissing, AccountLifecycleOutOfScope:
 		return true
 	default:
 		return false
@@ -95,6 +111,17 @@ type InstanceSnapshot struct {
 	Providers           []ProviderSnapshot
 }
 
+type LifecycleSnapshot struct {
+	InstanceID uuid.UUID
+	Provider   string
+	Lifecycle  AccountLifecycle
+	Count      uint64
+}
+
+func (LifecycleSnapshot) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED AccountInventoryLifecycleMetrics]"))
+}
+
 func (InstanceSnapshot) Format(state fmt.State, _ rune) {
 	_, _ = state.Write([]byte("[REDACTED PollInstanceMetrics]"))
 }
@@ -104,6 +131,7 @@ func (InstanceSnapshot) Format(state fmt.State, _ rune) {
 type Snapshot struct {
 	AllowedProviders []string
 	Instances        []InstanceSnapshot
+	Lifecycles       []LifecycleSnapshot
 }
 
 func (Snapshot) Format(state fmt.State, _ rune) {
@@ -126,6 +154,7 @@ type Collector struct {
 	providerDone  *prometheus.Desc
 	promotion     *prometheus.Desc
 	promotionSkip *prometheus.Desc
+	lifecycle     *prometheus.Desc
 }
 
 func NewCollector(provider SnapshotProvider, maxInstances int) (*Collector, error) {
@@ -180,6 +209,11 @@ func NewCollector(provider SnapshotProvider, maxInstances int) (*Collector, erro
 			"A fixed reason why the latest finalized Provider observation did not become the current snapshot.",
 			[]string{"instance_id", "provider", "reason"}, nil,
 		),
+		lifecycle: prometheus.NewDesc(
+			"relay_control_account_inventory_lifecycle_total",
+			"Current persisted account-inventory rows by lifecycle.",
+			[]string{"instance_id", "provider", "lifecycle"}, nil,
+		),
 	}, nil
 }
 
@@ -193,6 +227,7 @@ func (collector *Collector) Describe(channel chan<- *prometheus.Desc) {
 	channel <- collector.providerDone
 	channel <- collector.promotion
 	channel <- collector.promotionSkip
+	channel <- collector.lifecycle
 }
 
 func (collector *Collector) Collect(channel chan<- prometheus.Metric) {
@@ -232,6 +267,12 @@ func (collector *Collector) Collect(channel chan<- prometheus.Metric) {
 			}
 		}
 	}
+	for _, lifecycle := range snapshot.Lifecycles {
+		channel <- prometheus.MustNewConstMetric(
+			collector.lifecycle, prometheus.GaugeValue, float64(lifecycle.Count),
+			lifecycle.InstanceID.String(), lifecycle.Provider, string(lifecycle.Lifecycle),
+		)
+	}
 }
 
 func emitOptionalGauge(channel chan<- prometheus.Metric, description *prometheus.Desc, value *float64, labels ...string) {
@@ -252,7 +293,8 @@ func emitOptionalBool(channel chan<- prometheus.Metric, description *prometheus.
 }
 
 func (snapshot Snapshot) valid(maxInstances int) bool {
-	if len(snapshot.AllowedProviders) > maximumProviders || len(snapshot.Instances) > maxInstances {
+	if len(snapshot.AllowedProviders) > maximumProviders || len(snapshot.Instances) > maxInstances ||
+		len(snapshot.Lifecycles) > maxInstances*maximumProviders*4 {
 		return false
 	}
 	allowed := make(map[string]struct{}, len(snapshot.AllowedProviders))
@@ -265,7 +307,7 @@ func (snapshot Snapshot) valid(maxInstances int) bool {
 		}
 		allowed[provider] = struct{}{}
 	}
-	instances := make(map[uuid.UUID]struct{}, len(snapshot.Instances))
+	instances := make(map[uuid.UUID]struct{}, len(snapshot.Instances)+len(snapshot.Lifecycles))
 	for _, instance := range snapshot.Instances {
 		if instance.InstanceID == uuid.Nil || !instance.State.Valid() || !validOptionalSeconds(instance.SchedulerLagSeconds) ||
 			!validOptionalSeconds(instance.QueueWaitSeconds) || !validOptionalSeconds(instance.PollStartLagSeconds) {
@@ -291,7 +333,22 @@ func (snapshot Snapshot) valid(maxInstances int) bool {
 			providers[provider.Provider] = struct{}{}
 		}
 	}
-	return true
+	lifecycles := make(map[string]struct{}, len(snapshot.Lifecycles))
+	for _, lifecycle := range snapshot.Lifecycles {
+		if lifecycle.InstanceID == uuid.Nil {
+			return false
+		}
+		if _, ok := allowed[lifecycle.Provider]; !ok || !lifecycle.Lifecycle.Valid() {
+			return false
+		}
+		key := lifecycle.InstanceID.String() + "\x00" + lifecycle.Provider + "\x00" + string(lifecycle.Lifecycle)
+		if _, duplicate := lifecycles[key]; duplicate {
+			return false
+		}
+		instances[lifecycle.InstanceID] = struct{}{}
+		lifecycles[key] = struct{}{}
+	}
+	return len(instances) <= maxInstances
 }
 
 func validOptionalSeconds(value *float64) bool {

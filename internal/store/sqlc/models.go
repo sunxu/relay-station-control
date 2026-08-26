@@ -8,6 +8,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountInventory struct {
+	InstanceID              pgtype.UUID        `json:"instance_id"`
+	Provider                string             `json:"provider"`
+	AccountKey              string             `json:"account_key"`
+	NormalizedEmail         string             `json:"normalized_email"`
+	BasicStatus             string             `json:"basic_status"`
+	SuccessCount            int64              `json:"success_count"`
+	FailedCount             int64              `json:"failed_count"`
+	RecentRequestCount      int64              `json:"recent_request_count"`
+	LastRefreshAt           pgtype.Timestamptz `json:"last_refresh_at"`
+	NextRetryAt             pgtype.Timestamptz `json:"next_retry_at"`
+	SourceUpdatedAt         pgtype.Timestamptz `json:"source_updated_at"`
+	Lifecycle               string             `json:"lifecycle"`
+	ConsecutiveMissingCount int32              `json:"consecutive_missing_count"`
+	MissingSince            pgtype.Timestamptz `json:"missing_since"`
+	OutOfScopeSince         pgtype.Timestamptz `json:"out_of_scope_since"`
+	FirstSeenAt             pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt              pgtype.Timestamptz `json:"last_seen_at"`
+	CurrentPollRunID        pgtype.UUID        `json:"current_poll_run_id"`
+	CurrentScheduledAt      pgtype.Timestamptz `json:"current_scheduled_at"`
+	SourceObservedAt        pgtype.Timestamptz `json:"source_observed_at"`
+	SourceNodeVersion       string             `json:"source_node_version"`
+	SourceNodeCommit        string             `json:"source_node_commit"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AccountInventoryPollDuplicate struct {
 	PollRunID       pgtype.UUID        `json:"poll_run_id"`
 	InstanceID      pgtype.UUID        `json:"instance_id"`
@@ -81,6 +107,20 @@ type AccountInventoryProviderState struct {
 	SourceNodeCommit   string             `json:"source_node_commit"`
 	State              string             `json:"state"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	MonitoringStatus   string             `json:"monitoring_status"`
+	OutOfScopeSince    pgtype.Timestamptz `json:"out_of_scope_since"`
+}
+
+type AccountInventoryScopeTransitionAudit struct {
+	AuditID               pgtype.UUID        `json:"audit_id"`
+	ActivationID          pgtype.UUID        `json:"activation_id"`
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	Actor                 string             `json:"actor"`
+	Reason                string             `json:"reason"`
+	MovedOutProviders     []string           `json:"moved_out_providers"`
+	ReactivatedProviders  []string           `json:"reactivated_providers"`
+	TransitionedAt        pgtype.Timestamptz `json:"transitioned_at"`
 }
 
 type AccountInventorySnapshotItem struct {

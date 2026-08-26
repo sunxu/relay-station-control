@@ -11,6 +11,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateProviderPolicyWithLifecycle = `-- name: ActivateProviderPolicyWithLifecycle :one
+SELECT public.control_activate_provider_policy_with_lifecycle(
+    $1::text,
+    $2::text,
+    $3::text[],
+    $4::text[],
+    $5::text,
+    $6::text,
+    $7::timestamptz
+)::uuid AS activation_id
+`
+
+type ActivateProviderPolicyWithLifecycleParams struct {
+	NodeType              string             `json:"node_type"`
+	DriverContractVersion string             `json:"driver_contract_version"`
+	ActiveProviders       []string           `json:"active_providers"`
+	OutOfScopeProviders   []string           `json:"out_of_scope_providers"`
+	Actor                 string             `json:"actor"`
+	Reason                string             `json:"reason"`
+	EffectiveAt           pgtype.Timestamptz `json:"effective_at"`
+}
+
+func (q *Queries) ActivateProviderPolicyWithLifecycle(ctx context.Context, arg ActivateProviderPolicyWithLifecycleParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, activateProviderPolicyWithLifecycle,
+		arg.NodeType,
+		arg.DriverContractVersion,
+		arg.ActiveProviders,
+		arg.OutOfScopeProviders,
+		arg.Actor,
+		arg.Reason,
+		arg.EffectiveAt,
+	)
+	var activation_id pgtype.UUID
+	err := row.Scan(&activation_id)
+	return activation_id, err
+}
+
 const getAssetCounts = `-- name: GetAssetCounts :one
 SELECT
     (SELECT count(instance_id) FROM gateway_instances)::bigint AS gateways,

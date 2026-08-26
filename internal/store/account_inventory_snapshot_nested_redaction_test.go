@@ -22,7 +22,17 @@ func TestAccountInventorySnapshotNestedDTOsRedactIdentity(t *testing.T) {
 	generatedFinalize := generated.FinalizeAccountInventoryPollRunParams{
 		SnapshotItems: []byte(canary), DuplicateEvidence: []byte(canary),
 	}
+	generatedLifecycleFinalize := generated.FinalizeAccountInventoryPollRunWithLifecycleParams{
+		SnapshotItems: []byte(canary), DuplicateEvidence: []byte(canary),
+	}
+	generatedLifecycle := generated.AccountInventory{AccountKey: "openai:" + canary, NormalizedEmail: canary}
+	generatedLifecycleRow := generated.ListCurrentAccountInventoryLifecycleRow{
+		AccountKey: "openai:" + canary, NormalizedEmail: canary,
+	}
 	currentItem := pollstore.CurrentAccountInventorySnapshotItem{
+		AccountKey: "openai:" + canary, NormalizedEmail: canary,
+	}
+	currentLifecycleItem := pollstore.CurrentAccountInventoryLifecycleItem{
 		AccountKey: "openai:" + canary, NormalizedEmail: canary,
 	}
 	runtimeRequest := inventorypoll.FinalizeRequest{SnapshotItems: []inventorypoll.SnapshotCandidate{{
@@ -33,7 +43,11 @@ func TestAccountInventorySnapshotNestedDTOsRedactIdentity(t *testing.T) {
 		map[string]generated.AccountInventorySnapshotItem{"item": generatedItem},
 		[]generated.AccountInventoryPollDuplicate{generatedDuplicate},
 		map[string]generated.FinalizeAccountInventoryPollRunParams{"finalize": generatedFinalize},
+		map[string]generated.FinalizeAccountInventoryPollRunWithLifecycleParams{"finalize": generatedLifecycleFinalize},
+		[]generated.AccountInventory{generatedLifecycle},
+		[]generated.ListCurrentAccountInventoryLifecycleRow{generatedLifecycleRow},
 		[]pollstore.CurrentAccountInventorySnapshotItem{currentItem},
+		[]pollstore.CurrentAccountInventoryLifecycleItem{currentLifecycleItem},
 		[]inventorypoll.FinalizeRequest{runtimeRequest},
 	}
 	for _, value := range values {

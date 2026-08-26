@@ -11,6 +11,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkAccountInventoryLifecycleCompatibility = `-- name: CheckAccountInventoryLifecycleCompatibility :one
+SELECT (
+    to_regclass('public.account_inventory') IS NOT NULL
+    AND to_regprocedure(
+        'public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)'
+    ) IS NOT NULL
+    AND coalesce(has_function_privilege(
+        current_user,
+        to_regprocedure(
+            'public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)'
+        ),
+        'EXECUTE'
+    ), false)
+    AND to_regprocedure(
+        'public.control_list_current_account_inventory_lifecycle(uuid,text,text,text,integer)'
+    ) IS NOT NULL
+    AND coalesce(has_function_privilege(
+        current_user,
+        to_regprocedure(
+            'public.control_list_current_account_inventory_lifecycle(uuid,text,text,text,integer)'
+        ),
+        'EXECUTE'
+    ), false)
+    AND to_regprocedure(
+        'public.control_list_account_inventory_lifecycle_metrics()'
+    ) IS NOT NULL
+    AND coalesce(has_function_privilege(
+        current_user,
+        to_regprocedure('public.control_list_account_inventory_lifecycle_metrics()'),
+        'EXECUTE'
+    ), false)
+    AND NOT coalesce(has_function_privilege(
+        current_user,
+        to_regprocedure(
+            'public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)'
+        ),
+        'EXECUTE'
+    ), false)
+)::boolean AS compatible
+`
+
+func (q *Queries) CheckAccountInventoryLifecycleCompatibility(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, checkAccountInventoryLifecycleCompatibility)
+	var compatible bool
+	err := row.Scan(&compatible)
+	return compatible, err
+}
+
 const claimAccountInventoryPollRun = `-- name: ClaimAccountInventoryPollRun :one
 SELECT public.control_claim_account_inventory_poll_run(
     $1::uuid,
@@ -146,6 +194,122 @@ func (q *Queries) FinalizeAccountInventoryPollRun(ctx context.Context, arg Final
 	return i, err
 }
 
+const finalizeAccountInventoryPollRunWithLifecycle = `-- name: FinalizeAccountInventoryPollRunWithLifecycle :one
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
+    $1::uuid,
+    $2::uuid,
+    $3::boolean,
+    $4::boolean,
+    $5::boolean,
+    $6::text,
+    $7::boolean,
+    $8::boolean,
+    $9::boolean,
+    $10::text,
+    $11::text,
+    $12::integer,
+    $13::integer,
+    $14::integer,
+    $15::integer,
+    $16::integer,
+    $17::text,
+    $18::text,
+    $19::jsonb,
+    $20::jsonb,
+    $21::jsonb
+)
+`
+
+type FinalizeAccountInventoryPollRunWithLifecycleParams struct {
+	PollRunID                pgtype.UUID `json:"poll_run_id"`
+	LeaseFencingToken        pgtype.UUID `json:"lease_fencing_token"`
+	TransportSuccess         bool        `json:"transport_success"`
+	ResponseShapeValid       bool        `json:"response_shape_valid"`
+	ContractValid            bool        `json:"contract_valid"`
+	InventoryMode            pgtype.Text `json:"inventory_mode"`
+	NodeIdentityComplete     bool        `json:"node_identity_complete"`
+	SnapshotComplete         bool        `json:"snapshot_complete"`
+	Degraded                 bool        `json:"degraded"`
+	Result                   string      `json:"result"`
+	Reason                   string      `json:"reason"`
+	SourceRecordCount        int32       `json:"source_record_count"`
+	IdentifiableRecordCount  int32       `json:"identifiable_record_count"`
+	UnidentifiedRecordCount  int32       `json:"unidentified_record_count"`
+	UnsupportedProviderCount int32       `json:"unsupported_provider_count"`
+	OutOfScopeProviderCount  int32       `json:"out_of_scope_provider_count"`
+	NodeVersion              string      `json:"node_version"`
+	NodeCommit               string      `json:"node_commit"`
+	ProviderResults          []byte      `json:"provider_results"`
+	SnapshotItems            []byte      `json:"snapshot_items"`
+	DuplicateEvidence        []byte      `json:"duplicate_evidence"`
+}
+
+func (q *Queries) FinalizeAccountInventoryPollRunWithLifecycle(ctx context.Context, arg FinalizeAccountInventoryPollRunWithLifecycleParams) (AccountInventoryPollRun, error) {
+	row := q.db.QueryRow(ctx, finalizeAccountInventoryPollRunWithLifecycle,
+		arg.PollRunID,
+		arg.LeaseFencingToken,
+		arg.TransportSuccess,
+		arg.ResponseShapeValid,
+		arg.ContractValid,
+		arg.InventoryMode,
+		arg.NodeIdentityComplete,
+		arg.SnapshotComplete,
+		arg.Degraded,
+		arg.Result,
+		arg.Reason,
+		arg.SourceRecordCount,
+		arg.IdentifiableRecordCount,
+		arg.UnidentifiedRecordCount,
+		arg.UnsupportedProviderCount,
+		arg.OutOfScopeProviderCount,
+		arg.NodeVersion,
+		arg.NodeCommit,
+		arg.ProviderResults,
+		arg.SnapshotItems,
+		arg.DuplicateEvidence,
+	)
+	var i AccountInventoryPollRun
+	err := row.Scan(
+		&i.PollRunID,
+		&i.InstanceID,
+		&i.NodeType,
+		&i.DriverContractVersion,
+		&i.ScheduledAt,
+		&i.ProviderPolicyVersion,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.PollStartGraceSeconds,
+		&i.CreatedAt,
+		&i.FirstStartedAt,
+		&i.LastStartedAt,
+		&i.LeaseExpiresAt,
+		&i.LeaseFencingToken,
+		&i.FinalizedAt,
+		&i.AbandonedAt,
+		&i.ExecutionReason,
+		&i.ObservedAt,
+		&i.TransportSuccess,
+		&i.ResponseShapeValid,
+		&i.ContractValid,
+		&i.InventoryMode,
+		&i.NodeIdentityComplete,
+		&i.SnapshotComplete,
+		&i.Degraded,
+		&i.Result,
+		&i.Reason,
+		&i.SourceRecordCount,
+		&i.IdentifiableRecordCount,
+		&i.UnidentifiedRecordCount,
+		&i.UnsupportedProviderCount,
+		&i.OutOfScopeProviderCount,
+		&i.NodeVersion,
+		&i.NodeCommit,
+		&i.PromotionSkippedReason,
+	)
+	return i, err
+}
+
 const getAccountInventoryPollRun = `-- name: GetAccountInventoryPollRun :one
 SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason
 FROM account_inventory_poll_runs
@@ -194,6 +358,46 @@ func (q *Queries) GetAccountInventoryPollRun(ctx context.Context, pollRunID pgty
 		&i.PromotionSkippedReason,
 	)
 	return i, err
+}
+
+const listAccountInventoryLifecycleMetrics = `-- name: ListAccountInventoryLifecycleMetrics :many
+SELECT metric.instance_id::uuid AS instance_id,
+       metric.provider::text AS provider,
+       metric.lifecycle::text AS lifecycle,
+       metric.account_count::bigint AS account_count
+FROM public.control_list_account_inventory_lifecycle_metrics() AS metric
+`
+
+type ListAccountInventoryLifecycleMetricsRow struct {
+	InstanceID   pgtype.UUID `json:"instance_id"`
+	Provider     string      `json:"provider"`
+	Lifecycle    string      `json:"lifecycle"`
+	AccountCount int64       `json:"account_count"`
+}
+
+func (q *Queries) ListAccountInventoryLifecycleMetrics(ctx context.Context) ([]ListAccountInventoryLifecycleMetricsRow, error) {
+	rows, err := q.db.Query(ctx, listAccountInventoryLifecycleMetrics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAccountInventoryLifecycleMetricsRow{}
+	for rows.Next() {
+		var i ListAccountInventoryLifecycleMetricsRow
+		if err := rows.Scan(
+			&i.InstanceID,
+			&i.Provider,
+			&i.Lifecycle,
+			&i.AccountCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAccountInventoryPollProviderResults = `-- name: ListAccountInventoryPollProviderResults :many
@@ -366,6 +570,120 @@ func (q *Queries) ListAccountInventoryProviderMetrics(ctx context.Context) ([]Li
 			&i.PromotionApplied,
 			&i.PromotionEvaluated,
 			&i.PromotionSkippedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCurrentAccountInventoryLifecycle = `-- name: ListCurrentAccountInventoryLifecycle :many
+SELECT inventory.provider::text AS provider,
+       inventory.account_key::text AS account_key,
+       inventory.normalized_email::text AS normalized_email,
+       inventory.basic_status::text AS basic_status,
+       inventory.success_count::bigint AS success_count,
+       inventory.failed_count::bigint AS failed_count,
+       inventory.recent_request_count::bigint AS recent_request_count,
+       inventory.last_refresh_at::timestamptz AS last_refresh_at,
+       inventory.next_retry_at::timestamptz AS next_retry_at,
+       inventory.source_updated_at::timestamptz AS source_updated_at,
+       inventory.lifecycle::text AS lifecycle,
+       inventory.consecutive_missing_count::integer AS consecutive_missing_count,
+       inventory.missing_since::timestamptz AS missing_since,
+       inventory.out_of_scope_since::timestamptz AS out_of_scope_since,
+       inventory.first_seen_at::timestamptz AS first_seen_at,
+       inventory.last_seen_at::timestamptz AS last_seen_at,
+       inventory.current_poll_run_id::uuid AS current_poll_run_id,
+       inventory.current_scheduled_at::timestamptz AS current_scheduled_at,
+       inventory.source_observed_at::timestamptz AS source_observed_at,
+       inventory.source_node_version::text AS source_node_version,
+       inventory.source_node_commit::text AS source_node_commit,
+       inventory.updated_at::timestamptz AS updated_at
+FROM public.control_list_current_account_inventory_lifecycle(
+    $1::uuid,
+    $2::text,
+    $3::text,
+    $4::text,
+    $5::integer
+) AS inventory
+`
+
+type ListCurrentAccountInventoryLifecycleParams struct {
+	InstanceID      pgtype.UUID `json:"instance_id"`
+	Provider        string      `json:"provider"`
+	Lifecycle       string      `json:"lifecycle"`
+	AfterAccountKey string      `json:"after_account_key"`
+	PageLimit       int32       `json:"page_limit"`
+}
+
+type ListCurrentAccountInventoryLifecycleRow struct {
+	Provider                string             `json:"provider"`
+	AccountKey              string             `json:"account_key"`
+	NormalizedEmail         string             `json:"normalized_email"`
+	BasicStatus             string             `json:"basic_status"`
+	SuccessCount            int64              `json:"success_count"`
+	FailedCount             int64              `json:"failed_count"`
+	RecentRequestCount      int64              `json:"recent_request_count"`
+	LastRefreshAt           pgtype.Timestamptz `json:"last_refresh_at"`
+	NextRetryAt             pgtype.Timestamptz `json:"next_retry_at"`
+	SourceUpdatedAt         pgtype.Timestamptz `json:"source_updated_at"`
+	Lifecycle               string             `json:"lifecycle"`
+	ConsecutiveMissingCount int32              `json:"consecutive_missing_count"`
+	MissingSince            pgtype.Timestamptz `json:"missing_since"`
+	OutOfScopeSince         pgtype.Timestamptz `json:"out_of_scope_since"`
+	FirstSeenAt             pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt              pgtype.Timestamptz `json:"last_seen_at"`
+	CurrentPollRunID        pgtype.UUID        `json:"current_poll_run_id"`
+	CurrentScheduledAt      pgtype.Timestamptz `json:"current_scheduled_at"`
+	SourceObservedAt        pgtype.Timestamptz `json:"source_observed_at"`
+	SourceNodeVersion       string             `json:"source_node_version"`
+	SourceNodeCommit        string             `json:"source_node_commit"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListCurrentAccountInventoryLifecycle(ctx context.Context, arg ListCurrentAccountInventoryLifecycleParams) ([]ListCurrentAccountInventoryLifecycleRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentAccountInventoryLifecycle,
+		arg.InstanceID,
+		arg.Provider,
+		arg.Lifecycle,
+		arg.AfterAccountKey,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCurrentAccountInventoryLifecycleRow{}
+	for rows.Next() {
+		var i ListCurrentAccountInventoryLifecycleRow
+		if err := rows.Scan(
+			&i.Provider,
+			&i.AccountKey,
+			&i.NormalizedEmail,
+			&i.BasicStatus,
+			&i.SuccessCount,
+			&i.FailedCount,
+			&i.RecentRequestCount,
+			&i.LastRefreshAt,
+			&i.NextRetryAt,
+			&i.SourceUpdatedAt,
+			&i.Lifecycle,
+			&i.ConsecutiveMissingCount,
+			&i.MissingSince,
+			&i.OutOfScopeSince,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.CurrentPollRunID,
+			&i.CurrentScheduledAt,
+			&i.SourceObservedAt,
+			&i.SourceNodeVersion,
+			&i.SourceNodeCommit,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

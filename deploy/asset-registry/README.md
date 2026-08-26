@@ -11,8 +11,16 @@ identical. Conflicting content fails without partial writes.
   and one Relay Node with its declared capabilities.
 - `activate-provider-policy.sql` creates or reuses an immutable normalized
   Provider policy version, records its activation boundary, and updates the
-  latest-selection binding. Database-time activation history determines the
-  policy effective at any instant.
+  latest-selection binding through the lifecycle-aware transaction. Moving an
+  active Provider out of scope updates its current accounts atomically; moving
+  it back to active leaves old accounts out of scope until a complete promoted
+  runtime observation sees them again. Scope-changing lifecycle activations
+  are immediate database-time operations; a future boundary is rejected so
+  policy effectiveness and current account state cannot diverge. Every scope
+  transition requires a named actor plus a bounded reason and appends immutable
+  audit evidence. The template fails closed unless
+  `CONTROL_PROVIDER_POLICY_MUTATION_ENABLED=true`; clear or set it to `false`
+  before an application rollback.
 - `set-node-monitoring.sql` enables, disables, or schedules the Node inventory
   monitoring interval using a Node row lock.
 - `reconcile.sql` runs as a read-only repeatable-read transaction through a

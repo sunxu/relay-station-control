@@ -161,3 +161,14 @@ SELECT
     (SELECT count(instance_id) FROM relay_node_assets)::bigint AS nodes,
     (SELECT count(node_type) FROM node_drivers)::bigint AS drivers,
     (SELECT count(policy_version_id) FROM provider_inventory_policy_versions)::bigint AS provider_policies;
+
+-- name: ActivateProviderPolicyWithLifecycle :one
+SELECT public.control_activate_provider_policy_with_lifecycle(
+    sqlc.arg(node_type)::text,
+    sqlc.arg(driver_contract_version)::text,
+    sqlc.arg(active_providers)::text[],
+    sqlc.arg(out_of_scope_providers)::text[],
+    sqlc.arg(actor)::text,
+    sqlc.arg(reason)::text,
+    sqlc.narg(effective_at)::timestamptz
+)::uuid AS activation_id;
