@@ -31,7 +31,7 @@ func (q *Queries) ClaimAccountInventoryPollRun(ctx context.Context, arg ClaimAcc
 }
 
 const finalizeAccountInventoryPollRun = `-- name: FinalizeAccountInventoryPollRun :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit FROM public.control_finalize_account_inventory_poll_run(
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_finalize_account_inventory_poll_run(
     $1::uuid,
     $2::uuid,
     $3::boolean,
@@ -50,7 +50,9 @@ SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_a
     $16::integer,
     $17::text,
     $18::text,
-    $19::jsonb
+    $19::jsonb,
+    $20::jsonb,
+    $21::jsonb
 )
 `
 
@@ -74,6 +76,8 @@ type FinalizeAccountInventoryPollRunParams struct {
 	NodeVersion              string      `json:"node_version"`
 	NodeCommit               string      `json:"node_commit"`
 	ProviderResults          []byte      `json:"provider_results"`
+	SnapshotItems            []byte      `json:"snapshot_items"`
+	DuplicateEvidence        []byte      `json:"duplicate_evidence"`
 }
 
 func (q *Queries) FinalizeAccountInventoryPollRun(ctx context.Context, arg FinalizeAccountInventoryPollRunParams) (AccountInventoryPollRun, error) {
@@ -97,6 +101,8 @@ func (q *Queries) FinalizeAccountInventoryPollRun(ctx context.Context, arg Final
 		arg.NodeVersion,
 		arg.NodeCommit,
 		arg.ProviderResults,
+		arg.SnapshotItems,
+		arg.DuplicateEvidence,
 	)
 	var i AccountInventoryPollRun
 	err := row.Scan(
@@ -135,12 +141,13 @@ func (q *Queries) FinalizeAccountInventoryPollRun(ctx context.Context, arg Final
 		&i.OutOfScopeProviderCount,
 		&i.NodeVersion,
 		&i.NodeCommit,
+		&i.PromotionSkippedReason,
 	)
 	return i, err
 }
 
 const getAccountInventoryPollRun = `-- name: GetAccountInventoryPollRun :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason
 FROM account_inventory_poll_runs
 WHERE poll_run_id = $1::uuid
 `
@@ -184,12 +191,13 @@ func (q *Queries) GetAccountInventoryPollRun(ctx context.Context, pollRunID pgty
 		&i.OutOfScopeProviderCount,
 		&i.NodeVersion,
 		&i.NodeCommit,
+		&i.PromotionSkippedReason,
 	)
 	return i, err
 }
 
 const listAccountInventoryPollProviderResults = `-- name: ListAccountInventoryPollProviderResults :many
-SELECT poll_run_id, provider, identifiable_count, missing_identity_count, duplicate_identity_count, identity_complete, snapshot_complete, degraded, reason
+SELECT poll_run_id, provider, identifiable_count, missing_identity_count, duplicate_identity_count, identity_complete, snapshot_complete, degraded, reason, promotion_applied, promotion_skipped_reason
 FROM account_inventory_poll_provider_results
 WHERE poll_run_id = $1::uuid
 ORDER BY provider
@@ -214,6 +222,8 @@ func (q *Queries) ListAccountInventoryPollProviderResults(ctx context.Context, p
 			&i.SnapshotComplete,
 			&i.Degraded,
 			&i.Reason,
+			&i.PromotionApplied,
+			&i.PromotionSkippedReason,
 		); err != nil {
 			return nil, err
 		}
@@ -320,7 +330,11 @@ WITH latest_finalized AS (
     WHERE run.status = 'finalized'
     ORDER BY run.instance_id, run.scheduled_at DESC
 )
-SELECT latest_finalized.instance_id, result.provider, result.snapshot_complete
+SELECT latest_finalized.instance_id, result.provider, result.snapshot_complete,
+       result.promotion_applied,
+       (result.promotion_applied OR result.promotion_skipped_reason IS NOT NULL)::boolean
+           AS promotion_evaluated,
+       result.promotion_skipped_reason
 FROM latest_finalized
 JOIN account_inventory_poll_provider_results AS result
   ON result.poll_run_id = latest_finalized.poll_run_id
@@ -328,9 +342,12 @@ ORDER BY latest_finalized.instance_id, result.provider
 `
 
 type ListAccountInventoryProviderMetricsRow struct {
-	InstanceID       pgtype.UUID `json:"instance_id"`
-	Provider         string      `json:"provider"`
-	SnapshotComplete bool        `json:"snapshot_complete"`
+	InstanceID             pgtype.UUID `json:"instance_id"`
+	Provider               string      `json:"provider"`
+	SnapshotComplete       bool        `json:"snapshot_complete"`
+	PromotionApplied       bool        `json:"promotion_applied"`
+	PromotionEvaluated     bool        `json:"promotion_evaluated"`
+	PromotionSkippedReason pgtype.Text `json:"promotion_skipped_reason"`
 }
 
 func (q *Queries) ListAccountInventoryProviderMetrics(ctx context.Context) ([]ListAccountInventoryProviderMetricsRow, error) {
@@ -342,7 +359,89 @@ func (q *Queries) ListAccountInventoryProviderMetrics(ctx context.Context) ([]Li
 	items := []ListAccountInventoryProviderMetricsRow{}
 	for rows.Next() {
 		var i ListAccountInventoryProviderMetricsRow
-		if err := rows.Scan(&i.InstanceID, &i.Provider, &i.SnapshotComplete); err != nil {
+		if err := rows.Scan(
+			&i.InstanceID,
+			&i.Provider,
+			&i.SnapshotComplete,
+			&i.PromotionApplied,
+			&i.PromotionEvaluated,
+			&i.PromotionSkippedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCurrentAccountInventorySnapshot = `-- name: ListCurrentAccountInventorySnapshot :many
+SELECT snapshot.account_key::text AS account_key,
+       snapshot.normalized_email::text AS normalized_email,
+       snapshot.basic_status::text AS basic_status,
+       snapshot.success_count::bigint AS success_count,
+       snapshot.failed_count::bigint AS failed_count,
+       snapshot.recent_request_count::bigint AS recent_request_count,
+       snapshot.last_refresh_at::timestamptz AS last_refresh_at,
+       snapshot.next_retry_at::timestamptz AS next_retry_at,
+       snapshot.source_updated_at::timestamptz AS source_updated_at,
+       snapshot.observed_at::timestamptz AS observed_at
+FROM public.control_list_current_account_inventory_snapshot(
+    $1::uuid,
+    $2::text,
+    $3::text,
+    $4::integer
+) AS snapshot
+`
+
+type ListCurrentAccountInventorySnapshotParams struct {
+	InstanceID      pgtype.UUID `json:"instance_id"`
+	Provider        string      `json:"provider"`
+	AfterAccountKey string      `json:"after_account_key"`
+	PageLimit       int32       `json:"page_limit"`
+}
+
+type ListCurrentAccountInventorySnapshotRow struct {
+	AccountKey         string             `json:"account_key"`
+	NormalizedEmail    string             `json:"normalized_email"`
+	BasicStatus        string             `json:"basic_status"`
+	SuccessCount       int64              `json:"success_count"`
+	FailedCount        int64              `json:"failed_count"`
+	RecentRequestCount int64              `json:"recent_request_count"`
+	LastRefreshAt      pgtype.Timestamptz `json:"last_refresh_at"`
+	NextRetryAt        pgtype.Timestamptz `json:"next_retry_at"`
+	SourceUpdatedAt    pgtype.Timestamptz `json:"source_updated_at"`
+	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
+}
+
+func (q *Queries) ListCurrentAccountInventorySnapshot(ctx context.Context, arg ListCurrentAccountInventorySnapshotParams) ([]ListCurrentAccountInventorySnapshotRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentAccountInventorySnapshot,
+		arg.InstanceID,
+		arg.Provider,
+		arg.AfterAccountKey,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCurrentAccountInventorySnapshotRow{}
+	for rows.Next() {
+		var i ListCurrentAccountInventorySnapshotRow
+		if err := rows.Scan(
+			&i.AccountKey,
+			&i.NormalizedEmail,
+			&i.BasicStatus,
+			&i.SuccessCount,
+			&i.FailedCount,
+			&i.RecentRequestCount,
+			&i.LastRefreshAt,
+			&i.NextRetryAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -354,7 +453,7 @@ func (q *Queries) ListAccountInventoryProviderMetrics(ctx context.Context) ([]Li
 }
 
 const reconcileAccountInventoryPollRun = `-- name: ReconcileAccountInventoryPollRun :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit FROM public.control_reconcile_account_inventory_poll_run(
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_reconcile_account_inventory_poll_run(
 )
 `
 
@@ -397,6 +496,7 @@ func (q *Queries) ReconcileAccountInventoryPollRun(ctx context.Context) (Account
 		&i.OutOfScopeProviderCount,
 		&i.NodeVersion,
 		&i.NodeCommit,
+		&i.PromotionSkippedReason,
 	)
 	return i, err
 }

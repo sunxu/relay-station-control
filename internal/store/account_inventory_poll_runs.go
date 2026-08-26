@@ -5,11 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -35,23 +40,24 @@ const (
 )
 
 type PollRun struct {
-	ID                    uuid.UUID
-	InstanceID            uuid.UUID
-	NodeType              drivers.NodeType
-	DriverContractVersion drivers.DriverContractVersion
-	ScheduledAt           time.Time
-	ProviderPolicyVersion uuid.UUID
-	Status                PollRunStatus
-	AttemptCount          int
-	MaxAttempts           int
-	CreatedAt             time.Time
-	FirstStartedAt        *time.Time
-	LastStartedAt         *time.Time
-	FinalizedAt           *time.Time
-	AbandonedAt           *time.Time
-	ExecutionReason       string
-	ObservedAt            *time.Time
-	Observation           *PollObservationSummary
+	ID                     uuid.UUID
+	InstanceID             uuid.UUID
+	NodeType               drivers.NodeType
+	DriverContractVersion  drivers.DriverContractVersion
+	ScheduledAt            time.Time
+	ProviderPolicyVersion  uuid.UUID
+	Status                 PollRunStatus
+	AttemptCount           int
+	MaxAttempts            int
+	CreatedAt              time.Time
+	FirstStartedAt         *time.Time
+	LastStartedAt          *time.Time
+	FinalizedAt            *time.Time
+	AbandonedAt            *time.Time
+	ExecutionReason        string
+	PromotionSkippedReason string
+	ObservedAt             *time.Time
+	Observation            *PollObservationSummary
 }
 
 type PollObservationSummary struct {
@@ -97,6 +103,8 @@ type PollProviderResult struct {
 	SnapshotComplete       bool   `json:"snapshot_complete"`
 	Degraded               bool   `json:"degraded"`
 	Reason                 string `json:"reason"`
+	PromotionApplied       bool   `json:"promotion_applied,omitempty"`
+	PromotionSkippedReason string `json:"promotion_skipped_reason,omitempty"`
 }
 
 type FinalizePollRunInput struct {
@@ -104,6 +112,8 @@ type FinalizePollRunInput struct {
 	LeaseFencingToken uuid.UUID
 	Observation       PollObservationSummary
 	ProviderResults   []PollProviderResult
+	SnapshotItems     []pollSnapshotItem
+	Duplicates        []pollDuplicateEvidence
 }
 
 type PollRunMetric struct {
@@ -118,9 +128,52 @@ type PollRunMetric struct {
 }
 
 type PollProviderMetric struct {
-	InstanceID       uuid.UUID
-	Provider         string
-	SnapshotComplete bool
+	InstanceID             uuid.UUID
+	Provider               string
+	SnapshotComplete       bool
+	PromotionEvaluated     bool
+	PromotionApplied       bool
+	PromotionSkippedReason string
+}
+
+type CurrentAccountInventorySnapshotItem struct {
+	AccountKey         string
+	NormalizedEmail    string
+	BasicStatus        drivers.AccountState
+	SuccessCount       uint64
+	FailedCount        uint64
+	RecentRequestCount uint64
+	LastRefreshAt      *time.Time
+	NextRetryAt        *time.Time
+	SourceUpdatedAt    *time.Time
+	ObservedAt         time.Time
+}
+
+func (FinalizePollRunInput) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED FinalizePollRunInput]"))
+}
+
+func (CurrentAccountInventorySnapshotItem) Format(state fmt.State, _ rune) {
+	_, _ = state.Write([]byte("[REDACTED CurrentAccountInventorySnapshotItem]"))
+}
+
+type pollSnapshotItem struct {
+	Provider           string               `json:"provider"`
+	AccountKey         string               `json:"account_key"`
+	Email              string               `json:"email"`
+	BasicStatus        drivers.AccountState `json:"basic_status"`
+	SuccessCount       uint64               `json:"success_count"`
+	FailedCount        uint64               `json:"failed_count"`
+	RecentRequestCount uint64               `json:"recent_request_count"`
+	LastRefreshUnix    *int64               `json:"last_refresh_unix"`
+	NextRetryUnix      *int64               `json:"next_retry_unix"`
+	UpdatedAtUnix      *int64               `json:"updated_at_unix"`
+}
+
+type pollDuplicateEvidence struct {
+	Provider        string `json:"provider"`
+	AccountKey      string `json:"account_key"`
+	OccurrenceCount uint32 `json:"occurrence_count"`
 }
 
 type InventoryPollRepository struct {
@@ -197,6 +250,29 @@ func (repository *InventoryPollRepository) FinalizeFenced(
 			Degraded:               provider.Degraded, Reason: string(provider.Reason),
 		})
 	}
+	snapshotItems := make([]pollSnapshotItem, 0, len(request.SnapshotItems))
+	for _, item := range request.SnapshotItems {
+		if !validSnapshotCandidate(item) {
+			return inventorypoll.ErrInvalidObservation
+		}
+		snapshotItems = append(snapshotItems, pollSnapshotItem{
+			Provider: item.Provider, AccountKey: item.AccountKey, Email: item.Email,
+			BasicStatus: item.BasicStatus, SuccessCount: item.SuccessCount,
+			FailedCount: item.FailedCount, RecentRequestCount: item.RecentRequestCount,
+			LastRefreshUnix: item.LastRefreshUnix, NextRetryUnix: item.NextRetryUnix,
+			UpdatedAtUnix: item.UpdatedAtUnix,
+		})
+	}
+	duplicates := make([]pollDuplicateEvidence, 0, len(request.Duplicates))
+	for _, duplicate := range request.Duplicates {
+		if !validDuplicateEvidence(duplicate) {
+			return inventorypoll.ErrInvalidObservation
+		}
+		duplicates = append(duplicates, pollDuplicateEvidence{
+			Provider: duplicate.Provider, AccountKey: duplicate.AccountKey,
+			OccurrenceCount: duplicate.OccurrenceCount,
+		})
+	}
 	_, err := repository.finalize(ctx, FinalizePollRunInput{
 		PollRunID: request.PollRunID, LeaseFencingToken: request.FencingToken,
 		Observation: PollObservationSummary{
@@ -214,7 +290,7 @@ func (repository *InventoryPollRepository) FinalizeFenced(
 			OutOfScopeProviderCount:  int(request.Node.OutOfScopeProviderCount),
 			NodeVersion:              request.Node.Version, NodeCommit: request.Node.Commit,
 		},
-		ProviderResults: providers,
+		ProviderResults: providers, SnapshotItems: snapshotItems, Duplicates: duplicates,
 	})
 	if errors.Is(err, ErrPollRunLeaseLost) {
 		return inventorypoll.ErrLostLease
@@ -333,6 +409,14 @@ func (repository *InventoryPollRepository) finalize(
 	if err != nil {
 		return PollRun{}, ErrInvalidPollRunInput
 	}
+	encodedSnapshots, err := json.Marshal(input.SnapshotItems)
+	if err != nil {
+		return PollRun{}, ErrInvalidPollRunInput
+	}
+	encodedDuplicates, err := json.Marshal(input.Duplicates)
+	if err != nil {
+		return PollRun{}, ErrInvalidPollRunInput
+	}
 	mode := pgtype.Text{}
 	if input.Observation.InventoryMode != "" {
 		mode = pgtype.Text{String: string(input.Observation.InventoryMode), Valid: true}
@@ -351,9 +435,11 @@ func (repository *InventoryPollRepository) finalize(
 			UnsupportedProviderCount: int32(observation.UnsupportedProviderCount),
 			OutOfScopeProviderCount:  int32(observation.OutOfScopeProviderCount),
 			NodeVersion:              observation.NodeVersion, NodeCommit: observation.NodeCommit,
-			ProviderResults: encodedProviders,
+			ProviderResults: encodedProviders, SnapshotItems: encodedSnapshots,
+			DuplicateEvidence: encodedDuplicates,
 		})
-	if errors.Is(err, pgx.ErrNoRows) {
+	var databaseError *pgconn.PgError
+	if errors.Is(err, pgx.ErrNoRows) || errors.As(err, &databaseError) && databaseError.Code == "P0002" {
 		return PollRun{}, ErrPollRunLeaseLost
 	}
 	if err != nil {
@@ -379,6 +465,8 @@ func (repository *InventoryPollRepository) ProviderResults(
 			MissingIdentityCount: int(row.MissingIdentityCount), DuplicateIdentityCount: int(row.DuplicateIdentityCount),
 			IdentityComplete: row.IdentityComplete, SnapshotComplete: row.SnapshotComplete,
 			Degraded: row.Degraded, Reason: row.Reason,
+			PromotionApplied:       row.PromotionApplied,
+			PromotionSkippedReason: nullableTextValue(row.PromotionSkippedReason),
 		}
 		if !validPollProviderResult(result) {
 			return nil, ErrPollRunInconsistent
@@ -419,10 +507,47 @@ func (repository *InventoryPollRepository) Metrics(ctx context.Context) ([]PollR
 		}
 		providerMetrics = append(providerMetrics, PollProviderMetric{
 			InstanceID: uuidFromPG(row.InstanceID), Provider: row.Provider,
-			SnapshotComplete: row.SnapshotComplete,
+			SnapshotComplete: row.SnapshotComplete, PromotionEvaluated: row.PromotionEvaluated,
+			PromotionApplied:       row.PromotionApplied,
+			PromotionSkippedReason: nullableTextValue(row.PromotionSkippedReason),
 		})
 	}
 	return runMetrics, providerMetrics, nil
+}
+
+func (repository *InventoryPollRepository) CurrentProviderSnapshot(
+	ctx context.Context, instanceID uuid.UUID, provider, afterAccountKey string, limit int,
+) ([]CurrentAccountInventorySnapshotItem, error) {
+	if instanceID == uuid.Nil || !validProviderName(provider) || len(afterAccountKey) > 385 || limit < 1 || limit > 500 {
+		return nil, ErrInvalidPollRunInput
+	}
+	rows, err := repository.queries.ListCurrentAccountInventorySnapshot(ctx,
+		generated.ListCurrentAccountInventorySnapshotParams{
+			InstanceID: nullableUUID(instanceID), Provider: provider,
+			AfterAccountKey: afterAccountKey, PageLimit: int32(limit),
+		})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]CurrentAccountInventorySnapshotItem, 0, len(rows))
+	for _, row := range rows {
+		if row.SuccessCount < 0 || row.FailedCount < 0 || row.RecentRequestCount < 0 ||
+			row.ObservedAt.Time.IsZero() {
+			return nil, ErrPollRunInconsistent
+		}
+		item := CurrentAccountInventorySnapshotItem{
+			AccountKey: row.AccountKey, NormalizedEmail: row.NormalizedEmail,
+			BasicStatus: drivers.AccountState(row.BasicStatus), SuccessCount: uint64(row.SuccessCount),
+			FailedCount: uint64(row.FailedCount), RecentRequestCount: uint64(row.RecentRequestCount),
+			LastRefreshAt: nullableTime(row.LastRefreshAt), NextRetryAt: nullableTime(row.NextRetryAt),
+			SourceUpdatedAt: nullableTime(row.SourceUpdatedAt), ObservedAt: row.ObservedAt.Time.UTC(),
+		}
+		if !validCurrentSnapshotItem(provider, item) {
+			return nil, ErrPollRunInconsistent
+		}
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 type pollClaimJSON struct {
@@ -488,7 +613,7 @@ func pollRunFromRow(row generated.AccountInventoryPollRun) (PollRun, error) {
 		CreatedAt: row.CreatedAt.Time.UTC(), FirstStartedAt: nullableTime(row.FirstStartedAt),
 		LastStartedAt: nullableTime(row.LastStartedAt), FinalizedAt: nullableTime(row.FinalizedAt),
 		AbandonedAt: nullableTime(row.AbandonedAt), ExecutionReason: nullableTextValue(row.ExecutionReason),
-		ObservedAt: nullableTime(row.ObservedAt),
+		ObservedAt: nullableTime(row.ObservedAt), PromotionSkippedReason: nullableTextValue(row.PromotionSkippedReason),
 	}
 	if row.Status == string(PollRunFinalized) {
 		result.Observation = &PollObservationSummary{
@@ -562,11 +687,85 @@ func validPollProviderResult(result PollProviderResult) bool {
 		result.IdentityComplete != (result.MissingIdentityCount == 0 && result.DuplicateIdentityCount == 0) {
 		return false
 	}
+	baseValid := false
 	switch result.Reason {
 	case "complete":
-		return result.IdentityComplete && result.SnapshotComplete && !result.Degraded
+		baseValid = result.IdentityComplete && result.SnapshotComplete && !result.Degraded
 	case "transport_failed", "contract_invalid", "disk_fallback", "node_identity_incomplete", "identity_incomplete":
-		return result.Degraded
+		baseValid = result.Degraded
+	default:
+		return false
+	}
+	if !baseValid || result.PromotionApplied && (result.PromotionSkippedReason != "" || result.Reason != "complete") {
+		return false
+	}
+	if result.PromotionSkippedReason == "" {
+		return true
+	}
+	if result.PromotionApplied {
+		return false
+	}
+	switch result.PromotionSkippedReason {
+	case "policy_changed", "transport_failed", "contract_invalid", "disk_fallback",
+		"provider_identity_incomplete", "provider_duplicate", "stale_poll":
+		return true
+	default:
+		return false
+	}
+}
+
+func validSnapshotCandidate(item inventorypoll.SnapshotCandidate) bool {
+	if !validProviderName(item.Provider) || !validNormalizedIdentity(item.Email, 320) ||
+		item.Email != strings.ToLower(strings.TrimSpace(item.Email)) || len(item.AccountKey) < 3 || len(item.AccountKey) > 385 ||
+		item.AccountKey != item.Provider+":"+item.Email || item.SuccessCount > math.MaxInt64 ||
+		item.FailedCount > math.MaxInt64 || item.RecentRequestCount > 1000 ||
+		!validSourceUnix(item.LastRefreshUnix) || !validSourceUnix(item.NextRetryUnix) ||
+		!validSourceUnix(item.UpdatedAtUnix) {
+		return false
+	}
+	switch item.BasicStatus {
+	case drivers.AccountStateDisabled, drivers.AccountStateUnavailable, drivers.AccountStateError,
+		drivers.AccountStateActive, drivers.AccountStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validDuplicateEvidence(duplicate inventorypoll.DuplicateEvidence) bool {
+	suffix := strings.TrimPrefix(duplicate.AccountKey, duplicate.Provider+":")
+	return validProviderName(duplicate.Provider) && validNormalizedIdentity(suffix, 320) && len(duplicate.AccountKey) >= 3 &&
+		len(duplicate.AccountKey) <= 385 && strings.HasPrefix(duplicate.AccountKey, duplicate.Provider+":") &&
+		len(suffix) >= 1 && len(suffix) <= 320 && suffix == strings.ToLower(strings.TrimSpace(suffix)) &&
+		duplicate.OccurrenceCount >= 2 && duplicate.OccurrenceCount <= 1000
+}
+
+func validSourceUnix(value *int64) bool {
+	return value == nil || *value >= 1 && *value <= 253402300799
+}
+
+func validNormalizedIdentity(value string, maximum int) bool {
+	if !utf8.ValidString(value) || len(value) < 1 || len(value) > maximum {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
+}
+
+func validCurrentSnapshotItem(provider string, item CurrentAccountInventorySnapshotItem) bool {
+	if !validNormalizedIdentity(item.NormalizedEmail, 320) ||
+		item.NormalizedEmail != strings.ToLower(strings.TrimSpace(item.NormalizedEmail)) ||
+		item.AccountKey != provider+":"+item.NormalizedEmail {
+		return false
+	}
+	switch item.BasicStatus {
+	case drivers.AccountStateDisabled, drivers.AccountStateUnavailable, drivers.AccountStateError,
+		drivers.AccountStateActive, drivers.AccountStateUnknown:
+		return true
 	default:
 		return false
 	}

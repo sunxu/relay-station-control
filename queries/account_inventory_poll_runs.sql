@@ -36,7 +36,9 @@ SELECT * FROM public.control_finalize_account_inventory_poll_run(
     sqlc.arg(out_of_scope_provider_count)::integer,
     sqlc.arg(node_version)::text,
     sqlc.arg(node_commit)::text,
-    sqlc.arg(provider_results)::jsonb
+    sqlc.arg(provider_results)::jsonb,
+    sqlc.arg(snapshot_items)::jsonb,
+    sqlc.arg(duplicate_evidence)::jsonb
 );
 
 -- name: GetAccountInventoryPollRun :one
@@ -102,8 +104,30 @@ WITH latest_finalized AS (
     WHERE run.status = 'finalized'
     ORDER BY run.instance_id, run.scheduled_at DESC
 )
-SELECT latest_finalized.instance_id, result.provider, result.snapshot_complete
+SELECT latest_finalized.instance_id, result.provider, result.snapshot_complete,
+       result.promotion_applied,
+       (result.promotion_applied OR result.promotion_skipped_reason IS NOT NULL)::boolean
+           AS promotion_evaluated,
+       result.promotion_skipped_reason
 FROM latest_finalized
 JOIN account_inventory_poll_provider_results AS result
   ON result.poll_run_id = latest_finalized.poll_run_id
 ORDER BY latest_finalized.instance_id, result.provider;
+
+-- name: ListCurrentAccountInventorySnapshot :many
+SELECT snapshot.account_key::text AS account_key,
+       snapshot.normalized_email::text AS normalized_email,
+       snapshot.basic_status::text AS basic_status,
+       snapshot.success_count::bigint AS success_count,
+       snapshot.failed_count::bigint AS failed_count,
+       snapshot.recent_request_count::bigint AS recent_request_count,
+       snapshot.last_refresh_at::timestamptz AS last_refresh_at,
+       snapshot.next_retry_at::timestamptz AS next_retry_at,
+       snapshot.source_updated_at::timestamptz AS source_updated_at,
+       snapshot.observed_at::timestamptz AS observed_at
+FROM public.control_list_current_account_inventory_snapshot(
+    sqlc.arg(instance_id)::uuid,
+    sqlc.arg(provider)::text,
+    sqlc.arg(after_account_key)::text,
+    sqlc.arg(page_limit)::integer
+) AS snapshot;

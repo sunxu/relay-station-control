@@ -1522,7 +1522,7 @@ func TestDurableJobProtectedDownEachEvidenceClassPreservesPriorSchema(t *testing
 			}
 			definition := syntheticJobDefinition("test.down_" + testCase.name)
 			testCase.setup(t, ctx, database, definition)
-			err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down")
+			err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "3")
 			if err == nil || !strings.Contains(err.Error(), "durable job evidence exists") {
 				t.Fatalf("%s evidence down = %v", testCase.name, err)
 			}

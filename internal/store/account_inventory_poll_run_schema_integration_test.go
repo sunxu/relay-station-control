@@ -139,6 +139,19 @@ func TestInventoryPollRepositoryClaimFinalizeAndFencing(t *testing.T) {
 		fixture.nodeType, fixture.contract, fixture.policyID, fixture.activeProviders); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_bindings(
+		node_type,driver_contract_version,policy_version_id,bound_by,bound_at
+	) VALUES ($1,$2,$3,'integration-test',clock_timestamp())`, fixture.nodeType,
+		fixture.contract, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_activations(
+		node_type,driver_contract_version,policy_version_id,effective_from,
+		activated_by,created_at
+	) VALUES ($1,$2,$3,CURRENT_TIMESTAMP,'integration-test',CURRENT_TIMESTAMP)`,
+		fixture.nodeType, fixture.contract, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
 	slot := currentPollSlot(t, ctx, database.owner)
 	pollRunID := uuid.New()
 	_, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs (
@@ -203,15 +216,20 @@ func TestInventoryPollRepositoryClaimFinalizeAndFencing(t *testing.T) {
 	}
 	var status string
 	var observedAt time.Time
-	var providerCount int
+	var providerCount, snapshotCount, duplicateCount, stateCount int
 	if err := database.owner.QueryRow(ctx, `SELECT status,observed_at,
-		(SELECT count(*) FROM account_inventory_poll_provider_results WHERE poll_run_id=$1)
-		FROM account_inventory_poll_runs WHERE poll_run_id=$1`, pollRunID).
-		Scan(&status, &observedAt, &providerCount); err != nil {
+		(SELECT count(*) FROM account_inventory_poll_provider_results WHERE poll_run_id=$1),
+		(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$1),
+		(SELECT count(*) FROM account_inventory_poll_duplicates WHERE poll_run_id=$1),
+		(SELECT count(*) FROM account_inventory_provider_states WHERE instance_id=$2)
+		FROM account_inventory_poll_runs WHERE poll_run_id=$1`, pollRunID, fixture.instanceID).
+		Scan(&status, &observedAt, &providerCount, &snapshotCount, &duplicateCount, &stateCount); err != nil {
 		t.Fatal(err)
 	}
-	if status != "finalized" || observedAt.IsZero() || providerCount != len(fixture.activeProviders) {
-		t.Fatalf("finalized evidence = %s/%v/%d", status, observedAt, providerCount)
+	if status != "finalized" || observedAt.IsZero() || providerCount != len(fixture.activeProviders) ||
+		snapshotCount != 0 || duplicateCount != 0 || stateCount != 0 {
+		t.Fatalf("finalized evidence = %s/%v/%d/%d/%d/%d",
+			status, observedAt, providerCount, snapshotCount, duplicateCount, stateCount)
 	}
 }
 
@@ -409,7 +427,7 @@ func TestAccountInventoryPollMigrationDownRefusesEvidence(t *testing.T) {
 	),$2,clock_timestamp())`, instanceID, policyID); err != nil {
 		t.Fatal(err)
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "4"); err == nil {
 		t.Fatal("migration down unexpectedly removed nonempty poll evidence")
 	}
 	var present bool

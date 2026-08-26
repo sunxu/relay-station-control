@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountInventoryPollDuplicate struct {
+	PollRunID       pgtype.UUID        `json:"poll_run_id"`
+	InstanceID      pgtype.UUID        `json:"instance_id"`
+	Provider        string             `json:"provider"`
+	AccountKey      string             `json:"account_key"`
+	OccurrenceCount int32              `json:"occurrence_count"`
+	ObservedAt      pgtype.Timestamptz `json:"observed_at"`
+}
+
 type AccountInventoryPollProviderResult struct {
 	PollRunID              pgtype.UUID `json:"poll_run_id"`
 	Provider               string      `json:"provider"`
@@ -18,6 +27,8 @@ type AccountInventoryPollProviderResult struct {
 	SnapshotComplete       bool        `json:"snapshot_complete"`
 	Degraded               bool        `json:"degraded"`
 	Reason                 string      `json:"reason"`
+	PromotionApplied       bool        `json:"promotion_applied"`
+	PromotionSkippedReason pgtype.Text `json:"promotion_skipped_reason"`
 }
 
 type AccountInventoryPollRun struct {
@@ -56,6 +67,36 @@ type AccountInventoryPollRun struct {
 	OutOfScopeProviderCount  pgtype.Int4        `json:"out_of_scope_provider_count"`
 	NodeVersion              pgtype.Text        `json:"node_version"`
 	NodeCommit               pgtype.Text        `json:"node_commit"`
+	PromotionSkippedReason   pgtype.Text        `json:"promotion_skipped_reason"`
+}
+
+type AccountInventoryProviderState struct {
+	InstanceID         pgtype.UUID        `json:"instance_id"`
+	Provider           string             `json:"provider"`
+	CurrentPollRunID   pgtype.UUID        `json:"current_poll_run_id"`
+	CurrentScheduledAt pgtype.Timestamptz `json:"current_scheduled_at"`
+	LastCompleteAt     pgtype.Timestamptz `json:"last_complete_at"`
+	SourceObservedAt   pgtype.Timestamptz `json:"source_observed_at"`
+	SourceNodeVersion  string             `json:"source_node_version"`
+	SourceNodeCommit   string             `json:"source_node_commit"`
+	State              string             `json:"state"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AccountInventorySnapshotItem struct {
+	PollRunID          pgtype.UUID        `json:"poll_run_id"`
+	InstanceID         pgtype.UUID        `json:"instance_id"`
+	Provider           string             `json:"provider"`
+	AccountKey         string             `json:"account_key"`
+	NormalizedEmail    string             `json:"normalized_email"`
+	BasicStatus        string             `json:"basic_status"`
+	SuccessCount       int64              `json:"success_count"`
+	FailedCount        int64              `json:"failed_count"`
+	RecentRequestCount int64              `json:"recent_request_count"`
+	LastRefreshAt      pgtype.Timestamptz `json:"last_refresh_at"`
+	NextRetryAt        pgtype.Timestamptz `json:"next_retry_at"`
+	SourceUpdatedAt    pgtype.Timestamptz `json:"source_updated_at"`
+	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
 }
 
 type AsyncJob struct {

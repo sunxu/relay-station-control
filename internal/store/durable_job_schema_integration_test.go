@@ -497,15 +497,18 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 		if err := connection.QueryRow(ctx, `SELECT max(version_id) FILTER (WHERE is_applied), to_regclass('public.async_job_kinds')::text FROM goose_db_version`).Scan(&version, &tableName); err != nil {
 			t.Fatal(err)
 		}
-		if stage != "after-down" && (version != 4 || tableName == nil) {
+		if stage == "after-up" && (version != 6 || tableName == nil) {
 			t.Fatalf("%s version/table = %d/%v", stage, version, tableName)
 		}
 		if stage == "after-down" && (version != 3 || tableName != nil) {
 			t.Fatalf("%s version/table = %d/%v", stage, version, tableName)
 		}
+		if stage == "after-reup" && (version != 4 || tableName == nil) {
+			t.Fatalf("%s version/table = %d/%v", stage, version, tableName)
+		}
 	}
 	checkVersion("after-up")
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down"); err != nil {
+	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down-to", "3"); err != nil {
 		t.Fatalf("empty durable-job down: %v", err)
 	}
 	checkVersion("after-down")
@@ -711,7 +714,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 		t.Fatalf("failed mutation leaked state %s/%d", persistedStatus, confirmationCount)
 	}
 	pool.Close()
-	err = runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down")
+	err = runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down-to", "3")
 	if err == nil || !strings.Contains(err.Error(), "durable job evidence exists") {
 		t.Fatalf("protected down error = %v", err)
 	}
