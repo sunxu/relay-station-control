@@ -14,14 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  HTTP_PROXY: ""
-  HTTPS_PROXY: ""
-  ALL_PROXY: ""
-  http_proxy: ""
-  https_proxy: ""
-  all_proxy: ""
-  NO_PROXY: "*"
-  no_proxy: "*"
   GOPROXY: https://goproxy.cn,direct
   npm_config_registry: https://registry.npmmirror.com
   OPENSPEC_VERSION: "1.10.0"
@@ -53,28 +45,31 @@ jobs:
 
       - name: Install web dependencies
         working-directory: web
-        run: npm ci
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npm ci
+
+      - name: Lint GitHub Actions workflows
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
       - name: Generate committed artifacts
-        run: make generate
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy make generate
 
       - name: Verify generated artifacts are committed
         run: git diff --exit-code
 
       - name: Run tests
-        run: make test
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy make test
 
       - name: Build
-        run: make build
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy make build
 
       - name: Run Go vet
-        run: go vet ./...
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go vet ./...
 
       - name: Validate active OpenSpec change
-        run: npx --yes @fission-ai/openspec@${OPENSPEC_VERSION} validate add-control-account-inventory-snapshot-foundation --strict
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@${OPENSPEC_VERSION} validate add-control-account-inventory-snapshot-foundation --strict
 
       - name: Validate all OpenSpec specifications
-        run: npx --yes @fission-ai/openspec@${OPENSPEC_VERSION} validate --all --strict
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@${OPENSPEC_VERSION} validate --all --strict
 
       - name: Check patches for whitespace errors
         run: git diff --check
@@ -95,4 +90,4 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Run Go tests with the race detector
-        run: go test -race ./... -count=1
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go test -race ./... -count=1
