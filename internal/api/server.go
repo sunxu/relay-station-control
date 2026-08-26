@@ -23,6 +23,8 @@ type Server struct {
 	assets       assetstore.AssetReader
 	assetMetrics *AssetMetrics
 	nodeCursor   *assetstore.NodeCursorCodec
+	jobs         assetstore.JobReader
+	jobCursor    *assetstore.JobCursorCodec
 }
 
 type requestIDContextKey struct{}
@@ -56,6 +58,23 @@ func NewAuthenticatedServerWithAssets(version string, service *authn.Service, as
 	server.assets = assets
 	server.assetMetrics = metrics
 	server.nodeCursor = codec
+	return server, nil
+}
+
+func NewAuthenticatedServerWithAssetsAndJobs(version string, service *authn.Service, assets assetstore.AssetReader, metrics *AssetMetrics, jobs assetstore.JobReader) (*Server, error) {
+	server, err := NewAuthenticatedServerWithAssets(version, service, assets, metrics)
+	if err != nil {
+		return nil, err
+	}
+	if jobs == nil {
+		return nil, errors.New("api: durable job reader is unavailable")
+	}
+	codec, err := assetstore.NewJobCursorCodec(service.Config().Keyring)
+	if err != nil {
+		return nil, errors.New("api: durable job cursor initialization failed")
+	}
+	server.jobs = jobs
+	server.jobCursor = codec
 	return server, nil
 }
 

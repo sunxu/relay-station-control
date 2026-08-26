@@ -32,6 +32,7 @@ const (
 	DomainCSRFDigest          KeyDomain = "csrf-digest"
 	DomainBootstrapComparison KeyDomain = "bootstrap-comparison"
 	DomainAssetCursorDigest   KeyDomain = "asset-cursor-digest"
+	DomainJobCursorDigest     KeyDomain = "job-cursor-digest"
 )
 
 func (v KeyDomain) Valid() bool {
@@ -39,7 +40,7 @@ func (v KeyDomain) Valid() bool {
 	case DomainTOTPEncryption, DomainSessionDigest, DomainChallengeDigest,
 		DomainActivationDigest, DomainRecoveryCodeDigest, DomainLoginFingerprint,
 		DomainSourceFingerprint, DomainCSRFDigest, DomainBootstrapComparison,
-		DomainAssetCursorDigest:
+		DomainAssetCursorDigest, DomainJobCursorDigest:
 		return true
 	default:
 		return false

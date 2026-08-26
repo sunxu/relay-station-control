@@ -107,19 +107,19 @@ func (e AdministratorActivationStartRequestStage) Valid() bool {
 
 // Defines values for AdministratorStatus.
 const (
-	Disabled AdministratorStatus = "disabled"
-	Enabled  AdministratorStatus = "enabled"
-	Pending  AdministratorStatus = "pending"
+	AdministratorStatusDisabled AdministratorStatus = "disabled"
+	AdministratorStatusEnabled  AdministratorStatus = "enabled"
+	AdministratorStatusPending  AdministratorStatus = "pending"
 )
 
 // Valid indicates whether the value is a known member of the AdministratorStatus enum.
 func (e AdministratorStatus) Valid() bool {
 	switch e {
-	case Disabled:
+	case AdministratorStatusDisabled:
 		return true
-	case Enabled:
+	case AdministratorStatusEnabled:
 		return true
-	case Pending:
+	case AdministratorStatusPending:
 		return true
 	default:
 		return false
@@ -303,6 +303,141 @@ const (
 func (e HealthResponseStatus) Valid() bool {
 	switch e {
 	case Ok:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobActorType.
+const (
+	Reconciler JobActorType = "reconciler"
+	Service    JobActorType = "service"
+	System     JobActorType = "system"
+	Worker     JobActorType = "worker"
+)
+
+// Valid indicates whether the value is a known member of the JobActorType enum.
+func (e JobActorType) Valid() bool {
+	switch e {
+	case Reconciler:
+		return true
+	case Service:
+		return true
+	case System:
+		return true
+	case Worker:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobEventType.
+const (
+	JobEventTypeCancelRequested     JobEventType = "cancel_requested"
+	JobEventTypeCancelled           JobEventType = "cancelled"
+	JobEventTypeClaimed             JobEventType = "claimed"
+	JobEventTypeEnqueued            JobEventType = "enqueued"
+	JobEventTypeFailed              JobEventType = "failed"
+	JobEventTypeRetryScheduled      JobEventType = "retry_scheduled"
+	JobEventTypeRollbackStarted     JobEventType = "rollback_started"
+	JobEventTypeRolledBack          JobEventType = "rolled_back"
+	JobEventTypeSucceeded           JobEventType = "succeeded"
+	JobEventTypeVerificationStarted JobEventType = "verification_started"
+)
+
+// Valid indicates whether the value is a known member of the JobEventType enum.
+func (e JobEventType) Valid() bool {
+	switch e {
+	case JobEventTypeCancelRequested:
+		return true
+	case JobEventTypeCancelled:
+		return true
+	case JobEventTypeClaimed:
+		return true
+	case JobEventTypeEnqueued:
+		return true
+	case JobEventTypeFailed:
+		return true
+	case JobEventTypeRetryScheduled:
+		return true
+	case JobEventTypeRollbackStarted:
+		return true
+	case JobEventTypeRolledBack:
+		return true
+	case JobEventTypeSucceeded:
+		return true
+	case JobEventTypeVerificationStarted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobOutboxStatus.
+const (
+	JobOutboxStatusFailed     JobOutboxStatus = "failed"
+	JobOutboxStatusPending    JobOutboxStatus = "pending"
+	JobOutboxStatusPublishing JobOutboxStatus = "publishing"
+	JobOutboxStatusRetryWait  JobOutboxStatus = "retry_wait"
+	JobOutboxStatusSent       JobOutboxStatus = "sent"
+	JobOutboxStatusSuppressed JobOutboxStatus = "suppressed"
+)
+
+// Valid indicates whether the value is a known member of the JobOutboxStatus enum.
+func (e JobOutboxStatus) Valid() bool {
+	switch e {
+	case JobOutboxStatusFailed:
+		return true
+	case JobOutboxStatusPending:
+		return true
+	case JobOutboxStatusPublishing:
+		return true
+	case JobOutboxStatusRetryWait:
+		return true
+	case JobOutboxStatusSent:
+		return true
+	case JobOutboxStatusSuppressed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobStatus.
+const (
+	JobStatusCancelled   JobStatus = "cancelled"
+	JobStatusFailed      JobStatus = "failed"
+	JobStatusPending     JobStatus = "pending"
+	JobStatusRetryWait   JobStatus = "retry_wait"
+	JobStatusRolledBack  JobStatus = "rolled_back"
+	JobStatusRollingBack JobStatus = "rolling_back"
+	JobStatusRunning     JobStatus = "running"
+	JobStatusSucceeded   JobStatus = "succeeded"
+	JobStatusVerifying   JobStatus = "verifying"
+)
+
+// Valid indicates whether the value is a known member of the JobStatus enum.
+func (e JobStatus) Valid() bool {
+	switch e {
+	case JobStatusCancelled:
+		return true
+	case JobStatusFailed:
+		return true
+	case JobStatusPending:
+		return true
+	case JobStatusRetryWait:
+		return true
+	case JobStatusRolledBack:
+		return true
+	case JobStatusRollingBack:
+		return true
+	case JobStatusRunning:
+		return true
+	case JobStatusSucceeded:
+		return true
+	case JobStatusVerifying:
 		return true
 	default:
 		return false
@@ -660,6 +795,83 @@ type HealthResponse struct {
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
 
+// JobActorType defines model for JobActorType.
+type JobActorType string
+
+// JobDetail defines model for JobDetail.
+type JobDetail struct {
+	AttemptCount    int                 `json:"attempt_count"`
+	AvailableAt     time.Time           `json:"available_at"`
+	CancelRequested bool                `json:"cancel_requested"`
+	CompletedAt     *time.Time          `json:"completed_at,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
+	ErrorCode       *JobErrorCode       `json:"error_code,omitempty"`
+	Events          []JobLifecycleEvent `json:"events"`
+	JobId           openapi_types.UUID  `json:"job_id"`
+	JobKind         JobKind             `json:"job_kind"`
+	MaxAttempts     int                 `json:"max_attempts"`
+	OperationId     openapi_types.UUID  `json:"operation_id"`
+	OutboxStatus    JobOutboxStatus     `json:"outbox_status"`
+	StartedAt       *time.Time          `json:"started_at,omitempty"`
+	Status          JobStatus           `json:"status"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+}
+
+// JobErrorCode defines model for JobErrorCode.
+type JobErrorCode = string
+
+// JobEventType defines model for JobEventType.
+type JobEventType string
+
+// JobKind defines model for JobKind.
+type JobKind = string
+
+// JobLifecycleEvent defines model for JobLifecycleEvent.
+type JobLifecycleEvent struct {
+	ActorType    JobActorType   `json:"actor_type"`
+	AttemptCount int            `json:"attempt_count"`
+	ErrorCode    *JobErrorCode  `json:"error_code,omitempty"`
+	EventType    JobEventType   `json:"event_type"`
+	FromStatus   *JobStatus     `json:"from_status,omitempty"`
+	OccurredAt   time.Time      `json:"occurred_at"`
+	ReasonCode   *JobReasonCode `json:"reason_code,omitempty"`
+	Sequence     int            `json:"sequence"`
+	ToStatus     JobStatus      `json:"to_status"`
+}
+
+// JobListResponse defines model for JobListResponse.
+type JobListResponse struct {
+	Items      []JobSummary `json:"items"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+}
+
+// JobOutboxStatus defines model for JobOutboxStatus.
+type JobOutboxStatus string
+
+// JobReasonCode defines model for JobReasonCode.
+type JobReasonCode = string
+
+// JobStatus defines model for JobStatus.
+type JobStatus string
+
+// JobSummary defines model for JobSummary.
+type JobSummary struct {
+	AttemptCount    int                `json:"attempt_count"`
+	AvailableAt     time.Time          `json:"available_at"`
+	CancelRequested bool               `json:"cancel_requested"`
+	CompletedAt     *time.Time         `json:"completed_at,omitempty"`
+	CreatedAt       time.Time          `json:"created_at"`
+	ErrorCode       *JobErrorCode      `json:"error_code,omitempty"`
+	JobId           openapi_types.UUID `json:"job_id"`
+	JobKind         JobKind            `json:"job_kind"`
+	MaxAttempts     int                `json:"max_attempts"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+	OutboxStatus    JobOutboxStatus    `json:"outbox_status"`
+	StartedAt       *time.Time         `json:"started_at,omitempty"`
+	Status          JobStatus          `json:"status"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+}
+
 // LoginName defines model for LoginName.
 type LoginName = string
 
@@ -952,6 +1164,16 @@ type ResetPendingBootstrapParams struct {
 type StartBootstrapParams struct {
 	// XBootstrapSecret Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
 	XBootstrapSecret BootstrapSecret `json:"X-Bootstrap-Secret"`
+}
+
+// ListJobsParams defines parameters for ListJobs.
+type ListJobsParams struct {
+	JobKind     *JobKind   `form:"job_kind,omitempty" json:"job_kind,omitempty"`
+	Status      *JobStatus `form:"status,omitempty" json:"status,omitempty"`
+	CreatedFrom *time.Time `form:"created_from,omitempty" json:"created_from,omitempty"`
+	CreatedTo   *time.Time `form:"created_to,omitempty" json:"created_to,omitempty"`
+	Cursor      *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit       *int       `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // CompleteAdministratorActivationJSONRequestBody defines body for CompleteAdministratorActivation for application/json ContentType.
@@ -1367,6 +1589,12 @@ type ServerInterface interface {
 	// GetHealthz Report process health
 	// (GET /api/healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
+	// ListJobs List durable Control jobs
+	// (GET /api/jobs)
+	ListJobs(w http.ResponseWriter, r *http.Request, params ListJobsParams)
+	// GetJob Read one durable Control job
+	// (GET /api/jobs/{job_id})
+	GetJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -1514,6 +1742,18 @@ func (_ Unimplemented) GetEnvironment(w http.ResponseWriter, r *http.Request) {
 // GetHealthz Report process health
 // (GET /api/healthz)
 func (_ Unimplemented) GetHealthz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListJobs List durable Control jobs
+// (GET /api/jobs)
+func (_ Unimplemented) ListJobs(w http.ResponseWriter, r *http.Request, params ListJobsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetJob Read one durable Control job
+// (GET /api/jobs/{job_id})
+func (_ Unimplemented) GetJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2386,6 +2626,130 @@ func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListJobs operation middleware
+func (siw *ServerInterfaceWrapper) ListJobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListJobsParams
+
+	// ------------- Optional query parameter "job_kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "job_kind", r.URL.Query(), &params.JobKind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "job_kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "created_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "created_from", r.URL.Query(), &params.CreatedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "created_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "created_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "created_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "created_to", r.URL.Query(), &params.CreatedTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "created_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "created_to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListJobs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetJob operation middleware
+func (siw *ServerInterfaceWrapper) GetJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", chi.URLParam(r, "job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetJob(w, r, jobId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2570,6 +2934,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/provider-policies/current", wrapper.GetCurrentProviderInventoryPolicy)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/jobs", wrapper.ListJobs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/jobs/{job_id}", wrapper.GetJob)
 	})
 
 	return r

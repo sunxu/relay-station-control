@@ -128,6 +128,8 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodGet, "/api/assets/nodes/{instance_id}"}:       "getNodeAsset",
 		{http.MethodGet, "/api/assets/drivers"}:                   "listNodeDrivers",
 		{http.MethodGet, "/api/assets/provider-policies/current"}: "getCurrentProviderInventoryPolicy",
+		{http.MethodGet, "/api/jobs"}:                             "listJobs",
+		{http.MethodGet, "/api/jobs/{job_id}"}:                    "getJob",
 	}
 
 	if len(operations) != len(expected) {
@@ -208,6 +210,122 @@ func TestOpenAPIAssetRegistryIsProtectedReadOnlyAndSecretFree(t *testing.T) {
 		if schema == nil || schema.Value == nil || schema.Value.MinLength != expected.min || schema.Value.Pattern != expected.pattern {
 			t.Errorf("schema %s canonical constraint = %#v, want min=%d pattern=%q", schemaName, schema, expected.min, expected.pattern)
 		}
+	}
+}
+
+func TestOpenAPIDurableJobsAreProtectedReadOnlyAndRedacted(t *testing.T) {
+	document := loadDocument(t)
+	jobs := map[string]string{
+		"/api/jobs":          "#/components/schemas/JobListResponse",
+		"/api/jobs/{job_id}": "#/components/schemas/JobDetail",
+	}
+	for path, schemaRef := range jobs {
+		item := document.Paths.Find(path)
+		if item == nil || item.Get == nil {
+			t.Errorf("missing durable job GET %s", path)
+			continue
+		}
+		if len(item.Operations()) != 1 {
+			t.Errorf("durable job path %s declares non-GET operations", path)
+		}
+		if item.Get.Security != nil {
+			t.Errorf("durable job GET %s must inherit administrator session security", path)
+		}
+		for _, status := range []int{http.StatusUnauthorized, http.StatusServiceUnavailable} {
+			if item.Get.Responses.Status(status) == nil {
+				t.Errorf("durable job GET %s lacks %d response", path, status)
+			}
+		}
+		response := item.Get.Responses.Status(http.StatusOK)
+		if response == nil || response.Value == nil {
+			t.Errorf("durable job GET %s lacks 200 response", path)
+			continue
+		}
+		media := response.Value.Content.Get("application/json")
+		if media == nil || media.Schema == nil || media.Schema.Ref != schemaRef {
+			t.Errorf("durable job GET %s schema = %#v, want %s", path, media, schemaRef)
+		}
+	}
+
+	forbidden := map[string]bool{
+		"payload": true, "payload_hash": true, "idempotency_key": true,
+		"lease_owner": true, "lease_fencing_token": true, "lease_expires_at": true,
+		"error_summary": true, "envelope": true,
+	}
+	for _, schemaName := range []string{"JobSummary", "JobDetail", "JobLifecycleEvent"} {
+		schema := document.Components.Schemas[schemaName]
+		if schema == nil || schema.Value == nil {
+			t.Fatalf("missing schema %s", schemaName)
+		}
+		for property := range schema.Value.Properties {
+			if forbidden[property] {
+				t.Errorf("schema %s exposes forbidden property %s", schemaName, property)
+			}
+		}
+	}
+}
+
+func TestOpenAPIJobDetailResponseSchemaIsSatisfiableAndStrict(t *testing.T) {
+	document := loadDocument(t)
+	operation := document.Paths.Find("/api/jobs/{job_id}").Get
+	response := operation.Responses.Status(http.StatusOK)
+	if response == nil || response.Value == nil {
+		t.Fatal("job detail GET lacks a resolved 200 response")
+	}
+	media := response.Value.Content.Get("application/json")
+	if media == nil || media.Schema == nil || media.Schema.Value == nil {
+		t.Fatal("job detail GET lacks a resolved JSON response schema")
+	}
+
+	valid := map[string]any{
+		"job_id":           "00000000-0000-4000-8000-000000000101",
+		"operation_id":     "00000000-0000-4000-8000-000000000201",
+		"job_kind":         "synthetic.noop",
+		"status":           "running",
+		"attempt_count":    1,
+		"max_attempts":     3,
+		"available_at":     "2026-08-25T10:00:00Z",
+		"started_at":       "2026-08-25T10:01:00Z",
+		"completed_at":     nil,
+		"cancel_requested": false,
+		"error_code":       nil,
+		"outbox_status":    "suppressed",
+		"created_at":       "2026-08-25T10:00:00Z",
+		"updated_at":       "2026-08-25T10:01:00Z",
+		"events": []any{map[string]any{
+			"sequence":      1,
+			"event_type":    "enqueued",
+			"from_status":   nil,
+			"to_status":     "pending",
+			"attempt_count": 0,
+			"actor_type":    "service",
+			"reason_code":   "job_enqueued",
+			"error_code":    nil,
+			"occurred_at":   "2026-08-25T10:00:00Z",
+		}},
+	}
+	options := []openapi3.SchemaValidationOption{openapi3.EnableJSONSchema2020(), openapi3.EnableFormatValidation()}
+	if err := media.Schema.Value.VisitJSON(valid, options...); err != nil {
+		t.Fatalf("valid job detail response does not satisfy its schema: %v", err)
+	}
+
+	withForbiddenField := make(map[string]any, len(valid)+1)
+	for key, value := range valid {
+		withForbiddenField[key] = value
+	}
+	withForbiddenField["payload"] = map[string]any{"secret": "canary"}
+	if err := media.Schema.Value.VisitJSON(withForbiddenField, options...); err == nil {
+		t.Fatal("job detail response schema accepted a forbidden unknown property")
+	}
+
+	withoutEvents := make(map[string]any, len(valid)-1)
+	for key, value := range valid {
+		if key != "events" {
+			withoutEvents[key] = value
+		}
+	}
+	if err := media.Schema.Value.VisitJSON(withoutEvents, options...); err == nil {
+		t.Fatal("job detail response schema accepted a response without events")
 	}
 }
 
