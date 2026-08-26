@@ -16,7 +16,6 @@ concurrency:
 env:
   GOPROXY: https://goproxy.cn,direct
   npm_config_registry: https://registry.npmmirror.com
-  OPENSPEC_VERSION: "1.10.0"
 
 jobs:
   quality:
@@ -66,10 +65,10 @@ jobs:
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go vet ./...
 
       - name: Validate active OpenSpec change
-        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@${OPENSPEC_VERSION} validate add-control-account-inventory-snapshot-foundation --strict
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-snapshot-foundation --strict
 
       - name: Validate all OpenSpec specifications
-        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@${OPENSPEC_VERSION} validate --all --strict
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 
       - name: Check patches for whitespace errors
         run: git diff --check
