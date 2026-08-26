@@ -46,6 +46,52 @@ func TestObserverEmitsOnlyClosedLogAllowlist(t *testing.T) {
 	}
 }
 
+func TestObserverEmitsClosedProviderPromotionClassification(t *testing.T) {
+	instanceID := uuid.New()
+	tests := []struct {
+		record LogRecord
+		want   map[string]string
+	}{
+		{
+			record: LogRecord{
+				Component: ComponentWorker, Action: ActionPromote, Result: LogResultSuccess, Reason: ReasonNone,
+				State: StateFinalized, InstanceID: instanceID, Provider: "openai",
+			},
+			want: map[string]string{"result": "success", "reason": "none", "provider": "openai"},
+		},
+		{
+			record: LogRecord{
+				Component: ComponentWorker, Action: ActionPromote, Result: LogResultSkipped, Reason: ReasonStalePoll,
+				State: StateFinalized, InstanceID: instanceID, Provider: "openai",
+			},
+			want: map[string]string{"result": "skipped", "reason": "stale_poll", "provider": "openai"},
+		},
+	}
+	for _, test := range tests {
+		var output bytes.Buffer
+		observer := NewObserver(slog.New(slog.NewJSONHandler(&output, nil)))
+		if !observer.Record(context.Background(), test.record) {
+			t.Fatal("valid promotion record was dropped")
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+			t.Fatal(err)
+		}
+		for field, want := range test.want {
+			if fields[field] != want {
+				t.Fatalf("%s = %v, want %q", field, fields[field], want)
+			}
+		}
+		for _, forbidden := range []string{
+			"email", "account_key", "poll_run_id", "policy_version", "version", "commit", "endpoint", "secret", "error",
+		} {
+			if _, exists := fields[forbidden]; exists {
+				t.Fatalf("forbidden promotion log field %q", forbidden)
+			}
+		}
+	}
+}
+
 func TestObserverDropsCanariesAcrossEveryUntrustedField(t *testing.T) {
 	canary := "endpoint-secret-email-body-header-error-canary"
 	invalid := []LogRecord{
@@ -56,6 +102,11 @@ func TestObserverDropsCanariesAcrossEveryUntrustedField(t *testing.T) {
 		{Component: ComponentWorker, Action: ActionClaim, Result: LogResultFailure, Reason: ReasonDatabaseUnavailable, NodeType: NodeType(canary)},
 		{Component: ComponentWorker, Action: ActionClaim, Result: LogResultFailure, Reason: ReasonDatabaseUnavailable, State: State(canary)},
 		{Component: ComponentWorker, Action: ActionClaim, Result: LogResultFailure, Reason: ReasonDatabaseUnavailable, AttemptBucket: AttemptBucket(canary)},
+		{Component: ComponentWorker, Action: ActionClaim, Result: LogResultFailure, Reason: ReasonDatabaseUnavailable, Provider: canary},
+		{Component: ComponentWorker, Action: ActionPromote, Result: LogResultSkipped, Reason: ReasonPolicyChanged, State: StateFinalized, InstanceID: uuid.New(), Provider: canary + "@example.invalid"},
+		{Component: ComponentWorker, Action: ActionPromote, Result: LogResultSuccess, Reason: ReasonPolicyChanged, State: StateFinalized, InstanceID: uuid.New(), Provider: "openai"},
+		{Component: ComponentWorker, Action: ActionPromote, Result: LogResultSkipped, Reason: ReasonNone, State: StateFinalized, InstanceID: uuid.New(), Provider: "openai"},
+		{Component: ComponentScheduler, Action: ActionPromote, Result: LogResultSkipped, Reason: ReasonPolicyChanged, State: StateFinalized, InstanceID: uuid.New(), Provider: "openai"},
 	}
 	var output bytes.Buffer
 	observer := NewObserver(slog.New(slog.NewJSONHandler(&output, nil)))

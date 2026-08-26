@@ -25,12 +25,25 @@ var providerLabelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 type State string
 
+// PromotionSkippedReason is the complete set of persisted reasons for a
+// Provider observation not becoming the current snapshot. The empty value is
+// reserved for an applied promotion and is never exported as a label.
+type PromotionSkippedReason string
+
 const (
 	StatePending   State = "pending"
 	StateRunning   State = "running"
 	StateRetryWait State = "retry_wait"
 	StateFinalized State = "finalized"
 	StateAbandoned State = "abandoned"
+
+	PromotionSkippedPolicyChanged              PromotionSkippedReason = "policy_changed"
+	PromotionSkippedTransportFailed            PromotionSkippedReason = "transport_failed"
+	PromotionSkippedContractInvalid            PromotionSkippedReason = "contract_invalid"
+	PromotionSkippedDiskFallback               PromotionSkippedReason = "disk_fallback"
+	PromotionSkippedProviderIdentityIncomplete PromotionSkippedReason = "provider_identity_incomplete"
+	PromotionSkippedProviderDuplicate          PromotionSkippedReason = "provider_duplicate"
+	PromotionSkippedStalePoll                  PromotionSkippedReason = "stale_poll"
 )
 
 func (state State) Valid() bool {
@@ -42,11 +55,27 @@ func (state State) Valid() bool {
 	}
 }
 
-// ProviderSnapshot contains only the policy-controlled provider label and one
-// aggregate completeness bit. It cannot carry an account identity or response.
+func (reason PromotionSkippedReason) Valid() bool {
+	switch reason {
+	case PromotionSkippedPolicyChanged, PromotionSkippedTransportFailed, PromotionSkippedContractInvalid,
+		PromotionSkippedDiskFallback, PromotionSkippedProviderIdentityIncomplete, PromotionSkippedProviderDuplicate,
+		PromotionSkippedStalePoll:
+		return true
+	default:
+		return false
+	}
+}
+
+// ProviderSnapshot contains only the policy-controlled provider label and
+// aggregate completeness/promotion evidence. It cannot carry an account
+// identity or response. PromotionEvaluated distinguishes pre-Migration
+// finalized rows from an evaluated skip.
 type ProviderSnapshot struct {
-	Provider         string
-	SnapshotComplete bool
+	Provider               string
+	SnapshotComplete       bool
+	PromotionEvaluated     bool
+	PromotionApplied       bool
+	PromotionSkippedReason PromotionSkippedReason
 }
 
 func (ProviderSnapshot) Format(state fmt.State, _ rune) {
@@ -86,15 +115,17 @@ type SnapshotProvider interface {
 }
 
 type Collector struct {
-	provider     SnapshotProvider
-	maxInstances int
-	state        *prometheus.Desc
-	schedulerLag *prometheus.Desc
-	queueWait    *prometheus.Desc
-	startLag     *prometheus.Desc
-	transport    *prometheus.Desc
-	contract     *prometheus.Desc
-	providerDone *prometheus.Desc
+	provider      SnapshotProvider
+	maxInstances  int
+	state         *prometheus.Desc
+	schedulerLag  *prometheus.Desc
+	queueWait     *prometheus.Desc
+	startLag      *prometheus.Desc
+	transport     *prometheus.Desc
+	contract      *prometheus.Desc
+	providerDone  *prometheus.Desc
+	promotion     *prometheus.Desc
+	promotionSkip *prometheus.Desc
 }
 
 func NewCollector(provider SnapshotProvider, maxInstances int) (*Collector, error) {
@@ -139,6 +170,16 @@ func NewCollector(provider SnapshotProvider, maxInstances int) (*Collector, erro
 			"Whether the pinned-policy provider aggregate was complete.",
 			[]string{"instance_id", "provider"}, nil,
 		),
+		promotion: prometheus.NewDesc(
+			"relay_control_account_inventory_provider_promotion_applied",
+			"Whether the latest finalized Provider observation became the current snapshot.",
+			[]string{"instance_id", "provider"}, nil,
+		),
+		promotionSkip: prometheus.NewDesc(
+			"relay_control_account_inventory_provider_promotion_skipped",
+			"A fixed reason why the latest finalized Provider observation did not become the current snapshot.",
+			[]string{"instance_id", "provider", "reason"}, nil,
+		),
 	}, nil
 }
 
@@ -150,6 +191,8 @@ func (collector *Collector) Describe(channel chan<- *prometheus.Desc) {
 	channel <- collector.transport
 	channel <- collector.contract
 	channel <- collector.providerDone
+	channel <- collector.promotion
+	channel <- collector.promotionSkip
 }
 
 func (collector *Collector) Collect(channel chan<- prometheus.Metric) {
@@ -174,6 +217,19 @@ func (collector *Collector) Collect(channel chan<- prometheus.Metric) {
 				value = 1
 			}
 			channel <- prometheus.MustNewConstMetric(collector.providerDone, prometheus.GaugeValue, value, instanceID, provider.Provider)
+			if provider.PromotionEvaluated {
+				promotionValue := 0.0
+				if provider.PromotionApplied {
+					promotionValue = 1
+				}
+				channel <- prometheus.MustNewConstMetric(collector.promotion, prometheus.GaugeValue, promotionValue, instanceID, provider.Provider)
+			}
+			if provider.PromotionEvaluated && !provider.PromotionApplied {
+				channel <- prometheus.MustNewConstMetric(
+					collector.promotionSkip, prometheus.GaugeValue, 1,
+					instanceID, provider.Provider, string(provider.PromotionSkippedReason),
+				)
+			}
 		}
 	}
 }
@@ -225,6 +281,11 @@ func (snapshot Snapshot) valid(maxInstances int) bool {
 				return false
 			}
 			if _, duplicate := providers[provider.Provider]; duplicate {
+				return false
+			}
+			if (!provider.PromotionEvaluated && (provider.PromotionApplied || provider.PromotionSkippedReason != "")) ||
+				(provider.PromotionEvaluated && (provider.PromotionApplied == (provider.PromotionSkippedReason != "") ||
+					(!provider.PromotionApplied && !provider.PromotionSkippedReason.Valid()))) {
 				return false
 			}
 			providers[provider.Provider] = struct{}{}

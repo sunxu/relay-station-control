@@ -66,8 +66,14 @@ func TestAccountInventoryPollMetricsProviderBuildsPinnedProviderAllowlist(t *tes
 			{InstanceID: second, Status: controlstore.PollRunPending, QueueWait: 2 * time.Second},
 		},
 		providers: []controlstore.PollProviderMetric{
-			{InstanceID: first, Provider: "zeta", SnapshotComplete: false},
-			{InstanceID: first, Provider: "alpha", SnapshotComplete: true},
+			{
+				InstanceID: first, Provider: "zeta", SnapshotComplete: false,
+				PromotionEvaluated: true, PromotionSkippedReason: "provider_identity_incomplete",
+			},
+			{
+				InstanceID: first, Provider: "alpha", SnapshotComplete: true,
+				PromotionEvaluated: true, PromotionApplied: true,
+			},
 		},
 	}}
 	snapshot, err := provider.AccountInventoryPollMetricsSnapshot(context.Background())
@@ -78,11 +84,32 @@ func TestAccountInventoryPollMetricsProviderBuildsPinnedProviderAllowlist(t *tes
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
 	}
 	if snapshot.Instances[0].State != controlpollobs.StateFinalized || len(snapshot.Instances[0].Providers) != 2 ||
-		snapshot.Instances[0].Providers[0].Provider != "alpha" {
+		snapshot.Instances[0].Providers[0].Provider != "alpha" ||
+		!snapshot.Instances[0].Providers[0].PromotionEvaluated ||
+		!snapshot.Instances[0].Providers[0].PromotionApplied ||
+		snapshot.Instances[0].Providers[1].PromotionSkippedReason != controlpollobs.PromotionSkippedProviderIdentityIncomplete {
 		t.Fatalf("unexpected instance projection: %+v", snapshot.Instances[0])
 	}
 	if snapshot.Instances[1].State != controlpollobs.StatePending || snapshot.Instances[1].PollStartLagSeconds != nil {
 		t.Fatalf("pending poll exported a synthetic start lag: %+v", snapshot.Instances[1])
+	}
+}
+
+func TestAccountInventoryPollMetricsProviderPreservesLegacyPromotionState(t *testing.T) {
+	instanceID := uuid.New()
+	provider := accountInventoryPollMetricsProvider{store: fakeAccountInventoryPollMetricsStore{
+		runs: []controlstore.PollRunMetric{{InstanceID: instanceID, Status: controlstore.PollRunFinalized}},
+		providers: []controlstore.PollProviderMetric{{
+			InstanceID: instanceID, Provider: "openai", SnapshotComplete: true,
+		}},
+	}}
+	snapshot, err := provider.AccountInventoryPollMetricsSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	metric := snapshot.Instances[0].Providers[0]
+	if metric.PromotionEvaluated || metric.PromotionApplied || metric.PromotionSkippedReason != "" {
+		t.Fatalf("legacy promotion state was fabricated: %+v", metric)
 	}
 }
 

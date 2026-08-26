@@ -31,8 +31,8 @@ func TestCollectorExportsOnlyPersistentAggregateAllowlist(t *testing.T) {
 			SchedulerLagSeconds: &schedulerLag, QueueWaitSeconds: &queueWait, PollStartLagSeconds: &startLag,
 			TransportSuccess: &transport, ContractValid: &contract,
 			Providers: []ProviderSnapshot{
-				{Provider: "antigravity", SnapshotComplete: false},
-				{Provider: "geminicli", SnapshotComplete: false},
+				{Provider: "antigravity", SnapshotComplete: true, PromotionEvaluated: true, PromotionApplied: true},
+				{Provider: "geminicli", SnapshotComplete: false, PromotionEvaluated: true, PromotionSkippedReason: PromotionSkippedPolicyChanged},
 			},
 		}},
 	}}
@@ -54,6 +54,8 @@ func TestCollectorExportsOnlyPersistentAggregateAllowlist(t *testing.T) {
 		"relay_control_account_inventory_transport_success":          {"instance_id": {}},
 		"relay_control_account_inventory_contract_valid":             {"instance_id": {}},
 		"relay_control_account_inventory_provider_snapshot_complete": {"instance_id": {}, "provider": {}},
+		"relay_control_account_inventory_provider_promotion_applied": {"instance_id": {}, "provider": {}},
+		"relay_control_account_inventory_provider_promotion_skipped": {"instance_id": {}, "provider": {}, "reason": {}},
 	}
 	if len(families) != len(wantLabels) {
 		t.Fatalf("metric families = %d, want %d", len(families), len(wantLabels))
@@ -83,6 +85,57 @@ func TestCollectorExportsOnlyPersistentAggregateAllowlist(t *testing.T) {
 	restartedFamilies, err := restartedRegistry.Gather()
 	if err != nil || len(restartedFamilies) != len(families) {
 		t.Fatalf("restart gather = %d families, %v", len(restartedFamilies), err)
+	}
+}
+
+func TestCollectorRejectsContradictoryOrUncontrolledPromotionEvidence(t *testing.T) {
+	tests := []ProviderSnapshot{
+		{Provider: "openai", PromotionApplied: true},
+		{Provider: "openai", PromotionSkippedReason: PromotionSkippedPolicyChanged},
+		{Provider: "openai", PromotionEvaluated: true, PromotionApplied: true, PromotionSkippedReason: PromotionSkippedPolicyChanged},
+		{Provider: "openai", PromotionEvaluated: true, PromotionSkippedReason: PromotionSkippedReason("raw-error-canary")},
+	}
+	for _, provider := range tests {
+		collector, err := NewCollector(staticSnapshotProvider{snapshot: Snapshot{
+			AllowedProviders: []string{"openai"},
+			Instances: []InstanceSnapshot{{
+				InstanceID: uuid.New(), State: StateFinalized, Providers: []ProviderSnapshot{provider},
+			}},
+		}}, 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		registry := prometheus.NewRegistry()
+		registry.MustRegister(collector)
+		_, gatherErr := registry.Gather()
+		if gatherErr == nil || strings.Contains(gatherErr.Error(), "raw-error-canary") {
+			t.Fatalf("invalid promotion evidence was exported: %v", gatherErr)
+		}
+	}
+}
+
+func TestCollectorKeepsPreSnapshotFinalizedRowsObservableWithoutSyntheticPromotion(t *testing.T) {
+	collector, err := NewCollector(staticSnapshotProvider{snapshot: Snapshot{
+		AllowedProviders: []string{"openai"},
+		Instances: []InstanceSnapshot{{
+			InstanceID: uuid.New(), State: StateFinalized,
+			Providers: []ProviderSnapshot{{Provider: "openai", SnapshotComplete: true}},
+		}},
+	}}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(collector)
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() == "relay_control_account_inventory_provider_promotion_applied" ||
+			family.GetName() == "relay_control_account_inventory_provider_promotion_skipped" {
+			t.Fatalf("pre-snapshot row emitted synthetic promotion metric %s", family.GetName())
+		}
 	}
 }
 

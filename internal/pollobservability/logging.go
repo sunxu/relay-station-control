@@ -24,6 +24,7 @@ const (
 	ActionClaim     Action = "claim"
 	ActionDispatch  Action = "dispatch"
 	ActionFinalize  Action = "finalize"
+	ActionPromote   Action = "promote"
 	ActionReconcile Action = "reconcile"
 	ActionShutdown  Action = "shutdown"
 
@@ -45,6 +46,13 @@ const (
 	ReasonAttemptsExhausted           Reason = "attempts_exhausted"
 	ReasonNodeObservationFinalized    Reason = "node_observation_finalized"
 	ReasonControlExecutionInterrupted Reason = "control_execution_interrupted"
+	ReasonPolicyChanged               Reason = "policy_changed"
+	ReasonTransportFailed             Reason = "transport_failed"
+	ReasonContractInvalid             Reason = "contract_invalid"
+	ReasonDiskFallback                Reason = "disk_fallback"
+	ReasonProviderIdentityIncomplete  Reason = "provider_identity_incomplete"
+	ReasonProviderDuplicate           Reason = "provider_duplicate"
+	ReasonStalePoll                   Reason = "stale_poll"
 	ReasonShutdown                    Reason = "shutdown"
 
 	AttemptNone      AttemptBucket = ""
@@ -66,6 +74,7 @@ type LogRecord struct {
 	State         State
 	AttemptBucket AttemptBucket
 	InstanceID    uuid.UUID
+	Provider      string
 }
 
 func (LogRecord) Format(state fmt.State, _ rune) {
@@ -76,6 +85,19 @@ func (record LogRecord) Valid() bool {
 	if !validComponent(record.Component) || !validAction(record.Action) || !validLogResult(record.Result) ||
 		!validLogReason(record.Reason) || (record.NodeType != "" && record.NodeType != NodeTypeCLIProxyAPI) ||
 		(record.State != "" && !record.State.Valid()) || !validAttemptBucket(record.AttemptBucket) {
+		return false
+	}
+	if record.Action == ActionPromote {
+		if record.Component != ComponentWorker || record.InstanceID == uuid.Nil || record.State != StateFinalized ||
+			len(record.Provider) > maximumProviderBytes || !providerLabelPattern.MatchString(record.Provider) {
+			return false
+		}
+		if record.Result == LogResultSuccess {
+			return record.Reason == ReasonNone
+		}
+		return record.Result == LogResultSkipped && validPromotionLogReason(record.Reason)
+	}
+	if record.Provider != "" || validPromotionLogReason(record.Reason) {
 		return false
 	}
 	return true
@@ -109,6 +131,9 @@ func (observer *Observer) Record(ctx context.Context, record LogRecord) bool {
 	if record.InstanceID != uuid.Nil {
 		attributes = append(attributes, slog.String("instance_id", record.InstanceID.String()))
 	}
+	if record.Provider != "" {
+		attributes = append(attributes, slog.String("provider", record.Provider))
+	}
 	observer.logger.LogAttrs(ctx, slog.LevelInfo, "account inventory poll", attributes...)
 	return true
 }
@@ -119,7 +144,7 @@ func validComponent(value Component) bool {
 
 func validAction(value Action) bool {
 	switch value {
-	case ActionSchedule, ActionClaim, ActionDispatch, ActionFinalize, ActionReconcile, ActionShutdown:
+	case ActionSchedule, ActionClaim, ActionDispatch, ActionFinalize, ActionPromote, ActionReconcile, ActionShutdown:
 		return true
 	default:
 		return false
@@ -135,7 +160,18 @@ func validLogReason(value Reason) bool {
 	case ReasonNone, ReasonInvalidRuntimeConfig, ReasonDatabaseUnavailable, ReasonAssetIneligible,
 		ReasonAssetInconsistent, ReasonCapacityUnavailable, ReasonInvalidClaim, ReasonGraceExhausted,
 		ReasonLeaseExpired, ReasonLostFencing, ReasonLostLease, ReasonAttemptsExhausted, ReasonNodeObservationFinalized,
-		ReasonControlExecutionInterrupted, ReasonShutdown:
+		ReasonControlExecutionInterrupted, ReasonPolicyChanged, ReasonTransportFailed, ReasonContractInvalid,
+		ReasonDiskFallback, ReasonProviderIdentityIncomplete, ReasonProviderDuplicate, ReasonStalePoll, ReasonShutdown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validPromotionLogReason(value Reason) bool {
+	switch value {
+	case ReasonPolicyChanged, ReasonTransportFailed, ReasonContractInvalid, ReasonDiskFallback,
+		ReasonProviderIdentityIncomplete, ReasonProviderDuplicate, ReasonStalePoll:
 		return true
 	default:
 		return false

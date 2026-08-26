@@ -194,6 +194,11 @@ func (provider accountInventoryPollMetricsProvider) AccountInventoryPollMetricsS
 		allowed[metric.Provider] = struct{}{}
 		instance.Providers = append(instance.Providers, controlpollobs.ProviderSnapshot{
 			Provider: metric.Provider, SnapshotComplete: metric.SnapshotComplete,
+			PromotionEvaluated: metric.PromotionEvaluated,
+			PromotionApplied:   metric.PromotionApplied,
+			PromotionSkippedReason: controlpollobs.PromotionSkippedReason(
+				metric.PromotionSkippedReason,
+			),
 		})
 	}
 	for providerName := range allowed {
