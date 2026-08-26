@@ -167,7 +167,10 @@ export default function ManagementPage() {
           <Text type="secondary">{session.administrator.display_name} · {session.administrator.login_name}</Text>
         </div>
         <Space wrap>
-          <Button onClick={() => auth.navigate("assets")}>资产注册表</Button>
+          <Space wrap>
+            <Button onClick={() => auth.navigate("jobs")}>持久任务</Button>
+            <Button onClick={() => auth.navigate("assets")}>资产注册表</Button>
+          </Space>
           <Button danger loading={busy} onClick={() => void logout()}>注销</Button>
         </Space>
       </Flex>

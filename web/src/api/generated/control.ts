@@ -29,6 +29,147 @@ import type {
   UseQueryResult
 } from '@tanstack/react-query';
 
+/**
+ * @minLength 1
+ * @maxLength 64
+ * @pattern ^[a-z][a-z0-9._-]*$
+ */
+export type JobKind = string;
+
+export type JobStatus = typeof JobStatus[keyof typeof JobStatus];
+
+
+export const JobStatus = {
+  pending: 'pending',
+  running: 'running',
+  verifying: 'verifying',
+  retry_wait: 'retry_wait',
+  rolling_back: 'rolling_back',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @minLength 1
+ * @maxLength 64
+ * @pattern ^[a-z][a-z0-9_]*$
+ */
+export type JobErrorCode = string;
+
+export type JobOutboxStatus = typeof JobOutboxStatus[keyof typeof JobOutboxStatus];
+
+
+export const JobOutboxStatus = {
+  pending: 'pending',
+  publishing: 'publishing',
+  sent: 'sent',
+  suppressed: 'suppressed',
+  retry_wait: 'retry_wait',
+  failed: 'failed',
+} as const;
+
+export interface JobSummary {
+  job_id: string;
+  operation_id: string;
+  job_kind: JobKind;
+  status: JobStatus;
+  /** @minimum 0 */
+  attempt_count: number;
+  /** @minimum 1 */
+  max_attempts: number;
+  available_at: string;
+  /** @nullable */
+  started_at?: string | null;
+  /** @nullable */
+  completed_at?: string | null;
+  cancel_requested: boolean;
+  error_code?: JobErrorCode | null;
+  outbox_status: JobOutboxStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobListResponse {
+  /** @maxItems 200 */
+  items: JobSummary[];
+  /**
+     * @maxLength 512
+     * @nullable
+     */
+  next_cursor?: string | null;
+}
+
+export type JobEventType = typeof JobEventType[keyof typeof JobEventType];
+
+
+export const JobEventType = {
+  enqueued: 'enqueued',
+  claimed: 'claimed',
+  retry_scheduled: 'retry_scheduled',
+  verification_started: 'verification_started',
+  rollback_started: 'rollback_started',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  rolled_back: 'rolled_back',
+  cancelled: 'cancelled',
+  cancel_requested: 'cancel_requested',
+} as const;
+
+export type JobActorType = typeof JobActorType[keyof typeof JobActorType];
+
+
+export const JobActorType = {
+  service: 'service',
+  worker: 'worker',
+  reconciler: 'reconciler',
+  system: 'system',
+} as const;
+
+/**
+ * @minLength 1
+ * @maxLength 64
+ * @pattern ^[a-z][a-z0-9_]*$
+ */
+export type JobReasonCode = string;
+
+export interface JobLifecycleEvent {
+  /** @minimum 1 */
+  sequence: number;
+  event_type: JobEventType;
+  from_status?: JobStatus | null;
+  to_status: JobStatus;
+  /** @minimum 0 */
+  attempt_count: number;
+  actor_type: JobActorType;
+  reason_code?: JobReasonCode | null;
+  error_code?: JobErrorCode | null;
+  occurred_at: string;
+}
+
+export interface JobDetail {
+  job_id: string;
+  operation_id: string;
+  job_kind: JobKind;
+  status: JobStatus;
+  /** @minimum 0 */
+  attempt_count: number;
+  /** @minimum 1 */
+  max_attempts: number;
+  available_at: string;
+  /** @nullable */
+  started_at?: string | null;
+  /** @nullable */
+  completed_at?: string | null;
+  cancel_requested: boolean;
+  error_code?: JobErrorCode | null;
+  outbox_status: JobOutboxStatus;
+  created_at: string;
+  updated_at: string;
+  events: JobLifecycleEvent[];
+}
+
 export type EnvironmentAssetEnvironmentType = typeof EnvironmentAssetEnvironmentType[keyof typeof EnvironmentAssetEnvironmentType];
 
 
@@ -656,6 +797,23 @@ monitoring_active?: boolean;
 export type GetCurrentProviderInventoryPolicyParams = {
 node_type: NodeType;
 driver_contract_version: DriverContractVersion;
+};
+
+export type ListJobsParams = {
+job_kind?: JobKind;
+status?: JobStatus;
+created_from?: string;
+created_to?: string;
+/**
+ * @minLength 1
+ * @maxLength 512
+ */
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
 };
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -3732,6 +3890,295 @@ export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetCurrentProviderInventoryPolicyQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listJobsResponse200 = {
+  data: JobListResponse
+  status: 200
+}
+
+export type listJobsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listJobsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listJobsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listJobsResponseSuccess = (listJobsResponse200) & {
+  headers: Headers;
+};
+export type listJobsResponseError = (listJobsResponse400 | listJobsResponse401 | listJobsResponse503) & {
+  headers: Headers;
+};
+
+export type listJobsResponse = (listJobsResponseSuccess | listJobsResponseError)
+
+export const getListJobsUrl = (params?: ListJobsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/jobs?${stringifiedParams}` : `/api/jobs`
+}
+
+/**
+ * Returns a stable, redacted view of durable jobs. Payloads, payload hashes,
+ * idempotency keys, leases, Outbox envelopes, and error summaries are never projected.
+ * @summary List durable Control jobs
+ */
+export const listJobs = async (params?: ListJobsParams, options?: RequestInit): Promise<listJobsResponse> => {
+
+  const res = await fetch(getListJobsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listJobsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listJobsResponse
+}
+
+
+
+
+
+export const getListJobsQueryKey = (params?: ListJobsParams,) => {
+    return [
+    `/api/jobs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListJobsQueryOptions = <TData = Awaited<ReturnType<typeof listJobs>>, TError = ErrorResponse>(params?: ListJobsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listJobs>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListJobsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listJobs>>> = ({ signal }) => listJobs(params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listJobs>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListJobsQueryResult = NonNullable<Awaited<ReturnType<typeof listJobs>>>
+export type ListJobsQueryError = ErrorResponse
+
+
+export function useListJobs<TData = Awaited<ReturnType<typeof listJobs>>, TError = ErrorResponse>(
+ params: undefined |  ListJobsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listJobs>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listJobs>>,
+          TError,
+          Awaited<ReturnType<typeof listJobs>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListJobs<TData = Awaited<ReturnType<typeof listJobs>>, TError = ErrorResponse>(
+ params?: ListJobsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listJobs>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listJobs>>,
+          TError,
+          Awaited<ReturnType<typeof listJobs>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListJobs<TData = Awaited<ReturnType<typeof listJobs>>, TError = ErrorResponse>(
+ params?: ListJobsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listJobs>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List durable Control jobs
+ */
+
+export function useListJobs<TData = Awaited<ReturnType<typeof listJobs>>, TError = ErrorResponse>(
+ params?: ListJobsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listJobs>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListJobsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getJobResponse200 = {
+  data: JobDetail
+  status: 200
+}
+
+export type getJobResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getJobResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getJobResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getJobResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getJobResponseSuccess = (getJobResponse200) & {
+  headers: Headers;
+};
+export type getJobResponseError = (getJobResponse400 | getJobResponse401 | getJobResponse404 | getJobResponse503) & {
+  headers: Headers;
+};
+
+export type getJobResponse = (getJobResponseSuccess | getJobResponseError)
+
+export const getGetJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/jobs/${jobId}`
+}
+
+/**
+ * Returns a redacted job and its immutable, redacted lifecycle timeline.
+ * @summary Read one durable Control job
+ */
+export const getJob = async (jobId: string, options?: RequestInit): Promise<getJobResponse> => {
+
+  const res = await fetch(getGetJobUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getJobResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getJobResponse
+}
+
+
+
+
+
+export const getGetJobQueryKey = (jobId: string,) => {
+    return [
+    `/api/jobs/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetJobQueryOptions = <TData = Awaited<ReturnType<typeof getJob>>, TError = ErrorResponse>(jobId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJob>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetJobQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getJob>>> = ({ signal }) => getJob(jobId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: jobId !== null && jobId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getJob>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetJobQueryResult = NonNullable<Awaited<ReturnType<typeof getJob>>>
+export type GetJobQueryError = ErrorResponse
+
+
+export function useGetJob<TData = Awaited<ReturnType<typeof getJob>>, TError = ErrorResponse>(
+ jobId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJob>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getJob>>,
+          TError,
+          Awaited<ReturnType<typeof getJob>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetJob<TData = Awaited<ReturnType<typeof getJob>>, TError = ErrorResponse>(
+ jobId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJob>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getJob>>,
+          TError,
+          Awaited<ReturnType<typeof getJob>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetJob<TData = Awaited<ReturnType<typeof getJob>>, TError = ErrorResponse>(
+ jobId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJob>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one durable Control job
+ */
+
+export function useGetJob<TData = Awaited<ReturnType<typeof getJob>>, TError = ErrorResponse>(
+ jobId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJob>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetJobQueryOptions(jobId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -11,12 +11,14 @@ import type {
 import { AuthApiError, generatedAuthApi } from "../api/auth-api";
 import type { AuthApi } from "../api/auth-api";
 
-export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "management" | "assets" | "one-time" | "unavailable";
+export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "management" | "assets" | "jobs" | "one-time" | "unavailable";
 
-type AuthenticatedRoute = Extract<AuthRoute, "management" | "assets">;
+type AuthenticatedRoute = Extract<AuthRoute, "management" | "assets" | "jobs">;
 
 function authenticatedRouteFromLocation(): AuthenticatedRoute {
-  return window.location.pathname === "/assets" ? "assets" : "management";
+  if (window.location.pathname === "/assets") return "assets";
+  if (window.location.pathname === "/jobs") return "jobs";
+  return "management";
 }
 
 export interface OneTimeMaterial {
@@ -113,9 +115,9 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
 
   const navigate = useCallback((next: AuthRoute) => {
     wipeOneTime();
-    if (next === "assets" || next === "management") {
+    if (next === "assets" || next === "jobs" || next === "management") {
       authenticatedRouteRef.current = next;
-      window.history.pushState(null, "", next === "assets" ? "/assets" : "/");
+      window.history.pushState(null, "", next === "management" ? "/" : `/${next}`);
     }
     setRoute(next);
   }, [wipeOneTime]);
