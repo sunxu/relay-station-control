@@ -36,7 +36,7 @@
 - [x] 5.2 注入 snapshot items 批量写、duplicate 写、binding lock、Provider pointer 更新、promotion 标记和 finalized 前后崩溃，验证事务全有或全无
 - [x] 5.3 验证 finalize 提交未知继续使用原 poll/pinned policy/最多两次 Control 恢复；已形成的 Node 失败或 promotion skip 不触发同槽 Node 重试
 - [x] 5.4 并发执行旧/新槽 finalize，证明 Provider 指针只前进不倒退；并发策略切换只能得到“旧策略完整提升”或“policy_changed 不提升”两种结果
-- [ ] 5.5 PostgreSQL 停止、连接耗尽、事务超时和重启后从持久 poll 状态恢复，不产生内存当前快照、不 busy-loop、不影响 Gateway/Node 数据面（已覆盖 synthetic outage、事务/lease 超时和数据面隔离；尚未执行真实 PostgreSQL stop/连接耗尽/restart 演练）
+- [x] 5.5 PostgreSQL 停止、连接耗尽、事务超时和重启后从持久 poll 状态恢复，不产生内存当前快照、不 busy-loop、不影响 Gateway/Node 数据面（PG18 named-volume gate 已覆盖真实 stop/restart、in-flight finalize 回滚、SQLSTATE 57014/53300、持久 poll/fencing 恢复和 synthetic loopback HTTP 数据面隔离；不声称访问真实 Gateway/Node）
 
 ## 6. Store、读取边界与观测
 

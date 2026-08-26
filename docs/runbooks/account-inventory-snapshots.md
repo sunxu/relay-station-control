@@ -84,6 +84,14 @@ export npm_config_registry='https://registry.npmmirror.com'
 deploy/acceptance/account-inventory-snapshot-run.sh static
 ```
 
+真实数据库恢复门禁使用 pinned PostgreSQL 18 镜像、loopback 动态端口和该次运行独占的命名卷。它会在 finalize 等待 policy binding lock 时停止数据库，验证未提交事务全量回滚，再从持久 poll/lease/fencing 状态恢复；随后注入 `statement_timeout`、将 runtime LOGIN 角色的连接上限压到 1 并占满以确认 SQLSTATE `53300`，最后再次 stop/start 并从数据库重建 current snapshot 与指标。数据库停机期间只运行独立的 synthetic loopback HTTP 数据面，不访问 Gateway、真实 Node 或管理接口：
+
+```sh
+deploy/acceptance/account-inventory-snapshot-run.sh postgres
+```
+
+正常和失败退出都会定向删除该 Compose project、命名卷及 `/tmp` 下的受保护日志/二进制目录。输出只包含固定分类、SQLSTATE 和有界计数；不要为了排障回显 Goose/Store 原始日志、连接串、标识符或快照内容。
+
 敏感扫描目录只放脱敏数据库投影、Prometheus 文本、JSON 日志、固定错误、测试输出和验收 artifact，不得放真实响应、数据库 dump 或凭证。Scanner 不把 canary 放入 argv，也不回显命中文件或内容：
 
 ```sh

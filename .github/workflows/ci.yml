@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -65,7 +66,16 @@ jobs:
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go vet ./...
 
       - name: Validate active OpenSpec change
-        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-snapshot-foundation --strict
+        run: |
+          if [ -d openspec/changes/add-control-account-inventory-snapshot-foundation ]; then
+            env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+              npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-snapshot-foundation --strict
+          else
+            test -f openspec/specs/account-inventory-snapshot/spec.md
+            test -f openspec/specs/account-inventory-poll-run/spec.md
+            test "$(find openspec/changes/archive -mindepth 1 -maxdepth 1 -type d \
+              -name '*-add-control-account-inventory-snapshot-foundation' | wc -l | tr -d ' ')" -eq 1
+          fi
 
       - name: Validate all OpenSpec specifications
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
@@ -90,3 +100,23 @@ jobs:
 
       - name: Run Go tests with the race detector
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go test -race ./... -count=1
+
+  postgres_snapshot:
+    name: PostgreSQL 18 snapshot acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Run isolated PostgreSQL recovery acceptance
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-snapshot-run.sh postgres

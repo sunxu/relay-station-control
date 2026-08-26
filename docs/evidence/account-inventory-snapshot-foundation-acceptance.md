@@ -66,7 +66,15 @@ The complete `internal/inventorypoll` suite was executed with the race detector 
 - A synthetic unknown finalize outcome reused the same poll and pinned Provider evidence with a new fencing token, made exactly two Driver/finalize attempts and did not make a third attempt.
 - During a synthetic PostgreSQL reconciliation outage and after stopping the poll service, an independent data-plane simulator completed 50 of 50 requests while the management Driver call count remained zero.
 
-These pure-Go results do not claim database transaction fault injection, policy-lock races, pointer monotonicity or PostgreSQL restart completion; those remain part of the isolated PostgreSQL gate.
+These pure-Go results do not claim database transaction fault injection, policy-lock races, pointer monotonicity or PostgreSQL restart completion; those are covered separately by the isolated PostgreSQL gate.
+
+The isolated named-volume PostgreSQL recovery gate passed on PostgreSQL major 18 with these bounded results:
+
+- A real finalize transaction was held at the policy-binding lock and PostgreSQL was stopped. Restart showed one persistent non-terminal poll and zero finalized/provider/snapshot/current-state rows; the expired lease reconciled to `retry_wait`, a second fencing token claimed attempt 2, the stale token was rejected and the new finalize atomically produced one Provider result, one item and one current state.
+- A 500-millisecond `statement_timeout` while holding the same binding lock returned SQLSTATE `57014` and left one run with zero Provider/item/state rows. Releasing the lock allowed the same fenced poll to finalize once.
+- The runtime LOGIN role was limited to one connection and that connection was held. A fresh PostgreSQL connection returned SQLSTATE `53300`; the service startup barrier made four bounded reconcile attempts, invoked the Driver zero times and stopped on context cancellation without busy-looping.
+- While PostgreSQL was unavailable, an independent loopback HTTP path completed `50/50` synthetic requests and the management request count remained zero. This demonstrates process/data-path isolation only; it does not claim a real Gateway or Node request.
+- A second database stop/start retained two current items, two current states and the latest run/Provider metric for each of two synthetic instances. The running server reported major version 18. The focused snapshot Store integration gate then passed in the same isolated database.
 
 The isolated PostgreSQL capacity gate recorded `0/1/1000`-candidate finalizes in `6/7/106` milliseconds. The largest case retained about `29.9` seconds of a 30-second lease and `119.9` seconds of a 120-second grace window. A forced 300-millisecond binding lock wait completed in 314 milliseconds; a forced 1.2-second wait under a one-second lease returned the fixed lost-lease classification and rolled back all Provider, snapshot and state rows.
 
@@ -103,6 +111,7 @@ go vet ./...
 deploy/acceptance/account-inventory-snapshot-run.sh static
 deploy/acceptance/account-inventory-snapshot-run.sh scan
 deploy/acceptance/account-inventory-snapshot-run.sh container
+deploy/acceptance/account-inventory-snapshot-run.sh postgres
 
 npx --yes @fission-ai/openspec@latest validate \
   add-control-account-inventory-snapshot-foundation --strict

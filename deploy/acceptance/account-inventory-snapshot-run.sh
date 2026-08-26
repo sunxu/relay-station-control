@@ -47,6 +47,9 @@ case "$mode" in
     "$script_directory/account-inventory-poll-container.sh"
     echo 'account_inventory_snapshot_container=success image_version=v7.2.141 request_count=1 request_wait_seconds=10 operation=auth_files_readonly'
     ;;
+  postgres)
+    "$script_directory/account-inventory-snapshot-postgres.sh"
+    ;;
   real-node)
     echo 'account_inventory_snapshot_acceptance=failed reason=real_node_adapter_not_wired request_count=0' >&2
     exit 2
