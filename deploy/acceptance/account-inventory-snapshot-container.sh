@@ -75,6 +75,28 @@ wait_for_postgres() {
   done
 }
 
+classify_official_image_exit() {
+  local exit_code
+  if docker logs "$node_name" 2>&1 | grep -qi 'exec format error'; then
+    fixed_failure 'official_image_architecture_invalid'
+  fi
+  if docker logs "$node_name" 2>&1 | grep -qi 'permission denied'; then
+    fixed_failure 'official_image_permission_denied'
+  fi
+  if docker logs "$node_name" 2>&1 | grep -qi 'read-only file system'; then
+    fixed_failure 'official_image_read_only_violation'
+  fi
+  if docker logs "$node_name" 2>&1 | grep -Eqi '(invalid|failed|error).{0,32}config|config.{0,32}(invalid|failed|error)'; then
+    fixed_failure 'official_image_config_invalid'
+  fi
+  exit_code="$(docker inspect "$node_name" --format '{{.State.ExitCode}}' 2>/dev/null)"
+  case "$exit_code" in
+    126|127) fixed_failure 'official_image_command_unavailable' ;;
+    137) fixed_failure 'official_image_resource_exhausted' ;;
+    *) fixed_failure 'official_image_exited' ;;
+  esac
+}
+
 main() {
   local suffix module_cache harness_log migration_log
 
@@ -203,7 +225,7 @@ main() {
       break
     fi
     if [ "$(docker inspect "$node_name" --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
-      fixed_failure 'official_image_exited'
+      classify_official_image_exit
     fi
     sleep 0.25
   done
