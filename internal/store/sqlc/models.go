@@ -8,6 +8,66 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AsyncJob struct {
+	JobID                    pgtype.UUID        `json:"job_id"`
+	IdempotencyKey           string             `json:"idempotency_key"`
+	JobKind                  string             `json:"job_kind"`
+	PayloadSchemaVersion     int32              `json:"payload_schema_version"`
+	OperationID              pgtype.UUID        `json:"operation_id"`
+	Payload                  []byte             `json:"payload"`
+	PayloadHash              []byte             `json:"payload_hash"`
+	Status                   string             `json:"status"`
+	Priority                 int16              `json:"priority"`
+	AttemptCount             int32              `json:"attempt_count"`
+	VerificationAttempt      int32              `json:"verification_attempt"`
+	MaxAttempts              int32              `json:"max_attempts"`
+	MaxVerificationAttempts  int32              `json:"max_verification_attempts"`
+	TimeoutSeconds           int32              `json:"timeout_seconds"`
+	LeaseSeconds             int32              `json:"lease_seconds"`
+	HeartbeatIntervalSeconds int32              `json:"heartbeat_interval_seconds"`
+	ReplaySafe               bool               `json:"replay_safe"`
+	RollbackAllowed          bool               `json:"rollback_allowed"`
+	AvailableAt              pgtype.Timestamptz `json:"available_at"`
+	DeadlineAt               pgtype.Timestamptz `json:"deadline_at"`
+	StartedAt                pgtype.Timestamptz `json:"started_at"`
+	CompletedAt              pgtype.Timestamptz `json:"completed_at"`
+	CancelRequestedAt        pgtype.Timestamptz `json:"cancel_requested_at"`
+	ErrorCode                pgtype.Text        `json:"error_code"`
+	ErrorSummary             pgtype.Text        `json:"error_summary"`
+	LeaseOwner               pgtype.Text        `json:"lease_owner"`
+	LeaseFencingToken        pgtype.UUID        `json:"lease_fencing_token"`
+	LeaseExpiresAt           pgtype.Timestamptz `json:"lease_expires_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AsyncJobEvent struct {
+	JobID      pgtype.UUID        `json:"job_id"`
+	Sequence   int64              `json:"sequence"`
+	EventType  string             `json:"event_type"`
+	FromStatus pgtype.Text        `json:"from_status"`
+	ToStatus   string             `json:"to_status"`
+	Attempt    int32              `json:"attempt"`
+	ReasonCode pgtype.Text        `json:"reason_code"`
+	ErrorCode  pgtype.Text        `json:"error_code"`
+	ActorType  string             `json:"actor_type"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+}
+
+type AsyncJobKind struct {
+	JobKind                        string             `json:"job_kind"`
+	PayloadSchemaVersion           int32              `json:"payload_schema_version"`
+	DefaultTimeoutSeconds          int32              `json:"default_timeout_seconds"`
+	LeaseSeconds                   int32              `json:"lease_seconds"`
+	HeartbeatIntervalSeconds       int32              `json:"heartbeat_interval_seconds"`
+	DefaultMaxAttempts             int32              `json:"default_max_attempts"`
+	DefaultMaxVerificationAttempts int32              `json:"default_max_verification_attempts"`
+	ReplaySafe                     bool               `json:"replay_safe"`
+	RollbackAllowed                bool               `json:"rollback_allowed"`
+	LifecycleStatus                string             `json:"lifecycle_status"`
+	CreatedAt                      pgtype.Timestamptz `json:"created_at"`
+}
+
 type AuditLog struct {
 	AuditID           pgtype.UUID        `json:"audit_id"`
 	OccurredAt        pgtype.Timestamptz `json:"occurred_at"`
@@ -176,6 +236,26 @@ type NodeDriver struct {
 	DisplayName           string             `json:"display_name"`
 	LifecycleStatus       string             `json:"lifecycle_status"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type OperationOutbox struct {
+	EventID           pgtype.UUID        `json:"event_id"`
+	EventKey          string             `json:"event_key"`
+	JobID             pgtype.UUID        `json:"job_id"`
+	OperationID       pgtype.UUID        `json:"operation_id"`
+	Topic             string             `json:"topic"`
+	Envelope          []byte             `json:"envelope"`
+	Status            string             `json:"status"`
+	AttemptCount      int32              `json:"attempt_count"`
+	MaxAttempts       int32              `json:"max_attempts"`
+	AvailableAt       pgtype.Timestamptz `json:"available_at"`
+	SentAt            pgtype.Timestamptz `json:"sent_at"`
+	ErrorCode         pgtype.Text        `json:"error_code"`
+	LeaseOwner        pgtype.Text        `json:"lease_owner"`
+	LeaseFencingToken pgtype.UUID        `json:"lease_fencing_token"`
+	LeaseExpiresAt    pgtype.Timestamptz `json:"lease_expires_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ProviderInventoryPolicyActivation struct {
