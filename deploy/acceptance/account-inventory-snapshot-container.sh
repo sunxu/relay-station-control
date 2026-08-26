@@ -197,10 +197,13 @@ main() {
   fi
 
   local ready=false
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 240); do
     if docker logs "$node_name" 2>&1 | grep -q 'API server started successfully'; then
       ready=true
       break
+    fi
+    if [ "$(docker inspect "$node_name" --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
+      fixed_failure 'official_image_exited'
     fi
     sleep 0.25
   done
