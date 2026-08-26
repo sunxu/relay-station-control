@@ -62,3 +62,30 @@ func TestScanDirectoryRejectsSymlinkAndMalformedCanaries(t *testing.T) {
 		t.Fatalf("duplicate canary result = %v", err)
 	}
 }
+
+func TestScanDirectoryCoversSnapshotIdentityUnknownFieldAndSQLCanaries(t *testing.T) {
+	directory := t.TempDir()
+	canaries := []string{
+		"endpoint-canary-43b7", "reference-canary-43b7", "key-canary-43b7",
+		"email-canary-43b7", "body-canary-43b7", "header-canary-43b7", "error-canary-43b7",
+		"account-key-canary-43b7", "unknown-field-canary-43b7", "sql-parameter-canary-43b7",
+	}
+	artifact := filepath.Join(directory, "snapshot-acceptance.log")
+	if err := os.WriteFile(artifact, []byte("fixed promotion classification only"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanDirectory(directory, canaries); err != nil {
+		t.Fatalf("clean snapshot artifacts rejected: %v", err)
+	}
+	for _, index := range []int{7, 8, 9} {
+		if err := os.WriteFile(artifact, []byte(canaries[index]), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := scanDirectory(directory, canaries); !errors.Is(err, errSensitiveCanaryFound) {
+			t.Fatalf("snapshot canary %d result = %v", index, err)
+		}
+	}
+	if err := scanDirectory(directory, canaries[:8]); !errors.Is(err, errInvalidScanConfiguration) {
+		t.Fatalf("partial snapshot canary set result = %v", err)
+	}
+}

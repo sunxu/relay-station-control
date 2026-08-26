@@ -22,7 +22,7 @@ var (
 	errSensitiveCanaryFound     = errors.New("poll canary scan found sensitive material")
 )
 
-var canaryEnvironmentNames = []string{
+var pollCanaryEnvironmentNames = []string{
 	"CONTROL_POLL_CANARY_ENDPOINT",
 	"CONTROL_POLL_CANARY_SECRET_REFERENCE",
 	"CONTROL_POLL_CANARY_SECRET_VALUE",
@@ -30,6 +30,15 @@ var canaryEnvironmentNames = []string{
 	"CONTROL_POLL_CANARY_RESPONSE_BODY",
 	"CONTROL_POLL_CANARY_RESPONSE_HEADER",
 	"CONTROL_POLL_CANARY_RAW_ERROR",
+}
+
+// Snapshot-specific canaries are an all-or-none extension so the existing
+// poll-run scanner remains backward compatible while snapshot acceptance can
+// also cover derived identities, unknown fields and SQL parameter artifacts.
+var snapshotCanaryEnvironmentNames = []string{
+	"CONTROL_POLL_CANARY_ACCOUNT_KEY",
+	"CONTROL_POLL_CANARY_UNKNOWN_FIELD",
+	"CONTROL_POLL_CANARY_SQL_PARAMETER",
 }
 
 func main() {
@@ -42,9 +51,23 @@ func main() {
 
 func run() error {
 	directory := os.Getenv("CONTROL_POLL_CANARY_SCAN_DIR")
-	canaries := make([]string, 0, len(canaryEnvironmentNames))
-	for _, name := range canaryEnvironmentNames {
+	canaries := make([]string, 0, len(pollCanaryEnvironmentNames)+len(snapshotCanaryEnvironmentNames))
+	for _, name := range pollCanaryEnvironmentNames {
 		canaries = append(canaries, os.Getenv(name))
+	}
+	snapshotCanaryCount := 0
+	for _, name := range snapshotCanaryEnvironmentNames {
+		if os.Getenv(name) != "" {
+			snapshotCanaryCount++
+		}
+	}
+	if snapshotCanaryCount != 0 && snapshotCanaryCount != len(snapshotCanaryEnvironmentNames) {
+		return errInvalidScanConfiguration
+	}
+	if snapshotCanaryCount == len(snapshotCanaryEnvironmentNames) {
+		for _, name := range snapshotCanaryEnvironmentNames {
+			canaries = append(canaries, os.Getenv(name))
+		}
 	}
 	return scanDirectory(directory, canaries)
 }
@@ -98,7 +121,8 @@ func scanDirectory(directory string, canaries []string) error {
 }
 
 func validCanaries(canaries []string) bool {
-	if len(canaries) != len(canaryEnvironmentNames) {
+	if len(canaries) != len(pollCanaryEnvironmentNames) &&
+		len(canaries) != len(pollCanaryEnvironmentNames)+len(snapshotCanaryEnvironmentNames) {
 		return false
 	}
 	seen := make(map[string]struct{}, len(canaries))
