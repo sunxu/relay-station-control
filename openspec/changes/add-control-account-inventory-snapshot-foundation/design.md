@@ -56,7 +56,7 @@
 - `account_inventory_poll_duplicates`：只保存 `poll_run_id`、`instance_id`、provider、`account_key`、`occurrence_count>=2` 与数据库时间；唯一键 `(poll_run_id, instance_id, account_key)`，不保存冲突状态或原始记录。
 - `account_inventory_provider_states`：唯一键 `(instance_id, provider)`，保存可空 `current_poll_run_id`、`last_complete_at`、来源 observed/version/commit 与受控状态。当前指针外键 `ON DELETE SET NULL`，来源元数据不能只依赖将来可清理的 poll 行。
 
-现有 `account_inventory_poll_runs` 增加可空封闭 `promotion_skipped_reason`；`account_inventory_poll_provider_results` 增加 `promotion_applied boolean NOT NULL DEFAULT false` 和可空封闭 `promotion_skipped_reason`。约束保证 applied 与 skip reason 互斥，applied 只能属于 finalized、runtime、contract-valid、snapshot-complete Provider，并且必须存在匹配 provider state 当前指针；不完整 Provider 不得有 snapshot items。
+现有 `account_inventory_poll_runs` 增加可空封闭 `promotion_skipped_reason`；`account_inventory_poll_provider_results` 增加 `promotion_applied boolean NOT NULL DEFAULT false` 和可空封闭 `promotion_skipped_reason`。Migration 前已 finalized 的历史行以 `false/NULL` 明确表示“旧契约未评估 promotion”，不伪造 skipped 原因；新 finalize v2 的每个 Provider 必须产生 applied 或固定 skipped reason。约束保证 applied 与 skip reason 互斥，applied 只能属于 finalized、runtime、contract-valid、snapshot-complete Provider，并且必须存在匹配 provider state 当前指针；不完整 Provider 不得有 snapshot items。
 
 运行时角色没有这些表的直接 INSERT/UPDATE/DELETE/TRUNCATE 权限，只能调用受控 finalize 和只读快照/指标函数。数据库 trigger 保护不可变 snapshot/duplicate 行和 Provider 指针不被绕过。
 
@@ -66,12 +66,12 @@
 
 1. 验证 Node 聚合、pinned active Provider 全集、snapshot candidates 与 duplicate evidence 的闭合集合和计数。
 2. 锁定 poll run 对应 `(node_type, driver_contract_version)` 的当前 policy binding 行。
-3. 比较 binding 当前版本与 poll 的 `provider_policy_version`。
+3. 在持有 binding 锁时，以最终数据库当前时间查询 activation history 中实际生效的版本，并与 poll 的 `provider_policy_version` 比较。binding 指针可能因未来预约 activation 提前指向下一版本，不能直接当作当前生效版本。
 4. 版本不同：保存完整 poll/provider/duplicate 采集证据，所有 Provider `promotion_applied=false`、原因 `policy_changed`，不写 snapshot items、不更新任何 Provider 指针。
 5. 版本相同：逐 Provider 应用下一节规则。
 6. 写入最终 poll 结果并置 `finalized`，全部在同一事务提交。
 
-策略切换事务必须锁同一 binding 行后关闭旧 activation、创建新 activation 并更新指针。因此 finalize 与策略切换只能有一个先完成：先 finalize 时旧策略 promotion 完成；先切换时旧 poll 只留证据。不得先读后写、用 Go 锁或当前时间猜测顺序。
+策略切换事务必须锁同一 binding 行后关闭旧 activation、创建新 activation 并更新指针。因此 finalize 与策略切换只能有一个先完成：先 finalize 时旧策略 promotion 完成；先切换且新 activation 已生效时旧 poll 只留证据。未来预约但尚未生效的 activation 不得阻止仍有效旧策略的 promotion。不得先读后写、用 Go 锁或应用时间猜测顺序。
 
 ### 5. Provider 独立 promotion，不完整 Provider 保留旧指针
 
@@ -82,7 +82,7 @@
 - 某 Provider 的不完整不会阻止同一 Node 其他完整 Provider promotion。Node 汇总 degraded 也不能覆盖 Provider 级判断。
 - unsupported/out-of-scope Provider 永不创建 state 或 snapshot item。
 
-指针只能前进到更晚 `scheduled_at`；同槽 fenced 幂等重放只能得到相同结果，较旧 poll 即使因人工 SQL 或延迟 Worker 到达也不能覆盖新指针。当前版本/commit 与 observed time 复制到 Provider state，未来清理 poll run 后仍保留当前来源语义。
+指针只能前进到更晚 `scheduled_at`；同槽 fenced 幂等重放只能得到相同结果。较旧 poll 因延迟 Worker 到达时仍保存其采集证据，但受影响 Provider 必须以固定 `stale_poll` 记录 `promotion_applied=false`，不能覆盖新指针或把整个 finalize 变成无界重试。当前版本/commit 与 observed time 复制到 Provider state，未来清理 poll run 后仍保留当前来源语义。
 
 ### 6. 快照写入属于 finalize，不创建第二任务或请求
 
@@ -111,13 +111,15 @@ relay_control_account_inventory_provider_promotion_skipped{instance_id,provider,
 
 reason 来自封闭集合；不新增 email、`account_key`、poll ID、policy ID、version/commit 或 raw error 标签。结构化日志沿用 poll allowlist，可记录固定 promotion action/result/reason 和受控 instance/provider；禁止格式化 snapshot request、AccountObservation 或数据库参数。
 
+Migration 前的 legacy finalized Provider 仍导出原 snapshot-complete 指标，但因为没有真实 promotion 判定而不导出 applied/skipped 指标；不得把 `false/NULL` 猜测成 policy_changed 或其他失败。新 finalize v2 之后的记录必须完整导出 applied 或一个 skipped reason。
+
 验收向 email、account_key、endpoint、Secret、header/body、错误和未知字段注入唯一 canary，并扫描 PostgreSQL 非快照表、日志、指标、错误、test output 与 acceptance artifact。标准化 email/account_key 只允许出现在受保护 snapshot/duplicate 表的预期列；scanner 不回显命中值。
 
 ### 9. Migration、回滚与后续兼容
 
 Migration 为 forward-only additive。应用发布顺序是先 Migration、再同时理解新 finalize 契约的二进制；旧二进制回滚时停止 poll service，避免调用旧函数签名，并保留所有新表和字段。普通生产环境禁止 down。
 
-受保护 down 只在 snapshot/duplicate/provider-state 全空、没有 poll/provider promotion 标记且没有后续外键依赖时恢复旧 finalize 函数并删除新增对象。Migration 正反向、非空保护、角色权限、函数 owner/search_path 和生成物可复现必须有 PostgreSQL 18 测试。
+受保护 down 只在 snapshot/duplicate/provider-state 全空、没有 poll/provider promotion 标记且没有后续外键依赖时恢复旧 finalize 函数并删除新增对象。当前不可变 trigger 会拒绝直接删除以及经 poll 父行触发的级联删除；未来历史保留 change 必须先引入显式受控且可审计的清理机制，完成 snapshot/duplicate 清理后才允许 poll 删除触发 Provider state 的 `ON DELETE SET NULL`，不得用 trigger 深度猜测放行。Migration 正反向、非空保护、角色权限、函数 owner/search_path 和生成物可复现必须有 PostgreSQL 18 测试。
 
 后续生命周期 change 只消费 `promotion_applied=true` 的 Provider 当前快照并在同一事务边界扩展 `account_inventory`；不得重新读取 Node 或从不完整/策略变化快照推进 missing。历史压缩、API/UI 和 HMAC metrics 继续由独立 change 设计。
 

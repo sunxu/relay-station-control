@@ -48,17 +48,25 @@ PostgreSQL SHALL 只为 promotion-applied 的完整 runtime Provider 保存 `acc
 - **WHEN** 运行时或维护误操作尝试 UPDATE/DELETE/TRUNCATE snapshot item 或 duplicate evidence
 - **THEN** 最小权限和不可变保护拒绝操作，历史证据保持不变
 
+#### Scenario: Migration 前已有 finalized Provider 证据
+- **WHEN** additive Migration 遇到旧 finalize 契约形成且没有 promotion 判定的 Provider 结果
+- **THEN** 历史行保持 snapshot-complete 聚合并以 promotion false/reason NULL 表示未评估，不伪造 snapshot、当前指针或 skipped 原因
+
 ### Requirement: finalize MUST 锁定当前策略并区分 completeness 与 promotion
 
-Control MUST 在现有 poll lease/fencing finalize 事务中锁定 poll run 对应的当前 Provider policy binding，并将其与不可变 `provider_policy_version` 比较。`provider_snapshot_complete` MUST 只描述返回内容完整性；`promotion_applied` MUST 只描述该 Provider 的 snapshot items 与当前指针已在本事务生效。两者不得互相替代。
+Control MUST 在现有 poll lease/fencing finalize 事务中锁定 poll run 对应的当前 Provider policy binding，并在持锁后按 PostgreSQL 当前时间从 activation history 取得实际生效版本，与不可变 `provider_policy_version` 比较。binding 指针 MAY 为未来预约 activation 提前更新，因此 MUST NOT 单独作为当前生效版本。`provider_snapshot_complete` MUST 只描述返回内容完整性；`promotion_applied` MUST 只描述该 Provider 的 snapshot items 与当前指针已在本事务生效。两者不得互相替代。
 
 #### Scenario: poll 后策略未变化
-- **WHEN** finalize 锁定 binding 后当前版本仍等于 poll pinned policy
+- **WHEN** finalize 锁定 binding 后数据库当前时间对应的实际生效版本仍等于 poll pinned policy
 - **THEN** Control 按 Provider 完整性规则决定 promotion，并在同一事务保存结果、items、指针和 applied 标记
 
 #### Scenario: poll 后策略已经变化
-- **WHEN** 当前 binding 版本不同于 poll pinned policy
+- **WHEN** finalize 持有 binding 锁时实际生效版本不同于 poll pinned policy
 - **THEN** Control 保存 poll/provider/duplicate 采集证据，全部 active Provider 标记 `promotion_applied=false` 与 `policy_changed`，不写 snapshot items、不更新当前指针，也不按新策略重解释旧观察
+
+#### Scenario: 新策略已预约但尚未生效
+- **WHEN** binding 指针已指向未来 activation，但数据库当前时间仍落在 poll pinned policy 的 active range
+- **THEN** Control 仍按当前实际生效的旧策略执行 Provider promotion，不提前标记 `policy_changed`
 
 #### Scenario: finalize 与策略切换并发
 - **WHEN** finalize 和策略切换同时竞争同一 binding 行
@@ -78,7 +86,7 @@ Control MUST 在现有 poll lease/fencing finalize 事务中锁定 poll run 对�
 
 #### Scenario: 迟到旧槽试图覆盖新指针
 - **WHEN** 较新槽已经成为 Provider 当前快照，较旧 poll 随后到达 finalize/promotion 路径
-- **THEN** 数据库拒绝指针倒退，较新来源元数据和当前快照保持不变
+- **THEN** 较旧 poll 保存采集证据并以 `stale_poll` 标记 promotion false，较新来源元数据和当前快照保持不变且不会产生无界重试
 
 ### Requirement: 不完整或非 runtime 观察 MUST NOT 生成快照
 
@@ -125,7 +133,7 @@ Poll 聚合、Provider 结果、duplicate evidence、snapshot items、Provider s
 - **THEN** 当前指针、最近完整时间和来源元数据保持旧值，只在 poll/provider 证据中记录本槽 skip
 
 #### Scenario: 当前来源 poll 将来被清理
-- **WHEN** 后续受审历史保留 change 合法删除旧 poll 并使外键置空
+- **WHEN** 后续受审历史保留 change 先以显式受控机制替换本 foundation 的不可变删除保护并合法清理证据，再删除旧 poll 使外键置空
 - **THEN** Provider state 仍保留最近完整时间和来源版本/提交等必要元数据，不把空外键解释为没有当前快照
 
 ### Requirement: snapshot 身份数据 MUST 只进入受保护持久列
@@ -139,6 +147,10 @@ Poll 聚合、Provider 结果、duplicate evidence、snapshot items、Provider s
 #### Scenario: 指标导出 Provider promotion
 - **WHEN** Control 从 PostgreSQL 导出 promotion applied/skipped
 - **THEN** 标签只包含受控 instance ID、Provider 与固定 reason，不包含 email、account key、poll/policy ID、版本/提交或错误
+
+#### Scenario: legacy Provider 没有 promotion 判定
+- **WHEN** 最新 finalized Provider 来自 Migration 前旧契约且 promotion false/reason NULL
+- **THEN** Control 继续导出其 snapshot-complete 聚合但省略 applied/skipped 指标，不猜测或伪造跳过原因
 
 #### Scenario: 未授权读取或直接写快照
 - **WHEN** 非产品运行时角色或不存在的产品 API 尝试枚举、创建、修改或删除账号快照
