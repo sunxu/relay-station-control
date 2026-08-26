@@ -81,6 +81,10 @@ func runMain() (exitCode int) {
 		err = runTransactionTimeout()
 	case "exhaustion":
 		err = runExhaustion()
+	case "lifecycle-before-outage":
+		err = runLifecycleBeforeOutage()
+	case "data-plane-only":
+		err = runDataPlaneOnly()
 	case "restart-verify":
 		err = runRestartVerify()
 	default:
@@ -248,6 +252,34 @@ func runOutage() error {
 	return nil
 }
 
+func runLifecycleBeforeOutage() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	owner, err := openPool(ctx, ownerURLEnvironment, 1, 2*time.Second, 0)
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
+	var lifecycleRows, presentRows int
+	if err := owner.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE lifecycle='present')
+		FROM account_inventory
+		WHERE instance_id = ANY($1::uuid[])`, []uuid.UUID{fixtureInstanceID, timeoutInstanceID}).Scan(
+		&lifecycleRows, &presentRows,
+	); err != nil || lifecycleRows != 2 || presentRows != 2 {
+		return errAcceptanceInvariant
+	}
+	fmt.Println("account_inventory_snapshot_postgres_recovery=success phase=lifecycle-before-outage lifecycle_rows=2 lifecycle_present=2")
+	return nil
+}
+
+func runDataPlaneOnly() error {
+	if processed := <-runDataPlaneSimulator(50); processed != 50 {
+		return errAcceptanceInvariant
+	}
+	fmt.Println("account_inventory_snapshot_postgres_recovery=success phase=data-plane-only synthetic_data_plane_http=50/50 management_requests=0")
+	return nil
+}
+
 func runRecover() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
@@ -304,7 +336,7 @@ func runRecover() error {
 		return acceptanceCheckpoint("recover", "finalize")
 	}
 	counts, err = pollCounts(ctx, owner, fixturePollID, fixtureInstanceID)
-	if err != nil || counts != (boundedCounts{runs: 1, finalized: 1, providers: 1, snapshots: 1, states: 1}) {
+	if err != nil || counts != (boundedCounts{runs: 1, finalized: 1, providers: 1, snapshots: 1, states: 1, lifecycles: 1}) {
 		return acceptanceCheckpoint("recover", "persisted_counts")
 	}
 	fmt.Println("account_inventory_snapshot_postgres_recovery=success phase=recover retry_wait=1 attempt=2 stale_fence=rejected finalized=1 provider_results=1 snapshot_items=1 current_states=1")
@@ -374,7 +406,7 @@ func runTransactionTimeout() error {
 		return errAcceptanceInvariant
 	}
 	counts, err = pollCounts(ctx, owner, timeoutPollID, timeoutInstanceID)
-	if err != nil || counts != (boundedCounts{runs: 1, finalized: 1, providers: 1, snapshots: 1, states: 1}) {
+	if err != nil || counts != (boundedCounts{runs: 1, finalized: 1, providers: 1, snapshots: 1, states: 1, lifecycles: 1}) {
 		return errAcceptanceInvariant
 	}
 	fmt.Println("account_inventory_snapshot_postgres_recovery=success phase=transaction-timeout timeout_class=statement_timeout rollback_runs=1 rollback_provider_results=0 rollback_snapshot_items=0 finalized_after_release=1")
@@ -467,7 +499,15 @@ func runRestartVerify() error {
 	if err != nil || len(timeoutCurrent) != 1 || timeoutCurrent[0].NormalizedEmail != fixtureEmail || timeoutCurrent[0].SuccessCount != 12 {
 		return errAcceptanceInvariant
 	}
-	runs, providers, err := repository.Metrics(ctx)
+	lifecycle, err := repository.CurrentLifecycle(ctx, fixtureInstanceID, fixtureProvider, pollstore.AccountInventoryPresent, "", 10)
+	if err != nil || len(lifecycle) != 1 || lifecycle[0].NormalizedEmail != fixtureEmail || lifecycle[0].SuccessCount != 11 {
+		return errAcceptanceInvariant
+	}
+	timeoutLifecycle, err := repository.CurrentLifecycle(ctx, timeoutInstanceID, fixtureProvider, pollstore.AccountInventoryPresent, "", 10)
+	if err != nil || len(timeoutLifecycle) != 1 || timeoutLifecycle[0].NormalizedEmail != fixtureEmail || timeoutLifecycle[0].SuccessCount != 12 {
+		return errAcceptanceInvariant
+	}
+	runs, providers, lifecycles, err := repository.MetricsWithLifecycle(ctx, true)
 	if err != nil {
 		return errAcceptanceInvariant
 	}
@@ -488,8 +528,14 @@ func runRestartVerify() error {
 			}
 		}
 	}
-	if runCount != 2 || providerCount != 2 {
+	if runCount != 2 || providerCount != 2 || len(lifecycles) != 2 {
 		return errAcceptanceInvariant
+	}
+	for _, metric := range lifecycles {
+		if metric.Provider != fixtureProvider || metric.Lifecycle != pollstore.AccountInventoryPresent || metric.Count != 1 ||
+			(metric.InstanceID != fixtureInstanceID && metric.InstanceID != timeoutInstanceID) {
+			return errAcceptanceInvariant
+		}
 	}
 	var versionNumber string
 	if err := pool.QueryRow(ctx, "SHOW server_version_num").Scan(&versionNumber); err != nil {
@@ -716,11 +762,12 @@ func completeFixture(fence, pollID uuid.UUID, successCount uint64) inventorypoll
 }
 
 type boundedCounts struct {
-	runs      int
-	finalized int
-	providers int
-	snapshots int
-	states    int
+	runs       int
+	finalized  int
+	providers  int
+	snapshots  int
+	states     int
+	lifecycles int
 }
 
 func pollCounts(ctx context.Context, owner *pgxpool.Pool, pollID, instanceID uuid.UUID) (boundedCounts, error) {
@@ -729,10 +776,12 @@ func pollCounts(ctx context.Context, owner *pgxpool.Pool, pollID, instanceID uui
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$1),
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$1 AND status='finalized'),
 		(SELECT count(*) FROM account_inventory_poll_provider_results WHERE poll_run_id=$1),
-		(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$1),
-		(SELECT count(*) FROM account_inventory_provider_states WHERE instance_id=$2 AND provider=$3
-		 AND current_poll_run_id=$1)`, pollID, instanceID, fixtureProvider).Scan(
-		&counts.runs, &counts.finalized, &counts.providers, &counts.snapshots, &counts.states,
+			(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$1),
+			(SELECT count(*) FROM account_inventory_provider_states WHERE instance_id=$2 AND provider=$3
+			 AND current_poll_run_id=$1),
+			(SELECT count(*) FROM account_inventory WHERE instance_id=$2 AND provider=$3
+			 AND current_poll_run_id=$1 AND lifecycle='present')`, pollID, instanceID, fixtureProvider).Scan(
+		&counts.runs, &counts.finalized, &counts.providers, &counts.snapshots, &counts.states, &counts.lifecycles,
 	)
 	return counts, err
 }

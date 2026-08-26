@@ -333,8 +333,8 @@ func validateProjection(request inventorypoll.FinalizeRequest) error {
 }
 
 func assertPersistence(ctx context.Context, owner *pgxpool.Pool) error {
-	var runs, finalized, providers, promoted, snapshots, states int
-	var runtimeMode, completeNode, completeProvider, noSkip, currentPointer bool
+	var runs, finalized, providers, promoted, snapshots, states, lifecycleRows int
+	var runtimeMode, completeNode, completeProvider, noSkip, currentPointer, lifecyclePresent bool
 	err := owner.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$1),
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$1 AND status='finalized'),
@@ -347,11 +347,22 @@ func assertPersistence(ctx context.Context, owner *pgxpool.Pool) error {
 		 FROM account_inventory_poll_runs WHERE poll_run_id=$1),
 		(SELECT identity_complete AND snapshot_complete AND NOT degraded FROM account_inventory_poll_provider_results WHERE poll_run_id=$1 AND provider=$3),
 		(SELECT promotion_skipped_reason IS NULL FROM account_inventory_poll_runs WHERE poll_run_id=$1),
-		(SELECT current_poll_run_id=$1 FROM account_inventory_provider_states WHERE instance_id=$2 AND provider=$3)`,
+		(SELECT current_poll_run_id=$1 FROM account_inventory_provider_states WHERE instance_id=$2 AND provider=$3),
+		(SELECT count(*) FROM account_inventory WHERE instance_id=$2 AND provider=$3),
+		(SELECT lifecycle='present'
+		        AND consecutive_missing_count=0
+		        AND missing_since IS NULL
+		        AND out_of_scope_since IS NULL
+		        AND current_poll_run_id=$1
+		        AND first_seen_at=last_seen_at
+		        AND last_seen_at=source_observed_at
+		        AND current_scheduled_at=(SELECT scheduled_at FROM account_inventory_poll_runs WHERE poll_run_id=$1)
+		 FROM account_inventory
+		 WHERE instance_id=$2 AND account_key=$3 || ':snapshot-runtime@example.invalid')`,
 		fixturePollID, fixtureInstanceID, fixtureProvider).Scan(&runs, &finalized, &providers, &promoted, &snapshots, &states,
-		&runtimeMode, &completeNode, &completeProvider, &noSkip, &currentPointer)
+		&runtimeMode, &completeNode, &completeProvider, &noSkip, &currentPointer, &lifecycleRows, &lifecyclePresent)
 	if err != nil || runs != 1 || finalized != 1 || providers != 1 || promoted != 1 || snapshots != 1 || states != 1 ||
-		!runtimeMode || !completeNode || !completeProvider || !noSkip || !currentPointer {
+		lifecycleRows != 1 || !runtimeMode || !completeNode || !completeProvider || !noSkip || !currentPointer || !lifecyclePresent {
 		return errInvariant
 	}
 	return nil

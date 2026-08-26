@@ -149,8 +149,10 @@ main() {
   "$harness" recover
   "$harness" transaction-timeout
   "$harness" exhaustion
+  "$harness" lifecycle-before-outage
 
   compose stop --timeout 1 postgres >/dev/null 2>&1 || fixed_failure 'postgres_second_stop_failed'
+  "$harness" data-plane-only
   compose start postgres >/dev/null 2>&1 || fixed_failure 'postgres_second_restart_failed'
   wait_for_postgres
   set_database_urls
