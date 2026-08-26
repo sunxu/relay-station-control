@@ -8,6 +8,56 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountInventoryPollProviderResult struct {
+	PollRunID              pgtype.UUID `json:"poll_run_id"`
+	Provider               string      `json:"provider"`
+	IdentifiableCount      int32       `json:"identifiable_count"`
+	MissingIdentityCount   int32       `json:"missing_identity_count"`
+	DuplicateIdentityCount int32       `json:"duplicate_identity_count"`
+	IdentityComplete       bool        `json:"identity_complete"`
+	SnapshotComplete       bool        `json:"snapshot_complete"`
+	Degraded               bool        `json:"degraded"`
+	Reason                 string      `json:"reason"`
+}
+
+type AccountInventoryPollRun struct {
+	PollRunID                pgtype.UUID        `json:"poll_run_id"`
+	InstanceID               pgtype.UUID        `json:"instance_id"`
+	NodeType                 string             `json:"node_type"`
+	DriverContractVersion    string             `json:"driver_contract_version"`
+	ScheduledAt              pgtype.Timestamptz `json:"scheduled_at"`
+	ProviderPolicyVersion    pgtype.UUID        `json:"provider_policy_version"`
+	Status                   string             `json:"status"`
+	AttemptCount             int32              `json:"attempt_count"`
+	MaxAttempts              int32              `json:"max_attempts"`
+	PollStartGraceSeconds    int32              `json:"poll_start_grace_seconds"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	FirstStartedAt           pgtype.Timestamptz `json:"first_started_at"`
+	LastStartedAt            pgtype.Timestamptz `json:"last_started_at"`
+	LeaseExpiresAt           pgtype.Timestamptz `json:"lease_expires_at"`
+	LeaseFencingToken        pgtype.UUID        `json:"lease_fencing_token"`
+	FinalizedAt              pgtype.Timestamptz `json:"finalized_at"`
+	AbandonedAt              pgtype.Timestamptz `json:"abandoned_at"`
+	ExecutionReason          pgtype.Text        `json:"execution_reason"`
+	ObservedAt               pgtype.Timestamptz `json:"observed_at"`
+	TransportSuccess         pgtype.Bool        `json:"transport_success"`
+	ResponseShapeValid       pgtype.Bool        `json:"response_shape_valid"`
+	ContractValid            pgtype.Bool        `json:"contract_valid"`
+	InventoryMode            pgtype.Text        `json:"inventory_mode"`
+	NodeIdentityComplete     pgtype.Bool        `json:"node_identity_complete"`
+	SnapshotComplete         pgtype.Bool        `json:"snapshot_complete"`
+	Degraded                 pgtype.Bool        `json:"degraded"`
+	Result                   pgtype.Text        `json:"result"`
+	Reason                   pgtype.Text        `json:"reason"`
+	SourceRecordCount        pgtype.Int4        `json:"source_record_count"`
+	IdentifiableRecordCount  pgtype.Int4        `json:"identifiable_record_count"`
+	UnidentifiedRecordCount  pgtype.Int4        `json:"unidentified_record_count"`
+	UnsupportedProviderCount pgtype.Int4        `json:"unsupported_provider_count"`
+	OutOfScopeProviderCount  pgtype.Int4        `json:"out_of_scope_provider_count"`
+	NodeVersion              pgtype.Text        `json:"node_version"`
+	NodeCommit               pgtype.Text        `json:"node_commit"`
+}
+
 type AsyncJob struct {
 	JobID                    pgtype.UUID        `json:"job_id"`
 	IdempotencyKey           string             `json:"idempotency_key"`
