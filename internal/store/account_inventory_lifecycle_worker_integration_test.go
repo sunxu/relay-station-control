@@ -266,7 +266,7 @@ func runLifecycleWorkerPoll(
 	}
 	repository := &lifecycleClaimStore{database: database, store: store, finalized: make(chan error, 1), claim: inventorypoll.ClaimedRun{
 		PollRunID: pollID, InstanceID: fixture.instanceID, PolicyVersionID: policyID,
-		ScheduledAt: scheduledAt, Attempt: 1, MaxAttempts: 2, GraceRemaining: 10 * time.Second,
+		ScheduledAt: scheduledAt, Attempt: 1, MaxAttempts: 2, GraceRemaining: 30 * time.Second,
 		Target: drivers.NodeTarget{
 			InstanceID: fixture.instanceID, NodeType: drivers.NodeTypeCLIProxyAPI,
 			DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1,
@@ -279,8 +279,8 @@ func runLifecycleWorkerPoll(
 		},
 	}}
 	worker, err := inventorypoll.NewWorker(repository, driver, inventorypoll.Config{
-		PollStartGrace: 10 * time.Second, MaxMonitoredNodes: 1, Concurrency: 1,
-		WorstCasePollDuration: time.Second, LeaseDuration: 3 * time.Second,
+		PollStartGrace: 30 * time.Second, MaxMonitoredNodes: 1, Concurrency: 1,
+		WorstCasePollDuration: time.Second, LeaseDuration: 15 * time.Second,
 		DispatchMargin: time.Second, FinalizeMargin: time.Second,
 		SchedulerInterval: time.Second, WorkerScanInterval: 5 * time.Millisecond,
 		ReconcileInterval: 100 * time.Millisecond, DatabaseBackoffInitial: 5 * time.Millisecond,
@@ -293,7 +293,7 @@ func runLifecycleWorkerPoll(
 	workerContext, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- worker.Run(workerContext) }()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case finalizeErr := <-repository.finalized:

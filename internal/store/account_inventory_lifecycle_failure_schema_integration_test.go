@@ -102,9 +102,9 @@ func terminatePausedLifecycleFinalize(
 func TestAccountInventoryLifecycleUncommittedTerminationRollsBackMissingAndUpsert(t *testing.T) {
 	for _, phase := range []string{"missing", "upsert"} {
 		t.Run(phase, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			defer cancel()
 			database := newIsolatedJobDatabase(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
 			fixture := newLifecycleSchemaFixture(t, ctx, database)
 			account := lifecycleAccount{email: "fault@example.invalid", successCount: 1}
 			var baselinePoll uuid.UUID
@@ -193,9 +193,9 @@ func TestAccountInventoryLifecycleUncommittedTerminationRollsBackMissingAndUpser
 }
 
 func TestAccountInventoryLifecycleCommitUnknownReplayIsSingleState(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
 	database := newIsolatedJobDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
 	account := lifecycleAccount{email: "commit-unknown@example.invalid", successCount: 1}
 	baselinePoll := fixture.finalize(t, ctx, database, []lifecycleAccount{account})

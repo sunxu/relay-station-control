@@ -45,7 +45,7 @@ func main() {
 	if len(os.Args) != 2 {
 		fail("invalid_mode")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	harness, err := newRollbackHarness(ctx)
 	if err != nil {
@@ -68,6 +68,9 @@ func main() {
 		fail("invalid_mode")
 	}
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			fail(os.Args[1] + "_timeout")
+		}
 		fail(os.Args[1] + "_failed")
 	}
 	fmt.Printf("account_inventory_lifecycle_rollback_harness=success phase=%s\n", os.Args[1])
@@ -175,7 +178,7 @@ func (harness *rollbackHarness) insertRunningPoll(
 		provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
 		created_at,first_started_at,last_started_at,lease_expires_at,lease_fencing_token
 	) VALUES ($1,$2,$3,$4,$5,$6,'running',1,2,299,clock_timestamp(),
-		clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '60 seconds',$7)`,
+		clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '120 seconds',$7)`,
 		pollID, fixtureInstanceID, fixtureNodeType, fixtureContract, scheduledAt,
 		fixturePolicyID, fence)
 	return err

@@ -243,11 +243,19 @@ main() {
   done
   if ! (
     cd "$repository_root"
-    CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=1 \
+    CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=0 \
       go test ./internal/store -run '^TestAccountInventoryLifecycle' -count=1
-  ) >"$runtime_directory/store.log" 2>&1
+  ) >"$runtime_directory/store-core.log" 2>&1
   then
-    fixed_failure 'lifecycle_store_gate_failed'
+    fixed_failure 'lifecycle_store_core_gate_failed'
+  fi
+  if ! (
+    cd "$repository_root"
+    CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=1 \
+      go test ./internal/store -run '^TestAccountInventoryLifecycleCapacityOneTenFifty$' -count=1
+  ) >"$runtime_directory/store-capacity.log" 2>&1
+  then
+    fixed_failure 'lifecycle_capacity_gate_failed'
   fi
 
   echo 'account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered fake_driver_real_store=covered uncommitted_termination=covered commit_unknown=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=covered request_count=0 gateway_requests=0 data_plane_requests=0'

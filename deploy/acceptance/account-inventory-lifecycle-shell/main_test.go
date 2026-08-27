@@ -71,13 +71,33 @@ func TestLifecycleRunnerScansSyntheticArtifactWithoutExternalConfiguration(t *te
 	}
 }
 
-func TestLifecycleRunnerScansProjectedScenarioMatrix(t *testing.T) {
+func TestLifecycleRunnerScansComponentInputScenarioMatrix(t *testing.T) {
 	output, err := runScript(t, "scan-matrix")
 	if err != nil {
-		t.Fatalf("projected scenario scanner failed: %v: %s", err, output)
+		t.Fatalf("component-input scenario scanner failed: %v: %s", err, output)
 	}
 	if output != "account_inventory_lifecycle_canary_scan=success\n" {
-		t.Fatalf("projected scenario scanner output outside fixed schema: %q", output)
+		t.Fatalf("component-input scenario scanner output outside fixed schema: %q", output)
+	}
+}
+
+func TestLifecyclePostgresSeparatesCoreAndCapacityFailures(t *testing.T) {
+	path := filepath.Join(acceptanceRoot(t), "account-inventory-lifecycle-postgres.sh")
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(encoded)
+	for _, required := range []string{
+		"CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=0",
+		"CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=1",
+		"lifecycle_store_core_gate_failed",
+		"lifecycle_capacity_gate_failed",
+		"^TestAccountInventoryLifecycleCapacityOneTenFifty$",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Fatalf("PostgreSQL acceptance does not isolate %q", required)
+		}
 	}
 }
 
@@ -115,6 +135,7 @@ func TestLifecycleRollbackPinsOldBinaryAndFreezesBothMutationPaths(t *testing.T)
 		`start_control "$old_binary" false`,
 		`start_control "$new_binary" true`,
 		`"$harness" replay`,
+		"fixture_prepare_timeout",
 	} {
 		if !strings.Contains(contents, required) {
 			t.Fatalf("rollback acceptance missing %q", required)

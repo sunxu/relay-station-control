@@ -238,8 +238,12 @@ main() {
 
   build_binaries
   prepare_auth_files
-  "$harness" prepare >"$runtime_directory/prepare.log" 2>&1 \
-    || fixed_failure 'fixture_prepare_failed'
+  if ! "$harness" prepare >"$runtime_directory/prepare.log" 2>&1; then
+    if grep -Fq 'reason=prepare_timeout' "$runtime_directory/prepare.log"; then
+      fixed_failure 'fixture_prepare_timeout'
+    fi
+    fixed_failure 'fixture_prepare_failed'
+  fi
   before_old="$(lifecycle_fingerprint)" || fixed_failure 'fingerprint_failed'
   case "$before_old" in
     [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]* ) ;;

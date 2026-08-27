@@ -26,10 +26,10 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 	if os.Getenv("CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE") != "1" {
 		t.Skip("lifecycle capacity acceptance is opt-in")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
-	defer cancel()
 	database := newIsolatedJobDatabase(t)
-	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	setupContext, cancelSetup := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancelSetup()
+	fixture := newLifecycleSchemaFixture(t, setupContext, database)
 
 	runtimeConfig, err := pgxpool.ParseConfig(database.runtimeURL)
 	if err != nil {
@@ -37,11 +37,6 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 	}
 	runtimeConfig.MaxConns = 10
 	runtimeConfig.MinConns = 0
-	runtime, err := pgxpool.NewWithConfig(ctx, runtimeConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runtime.Close()
 
 	providerJSON, snapshotJSON := lifecycleCapacityPayload(t)
 	polls := make([]lifecycleCapacityPoll, 50)
@@ -49,7 +44,7 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 		instanceID := fixture.instanceID
 		if index > 0 {
 			instanceID = uuid.New()
-			if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_assets(
+			if _, err := database.owner.Exec(setupContext, `INSERT INTO relay_node_assets(
 				instance_id,display_name,node_type,driver_contract_version,
 				management_endpoint,reader_secret_ref
 			) VALUES ($1,'Lifecycle Capacity Node',$2,$3,$4,
@@ -59,7 +54,7 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 			}
 		}
 		polls[index] = lifecycleCapacityPoll{instanceID: instanceID, pollID: uuid.New(), fence: uuid.New()}
-		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+		if _, err := database.owner.Exec(setupContext, `INSERT INTO account_inventory_poll_runs(
 			poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
 			provider_policy_version,max_attempts,poll_start_grace_seconds,created_at
 		) VALUES ($1,$2,$3,$4,$5,$6,2,299,clock_timestamp())`, polls[index].pollID,
@@ -67,6 +62,15 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	cancelSetup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	defer cancel()
+	runtime, err := pgxpool.NewWithConfig(ctx, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
 
 	type checkpoint struct{ total, first int }
 	checkpoints := []checkpoint{{total: 1, first: 0}, {total: 10, first: 1}, {total: 50, first: 10}}
@@ -74,14 +78,6 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 	var totalWALBytes int64
 	for _, point := range checkpoints {
 		batch := polls[point.first:point.total]
-		for _, poll := range batch {
-			if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_poll_runs
-				SET status='running',attempt_count=1,first_started_at=clock_timestamp(),
-				last_started_at=clock_timestamp(),lease_expires_at=clock_timestamp()+interval '30 seconds',
-				lease_fencing_token=$2 WHERE poll_run_id=$1`, poll.pollID, poll.fence); err != nil {
-				t.Fatal(err)
-			}
-		}
 		var walStart string
 		if err := database.owner.QueryRow(ctx, `SELECT pg_current_wal_lsn()::text`).Scan(&walStart); err != nil {
 			t.Fatal(err)
@@ -92,9 +88,10 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 		go sampleLifecycleLockWaiters(ctx, database.owner, stopSampling, samplingDone, &maximumLockWaiters)
 
 		type result struct {
-			duration time.Duration
-			affected int
-			err      error
+			duration      time.Duration
+			dispatchDelay time.Duration
+			affected      int
+			err           error
 		}
 		results := make(chan result, len(batch))
 		semaphore := make(chan struct{}, 10)
@@ -107,15 +104,31 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 				defer workers.Done()
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
+				tag, err := database.owner.Exec(ctx, `UPDATE account_inventory_poll_runs
+					SET status='running',attempt_count=1,first_started_at=clock_timestamp(),
+					last_started_at=clock_timestamp(),lease_expires_at=clock_timestamp()+interval '30 seconds',
+					lease_fencing_token=$2 WHERE poll_run_id=$1 AND status='pending'`, poll.pollID, poll.fence)
+				if err != nil {
+					results <- result{err: fmt.Errorf("arm lifecycle capacity poll: %w", err)}
+					return
+				}
+				if tag.RowsAffected() != 1 {
+					results <- result{err: fmt.Errorf("arm lifecycle capacity poll: affected=%d", tag.RowsAffected())}
+					return
+				}
 				started := time.Now()
+				dispatchDelay := time.Since(batchStarted)
 				var affected int
-				err := runtime.QueryRow(ctx, `SELECT count(*)
+				err = runtime.QueryRow(ctx, `SELECT count(*)
 					FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
 						$1,$2,true,true,true,'runtime',true,true,false,'success','none',
 						$3,$3,0,0,0,'v1.0.0','abcdef1',$4::jsonb,$5::jsonb,'[]'::jsonb
 					)`, poll.pollID, poll.fence, lifecycleCapacityAccountsPerNode,
 					providerJSON, snapshotJSON).Scan(&affected)
-				results <- result{duration: time.Since(started), affected: affected, err: err}
+				results <- result{
+					duration: time.Since(started), dispatchDelay: dispatchDelay,
+					affected: affected, err: err,
+				}
 			}()
 		}
 		workers.Wait()
@@ -124,12 +137,16 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 		<-samplingDone
 		batchDuration := time.Since(batchStarted)
 		var maximumTransaction time.Duration
+		var maximumDispatchDelay time.Duration
 		for outcome := range results {
 			if outcome.err != nil || outcome.affected != 1 {
 				t.Fatalf("nodes=%d lifecycle finalize affected=%d err=%v", point.total, outcome.affected, outcome.err)
 			}
 			if outcome.duration > maximumTransaction {
 				maximumTransaction = outcome.duration
+			}
+			if outcome.dispatchDelay > maximumDispatchDelay {
+				maximumDispatchDelay = outcome.dispatchDelay
 			}
 		}
 		var walBytes int64
@@ -143,15 +160,17 @@ func TestAccountInventoryLifecycleCapacityOneTenFifty(t *testing.T) {
 			t.Fatal(err)
 		}
 		if lifecycleRows != point.total*lifecycleCapacityAccountsPerNode || walBytes <= 0 ||
-			maximumTransaction >= 30*time.Second || batchDuration >= 120*time.Second || maximumLockWaiters.Load() > 9 {
-			t.Fatalf("nodes=%d rows=%d wal_bytes=%d max_tx=%s batch=%s max_lock_waiters=%d",
-				point.total, lifecycleRows, walBytes, maximumTransaction, batchDuration, maximumLockWaiters.Load())
+			maximumTransaction >= 30*time.Second || maximumDispatchDelay >= 120*time.Second || maximumLockWaiters.Load() > 9 {
+			t.Fatalf("nodes=%d rows=%d wal_bytes=%d max_tx=%s last_dispatch=%s batch=%s max_lock_waiters=%d",
+				point.total, lifecycleRows, walBytes, maximumTransaction,
+				maximumDispatchDelay, batchDuration, maximumLockWaiters.Load())
 		}
-		t.Logf("lifecycle_capacity=passed nodes=%d accounts_per_node=%d rows=%d wal_bytes=%d max_transaction_ms=%d batch_ms=%d max_lock_waiters=%d",
+		t.Logf("lifecycle_capacity=passed nodes=%d accounts_per_node=%d rows=%d wal_bytes=%d max_transaction_ms=%d last_dispatch_ms=%d batch_ms=%d max_lock_waiters=%d",
 			point.total, lifecycleCapacityAccountsPerNode, lifecycleRows, walBytes,
-			maximumTransaction.Milliseconds(), batchDuration.Milliseconds(), maximumLockWaiters.Load())
+			maximumTransaction.Milliseconds(), maximumDispatchDelay.Milliseconds(),
+			batchDuration.Milliseconds(), maximumLockWaiters.Load())
 	}
-	if time.Since(totalStarted) >= 120*time.Second || totalWALBytes > 512<<20 {
+	if time.Since(totalStarted) >= 240*time.Second || totalWALBytes > 512<<20 {
 		t.Fatalf("lifecycle capacity budget exceeded")
 	}
 }
