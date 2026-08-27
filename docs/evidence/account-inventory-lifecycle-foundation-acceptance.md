@@ -1,12 +1,12 @@
 # Account inventory lifecycle foundation acceptance evidence
 
-Date: 2026-08-26
+Date: 2026-08-27
 
 Change: `add-control-account-inventory-lifecycle-foundation`
 
-Status: acceptance in progress pending post-push CI. Static, scanner-unit, enhanced PostgreSQL lifecycle, lifecycle-retention data-plane, enhanced official-container, projected full-path canary and all local release gates passed. The enhanced PostgreSQL run included policy-mutation fail-closed behavior, empty-side Provider-set transitions and 1/10/50 Node capacity checks. This file is not a claim that the change is archived or that CI has passed.
+Status: acceptance in progress pending post-push CI. Static, scanner-unit, enhanced PostgreSQL lifecycle, snapshot-only binary rollback, lifecycle-retention data-plane, enhanced official-container, component-input canary and all local release gates passed on the final acceptance patch. The enhanced PostgreSQL run included fake Driver→real Store lifecycle sequences, uncommitted termination, commit-unknown replay, policy-mutation fail-closed behavior, empty-side Provider-set transitions and 1/10/50 Node capacity checks. This file is not a claim that the change is archived or that CI has passed.
 
-Scope: fake Driver observations, synthetic official CLIProxyAPI fixtures and one-run isolated PostgreSQL 18 only. Real Nodes, production databases, production credentials and production account identities are outside this evidence. The lifecycle runner keeps real-Node mode fail closed with `request_count=0`.
+Scope: fake Driver observations, synthetic official CLIProxyAPI fixtures and isolated PostgreSQL 18 only. Real Nodes, production databases, production credentials and production account identities are outside this evidence. The lifecycle runner keeps real-Node mode fail closed with `request_count=0`.
 
 Retained evidence MUST contain only fixed classifications, bounded aggregate counts, durations and tool exit status. It MUST omit connection strings and SQL parameters, poll/policy identifiers, endpoints/IPs, Secret references and values, email/account keys, source version/commit, request/response material, raw errors, database rows/dumps and local runtime paths.
 
@@ -20,15 +20,16 @@ Retained evidence MUST contain only fixed classifications, bounded aggregate cou
 | Recovery | suspected/missing reappearance restores present, preserves first seen and refreshes last seen/source | direct database fixture; 0 network | passed: focused PostgreSQL |
 | Skip matrix | transport/contract/disk/identity/duplicate/policy/stale/abandoned evidence changes no lifecycle | no lifecycle-added call or retry | passed: PostgreSQL guardrail matrix |
 | Provider scope | active→out-of-scope is atomic; re-add does not restore absent accounts; actual reappearance does | direct policy/promotion fixture; 0 network | passed: focused PostgreSQL |
-| Atomicity/fencing | partial writes, old fencing, timeout and unknown commit cannot duplicate or split lifecycle/snapshot/poll | 0 additional calls | passed: rollback/recovery/fencing/replay gates |
+| Atomicity/fencing | terminated uncommitted lifecycle upsert/missing transactions roll back; old fencing, timeout and commit-unknown replay cannot duplicate or split lifecycle/snapshot/poll | 0 additional calls | passed: PostgreSQL failure/recovery/fencing gates |
 | Permissions/read boundary | Runtime role has no arbitrary lifecycle DML/enumeration; internal list is bounded/stable | 0 | passed: focused PostgreSQL |
 | Rollback mutation switch | Unset/false policy mutation fails before a transaction; true reaches only the controlled database function; either Provider set may be empty individually | 0 | passed: enhanced PostgreSQL |
+| Old binary rollback | Snapshot-only binary runs against forward schema with poll/policy mutation disabled; committed state remains frozen and the restored binary advances only the next qualified poll | management/data-plane/real Node 0; three local product reads | passed: isolated rollback drill |
 | Observability | Current totals survive restart; labels/reasons remain closed; no non-durable transition counter | 0 | passed: restart and metrics gates |
 | Capacity | 1/10/50 Nodes × 1000 accounts measure lifecycle rows, WAL, lock waiters and transaction/batch duration within lease/dispatch budgets | direct database fixture; 0 network | passed: enhanced PostgreSQL |
 | Data-plane isolation | Stopped lifecycle dependencies pause state while synthetic loopback data-plane remains successful | management 0; synthetic data-plane `50/50` | passed: lifecycle data-plane |
 | Official synthetic image | Production Driver/Worker request boundary remains one fixed read and 10-second cooldown | 1 synthetic GET | passed: enhanced official-container |
-| Canary scan | Every sensitive class is absent from the final fixed-schema success/failure/policy-race/rollback artifact projections | 0 | passed: synthetic projected matrix |
-| Product boundary | OpenAPI, generated client and React routes remain unchanged | 0 | passed: reproducible generation and frontend gates |
+| Canary scan | All 15 classes traverse Driver/Worker/sqlc inputs for success/failure/policy-race/rollback, then remain absent from final logs, metric counts, fixed errors and test artifacts | 1 synthetic management GET; 2 in-process fake Driver calls; 0 real Node | passed: component-input matrix |
+| Product boundary | OpenAPI, generated client and React routes remain unchanged; attempted lifecycle enumeration routes and write methods remain unregistered | 0 | passed: generation/frontend plus negative HTTP route test |
 
 ## Acceptance classifications to retain
 
@@ -50,7 +51,13 @@ account_inventory_lifecycle_canary_scan=success
 Accepted enhanced PostgreSQL gate output:
 
 ```text
-account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=covered request_count=0 gateway_requests=0 data_plane_requests=0
+account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered fake_driver_real_store=covered uncommitted_termination=covered commit_unknown=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=covered request_count=0 gateway_requests=0 data_plane_requests=0
+```
+
+Accepted snapshot-only binary rollback output:
+
+```text
+account_inventory_lifecycle_rollback=success old_revision=e482d8e forward_schema=7 poll_enabled=false policy_mutation_enabled=false old_product_reads=3 lifecycle_frozen=true next_qualified_poll_advanced=true finalized_replay_advanced=false management_requests=0 real_node_requests=0 gateway_requests=0 data_plane_requests=0
 ```
 
 Accepted official synthetic wrapper output:
@@ -75,15 +82,15 @@ CI also runs `scan-smoke`, which constructs a protected synthetic aggregate arti
 account_inventory_lifecycle_canary_scan=success
 ```
 
-That smoke alone is not full-path evidence. The separate `scan-matrix` gate constructs protected success, failure, policy-race and rollback subdirectories containing only their final fixed-schema aggregate projections, configures all 15 distinct canary classes and runs the formal `scan` path over the whole directory. It retained only:
+That smoke alone is not full-path evidence. The separate `scan-matrix` gate configures all 15 distinct canary classes, then actually passes them through the production CLIProxyAPI Driver and Worker success path, a raw transport failure, Worker lost-lease policy-race and database-error rollback classifications, and the generated sqlc lifecycle finalize parameter formatter. The test components write their resulting structured logs, measured request count, fixed Driver error, redacted SQL parameter format and Go test output into protected success, failure, policy-race and rollback subdirectories. The formal scanner then traverses the complete final directory and retained only:
 
 ```text
 account_inventory_lifecycle_canary_scan=success
 ```
 
-This is the approved minimum synthetic full-path artifact-boundary evidence. It proves that the final projected matrix is canary-free; it does not claim that production artifacts were collected or that arbitrary raw logs are safe to retain.
+This is synthetic component-input evidence: the success path issued one local management GET, the network-failure path attempted one dial without reaching an HTTP server, and policy-race/rollback used two in-process fake Driver calls. It proves those generated final artifacts are canary-free; it does not claim that production artifacts were collected, that a real Node was contacted, or that arbitrary raw logs are safe to retain.
 
-The final local release gate passed twice-reproducible generation, `make test`, `make build`, all Go tests, race detection, vet, frontend test/typecheck/build, workflow lint, change strict validation, all-spec strict validation and `git diff --check`. The generated diff hash was identical across the two consecutive generation runs. Post-push GitHub Actions remains the only pending completion gate.
+The final acceptance patch passed twice-reproducible generation, `make test`, `make build`, all Go tests, race detection, vet, frontend test/typecheck/build, workflow lint, change strict validation, all-spec strict validation and `git diff --check`. The generated diff hash was identical across both consecutive generation runs. Post-push GitHub Actions remains the only pending completion gate.
 
 ## Transition evidence to record
 
@@ -108,6 +115,7 @@ The accepted session record MUST distinguish:
 - Direct PostgreSQL lifecycle tests: `request_count=0`.
 - Fake Driver sequences: exactly one existing Driver call per poll observation; lifecycle adds `0` calls.
 - Scope activation/re-add transactions: Node requests `0`.
+- Snapshot-only binary rollback: three local health/bootstrap/metrics reads, management/real-Node/Gateway/data-plane requests `0`.
 - Official synthetic container: exactly one GET followed by its final 10-second cooldown.
 - Data-plane isolation: management requests `0`, synthetic loopback data-plane `50/50`; this is process isolation and does not claim a real Gateway/Node request.
 - Real-Node lifecycle mode: not executed and fixed at `request_count=0` unless a later, separately approved evidence session replaces this statement.
@@ -136,6 +144,7 @@ export npm_config_registry='https://registry.npmmirror.com'
 
 deploy/acceptance/account-inventory-lifecycle-run.sh static
 deploy/acceptance/account-inventory-lifecycle-run.sh postgres
+deploy/acceptance/account-inventory-lifecycle-run.sh rollback
 deploy/acceptance/account-inventory-lifecycle-run.sh container
 deploy/acceptance/account-inventory-lifecycle-run.sh data-plane
 deploy/acceptance/account-inventory-lifecycle-run.sh scan-smoke

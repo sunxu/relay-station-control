@@ -117,7 +117,7 @@ deploy/acceptance/account-inventory-lifecycle-run.sh scan-matrix
 
 为防止 `go test -run` 在没有匹配测试时仍返回成功，PostgreSQL gate 会先核对 `internal/store` 已登记连续缺失/恢复、Provider scope/re-add、权限/保护写、Migration no-backfill 和容量 suite；缺少任一 suite 时固定返回 `lifecycle_implementation_unavailable`，不得生成通过证据。故障恢复和数据面隔离由独立 `data-plane` gate 证明，不折叠进该成功分类。
 
-`scan-smoke` 只对 CI 中单一受保护合成聚合 artifact 验证 scanner 的配置和遍历边界。`scan-matrix` 进一步建立 success、failure、policy-race、rollback 四个受保护子目录，只写入最终固定 schema 的合成聚合投影，配置全部 15 类 canary 后复用正式 `scan` 路径。它是最小的合成 full-path artifact-boundary 证据，不表示采集过生产 artifact，也不允许保留或扫描后接受任意原始日志；真实执行产生的材料仍必须先投影为同类固定输出。
+`scan-smoke` 只对 CI 中单一受保护合成聚合 artifact 验证 scanner 的配置和遍历边界。`scan-matrix` 将全部 15 类 canary 实际送入 production CLIProxyAPI Driver/Worker 的成功与网络失败输入、Worker lost-lease/database-error 的 policy-race/rollback 输入，以及生成的 sqlc lifecycle finalize 参数 formatter；组件把真实产生的结构化日志、指标计数、固定错误、redacted 参数格式和 Go test output 写入 success、failure、policy-race、rollback 四个受保护子目录，再复用正式 `scan` 路径。该门禁使用一个本地 synthetic management GET和两个 in-process fake Driver 调用，不访问真实 Node或生产 artifact，也不允许保留任意原始日志。
 
 Canary scanner 的输入目录只能包含已脱敏的聚合投影、固定错误、指标和测试摘要，不得放原始响应、数据库 dump 或凭证。所有 canary 都经环境变量注入，scanner 的失败输出不会回显命中值：
 

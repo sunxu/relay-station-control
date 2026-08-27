@@ -28,7 +28,7 @@
 - [x] 4.1 固定 poll→binding→Provider state→按 account key lifecycle 的锁顺序，并以并发旧/新槽 finalize 和死锁检测测试证明状态只前进且事务有界结束
 - [x] 4.2 并发执行 lifecycle finalize 与 active→out-of-scope activation，证明结果只能是旧策略 promotion 先完成或新策略切换先完成且旧 poll policy_changed，两种结果都无混合账号状态
 - [x] 4.3 覆盖旧 fencing、过期 lease、已 finalized 重放和重复函数调用，断言影响零行或返回同一终态且 missing 不会重复增加
-- [x] 4.4 在 lifecycle upsert、missing 批量更新、Provider state、policy audit 和 COMMIT 前后注入连接中断，验证未提交整体恢复、已提交不重放且提交未知最终只有一份状态
+- [x] 4.4 在 lifecycle upsert 与 missing 更新事务中终止未提交连接，并模拟 COMMIT 已落盘但 acknowledgement 丢失；验证未提交 snapshot/Provider state/lifecycle 整体回滚，重试只应用一次，commit-unknown 重放为零影响（Provider policy 并发原子性由 4.2 的独立门禁证明）
 - [x] 4.5 停止/重启 PostgreSQL并模拟连接耗尽、事务超时和 Control 重启，验证不创建内存真相、不 busy-loop、不补历史槽且恢复后只处理下一有效/可恢复 poll
 
 ## 5. sqlc、Store 与应用接线
@@ -43,12 +43,12 @@
 
 - [x] 6.1 从 PostgreSQL 当前状态实现 lifecycle total 聚合，标签仅允许 instance/provider/lifecycle；若无持久 transition 事实则明确不实现 transition counter，并以进程重启前后指标一致性测试验证
 - [x] 6.2 扩展结构化日志 allowlist，只记录固定 operation/result/reason 和受控 instance/provider，以成功、失败、policy race、恢复路径日志测试证明没有逐账号 transition 或 SQL 参数
-- [x] 6.3 向 email/account key、endpoint/IP、Secret/Management Key、header/body、版本/提交和 raw error 注入唯一 canary，扫描数据库非允许列、日志、指标、错误、test output 与 acceptance artifact，验证只在三类受保护身份列中允许命中且报告不回显值
-- [x] 6.4 以运行时、产品 API、非授权数据库角色尝试枚举和任意写删改 lifecycle，验证最小权限/路由边界拒绝且审计与错误输出脱敏
+- [x] 6.3 将 email/account key、endpoint/IP、Secret/Management Key、header/body、版本/提交、raw error、SQL 参数、poll/policy ID 与未知字段 canary 实际送入 Driver/Worker/sqlc 的成功、失败、policy-race、rollback 输入，扫描其最终日志、指标计数、固定错误与 test artifact；结合 DTO formatter/观测 allowlist 测试证明报告不回显值
+- [x] 6.4 以运行时和非授权数据库角色尝试枚举及任意写删改 lifecycle，并对未注册产品 API 的 GET/POST/PUT/PATCH/DELETE 与 OpenAPI 契约做负向枚举，验证最小权限/路由边界拒绝且错误不回显查询 identity
 
 ## 7. 容器、容量与端到端验收
 
-- [x] 7.1 用 fake Driver 覆盖完整/空 runtime、首次/二次缺失、恢复、多 Provider 独立 promotion、所有 skip reason 和 out-of-scope/re-add，断言每轮只有既有固定账号清单 GET
+- [x] 7.1 用 fake Driver→生产 Worker→真实 PostgreSQL Store 覆盖完整/空 runtime、首次/二次缺失、恢复、多 Provider 独立 promotion、transport/contract/disk/identity/duplicate skip 和 out-of-scope/re-add；policy_changed/stale/abandoned 由 Store guardrail matrix 覆盖，并断言每轮只有既有一次 Driver 调用、scope mutation 增加零次
 - [x] 7.2 使用 1/10/50 Node 与最大账号记录模型测量 lifecycle 批量写、锁等待、事务时间和 WAL，验证仍满足 120 秒 dispatch grace、30 秒 lease、并发至少 10 与既有容量公式
 - [x] 7.3 使用官方 CLIProxyAPI v7.2.141 原版镜像与脱敏 runtime/disk fixtures，经生产 Driver/Worker/PostgreSQL 18 Store 验证 lifecycle；统计证明不修改 Node且不调用 Probe、Gateway、模型数据面或管理写接口
 - [x] 7.4 如使用阶段 0 两个真实测试 Node，保持管理请求全局串行且每次成功/失败及最后一次后等待至少 10 秒，只保存脱敏聚合与 lifecycle 分类，并以请求审计证明无额外 GET
@@ -59,6 +59,6 @@
 - [x] 8.1 编写 lifecycle Runbook，覆盖首次基线、完整空集合、连续缺失、恢复、Provider 移出/重新加入、数据库故障、函数版本检查和脱敏排障，并由命令示例 dry-run 验证可执行
 - [x] 8.2 在 Runbook 固化 rollout 与 rollback：先 schema/新二进制后启用，回滚先关闭 poll 与 policy mutation并保留 forward Migration；用隔离环境演练证明旧二进制不删除或重算状态
 - [x] 8.3 运行 Migration/schema/Store、全部 Go 单元与集成、`make generate`、`make test`、`make build`、`go test ./...`、`go test -race ./...`、`go vet ./...` 和前端门禁，保存不含敏感值的通过摘要
-- [x] 8.4 运行 container acceptance、故障恢复、策略竞态、容量、数据面隔离和完整 canary 扫描，核对每个 spec scenario 都有自动化证据或明确的受控人工证据
+- [x] 8.4 运行 container acceptance、故障恢复、策略竞态、容量、数据面隔离和组件输入 canary 扫描；canary 门禁覆盖成功/失败/policy-race/rollback 最终 artifact，未使用真实 Node或生产 artifact
 - [x] 8.5 运行 `openspec validate add-control-account-inventory-lifecycle-foundation --strict`、全部主规格 strict 校验和 `git diff --check`，对照 proposal/design/spec/tasks 与系统设计确认无漂移
 - [x] 8.6 检查 `git status --short`、生成物复现、Migration 范围、OpenAPI/UI 零差异和临时容器/目录，确认 worktree 只包含本 change 实现并整理 Conventional Commits 分层提交计划
