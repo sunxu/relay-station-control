@@ -168,6 +168,7 @@ export default function ManagementPage() {
         </div>
         <Space wrap>
           <Space wrap>
+            <Button onClick={() => auth.navigate("account-inventory")}>账号清单</Button>
             <Button onClick={() => auth.navigate("jobs")}>持久任务</Button>
             <Button onClick={() => auth.navigate("assets")}>资产注册表</Button>
           </Space>

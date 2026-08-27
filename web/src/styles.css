@@ -89,6 +89,15 @@ body {
   word-break: break-word;
 }
 
+.account-inventory-page .ant-table-cell {
+  vertical-align: top;
+}
+
+.account-inventory-page .ant-table-cell:first-child {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media (max-width: 640px) {
   .centered-page {
     align-items: start;

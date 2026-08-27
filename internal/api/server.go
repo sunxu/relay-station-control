@@ -17,14 +17,17 @@ import (
 const authenticationResponseFloor = 250 * time.Millisecond
 
 type Server struct {
-	version      string
-	service      *authn.Service
-	resolver     *authn.SourceResolver
-	assets       assetstore.AssetReader
-	assetMetrics *AssetMetrics
-	nodeCursor   *assetstore.NodeCursorCodec
-	jobs         assetstore.JobReader
-	jobCursor    *assetstore.JobCursorCodec
+	version                 string
+	service                 *authn.Service
+	resolver                *authn.SourceResolver
+	assets                  assetstore.AssetReader
+	assetMetrics            *AssetMetrics
+	nodeCursor              *assetstore.NodeCursorCodec
+	jobs                    assetstore.JobReader
+	jobCursor               *assetstore.JobCursorCodec
+	accountInventory        assetstore.AccountInventoryReader
+	accountInventoryCursor  *assetstore.AccountInventoryCursorCodec
+	accountInventoryMetrics *AccountInventoryMetrics
 }
 
 type requestIDContextKey struct{}
@@ -76,6 +79,35 @@ func NewAuthenticatedServerWithAssetsAndJobs(version string, service *authn.Serv
 	server.jobs = jobs
 	server.jobCursor = codec
 	return server, nil
+}
+
+func NewAuthenticatedServerWithAssetsJobsAndAccountInventory(
+	version string,
+	service *authn.Service,
+	assets assetstore.AssetReader,
+	metrics *AssetMetrics,
+	jobs assetstore.JobReader,
+	accountInventory assetstore.AccountInventoryReader,
+) (*Server, error) {
+	server, err := NewAuthenticatedServerWithAssetsAndJobs(version, service, assets, metrics, jobs)
+	if err != nil {
+		return nil, err
+	}
+	if accountInventory == nil {
+		return nil, errors.New("api: account inventory reader is unavailable")
+	}
+	codec, err := assetstore.NewAccountInventoryCursorCodec(service.Config().Keyring)
+	if err != nil {
+		return nil, errors.New("api: account inventory cursor initialization failed")
+	}
+	server.accountInventory = accountInventory
+	server.accountInventoryCursor = codec
+	server.accountInventoryMetrics = NewAccountInventoryMetrics()
+	return server, nil
+}
+
+func (s *Server) AccountInventoryMetrics() *AccountInventoryMetrics {
+	return s.accountInventoryMetrics
 }
 
 func (s *Server) GetHealthz(w http.ResponseWriter, r *http.Request) {
@@ -257,6 +289,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func (s *Server) PrepareGeneratedError(w http.ResponseWriter, r *http.Request, err error) {
+	if r.Method == http.MethodPost && r.URL.Path == "/api/account-inventory/query" && s.accountInventoryMetrics != nil {
+		startedAt := time.Now()
+		metricWriter := &accountInventoryMetricResponseWriter{ResponseWriter: w}
+		w = metricWriter
+		defer func() {
+			result, errorCode := accountInventoryMetricStatus(metricWriter.status)
+			_ = s.accountInventoryMetrics.record(result, errorCode, 0, time.Since(startedAt))
+		}()
+	}
 	s.prepare(w, r, true)
 	var headerErr *RequiredHeaderError
 	if errors.As(err, &headerErr) && headerErr.ParamName == "X-CSRF-Token" {
@@ -284,8 +325,12 @@ func (s *Server) authenticationDelay(ctx context.Context, start time.Time) {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	return decodeJSONWithLimit(w, r, target, 1<<20)
+}
+
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target any, maximum int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maximum)
+	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Code: ErrorCodeValidationFailed, Message: "The request is invalid.", RequestId: w.Header().Get("X-Request-ID")})

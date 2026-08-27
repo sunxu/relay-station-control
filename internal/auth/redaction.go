@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 const Redacted = "[REDACTED]"
@@ -49,6 +51,15 @@ var auditDetailSchema = map[AuditAction]map[string]func(any) bool{
 	AuditAuthorization:           {"error_code": validErrorCode},
 	AuditRateLimit:               {"rate_limit_dimension": validRateLimitDimension},
 	AuditCSRF:                    {"error_code": oneOf(string(ErrorCodeCSRFRejected))},
+	AuditAccountInventoryView: {
+		"instance_id":              canonicalUUID,
+		"provider_filter_used":     booleanValue,
+		"lifecycle_filter_used":    booleanValue,
+		"basic_status_filter_used": booleanValue,
+		"email_filter_used":        booleanValue,
+		"cursor_used":              booleanValue,
+		"result_count":             boundedAccountInventoryResultCount,
+	},
 }
 
 // SanitizeAuditDetails copies only registered, bounded fields. It rejects
@@ -105,6 +116,25 @@ func validRateLimitDimension(value any) bool {
 }
 
 func boundedCount(value any) bool {
+	count, ok := value.(int)
+	return ok && count >= 0 && count <= 100
+}
+
+func canonicalUUID(value any) bool {
+	text, ok := value.(string)
+	if !ok {
+		return false
+	}
+	parsed, err := uuid.Parse(text)
+	return err == nil && parsed != uuid.Nil && parsed.String() == text
+}
+
+func booleanValue(value any) bool {
+	_, ok := value.(bool)
+	return ok
+}
+
+func boundedAccountInventoryResultCount(value any) bool {
 	count, ok := value.(int)
 	return ok && count >= 0 && count <= 100
 }

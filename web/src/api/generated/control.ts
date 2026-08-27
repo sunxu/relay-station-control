@@ -32,6 +32,110 @@ import type {
 /**
  * @minLength 1
  * @maxLength 64
+ * @pattern ^[a-z0-9][a-z0-9._-]*$
+ */
+export type ProviderName = string;
+
+export type AccountInventoryLifecycle = typeof AccountInventoryLifecycle[keyof typeof AccountInventoryLifecycle];
+
+
+export const AccountInventoryLifecycle = {
+  present: 'present',
+  suspected_missing: 'suspected_missing',
+  missing: 'missing',
+  out_of_scope: 'out_of_scope',
+} as const;
+
+/**
+ * Last status reported by the Relay Node, not current schedulability.
+ */
+export type AccountInventoryBasicStatus = typeof AccountInventoryBasicStatus[keyof typeof AccountInventoryBasicStatus];
+
+
+export const AccountInventoryBasicStatus = {
+  reported_active: 'reported_active',
+  disabled: 'disabled',
+  unavailable: 'unavailable',
+  error: 'error',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+ * @minLength 1
+ * @maxLength 320
+ */
+export type NormalizedAccountEmail = string;
+
+export interface AccountInventoryQueryRequest {
+  instance_id: string;
+  provider?: ProviderName;
+  lifecycle?: AccountInventoryLifecycle;
+  basic_status?: AccountInventoryBasicStatus;
+  email?: NormalizedAccountEmail;
+  /**
+     * Opaque, encrypted, actor- and filter-bound continuation token.
+     * @minLength 1
+     * @maxLength 1536
+     */
+  cursor?: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  limit?: number;
+}
+
+export type AccountInventorySnapshotFreshness = typeof AccountInventorySnapshotFreshness[keyof typeof AccountInventorySnapshotFreshness];
+
+
+export const AccountInventorySnapshotFreshness = {
+  fresh: 'fresh',
+  stale: 'stale',
+  out_of_scope: 'out_of_scope',
+} as const;
+
+export interface AccountInventoryItem {
+  instance_id: string;
+  provider: ProviderName;
+  email: NormalizedAccountEmail;
+  basic_status: AccountInventoryBasicStatus;
+  lifecycle: AccountInventoryLifecycle;
+  /**
+     * @minimum 0
+     * @maximum 2
+     */
+  consecutive_missing_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  /** @nullable */
+  missing_since: string | null;
+  /** @nullable */
+  out_of_scope_since: string | null;
+  /** @nullable */
+  last_refresh_at: string | null;
+  /** @nullable */
+  next_retry_at: string | null;
+  /** @nullable */
+  source_updated_at: string | null;
+  provider_last_complete_at: string;
+  provider_degraded: boolean;
+  snapshot_freshness: AccountInventorySnapshotFreshness;
+}
+
+export interface AccountInventoryQueryResponse {
+  /** @maxItems 100 */
+  items: AccountInventoryItem[];
+  /**
+     * @maxLength 1536
+     * @nullable
+     */
+  next_cursor?: string | null;
+}
+
+/**
+ * @minLength 1
+ * @maxLength 64
  * @pattern ^[a-z][a-z0-9._-]*$
  */
 export type JobKind = string;
@@ -310,13 +414,6 @@ export const CurrentProviderInventoryPolicyResponseStatus = {
   configured: 'configured',
   not_configured: 'not_configured',
 } as const;
-
-/**
- * @minLength 1
- * @maxLength 64
- * @pattern ^[a-z0-9][a-z0-9._-]*$
- */
-export type ProviderName = string;
 
 export interface ProviderInventoryPolicy {
   version_id: string;
@@ -3901,6 +3998,141 @@ export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<
 
 
 
+
+export type queryAccountInventoryResponse200 = {
+  data: AccountInventoryQueryResponse
+  status: 200
+}
+
+export type queryAccountInventoryResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type queryAccountInventoryResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type queryAccountInventoryResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type queryAccountInventoryResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type queryAccountInventoryResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type queryAccountInventoryResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type queryAccountInventoryResponseSuccess = (queryAccountInventoryResponse200) & {
+  headers: Headers;
+};
+export type queryAccountInventoryResponseError = (queryAccountInventoryResponse400 | queryAccountInventoryResponse401 | queryAccountInventoryResponse403 | queryAccountInventoryResponse404 | queryAccountInventoryResponse409 | queryAccountInventoryResponse503) & {
+  headers: Headers;
+};
+
+export type queryAccountInventoryResponse = (queryAccountInventoryResponseSuccess | queryAccountInventoryResponseError)
+
+export const getQueryAccountInventoryUrl = () => {
+
+
+
+
+  return `/api/account-inventory/query`
+}
+
+/**
+ * Returns one bounded account-key-ordered page from the current PostgreSQL
+ * inventory projection. Filters and the opaque cursor are carried only in the
+ * request body. Every returned page, including an empty page, is committed to
+ * the named `account_inventory.view` audit trail before the response is sent.
+ * This operation never contacts a Relay Node, Gateway, Prometheus, or model
+ * data plane.
+ * @summary Query one Relay Node current account inventory
+ */
+export const queryAccountInventory = async (accountInventoryQueryRequest: AccountInventoryQueryRequest, options?: RequestInit): Promise<queryAccountInventoryResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getQueryAccountInventoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(accountInventoryQueryRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryAccountInventoryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryAccountInventoryResponse
+}
+
+
+
+
+
+export const getQueryAccountInventoryMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queryAccountInventory>>, TError,QueryAccountInventoryMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof queryAccountInventory>>, TError,QueryAccountInventoryMutationVariables, TContext> => {
+
+const mutationKey = ['queryAccountInventory'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof queryAccountInventory>>, QueryAccountInventoryMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  queryAccountInventory(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QueryAccountInventoryMutationResult = NonNullable<Awaited<ReturnType<typeof queryAccountInventory>>>
+    export type QueryAccountInventoryMutationBody = AccountInventoryQueryRequest
+    export type QueryAccountInventoryMutationError = ErrorResponse
+    export type QueryAccountInventoryMutationVariables = {data: AccountInventoryQueryRequest}
+
+    /**
+ * @summary Query one Relay Node current account inventory
+ */
+export const useQueryAccountInventory = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queryAccountInventory>>, TError,QueryAccountInventoryMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof queryAccountInventory>>,
+        TError,
+        QueryAccountInventoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getQueryAccountInventoryMutationOptions(options), queryClient);
+    }
 
 export type listJobsResponse200 = {
   data: JobListResponse

@@ -52,13 +52,14 @@ const (
 	AuditCategoryReauthentication AuditCategory = "reauthentication"
 	AuditCategoryAuthorization    AuditCategory = "authorization"
 	AuditCategoryRateLimit        AuditCategory = "rate_limit"
+	AuditCategoryAccountInventory AuditCategory = "account_inventory"
 )
 
 func (v AuditCategory) Valid() bool {
 	switch v {
 	case AuditCategoryBootstrap, AuditCategoryAdministrator, AuditCategoryPassword,
 		AuditCategoryMFA, AuditCategorySession, AuditCategoryReauthentication,
-		AuditCategoryAuthorization, AuditCategoryRateLimit:
+		AuditCategoryAuthorization, AuditCategoryRateLimit, AuditCategoryAccountInventory:
 		return true
 	default:
 		return false
@@ -87,6 +88,7 @@ const (
 	AuditAuthorization           AuditAction = "authorization.check"
 	AuditRateLimit               AuditAction = "auth.rate_limit"
 	AuditCSRF                    AuditAction = "auth.csrf"
+	AuditAccountInventoryView    AuditAction = "account_inventory.view"
 )
 
 func (v AuditAction) Valid() bool {
@@ -96,7 +98,8 @@ func (v AuditAction) Valid() bool {
 		AuditMFAEnroll, AuditMFAReset, AuditRecoveryCodeUse, AuditRecoveryCodesRegenerate,
 		AuditSessionCreate, AuditSessionRevoke, AuditReauthenticate,
 		AuditAdministratorCreate, AuditAdministratorActivate, AuditAdministratorDisable,
-		AuditActivationTokenGenerate, AuditAuthorization, AuditRateLimit, AuditCSRF:
+		AuditActivationTokenGenerate, AuditAuthorization, AuditRateLimit, AuditCSRF,
+		AuditAccountInventoryView:
 		return true
 	default:
 		return false
@@ -121,6 +124,8 @@ func AuditCategoryFor(action AuditAction) (AuditCategory, error) {
 		return AuditCategoryAuthorization, nil
 	case AuditRateLimit:
 		return AuditCategoryRateLimit, nil
+	case AuditAccountInventoryView:
+		return AuditCategoryAccountInventory, nil
 	default:
 		return "", fmt.Errorf("auth: invalid audit action")
 	}

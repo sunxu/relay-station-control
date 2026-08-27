@@ -44,6 +44,8 @@ func TestHTTPAuthenticationRouteMatrixAndSecurityEnvelope(t *testing.T) {
 		{name: "administrator list requires authentication", method: http.MethodGet, path: "/api/admins", wantStatus: http.StatusUnauthorized, wantCode: ErrorCodeUnauthorized},
 		{name: "service bearer is not an administrator session", method: http.MethodGet, path: "/api/admins", bearer: "gateway-service-credential", wantStatus: http.StatusUnauthorized, wantCode: ErrorCodeUnauthorized},
 		{name: "unsafe operation rejects missing csrf before authentication", method: http.MethodPost, path: "/api/admins", body: `{}`, wantStatus: http.StatusForbidden, wantCode: ErrorCodeCsrfInvalid},
+		{name: "account inventory query rejects missing csrf before authentication", method: http.MethodPost, path: "/api/account-inventory/query", body: `{}`, wantStatus: http.StatusForbidden, wantCode: ErrorCodeCsrfInvalid},
+		{name: "account inventory query with csrf still requires authentication", method: http.MethodPost, path: "/api/account-inventory/query", body: `{}`, csrf: "opaque-proof", wantStatus: http.StatusUnauthorized, wantCode: ErrorCodeUnauthorized},
 		{name: "unsafe operation with csrf still requires authentication", method: http.MethodPost, path: "/api/admins", body: `{}`, csrf: "opaque-proof", wantStatus: http.StatusUnauthorized, wantCode: ErrorCodeUnauthorized},
 	}
 

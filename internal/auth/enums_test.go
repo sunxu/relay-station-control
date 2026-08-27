@@ -26,3 +26,16 @@ func TestFixedEnumsRejectUnknownValues(t *testing.T) {
 		})
 	}
 }
+
+func TestAccountInventoryAuditEnumMapping(t *testing.T) {
+	if !AuditCategoryAccountInventory.Valid() {
+		t.Fatal("account inventory audit category is invalid")
+	}
+	if !AuditAccountInventoryView.Valid() {
+		t.Fatal("account inventory view audit action is invalid")
+	}
+	category, err := AuditCategoryFor(AuditAccountInventoryView)
+	if err != nil || category != AuditCategoryAccountInventory {
+		t.Fatalf("AuditCategoryFor(account_inventory.view) = %q, %v", category, err)
+	}
+}

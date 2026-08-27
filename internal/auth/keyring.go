@@ -22,17 +22,18 @@ type KeyVersion uint32
 type KeyDomain string
 
 const (
-	DomainTOTPEncryption      KeyDomain = "totp-encryption"
-	DomainSessionDigest       KeyDomain = "session-digest"
-	DomainChallengeDigest     KeyDomain = "challenge-digest"
-	DomainActivationDigest    KeyDomain = "activation-digest"
-	DomainRecoveryCodeDigest  KeyDomain = "recovery-code-digest"
-	DomainLoginFingerprint    KeyDomain = "login-fingerprint"
-	DomainSourceFingerprint   KeyDomain = "source-fingerprint"
-	DomainCSRFDigest          KeyDomain = "csrf-digest"
-	DomainBootstrapComparison KeyDomain = "bootstrap-comparison"
-	DomainAssetCursorDigest   KeyDomain = "asset-cursor-digest"
-	DomainJobCursorDigest     KeyDomain = "job-cursor-digest"
+	DomainTOTPEncryption                   KeyDomain = "totp-encryption"
+	DomainSessionDigest                    KeyDomain = "session-digest"
+	DomainChallengeDigest                  KeyDomain = "challenge-digest"
+	DomainActivationDigest                 KeyDomain = "activation-digest"
+	DomainRecoveryCodeDigest               KeyDomain = "recovery-code-digest"
+	DomainLoginFingerprint                 KeyDomain = "login-fingerprint"
+	DomainSourceFingerprint                KeyDomain = "source-fingerprint"
+	DomainCSRFDigest                       KeyDomain = "csrf-digest"
+	DomainBootstrapComparison              KeyDomain = "bootstrap-comparison"
+	DomainAssetCursorDigest                KeyDomain = "asset-cursor-digest"
+	DomainJobCursorDigest                  KeyDomain = "job-cursor-digest"
+	DomainAccountInventoryCursorEncryption KeyDomain = "account-inventory-cursor-encryption"
 )
 
 func (v KeyDomain) Valid() bool {
@@ -40,7 +41,7 @@ func (v KeyDomain) Valid() bool {
 	case DomainTOTPEncryption, DomainSessionDigest, DomainChallengeDigest,
 		DomainActivationDigest, DomainRecoveryCodeDigest, DomainLoginFingerprint,
 		DomainSourceFingerprint, DomainCSRFDigest, DomainBootstrapComparison,
-		DomainAssetCursorDigest, DomainJobCursorDigest:
+		DomainAssetCursorDigest, DomainJobCursorDigest, DomainAccountInventoryCursorEncryption:
 		return true
 	default:
 		return false
@@ -123,6 +124,15 @@ func ParseKeyring(data []byte, expectedEnvironment Environment) (*Keyring, error
 
 func (k *Keyring) CurrentVersion() KeyVersion {
 	return k.current
+}
+
+// Environment returns the deployment identity bound to this keyring. Callers
+// use it only as public associated data; it is not key material.
+func (k *Keyring) Environment() Environment {
+	if k == nil {
+		return ""
+	}
+	return k.environment
 }
 
 func (k *Keyring) Versions() []KeyVersion {

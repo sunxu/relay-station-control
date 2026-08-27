@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestAccountInventoryLifecycleProductAPIEnumerationBoundary(t *testing.T) {
+func TestAccountInventoryProductAPIRemainsLimitedToAuditedQuery(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime caller unavailable")
@@ -21,7 +21,6 @@ func TestAccountInventoryLifecycleProductAPIEnumerationBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{
-		"/api/account-inventory",
 		"/api/account-inventory/lifecycle",
 		"/api/accounts",
 		"CurrentAccountInventoryLifecycle",
@@ -29,6 +28,10 @@ func TestAccountInventoryLifecycleProductAPIEnumerationBoundary(t *testing.T) {
 		if strings.Contains(string(contract), forbidden) {
 			t.Fatalf("product contract unexpectedly exposes account lifecycle boundary %q", forbidden)
 		}
+	}
+	if !strings.Contains(string(contract), "/api/account-inventory/query:") ||
+		!strings.Contains(string(contract), "operationId: queryAccountInventory") {
+		t.Fatal("audited account inventory query is absent from product contract")
 	}
 
 	handler := HandlerWithOptions(NewServer("test"), ChiServerOptions{})

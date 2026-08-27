@@ -203,6 +203,14 @@ func main() {
 		logger.Error("durable job initialization failed", "component", "jobs")
 		os.Exit(1)
 	}
+	accountInventoryRepository, err := assetstore.NewAccountInventoryRepository(pool)
+	if err != nil {
+		logger.Error("account inventory query initialization failed", "component", "account_inventory")
+		os.Exit(1)
+	}
+	if err = accountInventoryRepository.CheckCompatibility(context.Background()); err != nil {
+		logger.Warn("account inventory query compatibility check failed", "component", "account_inventory", "reason", "schema_incompatible")
+	}
 	jobKinds, err := jobRepository.JobKinds(context.Background())
 	if err != nil {
 		logger.Error("durable job catalog unavailable", "component", "jobs")
@@ -254,11 +262,14 @@ func main() {
 	metricsRegistry.MustRegister(jobCollector)
 	router.Handle("/metrics", promhttp.HandlerFor(metricsRegistry, promhttp.HandlerOpts{}))
 
-	apiServer, err := controlapi.NewAuthenticatedServerWithAssetsAndJobs(version, authService, assetRepository, assetMetrics, jobRepository)
+	apiServer, err := controlapi.NewAuthenticatedServerWithAssetsJobsAndAccountInventory(
+		version, authService, assetRepository, assetMetrics, jobRepository, accountInventoryRepository,
+	)
 	if err != nil {
 		logger.Error("asset API initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	metricsRegistry.MustRegister(apiServer.AccountInventoryMetrics())
 	controlapi.HandlerWithOptions(apiServer, controlapi.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 		apiServer.PrepareGeneratedError(w, r, err)
 	}})

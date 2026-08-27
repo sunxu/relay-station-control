@@ -9,6 +9,7 @@ const ActivationPage = lazy(() => import("./pages/ActivationPage"));
 const ManagementPage = lazy(() => import("./pages/ManagementPage"));
 const AssetsPage = lazy(() => import("./pages/AssetsPage"));
 const JobsPage = lazy(() => import("./pages/JobsPage"));
+const AccountInventoryPage = lazy(() => import("./pages/AccountInventoryPage"));
 const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 
 function AuthShell() {
@@ -33,6 +34,7 @@ function AuthShell() {
       {auth.route === "management" && <ManagementPage />}
       {auth.route === "assets" && <AssetsPage />}
       {auth.route === "jobs" && <JobsPage />}
+      {auth.route === "account-inventory" && <AccountInventoryPage />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
     </Suspense>
   );

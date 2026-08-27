@@ -16,6 +16,7 @@ tags:
   - name: authentication
   - name: administrators
   - name: assets
+  - name: account-inventory
   - name: jobs
 paths:
   /api/healthz:
@@ -803,6 +804,86 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/account-inventory/query:
+    post:
+      operationId: queryAccountInventory
+      summary: Query one Relay Node current account inventory
+      description: |
+        Returns one bounded account-key-ordered page from the current PostgreSQL
+        inventory projection. Filters and the opaque cursor are carried only in the
+        request body. Every returned page, including an empty page, is committed to
+        the named `account_inventory.view` audit trail before the response is sent.
+        This operation never contacts a Relay Node, Gateway, Prometheus, or model
+        data plane.
+      tags: [account-inventory]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountInventoryQueryRequest"
+            examples:
+              first_page:
+                summary: First page with exact normalized email filtering
+                value:
+                  instance_id: 4b58290d-3b20-4f45-a5c5-14a5aebfd3a6
+                  provider: openai
+                  lifecycle: present
+                  basic_status: reported_active
+                  email: operator@example.com
+                  limit: 50
+              next_page:
+                summary: Continue the same query with an opaque cursor
+                value:
+                  instance_id: 4b58290d-3b20-4f45-a5c5-14a5aebfd3a6
+                  cursor: AQE4b3BhcXVlLWVuY3J5cHRlZC1jdXJzb3I
+                  limit: 50
+      responses:
+        "200":
+          description: Current account inventory page; its view audit is already committed.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountInventoryQueryResponse"
+              example:
+                items:
+                  - instance_id: 4b58290d-3b20-4f45-a5c5-14a5aebfd3a6
+                    provider: openai
+                    email: operator@example.com
+                    basic_status: reported_active
+                    lifecycle: present
+                    consecutive_missing_count: 0
+                    first_seen_at: 2026-08-27T01:00:00Z
+                    last_seen_at: 2026-08-27T02:00:00Z
+                    missing_since: null
+                    out_of_scope_since: null
+                    last_refresh_at: 2026-08-27T01:58:00Z
+                    next_retry_at: null
+                    source_updated_at: 2026-08-27T01:58:00Z
+                    provider_last_complete_at: 2026-08-27T02:00:00Z
+                    provider_degraded: false
+                    snapshot_freshness: fresh
+                next_cursor: null
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/jobs:
     get:
       operationId: listJobs
@@ -1034,6 +1115,131 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    AccountInventoryQueryRequest:
+      type: object
+      additionalProperties: false
+      required: [instance_id]
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+        provider:
+          $ref: "#/components/schemas/ProviderName"
+        lifecycle:
+          $ref: "#/components/schemas/AccountInventoryLifecycle"
+        basic_status:
+          $ref: "#/components/schemas/AccountInventoryBasicStatus"
+        email:
+          $ref: "#/components/schemas/NormalizedAccountEmail"
+        cursor:
+          type: string
+          minLength: 1
+          maxLength: 1536
+          description: Opaque, encrypted, actor- and filter-bound continuation token.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+
+    AccountInventoryQueryResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AccountInventoryItem"
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 1536
+
+    AccountInventoryItem:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - provider
+        - email
+        - basic_status
+        - lifecycle
+        - consecutive_missing_count
+        - first_seen_at
+        - last_seen_at
+        - missing_since
+        - out_of_scope_since
+        - last_refresh_at
+        - next_retry_at
+        - source_updated_at
+        - provider_last_complete_at
+        - provider_degraded
+        - snapshot_freshness
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+        provider:
+          $ref: "#/components/schemas/ProviderName"
+        email:
+          $ref: "#/components/schemas/NormalizedAccountEmail"
+        basic_status:
+          $ref: "#/components/schemas/AccountInventoryBasicStatus"
+        lifecycle:
+          $ref: "#/components/schemas/AccountInventoryLifecycle"
+        consecutive_missing_count:
+          type: integer
+          minimum: 0
+          maximum: 2
+        first_seen_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        missing_since:
+          type: [string, "null"]
+          format: date-time
+        out_of_scope_since:
+          type: [string, "null"]
+          format: date-time
+        last_refresh_at:
+          type: [string, "null"]
+          format: date-time
+        next_retry_at:
+          type: [string, "null"]
+          format: date-time
+        source_updated_at:
+          type: [string, "null"]
+          format: date-time
+        provider_last_complete_at:
+          type: string
+          format: date-time
+        provider_degraded:
+          type: boolean
+        snapshot_freshness:
+          $ref: "#/components/schemas/AccountInventorySnapshotFreshness"
+
+    AccountInventoryLifecycle:
+      type: string
+      enum: [present, suspected_missing, missing, out_of_scope]
+
+    AccountInventoryBasicStatus:
+      type: string
+      description: Last status reported by the Relay Node, not current schedulability.
+      enum: [reported_active, disabled, unavailable, error, unknown]
+
+    AccountInventorySnapshotFreshness:
+      type: string
+      enum: [fresh, stale, out_of_scope]
+
+    NormalizedAccountEmail:
+      type: string
+      minLength: 1
+      maxLength: 320
+      description: Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+
     JobListResponse:
       type: object
       additionalProperties: false

@@ -53,3 +53,40 @@ func TestAuditDetailsAllowlist(t *testing.T) {
 		t.Fatal("sanitized audit details alias caller map")
 	}
 }
+
+func TestSanitizeAccountInventoryViewDetails(t *testing.T) {
+	details, err := SanitizeAuditDetails(AuditAccountInventoryView, map[string]any{
+		"instance_id":              "4b58290d-3b20-4f45-a5c5-14a5aebfd3a6",
+		"provider_filter_used":     true,
+		"lifecycle_filter_used":    false,
+		"basic_status_filter_used": true,
+		"email_filter_used":        true,
+		"cursor_used":              false,
+		"result_count":             100,
+	})
+	if err != nil {
+		t.Fatalf("SanitizeAuditDetails() error = %v", err)
+	}
+	if details["result_count"] != 100 || details["email_filter_used"] != true {
+		t.Fatalf("SanitizeAuditDetails() = %#v", details)
+	}
+}
+
+func TestSanitizeAccountInventoryViewDetailsRejectsIdentityAndUnboundedFields(t *testing.T) {
+	for name, candidate := range map[string]map[string]any{
+		"email":             {"email": "identity-canary@example.com"},
+		"account key":       {"account_key": "provider:identity-canary@example.com"},
+		"cursor":            {"cursor": "cursor-canary"},
+		"filter hash":       {"filter_hash": "hash-canary"},
+		"filter value":      {"provider": "provider-canary"},
+		"nil instance":      {"instance_id": "00000000-0000-0000-0000-000000000000"},
+		"noncanonical UUID": {"instance_id": "4B58290D-3B20-4F45-A5C5-14A5AEBFD3A6"},
+		"count overflow":    {"result_count": 101},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := SanitizeAuditDetails(AuditAccountInventoryView, candidate); err == nil {
+				t.Fatalf("account inventory audit accepted %#v", candidate)
+			}
+		})
+	}
+}

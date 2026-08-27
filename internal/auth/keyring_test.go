@@ -17,10 +17,16 @@ func TestKeyringDomainEnvironmentAndVersionSeparation(t *testing.T) {
 	session, _ := production.Derive(2, DomainSessionDigest, 32)
 	assetCursor, _ := production.Derive(2, DomainAssetCursorDigest, 32)
 	jobCursor, _ := production.Derive(2, DomainJobCursorDigest, 32)
+	accountInventoryCursor, _ := production.Derive(2, DomainAccountInventoryCursorEncryption, 32)
 	old, _ := production.Derive(1, DomainTOTPEncryption, 32)
 	devKey, _ := dev.Derive(2, DomainTOTPEncryption, 32)
-	if string(totp) == string(session) || string(totp) == string(old) || string(totp) == string(devKey) || string(assetCursor) == string(jobCursor) {
+	if string(totp) == string(session) || string(totp) == string(old) || string(totp) == string(devKey) ||
+		string(assetCursor) == string(jobCursor) || string(accountInventoryCursor) == string(assetCursor) ||
+		string(accountInventoryCursor) == string(jobCursor) {
 		t.Fatal("derived keys were not separated by domain, version, and environment")
+	}
+	if production.Environment() != EnvironmentProduction || (*Keyring)(nil).Environment() != "" {
+		t.Fatal("keyring environment identity is unavailable")
 	}
 	if _, err := production.Derive(99, DomainTOTPEncryption, 32); err == nil {
 		t.Fatal("unknown key version accepted")

@@ -130,6 +130,7 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodGet, "/api/assets/provider-policies/current"}: "getCurrentProviderInventoryPolicy",
 		{http.MethodGet, "/api/jobs"}:                             "listJobs",
 		{http.MethodGet, "/api/jobs/{job_id}"}:                    "getJob",
+		{http.MethodPost, "/api/account-inventory/query"}:         "queryAccountInventory",
 	}
 
 	if len(operations) != len(expected) {

@@ -99,6 +99,16 @@ AEAD additional authenticated data 固定包含产品/domain/version/environment
 
 页面仅在内存 state 保存当前页 cursor 栈，不写 localStorage/sessionStorage、URL、analytics 或错误报告；刷新页面回到第一页。
 
+#### 敏感数据流与允许位置
+
+```text
+email filter: UI memory -> HTTPS POST body -> Handler/Store DTO -> protected SQL parameter
+email result: protected SQL column -> Store/API response DTO -> authorized UI memory/DOM
+account key: protected SQL row -> internal continuation DTO -> AEAD plaintext -> opaque ciphertext in UI memory
+```
+
+只有上述箭头和位置获准。email、account key、filter hash 与 cursor 不进入 URL、redirect/Location、普通日志、指标标签、audit details、浏览器 history/localStorage/sessionStorage 或保留测试 artifact；account key 不进入产品 OpenAPI/TypeScript schema。错误路径在序列化前丢弃内部 DTO，并只输出固定 code 与 request ID。
+
 ### 5. 返回字段区分账号状态与 Provider 新鲜度
 
 每条 API item 只返回：

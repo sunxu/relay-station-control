@@ -15,6 +15,78 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AccountInventoryBasicStatus.
+const (
+	AccountInventoryBasicStatusDisabled       AccountInventoryBasicStatus = "disabled"
+	AccountInventoryBasicStatusError          AccountInventoryBasicStatus = "error"
+	AccountInventoryBasicStatusReportedActive AccountInventoryBasicStatus = "reported_active"
+	AccountInventoryBasicStatusUnavailable    AccountInventoryBasicStatus = "unavailable"
+	AccountInventoryBasicStatusUnknown        AccountInventoryBasicStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AccountInventoryBasicStatus enum.
+func (e AccountInventoryBasicStatus) Valid() bool {
+	switch e {
+	case AccountInventoryBasicStatusDisabled:
+		return true
+	case AccountInventoryBasicStatusError:
+		return true
+	case AccountInventoryBasicStatusReportedActive:
+		return true
+	case AccountInventoryBasicStatusUnavailable:
+		return true
+	case AccountInventoryBasicStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountInventoryLifecycle.
+const (
+	AccountInventoryLifecycleMissing          AccountInventoryLifecycle = "missing"
+	AccountInventoryLifecycleOutOfScope       AccountInventoryLifecycle = "out_of_scope"
+	AccountInventoryLifecyclePresent          AccountInventoryLifecycle = "present"
+	AccountInventoryLifecycleSuspectedMissing AccountInventoryLifecycle = "suspected_missing"
+)
+
+// Valid indicates whether the value is a known member of the AccountInventoryLifecycle enum.
+func (e AccountInventoryLifecycle) Valid() bool {
+	switch e {
+	case AccountInventoryLifecycleMissing:
+		return true
+	case AccountInventoryLifecycleOutOfScope:
+		return true
+	case AccountInventoryLifecyclePresent:
+		return true
+	case AccountInventoryLifecycleSuspectedMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountInventorySnapshotFreshness.
+const (
+	AccountInventorySnapshotFreshnessFresh      AccountInventorySnapshotFreshness = "fresh"
+	AccountInventorySnapshotFreshnessOutOfScope AccountInventorySnapshotFreshness = "out_of_scope"
+	AccountInventorySnapshotFreshnessStale      AccountInventorySnapshotFreshness = "stale"
+)
+
+// Valid indicates whether the value is a known member of the AccountInventorySnapshotFreshness enum.
+func (e AccountInventorySnapshotFreshness) Valid() bool {
+	switch e {
+	case AccountInventorySnapshotFreshnessFresh:
+		return true
+	case AccountInventorySnapshotFreshnessOutOfScope:
+		return true
+	case AccountInventorySnapshotFreshnessStale:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdministratorAuthSource.
 const (
 	Local AdministratorAuthSource = "local"
@@ -591,6 +663,60 @@ func (e TotpEnrollmentPeriodSeconds) Valid() bool {
 	}
 }
 
+// AccountInventoryBasicStatus Last status reported by the Relay Node, not current schedulability.
+type AccountInventoryBasicStatus string
+
+// AccountInventoryItem defines model for AccountInventoryItem.
+type AccountInventoryItem struct {
+	// BasicStatus Last status reported by the Relay Node, not current schedulability.
+	BasicStatus             AccountInventoryBasicStatus `json:"basic_status"`
+	ConsecutiveMissingCount int                         `json:"consecutive_missing_count"`
+
+	// Email Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+	Email                  NormalizedAccountEmail            `json:"email"`
+	FirstSeenAt            time.Time                         `json:"first_seen_at"`
+	InstanceId             openapi_types.UUID                `json:"instance_id"`
+	LastRefreshAt          *time.Time                        `json:"last_refresh_at"`
+	LastSeenAt             time.Time                         `json:"last_seen_at"`
+	Lifecycle              AccountInventoryLifecycle         `json:"lifecycle"`
+	MissingSince           *time.Time                        `json:"missing_since"`
+	NextRetryAt            *time.Time                        `json:"next_retry_at"`
+	OutOfScopeSince        *time.Time                        `json:"out_of_scope_since"`
+	Provider               ProviderName                      `json:"provider"`
+	ProviderDegraded       bool                              `json:"provider_degraded"`
+	ProviderLastCompleteAt time.Time                         `json:"provider_last_complete_at"`
+	SnapshotFreshness      AccountInventorySnapshotFreshness `json:"snapshot_freshness"`
+	SourceUpdatedAt        *time.Time                        `json:"source_updated_at"`
+}
+
+// AccountInventoryLifecycle defines model for AccountInventoryLifecycle.
+type AccountInventoryLifecycle string
+
+// AccountInventoryQueryRequest defines model for AccountInventoryQueryRequest.
+type AccountInventoryQueryRequest struct {
+	// BasicStatus Last status reported by the Relay Node, not current schedulability.
+	BasicStatus *AccountInventoryBasicStatus `json:"basic_status,omitempty"`
+
+	// Cursor Opaque, encrypted, actor- and filter-bound continuation token.
+	Cursor *string `json:"cursor,omitempty"`
+
+	// Email Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+	Email      *NormalizedAccountEmail    `json:"email,omitempty"`
+	InstanceId openapi_types.UUID         `json:"instance_id"`
+	Lifecycle  *AccountInventoryLifecycle `json:"lifecycle,omitempty"`
+	Limit      *int                       `json:"limit,omitempty"`
+	Provider   *ProviderName              `json:"provider,omitempty"`
+}
+
+// AccountInventoryQueryResponse defines model for AccountInventoryQueryResponse.
+type AccountInventoryQueryResponse struct {
+	Items      []AccountInventoryItem `json:"items"`
+	NextCursor *string                `json:"next_cursor,omitempty"`
+}
+
+// AccountInventorySnapshotFreshness defines model for AccountInventorySnapshotFreshness.
+type AccountInventorySnapshotFreshness string
+
 // ActivationToken defines model for ActivationToken.
 type ActivationToken = string
 
@@ -962,6 +1088,9 @@ type NodeMonitoringStatus struct {
 // NodeType defines model for NodeType.
 type NodeType = string
 
+// NormalizedAccountEmail Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+type NormalizedAccountEmail = string
+
 // OperationReason defines model for OperationReason.
 type OperationReason = string
 
@@ -1078,6 +1207,12 @@ type PageLimit = int
 // Error defines model for Error.
 type Error = ErrorResponse
 
+// QueryAccountInventoryParams defines parameters for QueryAccountInventory.
+type QueryAccountInventoryParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // ListAdministratorsParams defines parameters for ListAdministrators.
 type ListAdministratorsParams struct {
 	Limit  *PageLimit           `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1175,6 +1310,9 @@ type ListJobsParams struct {
 	Cursor      *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit       *int       `form:"limit,omitempty" json:"limit,omitempty"`
 }
+
+// QueryAccountInventoryJSONRequestBody defines body for QueryAccountInventory for application/json ContentType.
+type QueryAccountInventoryJSONRequestBody = AccountInventoryQueryRequest
 
 // CompleteAdministratorActivationJSONRequestBody defines body for CompleteAdministratorActivation for application/json ContentType.
 type CompleteAdministratorActivationJSONRequestBody = AdministratorActivationRequest
@@ -1517,6 +1655,9 @@ func (t *LoginResponse) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// QueryAccountInventory Query one Relay Node current account inventory
+	// (POST /api/account-inventory/query)
+	QueryAccountInventory(w http.ResponseWriter, r *http.Request, params QueryAccountInventoryParams)
 	// CompleteAdministratorActivation Enroll TOTP or complete administrator activation
 	// (POST /api/admin-activations/complete)
 	CompleteAdministratorActivation(w http.ResponseWriter, r *http.Request)
@@ -1600,6 +1741,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// QueryAccountInventory Query one Relay Node current account inventory
+// (POST /api/account-inventory/query)
+func (_ Unimplemented) QueryAccountInventory(w http.ResponseWriter, r *http.Request, params QueryAccountInventoryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // CompleteAdministratorActivation Enroll TOTP or complete administrator activation
 // (POST /api/admin-activations/complete)
@@ -1765,6 +1912,51 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// QueryAccountInventory operation middleware
+func (siw *ServerInterfaceWrapper) QueryAccountInventory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params QueryAccountInventoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryAccountInventory(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // CompleteAdministratorActivation operation middleware
 func (siw *ServerInterfaceWrapper) CompleteAdministratorActivation(w http.ResponseWriter, r *http.Request) {
@@ -2934,6 +3126,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/provider-policies/current", wrapper.GetCurrentProviderInventoryPolicy)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-inventory/query", wrapper.QueryAccountInventory)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/jobs", wrapper.ListJobs)
