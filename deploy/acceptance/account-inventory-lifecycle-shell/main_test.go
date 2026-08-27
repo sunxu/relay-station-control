@@ -99,9 +99,41 @@ func TestProviderPolicyTemplateGuardsMutationBeforeTransaction(t *testing.T) {
 	}
 }
 
+func TestLifecycleRollbackPinsOldBinaryAndFreezesBothMutationPaths(t *testing.T) {
+	path := filepath.Join(acceptanceRoot(t), "account-inventory-lifecycle-rollback.sh")
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(encoded)
+	for _, required := range []string{
+		"e482d8eb19896a60b73a4144ee155d1f66a2b1d7",
+		"git archive --format=tar",
+		"CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED=false",
+		"CONTROL_PROVIDER_POLICY_MUTATION_ENABLED=false",
+		"lifecycle_fingerprint",
+		`start_control "$old_binary" false`,
+		`start_control "$new_binary" true`,
+		`"$harness" replay`,
+	} {
+		if !strings.Contains(contents, required) {
+			t.Fatalf("rollback acceptance missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"git checkout", "git switch", "git worktree"} {
+		if strings.Contains(contents, forbidden) {
+			t.Fatalf("rollback acceptance mutates the primary worktree with %q", forbidden)
+		}
+	}
+}
+
 func TestLifecycleScriptsClearAllProxySpellingsAndPassSyntax(t *testing.T) {
 	root := acceptanceRoot(t)
-	for _, name := range []string{"account-inventory-lifecycle-run.sh", "account-inventory-lifecycle-postgres.sh"} {
+	for _, name := range []string{
+		"account-inventory-lifecycle-run.sh",
+		"account-inventory-lifecycle-postgres.sh",
+		"account-inventory-lifecycle-rollback.sh",
+	} {
 		path := filepath.Join(root, name)
 		encoded, err := os.ReadFile(path)
 		if err != nil {
@@ -112,6 +144,9 @@ func TestLifecycleScriptsClearAllProxySpellingsAndPassSyntax(t *testing.T) {
 			if !strings.Contains(contents, spelling) {
 				t.Fatalf("%s does not clear %s", name, spelling)
 			}
+		}
+		if strings.Contains(contents, "command -v rg") || strings.Contains(contents, "rg -q") {
+			t.Fatalf("%s requires non-standard ripgrep on the acceptance runner", name)
 		}
 		command := exec.Command("bash", "-n", path)
 		if output, err := command.CombinedOutput(); err != nil {

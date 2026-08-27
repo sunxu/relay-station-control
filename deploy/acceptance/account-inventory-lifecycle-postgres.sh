@@ -133,10 +133,10 @@ run_policy_mutation_switch_gate() {
     esac
     case "$setting" in
       unset|false)
-        rg -q 'Provider policy mutation is disabled' "$log" || fixed_failure 'policy_switch_disabled_classification_missing'
+        grep -Fq 'Provider policy mutation is disabled' "$log" || fixed_failure 'policy_switch_disabled_classification_missing'
         ;;
       invalid-reason)
-        rg -q 'Provider policy reason is invalid' "$log" || fixed_failure 'policy_reason_classification_missing'
+        grep -Fq 'Provider policy reason is invalid' "$log" || fixed_failure 'policy_reason_classification_missing'
         ;;
       true) ;;
     esac
@@ -194,7 +194,6 @@ main() {
   trap 'exit 130' HUP INT TERM
   command -v docker >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
   command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
-  command -v rg >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
 
   if ! compose up --detach --wait postgres >/dev/null 2>&1; then
     fixed_failure 'postgres_start_failed'
@@ -215,7 +214,7 @@ main() {
   then
     fixed_failure 'postgres_version_check_failed'
   fi
-  if ! rg -q '^18[0-9]{4}$' "$runtime_directory/server-version.log"; then
+  if ! grep -Eq '^18[0-9]{4}$' "$runtime_directory/server-version.log"; then
     fixed_failure 'postgres_major_invalid'
   fi
   run_policy_mutation_switch_gate
@@ -233,9 +232,12 @@ main() {
     TestAccountInventoryLifecycleProviderOutOfScopeAndPartialReactivation \
     TestAccountInventoryLifecyclePermissionsAndProtectedWrites \
     TestAccountInventoryLifecycleMigrationDoesNotBackfillSnapshotHistory \
+    TestAccountInventoryLifecycleFakeDriverRealStoreSequence \
+    TestAccountInventoryLifecycleUncommittedTerminationRollsBackMissingAndUpsert \
+    TestAccountInventoryLifecycleCommitUnknownReplayIsSingleState \
     TestAccountInventoryLifecycleCapacityOneTenFifty
   do
-    if ! rg -q "^${test_name}$" "$test_list"; then
+    if ! grep -Fxq "$test_name" "$test_list"; then
       fixed_failure 'lifecycle_implementation_unavailable'
     fi
   done
@@ -248,7 +250,7 @@ main() {
     fixed_failure 'lifecycle_store_gate_failed'
   fi
 
-  echo 'account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=covered request_count=0 gateway_requests=0 data_plane_requests=0'
+  echo 'account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered fake_driver_real_store=covered uncommitted_termination=covered commit_unknown=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=covered request_count=0 gateway_requests=0 data_plane_requests=0'
 }
 
 main "$@"

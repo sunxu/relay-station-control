@@ -38,14 +38,13 @@ require_lifecycle_test() {
   if ! go test "$package" -list "$pattern" >"$listing" 2>&1; then
     fixed_failure 'lifecycle_test_discovery_failed'
   fi
-  if ! rg -q '^Test(AccountInventory.*Lifecycle|CurrentAccountInventoryLifecycle|InventoryLifecycle)' "$listing"; then
+  if ! grep -Eq '^Test(AccountInventory.*Lifecycle|CurrentAccountInventoryLifecycle|InventoryLifecycle)' "$listing"; then
     fixed_failure "$classification"
   fi
 }
 
 run_static() {
   command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
-  command -v rg >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
   runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-static.XXXXXXXXXXXX)"
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
@@ -127,51 +126,49 @@ run_scan_smoke() {
 }
 
 run_scan_matrix() {
-  local index=0 variable_name suffix
+  local suffix
   runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-scan.XXXXXXXXXXXX)"
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
   umask 077
-  mkdir -p \
-    "$runtime_directory/success" \
-    "$runtime_directory/failure" \
-    "$runtime_directory/policy-race" \
-    "$runtime_directory/rollback"
-  printf '%s\n' \
-    'account_inventory_lifecycle_artifact=success scenario=success lifecycle_rows=1 request_count=1 raw_fields=0' \
-    >"$runtime_directory/success/final.log"
-  printf '%s\n' \
-    'account_inventory_lifecycle_artifact=success scenario=failure lifecycle_changed_rows=0 request_count=0 raw_fields=0' \
-    >"$runtime_directory/failure/final.log"
-  printf '%s\n' \
-    'account_inventory_lifecycle_artifact=success scenario=policy_race promotion_applied=0 lifecycle_changed_rows=0 request_count=0 raw_fields=0' \
-    >"$runtime_directory/policy-race/final.log"
-  printf '%s\n' \
-    'account_inventory_lifecycle_artifact=success scenario=rollback committed_lifecycle_rows=0 request_count=0 raw_fields=0' \
-    >"$runtime_directory/rollback/final.log"
-
+  mkdir -p "$runtime_directory/test"
   export CONTROL_LIFECYCLE_CANARY_SCAN_DIR="$runtime_directory"
+  export CONTROL_LIFECYCLE_CANARY_ARTIFACT_DIR="$runtime_directory"
   suffix="matrix-$$-8f27"
-  for variable_name in \
-    CONTROL_LIFECYCLE_CANARY_ENDPOINT \
-    CONTROL_LIFECYCLE_CANARY_IP \
-    CONTROL_LIFECYCLE_CANARY_SECRET_REFERENCE \
-    CONTROL_LIFECYCLE_CANARY_SECRET_VALUE \
-    CONTROL_LIFECYCLE_CANARY_EMAIL \
-    CONTROL_LIFECYCLE_CANARY_ACCOUNT_KEY \
-    CONTROL_LIFECYCLE_CANARY_RESPONSE_BODY \
-    CONTROL_LIFECYCLE_CANARY_RESPONSE_HEADER \
-    CONTROL_LIFECYCLE_CANARY_VERSION \
-    CONTROL_LIFECYCLE_CANARY_COMMIT \
-    CONTROL_LIFECYCLE_CANARY_RAW_ERROR \
-    CONTROL_LIFECYCLE_CANARY_SQL_PARAMETER \
-    CONTROL_LIFECYCLE_CANARY_POLL_ID \
-    CONTROL_LIFECYCLE_CANARY_POLICY_ID \
-    CONTROL_LIFECYCLE_CANARY_UNKNOWN_FIELD
-  do
-    index=$((index + 1))
-    export "${variable_name}=lifecycle-${suffix}-${index}"
-  done
+  export CONTROL_LIFECYCLE_CANARY_ENDPOINT="node-${suffix}.invalid"
+  export CONTROL_LIFECYCLE_CANARY_IP='10.42.0.99'
+  export CONTROL_LIFECYCLE_CANARY_SECRET_REFERENCE="file://lifecycle/${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_SECRET_VALUE="management-key-${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_EMAIL="lifecycle-${suffix}@example.invalid"
+  export CONTROL_LIFECYCLE_CANARY_ACCOUNT_KEY="openai:${CONTROL_LIFECYCLE_CANARY_EMAIL}"
+  export CONTROL_LIFECYCLE_CANARY_RESPONSE_BODY="response-body-${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_RESPONSE_HEADER="response-header-${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_VERSION="v9.9.9-${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_COMMIT='feedfacecafebeef'
+  export CONTROL_LIFECYCLE_CANARY_RAW_ERROR="raw-error-${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_SQL_PARAMETER="sql-parameter-${suffix}"
+  export CONTROL_LIFECYCLE_CANARY_POLL_ID='11111111-1111-4111-8111-111111111111'
+  export CONTROL_LIFECYCLE_CANARY_POLICY_ID='22222222-2222-4222-8222-222222222222'
+  export CONTROL_LIFECYCLE_CANARY_UNKNOWN_FIELD="unknown_field_${suffix}"
+
+  if ! go test ./internal/drivers/cliproxyapi \
+    -run '^TestAccountInventoryLifecycleCanariesTraverseDriverWorkerArtifacts$' \
+    -count=1 >"$runtime_directory/test/driver.log" 2>&1
+  then
+    fixed_failure 'canary_driver_path_failed'
+  fi
+  if ! go test ./internal/inventorypoll \
+    -run '^TestAccountInventoryLifecycleCanariesTraversePolicyRaceRollbackArtifacts$' \
+    -count=1 >"$runtime_directory/test/worker.log" 2>&1
+  then
+    fixed_failure 'canary_worker_path_failed'
+  fi
+  if ! go test ./internal/store \
+    -run '^TestAccountInventoryLifecycleCanariesTraverseSQLParameterArtifact$' \
+    -count=1 >"$runtime_directory/test/store.log" 2>&1
+  then
+    fixed_failure 'canary_store_parameter_path_failed'
+  fi
   run_scan
 }
 
@@ -191,6 +188,9 @@ case "$mode" in
     ;;
   postgres)
     "$script_directory/account-inventory-lifecycle-postgres.sh"
+    ;;
+  rollback)
+    "$script_directory/account-inventory-lifecycle-rollback.sh"
     ;;
   container)
     "$script_directory/account-inventory-lifecycle-postgres.sh"

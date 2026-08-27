@@ -65,11 +65,18 @@ jobs:
       - name: Run Go vet
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy go vet ./...
 
-      - name: Validate active OpenSpec change
+      - name: Validate active or archived OpenSpec change
         run: |
-          test -d openspec/changes/add-control-account-inventory-lifecycle-foundation
-          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-            npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-lifecycle-foundation --strict
+          if [ -d openspec/changes/add-control-account-inventory-lifecycle-foundation ]; then
+            env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+              npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-lifecycle-foundation --strict
+          else
+            test -f openspec/specs/account-inventory-lifecycle/spec.md
+            test -f openspec/specs/account-inventory-snapshot/spec.md
+            test -f openspec/specs/account-inventory-poll-run/spec.md
+            test "$(find openspec/changes/archive -mindepth 1 -maxdepth 1 -type d \
+              -name '*-add-control-account-inventory-lifecycle-foundation' | wc -l | tr -d ' ')" -eq 1
+          fi
 
       - name: Validate all OpenSpec specifications
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
@@ -123,9 +130,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Rollback acceptance builds the archived snapshot-only revision in
+          # an isolated temporary tree without changing the checked-out tree.
+          fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31d06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -138,11 +149,14 @@ jobs:
       - name: Run synthetic lifecycle artifact scanner smoke
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-lifecycle-run.sh scan-smoke
 
-      - name: Scan projected lifecycle scenario artifacts
+      - name: Scan component-input lifecycle scenario artifacts
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-lifecycle-run.sh scan-matrix
 
       - name: Run isolated lifecycle PostgreSQL acceptance
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-lifecycle-run.sh postgres
+
+      - name: Exercise snapshot-only binary rollback on forward schema
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-lifecycle-run.sh rollback
 
   official_snapshot:
     name: Official CLIProxyAPI lifecycle acceptance
