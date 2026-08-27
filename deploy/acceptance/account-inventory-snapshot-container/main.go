@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -31,6 +32,9 @@ const (
 
 	fixtureProvider = "antigravity"
 	requestCooldown = 10 * time.Second
+	setupTimeout    = 60 * time.Second
+	workerTimeout   = 45 * time.Second
+	schedulePeriod  = 5 * time.Minute
 )
 
 var (
@@ -82,22 +86,26 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
+	setupContext, cancelSetup := context.WithTimeout(context.Background(), setupTimeout)
+	defer cancelSetup()
 
-	owner, err := openPool(ctx, configuration.ownerURL)
+	owner, err := openPool(setupContext, configuration.ownerURL)
 	if err != nil {
 		return checkpoint("owner_database")
 	}
 	defer owner.Close()
-	runtime, err := openPool(ctx, configuration.runtimeURL)
+	runtime, err := openPool(setupContext, configuration.runtimeURL)
 	if err != nil {
 		return checkpoint("runtime_database")
 	}
 	defer runtime.Close()
-	if err := seed(ctx, owner, configuration.endpoint, configuration.secretReference); err != nil {
+	if err := seed(setupContext, owner, configuration.endpoint, configuration.secretReference); err != nil {
 		return checkpoint("seed")
 	}
+	cancelSetup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), workerTimeout)
+	defer cancel()
 
 	resolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{MappingFile: configuration.mappingFile})
 	if err != nil {
@@ -241,14 +249,15 @@ func seed(ctx context.Context, owner *pgxpool.Pool, endpoint, secretReference st
 }
 
 func waitForSafeSlot(ctx context.Context, owner *pgxpool.Pool) error {
-	var remaining int
-	if err := owner.QueryRow(ctx, `SELECT 300-mod(extract(epoch FROM clock_timestamp())::bigint,300)`).Scan(&remaining); err != nil {
+	var epochSeconds float64
+	if err := owner.QueryRow(ctx, `SELECT extract(epoch FROM clock_timestamp())::double precision`).Scan(&epochSeconds); err != nil {
 		return err
 	}
-	if remaining >= 30 {
+	delay := safeSlotDelay(epochSeconds)
+	if delay == 0 {
 		return nil
 	}
-	timer := time.NewTimer(time.Duration(remaining)*time.Second + 250*time.Millisecond)
+	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -256,6 +265,14 @@ func waitForSafeSlot(ctx context.Context, owner *pgxpool.Pool) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func safeSlotDelay(epochSeconds float64) time.Duration {
+	remainingSeconds := schedulePeriod.Seconds() - math.Mod(epochSeconds, schedulePeriod.Seconds())
+	if remainingSeconds >= 30 {
+		return 0
+	}
+	return time.Duration(remainingSeconds*float64(time.Second)) + 250*time.Millisecond
 }
 
 type cooldownInvoker struct {
