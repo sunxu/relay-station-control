@@ -228,7 +228,7 @@ func newLifecycleWorkerFixture(
 	}
 	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_activations(
 		node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at
-	) VALUES ($1,$2,$3,clock_timestamp(),'fake-driver-test',clock_timestamp())`,
+	) VALUES ($1,$2,$3,clock_timestamp(),'fake-driver-test',CURRENT_TIMESTAMP)`,
 		fixture.nodeType, fixture.contract, policyID); err != nil {
 		t.Fatal(err)
 	}

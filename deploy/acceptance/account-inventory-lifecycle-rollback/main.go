@@ -137,7 +137,7 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 			[]any{fixtureNodeType, fixtureContract, fixturePolicyID}},
 		{`INSERT INTO provider_inventory_policy_activations(node_type,driver_contract_version,
 			policy_version_id,effective_from,activated_by,created_at)
-			VALUES ($1,$2,$3,clock_timestamp(),'rollback-acceptance',clock_timestamp())`,
+			VALUES ($1,$2,$3,clock_timestamp(),'rollback-acceptance',CURRENT_TIMESTAMP)`,
 			[]any{fixtureNodeType, fixtureContract, fixturePolicyID}},
 	}
 	for _, statement := range statements {
