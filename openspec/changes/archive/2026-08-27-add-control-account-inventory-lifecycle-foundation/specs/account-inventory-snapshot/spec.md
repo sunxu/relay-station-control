@@ -57,3 +57,8 @@ Snapshot foundation SHALL 继续形成不可变 snapshot items、节点内重复
 #### Scenario: 网络调用范围检查
 - **WHEN** snapshot/promotion/lifecycle 验收运行
 - **THEN** 网络请求数量和目标与既有 poll-run 固定账号清单只读 GET 相同，不增加 Probe、Gateway、模型数据面、Node 写接口或任意目标
+
+## RENAMED Requirements
+
+- FROM: `### Requirement: 本 snapshot foundation MUST 不推进账号生命周期或历史产品功能`
+- TO: `### Requirement: 本 snapshot foundation SHALL 只在合格 promotion 推进当前账号生命周期`

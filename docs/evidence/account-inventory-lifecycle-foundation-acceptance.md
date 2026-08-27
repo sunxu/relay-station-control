@@ -4,7 +4,7 @@ Date: 2026-08-27
 
 Change: `add-control-account-inventory-lifecycle-foundation`
 
-Status: acceptance in progress pending post-push CI. Static, scanner-unit, enhanced PostgreSQL lifecycle, snapshot-only binary rollback, lifecycle-retention data-plane, enhanced official-container, component-input canary and all local release gates passed on the final acceptance patch. The enhanced PostgreSQL run included fake Driver→real Store lifecycle sequences, uncommitted termination, commit-unknown replay, policy-mutation fail-closed behavior, empty-side Provider-set transitions and 1/10/50 Node capacity checks. This file is not a claim that the change is archived or that CI has passed.
+Status: complete and archived. Static, scanner-unit, enhanced PostgreSQL lifecycle, snapshot-only binary rollback, lifecycle-retention data-plane, enhanced official-container, component-input canary and all local release gates passed on the final acceptance patch. GitHub Actions run [33033459871](https://github.com/sunxu/relay-station-control/actions/runs/33033459871) passed all five active-change jobs. The enhanced PostgreSQL run included fake Driver→real Store lifecycle sequences, uncommitted termination, commit-unknown replay, policy-mutation fail-closed behavior, empty-side Provider-set transitions and 1/10/50 Node capacity checks. The archived tree remains subject to the same branch CI gates.
 
 Scope: fake Driver observations, synthetic official CLIProxyAPI fixtures and isolated PostgreSQL 18 only. Real Nodes, production databases, production credentials and production account identities are outside this evidence. The lifecycle runner keeps real-Node mode fail closed with `request_count=0`.
 
@@ -90,7 +90,7 @@ account_inventory_lifecycle_canary_scan=success
 
 This is synthetic component-input evidence: the success path issued one local management GET, the network-failure path attempted one dial without reaching an HTTP server, and policy-race/rollback used two in-process fake Driver calls. It proves those generated final artifacts are canary-free; it does not claim that production artifacts were collected, that a real Node was contacted, or that arbitrary raw logs are safe to retain.
 
-The final acceptance patch passed twice-reproducible generation, `make test`, `make build`, all Go tests, race detection, vet, frontend test/typecheck/build, workflow lint, change strict validation, all-spec strict validation and `git diff --check`. The generated diff hash was identical across both consecutive generation runs. Post-push GitHub Actions remains the only pending completion gate.
+The final acceptance patch passed twice-reproducible generation, `make test`, `make build`, all Go tests, race detection, vet, frontend test/typecheck/build, workflow lint, change strict validation, all-spec strict validation and `git diff --check`. The generated diff hash was identical across both consecutive generation runs. The final active-change GitHub Actions run passed before archive.
 
 ## Transition evidence to record
 

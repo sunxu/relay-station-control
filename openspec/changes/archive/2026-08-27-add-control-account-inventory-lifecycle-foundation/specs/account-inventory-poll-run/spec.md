@@ -41,3 +41,8 @@ Poll-run 与 snapshot foundation SHALL 在同一 fenced finalize 中保存完整
 #### Scenario: 网络调用范围检查
 - **WHEN** Scheduler、Worker、Reconciler、snapshot 和 lifecycle 验收运行
 - **THEN** 除固定 Node Driver 账号清单只读 GET 外不调用 Gateway、Node 写接口、模型数据面或任意未登记目标
+
+## RENAMED Requirements
+
+- FROM: `### Requirement: 本 foundation MUST 不提前实现账号状态或产品界面`
+- TO: `### Requirement: 本 foundation SHALL 推进当前账号状态但不实现产品界面`
