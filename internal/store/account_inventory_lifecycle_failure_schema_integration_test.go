@@ -126,8 +126,8 @@ func TestAccountInventoryLifecycleUncommittedTerminationRollsBackMissingAndUpser
 			if err != nil {
 				t.Fatal("acquire lifecycle fault connection failed")
 			}
+			defer connection.Release()
 			terminatePausedLifecycleFinalize(t, ctx, database, connection, poll, payload)
-			connection.Release()
 
 			var status string
 			var providerEvidence, snapshotEvidence, lifecycleRows, providerStateRows int
@@ -209,18 +209,16 @@ func TestAccountInventoryLifecycleCommitUnknownReplayIsSingleState(t *testing.T)
 	if err != nil {
 		t.Fatal("acquire commit-unknown connection failed")
 	}
+	defer connection.Release()
 	if _, err := connection.Exec(ctx, `BEGIN`); err != nil {
-		connection.Release()
 		t.Fatal("begin commit-unknown transaction failed")
 	}
 	finalized, err := finalizeLifecyclePoll(ctx, connection, poll, payload)
 	if err != nil || finalized != 1 {
-		connection.Release()
 		t.Fatal("commit-unknown transaction did not stage one finalize")
 	}
 	_, commitUnknownErr := connection.Exec(ctx,
 		`COMMIT; SELECT pg_terminate_backend(pg_backend_pid())`)
-	connection.Release()
 	if commitUnknownErr == nil {
 		t.Fatal("commit-unknown injection unexpectedly returned a reliable acknowledgement")
 	}

@@ -166,9 +166,9 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 			name = "scope_first"
 		}
 		t.Run(name, func(t *testing.T) {
+			database := newIsolatedJobDatabase(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			database := newIsolatedJobDatabase(t)
 			fixture := newLifecycleSchemaFixture(t, ctx, database)
 			baselinePoll := fixture.finalize(t, ctx, database, []lifecycleAccount{{
 				email: "scope-race@example.invalid", successCount: 1,
@@ -297,9 +297,9 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 }
 
 func TestAccountInventoryLifecycleConcurrentSlotsAdvanceOnlyNewestOnce(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	database := newIsolatedJobDatabase(t)
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
 	baseline := fixture.finalize(t, ctx, database, []lifecycleAccount{{
 		email: "slot-race@example.invalid", successCount: 1,
@@ -483,9 +483,9 @@ func measureLifecycleFinalize(
 }
 
 func TestAccountInventoryLifecycleCapacityThousandAccounts(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 	defer cancel()
-	database := newIsolatedJobDatabase(t)
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
 	accounts := make([]lifecycleAccount, 1000)
 	for index := range accounts {
