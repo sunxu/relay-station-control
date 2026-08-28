@@ -831,6 +831,7 @@ func proxyFreeEnvironment() []string {
 	blocked := map[string]bool{
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true,
 		"http_proxy": true, "https_proxy": true, "all_proxy": true,
+		"GOOSE_DRIVER": true, "GOOSE_DBSTRING": true, "GOOSE_MIGRATION_DIR": true,
 	}
 	environment := make([]string, 0, len(os.Environ())+2)
 	for _, entry := range os.Environ() {
@@ -847,11 +848,15 @@ func proxyFreeEnvironment() []string {
 
 func runAssetGoose(t *testing.T, ctx context.Context, repositoryRoot, databaseURL string, arguments ...string) error {
 	t.Helper()
-	commandArguments := []string{"tool", "goose", "-dir", "../migrations", "postgres", databaseURL}
+	commandArguments := []string{"tool", "goose"}
 	commandArguments = append(commandArguments, arguments...)
 	command := exec.CommandContext(ctx, "go", commandArguments...)
 	command.Dir = filepath.Join(repositoryRoot, "tools")
-	command.Env = proxyFreeEnvironment()
+	command.Env = append(proxyFreeEnvironment(),
+		"GOOSE_DRIVER=postgres",
+		"GOOSE_DBSTRING="+databaseURL,
+		"GOOSE_MIGRATION_DIR=../migrations",
+	)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("goose %s: %w: %s", strings.Join(arguments, " "), err, strings.TrimSpace(string(output)))

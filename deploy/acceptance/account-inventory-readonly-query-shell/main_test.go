@@ -275,6 +275,16 @@ func TestReadonlyQueryBundlePinsPostgresAndOwnsTemporaryCleanup(t *testing.T) {
 			t.Errorf("%s does not verify the applied Migration version", name)
 		}
 	}
+	postgresScript := readFile(t, filepath.Join(root, "account-inventory-readonly-query-postgres.sh"))
+	for _, required := range []string{
+		"TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility",
+		"protected_down_empty_up=covered",
+		"protected_down_audit_fail_closed=covered",
+	} {
+		if !strings.Contains(postgresScript, required) {
+			t.Errorf("readonly query PostgreSQL acceptance lacks protected-down contract %q", required)
+		}
+	}
 	for _, required := range []string{"docker compose --project-name", "down --volumes --remove-orphans"} {
 		if !strings.Contains(contents, required) {
 			t.Errorf("readonly query acceptance lacks bounded temporary cleanup contract %q", required)

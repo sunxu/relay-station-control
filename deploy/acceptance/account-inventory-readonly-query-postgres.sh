@@ -145,6 +145,7 @@ main() {
   fi
   grep -Fxq '8' "$runtime_directory/migration-version.log" || fixed_failure 'migration_version_invalid'
 
+  require_test ./internal/store TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility
   require_test ./internal/store TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix
   require_test ./internal/store TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback
   require_test ./internal/store TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics
@@ -154,7 +155,7 @@ main() {
 
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test ./internal/store \
-      -run '^TestAccountInventoryReadonlyQuery(StoreAndPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)$' \
+      -run '^TestAccountInventoryReadonlyQuery(MigrationEmptyDownUpRestoresCompatibility|StoreAndPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)$' \
       -count=1 >"$runtime_directory/store.log" 2>&1; then
     fixed_failure 'store_gate_failed'
   fi
@@ -188,13 +189,13 @@ main() {
   fi
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test -race ./internal/store ./internal/api \
-      -run '^(TestAccountInventoryReadonlyQuery(StoreAndPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)$' \
+      -run '^(TestAccountInventoryReadonlyQuery(MigrationEmptyDownUpRestoresCompatibility|StoreAndPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)$' \
       -count=1 >"$runtime_directory/race.log" 2>&1; then
     fixed_failure 'race_gate_failed'
   fi
 
   strict_cleanup
-  echo 'account_inventory_readonly_query_postgres=success server_major=18 migration=8 permissions=covered query_semantics=covered http=covered concurrency=covered atomic_audit=covered database_faults=covered capacity_1_10_50=covered query_external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
+  echo 'account_inventory_readonly_query_postgres=success server_major=18 migration=8 protected_down_empty_up=covered protected_down_audit_fail_closed=covered permissions=covered query_semantics=covered http=covered concurrency=covered atomic_audit=covered database_faults=covered capacity_1_10_50=covered query_external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
   printf '%s\n' "$capacity_one" "$capacity_ten" "$capacity_fifty"
 }
 

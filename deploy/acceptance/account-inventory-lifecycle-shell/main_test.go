@@ -136,15 +136,24 @@ func TestLifecycleRollbackPinsOldBinaryAndFreezesBothMutationPaths(t *testing.T)
 		`start_control "$new_binary" true`,
 		`"$harness" replay`,
 		"fixture_prepare_timeout",
+		"minimum_forward_schema=7",
+		`[ "$schema_version" -lt "$minimum_forward_schema" ]`,
+		"GOOSE_DBSTRING=\"$CONTROL_LIFECYCLE_ROLLBACK_OWNER_URL\"",
 	} {
 		if !strings.Contains(contents, required) {
 			t.Fatalf("rollback acceptance missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"git checkout", "git switch", "git worktree"} {
+	for _, forbidden := range []string{
+		"git checkout", "git switch", "git worktree",
+		`go tool goose -dir ../migrations postgres "$CONTROL_LIFECYCLE_ROLLBACK_OWNER_URL"`,
+	} {
 		if strings.Contains(contents, forbidden) {
 			t.Fatalf("rollback acceptance mutates the primary worktree with %q", forbidden)
 		}
+	}
+	if strings.Contains(contents, `[ "$schema_version" != 7 ]`) {
+		t.Fatal("rollback acceptance rejects additive schema versions newer than lifecycle foundation")
 	}
 }
 

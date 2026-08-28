@@ -12,6 +12,46 @@ import (
 	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
+func TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	repository, err := productstore.NewAccountInventoryRepository(database.runtime)
+	if err != nil {
+		t.Fatal("create readonly query repository")
+	}
+	if err := repository.CheckCompatibility(ctx); err != nil {
+		t.Fatal("Migration 8 compatibility is unavailable before protected down")
+	}
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatal("empty readonly query Migration 8 down failed")
+	}
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 7)
+	if err := repository.CheckCompatibility(ctx); !errors.Is(err, productstore.ErrAccountInventoryInconsistent) {
+		t.Fatal("readonly query compatibility remained available after Migration 8 down")
+	}
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+		t.Fatal("readonly query Migration 8 up after protected down failed")
+	}
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
+	if err := repository.CheckCompatibility(ctx); err != nil {
+		t.Fatal("readonly query compatibility did not recover after Migration 8 up")
+	}
+}
+
+func requireAccountInventoryReadonlyQueryMigrationVersion(
+	t *testing.T, ctx context.Context, database *isolatedJobDatabase, want int64,
+) {
+	t.Helper()
+	var version int64
+	if err := database.owner.QueryRow(ctx, `SELECT max(version_id)
+		FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil || version != want {
+		t.Fatalf("readonly query Migration version = %d, want %d", version, want)
+	}
+}
+
 func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
@@ -154,6 +194,7 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
 		t.Fatal("protected down removed a query schema with immutable view audits")
 	}
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
 	if err := repository.CheckCompatibility(ctx); err != nil {
 		t.Fatalf("failed protected down changed compatibility: %v", err)
 	}

@@ -15,6 +15,7 @@ compose_file="$script_directory/account-inventory-snapshot-postgres.compose.yaml
 runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-rollback.XXXXXXXXXXXX)"
 project_name="relay-control-lifecycle-rollback-pg-$$"
 old_revision='e482d8eb19896a60b73a4144ee155d1f66a2b1d7'
+minimum_forward_schema=7
 old_source="$runtime_directory/old-source"
 old_archive="$runtime_directory/old-source.tar"
 old_binary="$runtime_directory/control-old"
@@ -223,7 +224,10 @@ main() {
   export CONTROL_LIFECYCLE_ROLLBACK_RUNTIME_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${port}/relay_station_control?sslmode=disable"
   if ! (
     cd "$repository_root/tools"
-    go tool goose -dir ../migrations postgres "$CONTROL_LIFECYCLE_ROLLBACK_OWNER_URL" up
+    GOOSE_DRIVER=postgres \
+      GOOSE_DBSTRING="$CONTROL_LIFECYCLE_ROLLBACK_OWNER_URL" \
+      GOOSE_MIGRATION_DIR=../migrations \
+      go tool goose up
   ) >"$runtime_directory/migration.log" 2>&1
   then
     fixed_failure 'migration_failed'
@@ -232,7 +236,10 @@ main() {
     --dbname relay_station_control --tuples-only --no-align \
     --command 'SELECT max(version_id) FROM goose_db_version WHERE is_applied' \
     2>/dev/null)" || fixed_failure 'schema_version_unavailable'
-  if [ "$schema_version" != 7 ]; then
+  case "$schema_version" in
+    ''|*[!0-9]*) fixed_failure 'forward_schema_invalid' ;;
+  esac
+  if [ "$schema_version" -lt "$minimum_forward_schema" ]; then
     fixed_failure 'forward_schema_invalid'
   fi
 
@@ -296,7 +303,7 @@ main() {
   then
     fixed_failure 'identity_leaked_to_logs'
   fi
-  echo 'account_inventory_lifecycle_rollback=success old_revision=e482d8e forward_schema=7 poll_enabled=false policy_mutation_enabled=false old_product_reads=3 lifecycle_frozen=true next_qualified_poll_advanced=true finalized_replay_advanced=false management_requests=0 real_node_requests=0 gateway_requests=0 data_plane_requests=0'
+  echo "account_inventory_lifecycle_rollback=success old_revision=e482d8e forward_schema=${schema_version} minimum_forward_schema=${minimum_forward_schema} poll_enabled=false policy_mutation_enabled=false old_product_reads=3 lifecycle_frozen=true next_qualified_poll_advanced=true finalized_replay_advanced=false management_requests=0 real_node_requests=0 gateway_requests=0 data_plane_requests=0"
 }
 
 main "$@"
