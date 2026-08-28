@@ -106,7 +106,7 @@ require_test() {
 
 classify_grouped_go_test_failure() {
   local log="$1" gate="$2" event package test_name
-  local failure_event_pattern='^\{"Time":"[^"]+","Action":"fail","Package":"github\.com/sunxu/relay-station-control/(internal/store|internal/api)","Test":"(TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState|TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix|TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix|TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback|TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics|TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)"(,"Elapsed":[0-9]+(\.[0-9]+)?)?\}$'
+  local failure_event_pattern='^\{"Time":"[^"]+","Action":"fail","Package":"github\.com/sunxu/relay-station-control/(internal/store|internal/api)","Test":"(TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/tables_unchanged|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/columns_unchanged|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/rows_unchanged|TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix|TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix|TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback|TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics|TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)"(,"Elapsed":[0-9]+(\.[0-9]+)?)?\}$'
 
   while IFS= read -r event; do
     if [[ "$event" =~ $failure_event_pattern ]]; then
@@ -118,6 +118,15 @@ classify_grouped_go_test_failure() {
           ;;
         store:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState)
           fixed_failure 'store_test_migration_state_preservation_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/tables_unchanged)
+          fixed_failure 'store_test_migration_state_tables_changed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/columns_unchanged)
+          fixed_failure 'store_test_migration_state_columns_changed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/rows_unchanged)
+          fixed_failure 'store_test_migration_state_rows_changed'
           ;;
         store:internal/store:TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix)
           fixed_failure 'store_test_store_permission_matrix_failed'
@@ -139,6 +148,15 @@ classify_grouped_go_test_failure() {
           ;;
         race:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState)
           fixed_failure 'race_test_migration_state_preservation_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/tables_unchanged)
+          fixed_failure 'race_test_migration_state_tables_changed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/columns_unchanged)
+          fixed_failure 'race_test_migration_state_columns_changed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/rows_unchanged)
+          fixed_failure 'race_test_migration_state_rows_changed'
           ;;
         race:internal/store:TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix)
           fixed_failure 'race_test_store_permission_matrix_failed'

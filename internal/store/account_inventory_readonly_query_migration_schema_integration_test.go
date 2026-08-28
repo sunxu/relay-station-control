@@ -70,15 +70,21 @@ func TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState(t
 	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
 	after := captureReadonlyQueryMigrationState(t, ctx, database)
 
-	if !reflect.DeepEqual(after.tables, before.tables) {
-		t.Fatal("Migration 8 added or removed a product table")
-	}
-	if !reflect.DeepEqual(after.columns, before.columns) {
-		t.Fatal("Migration 8 added, removed, or changed a product column")
-	}
-	if !reflect.DeepEqual(after.rows, before.rows) {
-		t.Fatal("Migration 8 changed or copied existing product row state")
-	}
+	t.Run("tables_unchanged", func(t *testing.T) {
+		if !reflect.DeepEqual(after.tables, before.tables) {
+			t.Fatal("Migration 8 added or removed a product table")
+		}
+	})
+	t.Run("columns_unchanged", func(t *testing.T) {
+		if !reflect.DeepEqual(after.columns, before.columns) {
+			t.Fatal("Migration 8 added, removed, or changed a product column")
+		}
+	})
+	t.Run("rows_unchanged", func(t *testing.T) {
+		if !reflect.DeepEqual(after.rows, before.rows) {
+			t.Fatal("Migration 8 changed or copied existing product row state")
+		}
+	})
 	requireReadonlyQueryIdentityColumnShape(t, after.columns)
 	if err := repository.CheckCompatibility(ctx); err != nil {
 		t.Fatal("readonly query compatibility did not become available after Migration 8")

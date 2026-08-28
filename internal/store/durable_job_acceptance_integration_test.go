@@ -257,7 +257,8 @@ func assertRejectedCompositeInsert(t *testing.T, ctx context.Context, tx pgx.Tx,
 	}
 }
 
-// isolatedJobDatabase migrates a disposable PostgreSQL 18 database to v4.
+// isolatedJobDatabase migrates a disposable PostgreSQL 18 database through the
+// current production migration set.
 // It lets concurrency and runtime-role tests commit without leaving test kinds
 // or durable evidence in the shared development database.
 type isolatedJobDatabase struct {
@@ -269,8 +270,6 @@ type isolatedJobDatabase struct {
 
 func newIsolatedJobDatabase(t *testing.T) *isolatedJobDatabase {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	t.Cleanup(cancel)
 	ownerConfig, err := pgx.ParseConfig(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
@@ -278,19 +277,25 @@ func newIsolatedJobDatabase(t *testing.T) *isolatedJobDatabase {
 	databaseName := strings.ReplaceAll("job_accept_"+assetFixtureSuffix(t), "-", "_")
 	maintenanceConfig := ownerConfig.Copy()
 	maintenanceConfig.Database = "postgres"
-	maintenance, err := pgx.ConnectConfig(ctx, maintenanceConfig)
+	controlCtx, cancelControl := context.WithTimeout(context.Background(), 45*time.Second)
+	maintenance, err := pgx.ConnectConfig(controlCtx, maintenanceConfig)
 	if err != nil {
+		cancelControl()
 		t.Fatal(err)
 	}
 	identifier := pgx.Identifier{databaseName}.Sanitize()
-	if _, err := maintenance.Exec(ctx, `CREATE DATABASE `+identifier); err != nil {
-		maintenance.Close(context.Background())
+	if _, err := maintenance.Exec(controlCtx, `CREATE DATABASE `+identifier); err != nil {
+		maintenance.Close(controlCtx)
+		cancelControl()
 		t.Fatal(err)
 	}
+	cancelControl()
 	t.Cleanup(func() {
-		_, _ = maintenance.Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, databaseName)
-		_, _ = maintenance.Exec(context.Background(), `DROP DATABASE IF EXISTS `+identifier)
-		maintenance.Close(context.Background())
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancelCleanup()
+		_, _ = maintenance.Exec(cleanupCtx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, databaseName)
+		_, _ = maintenance.Exec(cleanupCtx, `DROP DATABASE IF EXISTS `+identifier)
+		maintenance.Close(cleanupCtx)
 	})
 	ownerLocation, err := url.Parse(testDatabaseURL(t))
 	if err != nil {
@@ -303,14 +308,20 @@ func newIsolatedJobDatabase(t *testing.T) *isolatedJobDatabase {
 	}
 	runtimeLocation.Path = "/" + databaseName
 	result := &isolatedJobDatabase{ownerURL: ownerLocation.String(), runtimeURL: runtimeLocation.String()}
-	if err := runAssetGoose(t, ctx, "../..", result.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	result.owner, err = pgxpool.New(ctx, result.ownerURL)
+	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
+	err = runAssetGoose(t, migrationCtx, "../..", result.ownerURL, "up")
+	cancelMigration()
 	if err != nil {
 		t.Fatal(err)
 	}
-	result.runtime, err = pgxpool.New(ctx, result.runtimeURL)
+	poolCtx, cancelPool := context.WithTimeout(context.Background(), 45*time.Second)
+	result.owner, err = pgxpool.New(poolCtx, result.ownerURL)
+	if err != nil {
+		cancelPool()
+		t.Fatal(err)
+	}
+	result.runtime, err = pgxpool.New(poolCtx, result.runtimeURL)
+	cancelPool()
 	if err != nil {
 		result.owner.Close()
 		t.Fatal(err)

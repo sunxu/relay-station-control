@@ -171,6 +171,36 @@ func TestReadonlyQueryRunnerHasClosedModeMatrix(t *testing.T) {
 	}
 }
 
+func TestReadonlyQueryRunnerValidatesActiveOrArchivedOpenSpec(t *testing.T) {
+	contents := readFile(t, filepath.Join(acceptanceRoot(t), runnerName))
+	continued := strings.ReplaceAll(contents, "\\\n", " ")
+	normalized := regexp.MustCompile(`\s+`).ReplaceAllString(continued, " ")
+	for _, required := range []string{
+		"validate_openspec()",
+		`[ -d "$repository_root/openspec/changes/add-control-account-inventory-readonly-query" ]`,
+		proxyPrefix + "npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-readonly-query --strict",
+		"account-inventory-readonly-query",
+		"account-inventory-lifecycle",
+		"account-inventory-snapshot",
+		"account-inventory-poll-run",
+		`$repository_root/openspec/specs/$canonical_spec/spec.md`,
+		`$repository_root/openspec/changes/archive`,
+		"*-add-control-account-inventory-readonly-query",
+		`[ "$archive_count" -ne 1 ]`,
+		proxyPrefix + "npx --yes @fission-ai/openspec@1.10.0 validate --all --strict",
+	} {
+		if !strings.Contains(normalized, required) {
+			t.Errorf("readonly query runner lacks active/archive OpenSpec contract %q", required)
+		}
+	}
+	if strings.Count(contents, "validate_openspec") != 2 {
+		t.Fatal("readonly query runner does not call its OpenSpec gate exactly once")
+	}
+	if strings.Contains(contents, "--skip-specs") || strings.Contains(contents, "--no-validate") {
+		t.Fatal("readonly query runner permits archive validation bypass")
+	}
+}
+
 func TestReadonlyQueryScriptsAreSyntacticallyValidAndFailClosed(t *testing.T) {
 	root := acceptanceRoot(t)
 	for _, name := range acceptanceScripts {
@@ -381,6 +411,13 @@ func TestReadonlyQuerySuccessfulPathsStrictlyVerifyCleanup(t *testing.T) {
 
 func TestReadonlyQueryPostgresClassifiesGroupedGoTestFailuresWithoutPrintingLogs(t *testing.T) {
 	script := readFile(t, filepath.Join(acceptanceRoot(t), "account-inventory-readonly-query-postgres.sh"))
+	migrationTest := readFile(t, filepath.Join(repositoryRoot(t), "internal", "store",
+		"account_inventory_readonly_query_migration_schema_integration_test.go"))
+	for _, subtest := range []string{"tables_unchanged", "columns_unchanged", "rows_unchanged"} {
+		if !strings.Contains(migrationTest, `t.Run("`+subtest+`"`) {
+			t.Errorf("migration preservation acceptance lacks exact subtest %q", subtest)
+		}
+	}
 	for _, required := range []string{
 		"go test -json ./internal/store",
 		"go test -json -race ./internal/store ./internal/api",
@@ -400,6 +437,15 @@ func TestReadonlyQueryPostgresClassifiesGroupedGoTestFailuresWithoutPrintingLogs
 		},
 		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState": {
 			"store_test_migration_state_preservation_failed", "race_test_migration_state_preservation_failed",
+		},
+		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/tables_unchanged": {
+			"store_test_migration_state_tables_changed", "race_test_migration_state_tables_changed",
+		},
+		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/columns_unchanged": {
+			"store_test_migration_state_columns_changed", "race_test_migration_state_columns_changed",
+		},
+		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/rows_unchanged": {
+			"store_test_migration_state_rows_changed", "race_test_migration_state_rows_changed",
 		},
 		"TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix": {
 			"store_test_store_permission_matrix_failed", "race_test_store_permission_matrix_failed",

@@ -62,6 +62,42 @@ require_test() {
   fi
 }
 
+validate_openspec() {
+  local archive_count canonical_spec openspec_log
+  openspec_log="$runtime_directory/openspec.log"
+  if [ -d "$repository_root/openspec/changes/add-control-account-inventory-readonly-query" ]; then
+    if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-readonly-query --strict \
+        >"$openspec_log" 2>&1; then
+      fixed_failure 'openspec_validation_failed'
+    fi
+  else
+    for canonical_spec in \
+      account-inventory-readonly-query \
+      account-inventory-lifecycle \
+      account-inventory-snapshot \
+      account-inventory-poll-run
+    do
+      if [ ! -f "$repository_root/openspec/specs/$canonical_spec/spec.md" ]; then
+        fixed_failure 'openspec_validation_failed'
+      fi
+    done
+    if ! archive_count="$(find "$repository_root/openspec/changes/archive" \
+      -mindepth 1 -maxdepth 1 -type d \
+      -name '*-add-control-account-inventory-readonly-query' | wc -l | tr -d ' ')"; then
+      fixed_failure 'openspec_validation_failed'
+    fi
+    if [ "$archive_count" -ne 1 ]; then
+      fixed_failure 'openspec_validation_failed'
+    fi
+  fi
+  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    npx --yes @fission-ai/openspec@1.10.0 validate --all --strict \
+      >>"$openspec_log" 2>&1; then
+    fixed_failure 'openspec_validation_failed'
+  fi
+}
+
 run_static() {
   command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
   command -v npm >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
@@ -96,11 +132,7 @@ run_static() {
   ); then
     fixed_failure 'frontend_typecheck_failed'
   fi
-  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    npx --yes @fission-ai/openspec@1.10.0 validate add-control-account-inventory-readonly-query --strict \
-      >"$runtime_directory/openspec.log" 2>&1; then
-    fixed_failure 'openspec_validation_failed'
-  fi
+  validate_openspec
 }
 
 cd "$repository_root"
