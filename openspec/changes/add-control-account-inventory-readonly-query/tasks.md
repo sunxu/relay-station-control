@@ -51,13 +51,13 @@
 - [x] 7.2 向email/account key/cursor、endpoint、Secret、poll/policy ID、版本/提交、raw error注入唯一canary，扫描成功、空结果、非法filter、audit failure、cursor failure和UI错误的最终日志/指标/audit/error/artifact
 - [x] 7.3 检查request URL、redirect/Location、反向代理access log fixture、浏览器history/localStorage/sessionStorage和前端query cache持久化，证明敏感body/cursor不扩散
 - [x] 7.4 使用1/10/50 Node与总计1,000个合成账号测量无筛选、各单筛选、组合筛选、深分页和并发管理员查询P50/P95/P99、DB buffers与audit写入开销
-- [ ] 7.5 停止/重启Control和PostgreSQL并模拟连接耗尽、statement timeout、audit commit失败与key rotation，验证query fail closed、恢复后直接读取当前状态且数据面持续通过
+- [x] 7.5 停止/重启Control和PostgreSQL并模拟连接耗尽、statement timeout、audit commit失败与key rotation，验证query fail closed、恢复后直接读取当前状态且数据面持续通过
 
 ## 8. Runbook、证据与最终门禁
 
 - [x] 8.1 编写账号只读查询Runbook，覆盖Node capability、exact email、分页过期、fresh/degraded解释、审计不可用、DB参数日志关闭、key rotation和脱敏排障
 - [x] 8.2 固化rollout/rollback：先Migration再新二进制、compatibility gate、导航开放、回滚保留函数/索引/audit且生产不执行down，并在隔离环境dry run
 - [x] 8.3 运行Migration/schema/Store、全部Go单元与集成、`make generate`、`make test`、`make build`、`go test ./...`、`go test -race ./...`、`go vet ./...`和前端typecheck/test/build
-- [ ] 8.4 运行PostgreSQL18 container acceptance、HTTP/UI、权限、并发promotion、容量、零外部请求、no-store和敏感canary门禁，保存不含身份值的验收摘要
+- [x] 8.4 运行PostgreSQL18 container acceptance、HTTP/UI、权限、并发promotion、容量、零外部请求、no-store和敏感canary门禁，保存不含身份值的验收摘要
 - [x] 8.5 运行`openspec validate add-control-account-inventory-readonly-query --strict`、全部主规格strict校验和`git diff --check`，对照proposal/design/spec/tasks与系统设计确认无漂移
 - [x] 8.6 检查`git status --short`、生成物复现、Migration/OpenAPI/UI范围和临时容器/目录，确认worktree只包含本change实现并整理Conventional Commits分层提交计划
