@@ -278,12 +278,24 @@ func TestReadonlyQueryBundlePinsPostgresAndOwnsTemporaryCleanup(t *testing.T) {
 	postgresScript := readFile(t, filepath.Join(root, "account-inventory-readonly-query-postgres.sh"))
 	for _, required := range []string{
 		"TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility",
+		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState",
+		"TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix",
+		"migration8_existing_state_unchanged=covered",
+		"migration8_identity_copy_backfill=0",
 		"protected_down_empty_up=covered",
 		"protected_down_audit_fail_closed=covered",
+		"runtime_function_execute=allowed",
+		"runtime_sensitive_table_enumeration=denied",
+		"runtime_sensitive_table_dml=denied",
+		"unauthorized_function_execute=denied",
 	} {
 		if !strings.Contains(postgresScript, required) {
 			t.Errorf("readonly query PostgreSQL acceptance lacks protected-down contract %q", required)
 		}
+	}
+	if strings.Count(postgresScript,
+		"RuntimeAndUnauthorizedPermissionMatrix") < 3 {
+		t.Fatal("readonly query permission matrix is not required by discovery, normal, and race gates")
 	}
 	for _, required := range []string{"docker compose --project-name", "down --volumes --remove-orphans"} {
 		if !strings.Contains(contents, required) {

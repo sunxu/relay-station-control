@@ -162,6 +162,35 @@ verify_product_reads() {
     || fixed_failure "${prefix}_metrics_read_failed"
 }
 
+verify_old_readonly_route_closed() {
+  local status response_size
+  printf '%s\n' \
+    '{"instance_id":"00000000-0000-4000-8000-000000000821","email":"rollback-route-canary@example.invalid","limit":1}' \
+    >"$runtime_directory/old-readonly-request.json"
+  status="$(curl --noproxy '*' --silent --request POST \
+    --header 'Content-Type: application/json' \
+    --data-binary "@$runtime_directory/old-readonly-request.json" \
+    --output "$runtime_directory/old-readonly-response.txt" \
+    --write-out '%{http_code}' --max-time 5 \
+    "http://127.0.0.1:${http_port}/api/account-inventory/query" 2>/dev/null)" \
+    || fixed_failure 'old_readonly_route_probe_failed'
+  if [ "$status" != 404 ]; then
+    fixed_failure 'old_readonly_route_not_closed'
+  fi
+  response_size="$(wc -c <"$runtime_directory/old-readonly-response.txt" | tr -d ' ')"
+  case "$response_size" in
+    ''|*[!0-9]*) fixed_failure 'old_readonly_route_response_invalid' ;;
+  esac
+  if [ "$response_size" -gt 4096 ]; then
+    fixed_failure 'old_readonly_route_response_unbounded'
+  fi
+  if grep -Eq 'rollback-route-canary@example.invalid|00000000-0000-4000-8000-000000000821' \
+    "$runtime_directory/old-readonly-response.txt"
+  then
+    fixed_failure 'old_readonly_route_identity_leaked'
+  fi
+}
+
 lifecycle_fingerprint() {
   compose exec -T postgres psql --username relay_control_migrator \
     --dbname relay_station_control --tuples-only --no-align --command "
@@ -213,7 +242,7 @@ main() {
   umask 077
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
-  for command_name in curl docker git go grep openssl tar tr; do
+  for command_name in curl docker git go grep openssl tar tr wc; do
     command -v "$command_name" >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
   done
 
@@ -259,6 +288,7 @@ main() {
 
   start_control "$old_binary" false "$runtime_directory/old-control.log"
   verify_product_reads old
+  verify_old_readonly_route_closed
   if grep -Eq '^relay_control_account_inventory_lifecycle_total' \
     "$runtime_directory/old-metrics.txt"
   then
@@ -268,6 +298,8 @@ main() {
   "$harness" verify-frozen >"$runtime_directory/old-frozen.log" 2>&1 \
     || fixed_failure 'old_binary_changed_lifecycle'
   stop_control
+  "$harness" verify-frozen >"$runtime_directory/old-audit-retained.log" 2>&1 \
+    || fixed_failure 'old_binary_changed_readonly_audit'
   after_old="$(lifecycle_fingerprint)" || fixed_failure 'fingerprint_failed'
   if [ "$after_old" != "$before_old" ]; then
     fixed_failure 'old_binary_changed_forward_state'
@@ -303,7 +335,7 @@ main() {
   then
     fixed_failure 'identity_leaked_to_logs'
   fi
-  echo "account_inventory_lifecycle_rollback=success old_revision=e482d8e forward_schema=${schema_version} minimum_forward_schema=${minimum_forward_schema} poll_enabled=false policy_mutation_enabled=false old_product_reads=3 lifecycle_frozen=true next_qualified_poll_advanced=true finalized_replay_advanced=false management_requests=0 real_node_requests=0 gateway_requests=0 data_plane_requests=0"
+  echo "account_inventory_lifecycle_rollback=success old_revision=e482d8e forward_schema=${schema_version} minimum_forward_schema=${minimum_forward_schema} poll_enabled=false policy_mutation_enabled=false old_product_reads=3 old_readonly_route_requests=1 old_readonly_route_closed=true old_readonly_route_identity_occurrences=0 readonly_view_audits_retained=1 lifecycle_frozen=true next_qualified_poll_advanced=true finalized_replay_advanced=false management_requests=0 real_node_requests=0 gateway_requests=0 data_plane_requests=0"
 }
 
 main "$@"

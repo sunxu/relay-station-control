@@ -139,6 +139,16 @@ func TestLifecycleRollbackPinsOldBinaryAndFreezesBothMutationPaths(t *testing.T)
 		"minimum_forward_schema=7",
 		`[ "$schema_version" -lt "$minimum_forward_schema" ]`,
 		"GOOSE_DBSTRING=\"$CONTROL_LIFECYCLE_ROLLBACK_OWNER_URL\"",
+		"verify_old_readonly_route_closed",
+		`--request POST`,
+		`/api/account-inventory/query`,
+		`[ "$status" != 404 ]`,
+		"old_readonly_route_identity_leaked",
+		`"$harness" verify-frozen >"$runtime_directory/old-audit-retained.log"`,
+		"old_readonly_route_requests=1",
+		"old_readonly_route_closed=true",
+		"old_readonly_route_identity_occurrences=0",
+		"readonly_view_audits_retained=1",
 	} {
 		if !strings.Contains(contents, required) {
 			t.Fatalf("rollback acceptance missing %q", required)
@@ -154,6 +164,36 @@ func TestLifecycleRollbackPinsOldBinaryAndFreezesBothMutationPaths(t *testing.T)
 	}
 	if strings.Contains(contents, `[ "$schema_version" != 7 ]`) {
 		t.Fatal("rollback acceptance rejects additive schema versions newer than lifecycle foundation")
+	}
+	for _, forbidden := range []string{
+		`cat "$runtime_directory/old-readonly-response.txt"`,
+		`echo "$status"`,
+	} {
+		if strings.Contains(contents, forbidden) {
+			t.Fatalf("rollback acceptance exposes bounded route probe output with %q", forbidden)
+		}
+	}
+
+	harnessPath := filepath.Join(acceptanceRoot(t), "account-inventory-lifecycle-rollback", "main.go")
+	harnessEncoded, err := os.ReadFile(harnessPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harnessContents := string(harnessEncoded)
+	for _, required := range []string{
+		"fixtureAuditID",
+		"fixtureAuditActor",
+		"INSERT INTO audit_logs",
+		"'account_inventory.view'",
+		"'rollback-readonly-view'",
+		"viewAuditRows != 1",
+	} {
+		if !strings.Contains(harnessContents, required) {
+			t.Fatalf("rollback harness lacks bounded readonly audit retention contract %q", required)
+		}
+	}
+	if strings.Count(harnessContents, "viewAuditRows != 1") < 2 {
+		t.Fatal("rollback harness does not verify the readonly audit before and after state advancement")
 	}
 }
 

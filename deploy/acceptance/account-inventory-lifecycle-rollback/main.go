@@ -33,6 +33,8 @@ var (
 	baselineFence     = uuid.MustParse("00000000-0000-4000-8000-000000000826")
 	suspectedFence    = uuid.MustParse("00000000-0000-4000-8000-000000000827")
 	advanceFence      = uuid.MustParse("00000000-0000-4000-8000-000000000828")
+	fixtureAuditID    = uuid.MustParse("00000000-0000-4000-8000-000000000829")
+	fixtureAuditActor = uuid.MustParse("00000000-0000-4000-8000-000000000830")
 )
 
 type rollbackHarness struct {
@@ -121,6 +123,8 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 	}{
 		{`INSERT INTO environments(singleton_id,environment_id,name,environment_type)
 			VALUES (1,'rollback-acceptance','Rollback Acceptance','dev')`, nil},
+		{`INSERT INTO control_admin_users(admin_id,login_name,display_name)
+			VALUES ($1,'rollback_audit','Rollback Audit Fixture')`, []any{fixtureAuditActor}},
 		{`INSERT INTO node_drivers(node_type,driver_contract_version,display_name)
 			VALUES ($1,$2,'Rollback Snapshot Driver')`, []any{fixtureNodeType, fixtureContract}},
 		{`INSERT INTO relay_node_assets(instance_id,display_name,node_type,
@@ -139,6 +143,14 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 			policy_version_id,effective_from,activated_by,created_at)
 			VALUES ($1,$2,$3,clock_timestamp(),'rollback-acceptance',CURRENT_TIMESTAMP)`,
 			[]any{fixtureNodeType, fixtureContract, fixturePolicyID}},
+		{`INSERT INTO audit_logs(audit_id,category,action,result,actor_admin_id,
+			source_fingerprint,request_id,details)
+			VALUES ($1,'account_inventory','account_inventory.view','success',$2,
+			decode(repeat('42',32),'hex'),'rollback-readonly-view',jsonb_build_object(
+			'instance_id',$3::text,'provider_filter_used',false,
+			'lifecycle_filter_used',false,'basic_status_filter_used',false,
+			'email_filter_used',false,'cursor_used',false,'result_count',1))`,
+			[]any{fixtureAuditID, fixtureAuditActor, fixtureInstanceID}},
 	}
 	for _, statement := range statements {
 		if _, err := transaction.Exec(ctx, statement.query, statement.args...); err != nil {
@@ -213,7 +225,7 @@ func (harness *rollbackHarness) finalize(
 
 func (harness *rollbackHarness) verifyFrozen(ctx context.Context) error {
 	var lifecycle string
-	var missing, lifecycleRows, pollRows, finalizedRows, snapshotRows, policyRows, auditRows int
+	var missing, lifecycleRows, pollRows, finalizedRows, snapshotRows, policyRows, auditRows, viewAuditRows int
 	var accountPoll, providerPoll uuid.UUID
 	err := harness.owner.QueryRow(ctx, `SELECT
 		(SELECT lifecycle FROM account_inventory WHERE instance_id=$1),
@@ -226,16 +238,22 @@ func (harness *rollbackHarness) verifyFrozen(ctx context.Context) error {
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id=$1 AND status='finalized'),
 		(SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id=$1),
 		(SELECT count(*) FROM provider_inventory_policy_versions WHERE node_type=$2),
-		(SELECT count(*) FROM account_inventory_scope_transition_audits WHERE node_type=$2)`,
-		fixtureInstanceID, fixtureNodeType).Scan(&lifecycle, &missing, &accountPoll,
+		(SELECT count(*) FROM account_inventory_scope_transition_audits WHERE node_type=$2),
+		(SELECT count(*) FROM audit_logs WHERE audit_id=$3
+		 AND category='account_inventory' AND action='account_inventory.view'
+		 AND result='success' AND actor_admin_id=$4
+		 AND request_id='rollback-readonly-view'
+		 AND details->>'instance_id'=$1::text
+		 AND details->>'result_count'='1')`,
+		fixtureInstanceID, fixtureNodeType, fixtureAuditID, fixtureAuditActor).Scan(&lifecycle, &missing, &accountPoll,
 		&providerPoll, &lifecycleRows, &pollRows, &finalizedRows, &snapshotRows,
-		&policyRows, &auditRows)
+		&policyRows, &auditRows, &viewAuditRows)
 	if err != nil {
 		return err
 	}
 	if lifecycle != "suspected_missing" || missing != 1 || accountPoll != baselinePollID ||
 		providerPoll != suspectedPollID || lifecycleRows != 1 || pollRows != 2 || finalizedRows != 2 ||
-		snapshotRows != 1 || policyRows != 1 || auditRows != 0 {
+		snapshotRows != 1 || policyRows != 1 || auditRows != 0 || viewAuditRows != 1 {
 		return errors.New("rollback state changed")
 	}
 	return nil
@@ -266,7 +284,7 @@ func (harness *rollbackHarness) replay(ctx context.Context) error {
 
 func (harness *rollbackHarness) verifyAdvanced(ctx context.Context) error {
 	var lifecycle string
-	var missing, lifecycleRows, pollRows, finalizedRows, snapshotRows int
+	var missing, lifecycleRows, pollRows, finalizedRows, snapshotRows, viewAuditRows int
 	var accountPoll, providerPoll uuid.UUID
 	err := harness.owner.QueryRow(ctx, `SELECT
 		(SELECT lifecycle FROM account_inventory WHERE instance_id=$1),
@@ -277,15 +295,21 @@ func (harness *rollbackHarness) verifyAdvanced(ctx context.Context) error {
 		(SELECT count(*) FROM account_inventory WHERE instance_id=$1),
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id=$1),
 		(SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id=$1 AND status='finalized'),
-		(SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id=$1)`,
-		fixtureInstanceID).Scan(&lifecycle, &missing, &accountPoll, &providerPoll,
-		&lifecycleRows, &pollRows, &finalizedRows, &snapshotRows)
+		(SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id=$1),
+		(SELECT count(*) FROM audit_logs WHERE audit_id=$2
+		 AND category='account_inventory' AND action='account_inventory.view'
+		 AND result='success' AND actor_admin_id=$3
+		 AND request_id='rollback-readonly-view'
+		 AND details->>'instance_id'=$1::text
+		 AND details->>'result_count'='1')`,
+		fixtureInstanceID, fixtureAuditID, fixtureAuditActor).Scan(&lifecycle, &missing, &accountPoll, &providerPoll,
+		&lifecycleRows, &pollRows, &finalizedRows, &snapshotRows, &viewAuditRows)
 	if err != nil {
 		return err
 	}
 	if lifecycle != "missing" || missing != 2 || accountPoll != baselinePollID ||
 		providerPoll != advancePollID || lifecycleRows != 1 || pollRows != 3 ||
-		finalizedRows != 3 || snapshotRows != 1 {
+		finalizedRows != 3 || snapshotRows != 1 || viewAuditRows != 1 {
 		return errors.New("restored lifecycle did not advance exactly once")
 	}
 	return nil
