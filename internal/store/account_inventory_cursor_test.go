@@ -147,37 +147,62 @@ func TestAccountInventoryCursorBindsActorInstanceAndEveryFilter(t *testing.T) {
 }
 
 func TestAccountInventoryCursorTTLAndKeyRotation(t *testing.T) {
-	now := accountInventoryCursorTestNow
+	issuedAt := accountInventoryCursorTestNow
 	oldKeyring := testAccountInventoryCursorKeyring(t, authn.EnvironmentStaging, 1, 1)
-	oldCodec := testAccountInventoryCursorCodec(t, oldKeyring, &now)
+	oldCodec := testAccountInventoryCursorCodec(t, oldKeyring, &issuedAt)
 	filters := AccountInventoryCursorFilters{Provider: "openai"}
 	token, err := oldCodec.Encode(accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters,
 		"openai:rotate@example.invalid")
 	if err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(accountInventoryCursorTTL - time.Second)
-	rotated := testAccountInventoryCursorCodec(t,
-		testAccountInventoryCursorKeyring(t, authn.EnvironmentStaging, 2, 1, 2), &now)
-	if decoded, err := rotated.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != nil ||
-		decoded != "openai:rotate@example.invalid" {
-		t.Fatalf("retained key Decode = %q, %v", decoded, err)
-	}
-	removed := testAccountInventoryCursorCodec(t,
-		testAccountInventoryCursorKeyring(t, authn.EnvironmentStaging, 2, 2), &now)
-	if _, err := removed.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != ErrInvalidAccountInventoryCursor {
-		t.Fatalf("removed-key error = %v", err)
-	}
-	now = accountInventoryCursorTestNow.Add(accountInventoryCursorTTL)
-	if _, err := rotated.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != ErrInvalidAccountInventoryCursor {
-		t.Fatalf("expiry-boundary error = %v", err)
-	}
+	stillValid := issuedAt.Add(accountInventoryCursorTTL - time.Second)
 
-	wrongEnvironment := testAccountInventoryCursorCodec(t,
-		testAccountInventoryCursorKeyring(t, authn.EnvironmentProduction, 1, 1), &now)
-	if _, err := wrongEnvironment.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != ErrInvalidAccountInventoryCursor {
-		t.Fatalf("cross-environment error = %v", err)
-	}
+	t.Run("old key retained within TTL", func(t *testing.T) {
+		rotated := testAccountInventoryCursorCodec(t,
+			testAccountInventoryCursorKeyring(t, authn.EnvironmentStaging, 2, 1, 2), &stillValid)
+		if decoded, err := rotated.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != nil ||
+			decoded != "openai:rotate@example.invalid" {
+			t.Fatal("retained key cursor did not decode within TTL")
+		}
+		currentToken, err := rotated.Encode(accountInventoryCursorTestActor, accountInventoryCursorTestInstance,
+			filters, "openai:current@example.invalid")
+		if err != nil {
+			t.Fatal("rotated keyring did not issue a current cursor")
+		}
+		if envelope := decodeAccountInventoryCursorTestEnvelope(t, currentToken); envelope.KeyVersion != 2 {
+			t.Fatal("rotated keyring did not issue the cursor with the current key version")
+		}
+		if _, err := rotated.Decode(currentToken, accountInventoryCursorTestActor,
+			accountInventoryCursorTestInstance, filters); err != nil {
+			t.Fatal("cursor issued with the rotated current key did not decode")
+		}
+	})
+
+	t.Run("old key removed within TTL", func(t *testing.T) {
+		removed := testAccountInventoryCursorCodec(t,
+			testAccountInventoryCursorKeyring(t, authn.EnvironmentStaging, 2, 2), &stillValid)
+		if _, err := removed.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != ErrInvalidAccountInventoryCursor {
+			t.Fatal("removed key did not return the fixed invalid cursor error")
+		}
+	})
+
+	t.Run("expired with old key retained", func(t *testing.T) {
+		expired := issuedAt.Add(accountInventoryCursorTTL)
+		rotated := testAccountInventoryCursorCodec(t,
+			testAccountInventoryCursorKeyring(t, authn.EnvironmentStaging, 2, 1, 2), &expired)
+		if _, err := rotated.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != ErrInvalidAccountInventoryCursor {
+			t.Fatal("expired cursor did not return the fixed invalid cursor error")
+		}
+	})
+
+	t.Run("cross environment within TTL", func(t *testing.T) {
+		wrongEnvironment := testAccountInventoryCursorCodec(t,
+			testAccountInventoryCursorKeyring(t, authn.EnvironmentProduction, 1, 1), &stillValid)
+		if _, err := wrongEnvironment.Decode(token, accountInventoryCursorTestActor, accountInventoryCursorTestInstance, filters); err != ErrInvalidAccountInventoryCursor {
+			t.Fatal("cross-environment cursor did not return the fixed invalid cursor error")
+		}
+	})
 }
 
 func TestAccountInventoryCursorRejectsMalformedEnvelopeAndCiphertextUniformly(t *testing.T) {
