@@ -6,7 +6,7 @@
 
 ### Requirement: Control MUST 只枚举达到保留边界的完整 UTC 日与预期压缩键
 
-Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock_timestamp() - 72 hours`的完整自然日。账号snapshot summary date MUST取`date(observed_at AT TIME ZONE 'UTC')`；Provider coverage、漏槽、abandoned和retention归属MUST取poll `scheduled_at` UTC日。合法snapshot的observed日与scheduled日MUST相同，任何跨日源行都使scheduled日及observed日涉及的压缩键fixed failed并保留源数据。预期`(summary_date, instance_id, provider_policy_version)`键SHALL来自不可变Provider策略激活区间与Node inventory monitoring激活区间的半开交集；同一策略版本的多个交集区间MUST合并去重，并按交集内实际存在的对齐五分钟槽计算Provider `expected_poll_count`。只有交集内至少存在一个预期槽时才创建key；有预期槽但没有poll或snapshot时MUST创建零数据segment，无预期槽时MUST NOT伪造key或partial。
+Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock_timestamp() - 72 hours`的完整自然日。账号snapshot summary date MUST取`date(observed_at AT TIME ZONE 'UTC')`；Provider coverage、漏槽、abandoned和retention归属MUST取poll `scheduled_at` UTC日。合法snapshot的observed日与scheduled日MUST相同，任何跨日源行都使scheduled日及observed日涉及的压缩键fixed failed并保留源数据。预期`(summary_date, instance_id, provider_policy_version)`键SHALL来自不可变Provider策略激活区间与Node inventory monitoring激活区间的半开交集；同一策略版本的多个交集区间MUST合并去重，并按交集内实际存在的对齐五分钟槽计算Provider `expected_poll_count`。只有交集内至少存在一个预期槽时才创建key；有预期槽但没有poll或snapshot时MUST创建零数据segment，无预期槽时MUST NOT伪造key或partial。正常planner MUST只枚举`day_end > database_now - 30 days`的日期；更旧日期在仍存在同日source poll或该Node/日已有compaction lineage时MUST继续枚举全部预期key以bootstrap，两个条件均不存在时MUST NOT从activation truth创建新lineage。Migration MUST NOT自行生成run或retired marker。存在`(summary_date, instance_id)` retired-day cutoff时，planner MUST NOT再为该日创建compaction或rollup lineage。
 
 #### Scenario: 日期尚未到达 72 小时边界
 - **WHEN** 某 UTC 日结束距数据库当前时间不足 72 小时
@@ -15,6 +15,14 @@ Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock
 #### Scenario: 日期恰好达到资格边界
 - **WHEN** 数据库时间满足该日 `day_end <= now - 72h`
 - **THEN** scheduler 可以幂等创建去重后的预期压缩键，且所有日期计算不受进程本地时区影响
+
+#### Scenario: 升级前旧源数据跨过正常 horizon
+- **WHEN** Migration 8升级后的eligible UTC日已超过30天但仍存在同日source poll，或该Node/日已有未退休compaction lineage
+- **THEN** planner通过普通幂等run bootstrap使全部预期key继续相同证明链；Migration本身不生成run或marker
+
+#### Scenario: 已退休日期不复活
+- **WHEN** 某Node/日已有durable retired-day cutoff，即使activation、旧source metadata或部分compaction-run删除窗口仍可见
+- **THEN** planner不创建任何compaction或rollup lineage
 
 #### Scenario: 日内切换、移出并重新加入策略
 - **WHEN** 同一 UTC 日存在多个策略版本或同一版本多个不重叠激活交集
@@ -98,7 +106,7 @@ Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock
 
 ### Requirement: 历史保留清理 MUST 按依赖顺序且保护当前真相
 
-全量snapshot items MUST等到所属UTC `day_end <= database_now-72h`且compaction完成后才能删除。Poll run只有`scheduled_at <= database_now-30 days`才到期；策略segment/final rollup只有其UTC `day_end <= database_now-30 days`且对应rollup `completed_at <= database_now-30 days`才到期；completed run只有自身`completed_at <= database_now-30 days`且依赖已清空才到期。这些72小时、30天和95%值在本change固定，不由运行配置追溯重解释。Control MUST先确认compaction completed和对应snapshot items为空，才能有界删除到期poll；其历史子表SHALL受控级联删除，Provider state与current account来源外键SHALL `ON DELETE SET NULL`，冗余observed/version/commit、基础状态和lifecycle MUST保持不变。删除顺序MUST为poll及子证据、segment/final rows、completed rollup run、completed compaction run，每类使用独立精确retention gate；UPDATE/TRUNCATE始终禁止。pending、summarized、deleting、failed或校验异常任务MUST NOT自动清理。本capability MUST NOT自动删除current account、missing/out-of-scope lifecycle、认证审计或告警历史；没有retained completed rollup时coverage指标MUST省略而非永久导出已过期值。
+全量snapshot items MUST等到所属UTC `day_end <= database_now-72h`且compaction完成后才能删除。Poll run只有`scheduled_at <= database_now-30 days`才到期；策略segment/final rollup只有其UTC `day_end <= database_now-30 days`且对应rollup `completed_at <= database_now-30 days`才到期；completed run只有自身`completed_at <= database_now-30 days`且依赖已清空才到期。这些72小时、30天和95%值在本change固定，不由运行配置追溯重解释。Control MUST先确认compaction completed和对应snapshot items为空，才能有界删除到期poll；其历史子表SHALL受控级联删除，Provider state与current account来源外键SHALL `ON DELETE SET NULL`，冗余observed/version/commit、基础状态和lifecycle MUST保持不变。删除顺序MUST为poll及子证据、segment/final rows、completed rollup run、completed compaction run，每类使用独立精确retention gate；UPDATE/TRUNCATE始终禁止。Completed rollup-run retention MUST在确认同日poll及四类segment/final rows全部为空后，于删除run的同一事务先创建唯一、不可变的`(summary_date, instance_id)` retired-day cutoff。该marker MUST在后续compaction-run分批删除及全部删除后持续存在、阻止planner复活，并使任何写入该UTC日的晚到poll失败；本cleaner MUST NOT删除marker。pending、summarized、deleting、failed或校验异常任务MUST NOT自动清理。本capability MUST NOT自动删除current account、missing/out-of-scope lifecycle、认证审计或告警历史；没有retained completed rollup时coverage指标MUST省略而非永久导出已过期值。
 
 #### Scenario: 未完成压缩或未到期历史
 - **WHEN** cleanup 遇到未 completed 压缩键、仍有 snapshot items、失败任务或未达到对应保留期
@@ -110,7 +118,11 @@ Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock
 
 #### Scenario: 已完成任务和摘要到期
 - **WHEN** completed run 和其摘要超过 30 天且不存在未完成依赖
-- **THEN** cleanup 按固定依赖顺序有界清理，不影响更晚摘要、当前状态或任何失败证据
+- **THEN** cleanup 按固定依赖顺序有界清理，rollup-run删除事务先持久化retired-day cutoff，随后删除compaction runs时不会复活lineage，且不影响更晚摘要、当前状态或任何失败证据
+
+#### Scenario: 晚到 poll 不能重开 retired day
+- **WHEN** rollup-run retention已为某Node/UTC日持久化retired-day cutoff后尝试插入该日poll
+- **THEN** 数据库拒绝poll写入且marker、已完成清理和planner负向真相保持不变
 
 ### Requirement: history runner MUST 在并发、重启和 PostgreSQL 故障后安全恢复
 
@@ -130,18 +142,18 @@ History scheduler/worker/reconciler SHALL以PostgreSQL时间、唯一键、lease
 
 ### Requirement: Migration 与权限 MUST additive、最小且 fail closed
 
-Forward Migration SHALL创建版本化history schema、约束、索引和受控函数，并把现有snapshot/poll删除保护仅收窄到合法固定函数路径；Migration DDL MUST NOT回填摘要、复制身份、改写poll/promotion/current lifecycle或自动删除数据。Runner启用后MAY处理升级前仍完整且eligible的历史，不完整历史MUST fail closed。运行时角色MUST只有固定history函数EXECUTE，对六张history表和snapshot/identity表无任意表级访问或DML/TRUNCATE；既有poll/provider-result最小只读权限和受控函数保持兼容。其他角色和产品API MUST无权启动、重建或删除历史。schema compatibility未通过时runner MUST fail closed，既有poll/lifecycle/current query继续按旧能力运行。
+Forward Migration SHALL创建六张aggregate/run history表和一张durable retired-day cutoff表及版本化约束、索引和受控函数，并把现有snapshot/poll删除保护仅收窄到合法固定函数路径；Migration DDL MUST NOT回填摘要、生成run/retired marker、复制身份、改写poll/promotion/current lifecycle或自动删除数据。Runner启用后MUST按前述source poll或既有lineage bootstrap规则处理升级前仍完整且eligible的历史，不完整历史MUST fail closed。运行时角色MUST只有固定history函数EXECUTE，对七张history表和snapshot/identity表无任意表级访问或DML/TRUNCATE；既有poll/provider-result最小只读权限和受控函数保持兼容。其他角色和产品API MUST无权启动、重建或删除历史或伪造retired marker。schema compatibility未通过时runner MUST fail closed，既有poll/lifecycle/current query继续按旧能力运行。
 
 #### Scenario: 带既有数据升级
 - **WHEN** Migration 8 数据库包含 poll、snapshot、Provider state、lifecycle、query audit 后执行新 Migration
-- **THEN** 既有行与字段指纹保持一致，history 表为空且未删除或回填任何身份/摘要
+- **THEN** 既有行与字段指纹保持一致，七张history表为空且未删除或回填任何身份/摘要/run/retired marker
 
 #### Scenario: 权限绕过或旧应用运行
 - **WHEN** runtime 直接访问 history/snapshot/poll 表、调用错误状态函数，或旧二进制运行在 forward schema
 - **THEN** history表任意访问与snapshot/poll直接DML被拒绝，既有poll受限读取/函数保持；旧二进制仍可poll、promotion和current query，且不会启动或误删history
 
 #### Scenario: 受保护 down
-- **WHEN** 数据库已有 history row、摘要、删除进度或后续依赖时尝试 down
+- **WHEN** 数据库已有 history row、retired-day cutoff、摘要、删除进度或后续依赖时尝试 down
 - **THEN** down 拒绝破坏性回退并保留全部数据；生产 Runbook 继续禁止执行 down
 
 ### Requirement: coverage 与 compaction 观测 MUST 低基数且不泄露身份

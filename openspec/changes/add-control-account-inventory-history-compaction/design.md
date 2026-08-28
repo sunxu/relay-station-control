@@ -55,9 +55,11 @@ Planner 读取不可变 Provider policy activations 与 Node inventory monitorin
 
 只有合并交集内实际存在至少一个对齐scheduled slot时才创建key；`[00:01,00:04)`这类无slot短区间不生成虚假expected。存在预期slot但没有poll时生成零数据segment。漏槽与abandoned进入expected，只有`promotion_applied=true`进入coverage分子。`policy_changed`、失败、不完整或stale poll保留各自固定计数但不进入分子。
 
+为防止activation truth从无限历史持续生成新工作，正常planner只枚举`day_end > database_now - 30 days`的retained horizon。更旧的eligible日期只有仍存在同日source poll，或该Node/日已存在任一compaction run时才继续枚举全部预期key；前者让Migration 8升级前完整poll首次收敛，后者让zero-poll或晚完成的部分lineage跨过horizon后仍可完成。两条bootstrap路径都只创建普通run并走相同claim、checksum、守恒、finalize与retention门禁，Migration DDL本身不生成run。存在durable retired-day cutoff的Node/日永远先被planner排除。
+
 备选方案是给历史 activation 增加五分钟对齐约束；既有记录无法无损追溯对齐，且会改变资产注册语义，因此不在本 change 中采用。
 
-### 4. 六张历史表分离策略证据与产品日级真相
+### 4. 六张 aggregate/run 表与一张 durable cutoff 表分离证据、真相和退休边界
 
 - `account_inventory_daily_summaries`：账号策略分段，唯一`(summary_date, instance_id, account_key, provider_policy_version)`；保存first/last scheduled/observed、last basic status、sample/status counts、first/last cumulative counters和reset counts。保留first counters使最终rollup能识别分段边界计数下降，但累计差值仍不解释为准确用量；不复制normalized email。
 - `account_inventory_daily_provider_summaries`：Provider 策略分段，唯一 `(date, instance, provider, policy)`；保存 expected、transport、contract、snapshot complete、promotion applied/skipped、abandoned、degraded、first/last promotion、coverage numerator/denominator、ratio/status 和固化的 threshold basis points `9500`。
@@ -65,8 +67,9 @@ Planner 读取不可变 Provider policy activations 与 Node inventory monitorin
 - `account_inventory_daily_provider_rollups`：唯一 `(date, instance, provider)`；逐项求和后重新计算 `sum(applied)/sum(expected)`，不得平均分段 ratio；固化 `complete|partial` 和阈值。
 - `account_inventory_compaction_runs`：唯一 `(date, instance, policy)`；保存状态、failed_from、lease/fencing、源 snapshot/poll/provider/duplicate counts、版本化 SHA-256 source checksum、deleted snapshot count、attempt、固定错误与阶段时间。
 - `account_inventory_daily_rollup_runs`：唯一 `(date, instance)`；保存状态、lease/fencing、expected/completed segment counts、版本化 segment checksum、attempt、固定错误与阶段时间。
+- `account_inventory_history_retired_days`：唯一 `(date, instance)`；只保存数据库生成的`retired_at`和无身份的day-level负向真相。它仅能由completed rollup-run retention在同日poll与四类segment/final rows全部为空后原子插入，不因后续compaction-run删除而清理。
 
-账号summary/rollup只含受保护account key，不复制normalized email；当前change无需把可读身份扩散到新历史表，未来授权历史页面必须另行评审identity映射。它们无runtime表权限。Provider summary不复制账号身份。所有表用数据库CHECK、唯一/外键和immutable trigger保护completed/summarized结果；UPDATE/TRUNCATE始终拒绝，DELETE仅由后述精确retention gate放行。
+账号summary/rollup只含受保护account key，不复制normalized email；当前change无需把可读身份扩散到新历史表，未来授权历史页面必须另行评审identity映射。它们无runtime表权限。Provider summary和retired cutoff不复制账号身份。六张aggregate/run表用数据库CHECK、唯一/外键和immutable trigger保护completed/summarized结果；UPDATE/TRUNCATE始终拒绝，DELETE仅由后述精确retention gate放行。Retired cutoff为insert-once永久marker：普通runtime和migration owner不能伪造或修改，当前cleaner不删除它，并由poll insert trigger拒绝任何落入已退休UTC日的晚到poll。
 
 ### 5. Provider current state 冗余最近健康，解除 query 对历史行的依赖
 
@@ -111,9 +114,9 @@ Completed final rows和rollup run不可覆盖。普通趋势和Prometheus以后�
 1. 72 小时后完成 segment summarize/delete；
 2. 全部 segments completed 后完成 final rollup；
 3. poll满足`scheduled_at <= database_now-30 days`时，逐条验证scheduled date/policy compaction completed且snapshot items为空，再有界删除terminal poll；Provider result与duplicate级联删除，current Provider/account FK置空；
-4. segment/final同时满足UTC `day_end <= now-30 days`和对应rollup `completed_at <= now-30 days`且poll已清空后，才按segment rows、final rows、completed rollup run顺序清理；completed compaction run还需自身`completed_at <= now-30 days`并最后删除。
+4. segment/final同时满足UTC `day_end <= now-30 days`和对应rollup `completed_at <= now-30 days`且poll已清空后，才按segment rows、final rows清理；completed rollup run只有同日poll与四类segment/final rows全部为空才可清理，并在同一事务先插入durable retired-day cutoff再删除run；completed compaction run还需自身`completed_at <= now-30 days`并最后分批删除。
 
-同为30天时poll必须先于证明其安全的summary/run删除。每类DELETE使用独立gate、有界批次和实际计数；UPDATE/TRUNCATE永远禁止。pending/summarized/deleting/failed、source/deleted不一致、非终态poll和仍有依赖的activation/policy永不自动清理。当前lifecycle、missing/out-of-scope、180天history/admin audit和alerts不在本change cleaner范围。
+同为30天时poll必须先于证明其安全的summary/run删除。Rollup-run删除与marker插入的事务原子性关闭了rollup run已消失但compaction runs尚未删尽的复活窗口；marker在部分删除和最终删除后均使planner创建零lineage，并使晚到poll失败。每类DELETE使用独立gate、有界批次和实际计数；UPDATE/TRUNCATE永远禁止。pending/summarized/deleting/failed、source/deleted不一致、非终态poll和仍有依赖的activation/policy永不自动清理，retired marker也永不由本cleaner删除。当前lifecycle、missing/out-of-scope、180天history/admin audit和alerts不在本change cleaner范围。
 
 ### 10. runtime 配置默认关闭且全部有界
 
@@ -143,9 +146,9 @@ History只访问本环境Control PostgreSQL。测试注入network counters，要
 ## Migration Plan
 
 1. 在隔离PostgreSQL18对空库和Migration8数据库执行新forward Migration；验证既有旧列值/行数不变，只新增并回填Provider current非身份健康列，并验证旧二进制在新schema继续poll/current query。
-2. 部署新二进制但保持history disabled；compatibility gate检查六表、约束、core sha256、函数owner/ACL、provider health和query函数签名。
+2. 部署新二进制但保持history disabled；compatibility gate检查六张aggregate/run表和一张retired-day cutoff表、约束、core sha256、函数owner/ACL、provider health和query函数签名。
 3. 在 staging先启用单 Worker，以一个已达到72小时的合成UTC日验证segment、checksum、分批删除、final rollup、current query字段保持和零外部请求。
 4. Permanent CI运行1/10/50 Node、总计1,000账号的缩短slot功能矩阵；nightly/manual运行86.4万与115.2万snapshot规模、至少20个delete batches和5次独立summary/rollup样本，按nearest-rank记录P50/P95/P99、DB/index/WAL、max RSS、buffers、lock wait、恢复和残留。首次change只把完成、无OOM/timeout/deadlock、守恒和配置上限作为硬门禁，不伪造未经批准的生产时延SLO。
 5. 生产先以最小concurrency/batch启用，观察unfinished age、failure、WAL与锁，再按Runbook有界调整；任何checksum/count异常立即停runner并保留源数据。
 
-应用回滚先关闭/停止 history runner，再回退旧二进制；保留 forward schema、summary/run和剩余源历史。已合规删除的snapshot不尝试恢复，final rollup是替代证据。生产永不执行down；隔离全新环境只有在没有history row、没有任何deleted count、没有后续依赖时才允许受保护down。
+应用回滚先关闭/停止 history runner，再回退旧二进制；保留 forward schema、summary/run、retired-day cutoff和剩余源历史。已合规删除的snapshot不尝试恢复，final rollup是替代证据。生产永不执行down；隔离全新环境只有在没有history row、没有retired marker、没有任何deleted count、没有后续依赖时才允许受保护down。
