@@ -34,6 +34,169 @@ type AccountInventory struct {
 	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AccountInventoryCompactionRun struct {
+	CompactionRunID            pgtype.UUID        `json:"compaction_run_id"`
+	SummaryDate                pgtype.Date        `json:"summary_date"`
+	InstanceID                 pgtype.UUID        `json:"instance_id"`
+	ProviderPolicyVersion      pgtype.UUID        `json:"provider_policy_version"`
+	Status                     string             `json:"status"`
+	FailedFrom                 pgtype.Text        `json:"failed_from"`
+	ClaimOwner                 pgtype.Text        `json:"claim_owner"`
+	LeaseExpiresAt             pgtype.Timestamptz `json:"lease_expires_at"`
+	FencingToken               pgtype.UUID        `json:"fencing_token"`
+	AttemptCount               int32              `json:"attempt_count"`
+	ChecksumVersion            pgtype.Int2        `json:"checksum_version"`
+	SourceSnapshotCount        pgtype.Int8        `json:"source_snapshot_count"`
+	SourcePollCount            pgtype.Int8        `json:"source_poll_count"`
+	SourceProviderResultCount  pgtype.Int8        `json:"source_provider_result_count"`
+	SourceDuplicateCount       pgtype.Int8        `json:"source_duplicate_count"`
+	SourceChecksum             []byte             `json:"source_checksum"`
+	DeletedSnapshotCount       int64              `json:"deleted_snapshot_count"`
+	DeletedPollCount           int64              `json:"deleted_poll_count"`
+	DeletedProviderResultCount int64              `json:"deleted_provider_result_count"`
+	DeletedDuplicateCount      int64              `json:"deleted_duplicate_count"`
+	FailureReason              pgtype.Text        `json:"failure_reason"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	SummarizedAt               pgtype.Timestamptz `json:"summarized_at"`
+	DeletingAt                 pgtype.Timestamptz `json:"deleting_at"`
+	CompletedAt                pgtype.Timestamptz `json:"completed_at"`
+	FailedAt                   pgtype.Timestamptz `json:"failed_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AccountInventoryDailyAccountRollup struct {
+	AccountRollupID   pgtype.UUID        `json:"account_rollup_id"`
+	RollupRunID       pgtype.UUID        `json:"rollup_run_id"`
+	SummaryDate       pgtype.Date        `json:"summary_date"`
+	InstanceID        pgtype.UUID        `json:"instance_id"`
+	Provider          string             `json:"provider"`
+	AccountKey        string             `json:"account_key"`
+	FirstScheduledAt  pgtype.Timestamptz `json:"first_scheduled_at"`
+	LastScheduledAt   pgtype.Timestamptz `json:"last_scheduled_at"`
+	FirstObservedAt   pgtype.Timestamptz `json:"first_observed_at"`
+	LastObservedAt    pgtype.Timestamptz `json:"last_observed_at"`
+	LastBasicStatus   string             `json:"last_basic_status"`
+	SampleCount       int32              `json:"sample_count"`
+	DisabledCount     int32              `json:"disabled_count"`
+	UnavailableCount  int32              `json:"unavailable_count"`
+	ErrorCount        int32              `json:"error_count"`
+	ActiveCount       int32              `json:"active_count"`
+	UnknownCount      int32              `json:"unknown_count"`
+	FirstSuccessCount int64              `json:"first_success_count"`
+	LastSuccessCount  int64              `json:"last_success_count"`
+	SuccessResetCount int32              `json:"success_reset_count"`
+	FirstFailedCount  int64              `json:"first_failed_count"`
+	LastFailedCount   int64              `json:"last_failed_count"`
+	FailedResetCount  int32              `json:"failed_reset_count"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type AccountInventoryDailyProviderRollup struct {
+	ProviderRollupID             pgtype.UUID        `json:"provider_rollup_id"`
+	RollupRunID                  pgtype.UUID        `json:"rollup_run_id"`
+	SummaryDate                  pgtype.Date        `json:"summary_date"`
+	InstanceID                   pgtype.UUID        `json:"instance_id"`
+	Provider                     string             `json:"provider"`
+	ExpectedPollCount            int32              `json:"expected_poll_count"`
+	TransportSuccessCount        int32              `json:"transport_success_count"`
+	ContractValidCount           int32              `json:"contract_valid_count"`
+	SnapshotCompleteCount        int32              `json:"snapshot_complete_count"`
+	PromotionAppliedCount        int32              `json:"promotion_applied_count"`
+	PromotionSkippedCount        int32              `json:"promotion_skipped_count"`
+	PolicyChangedCount           int32              `json:"policy_changed_count"`
+	AbandonedCount               int32              `json:"abandoned_count"`
+	DegradedCount                int32              `json:"degraded_count"`
+	FirstPromotionAt             pgtype.Timestamptz `json:"first_promotion_at"`
+	LastPromotionAt              pgtype.Timestamptz `json:"last_promotion_at"`
+	CoverageNumerator            int32              `json:"coverage_numerator"`
+	CoverageDenominator          int32              `json:"coverage_denominator"`
+	CoverageRatio                pgtype.Numeric     `json:"coverage_ratio"`
+	CoverageThresholdBasisPoints int32              `json:"coverage_threshold_basis_points"`
+	CoverageStatus               string             `json:"coverage_status"`
+	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
+}
+
+type AccountInventoryDailyProviderSummary struct {
+	ProviderSummaryID            pgtype.UUID        `json:"provider_summary_id"`
+	CompactionRunID              pgtype.UUID        `json:"compaction_run_id"`
+	SummaryDate                  pgtype.Date        `json:"summary_date"`
+	InstanceID                   pgtype.UUID        `json:"instance_id"`
+	Provider                     string             `json:"provider"`
+	ProviderPolicyVersion        pgtype.UUID        `json:"provider_policy_version"`
+	ExpectedPollCount            int32              `json:"expected_poll_count"`
+	TransportSuccessCount        int32              `json:"transport_success_count"`
+	ContractValidCount           int32              `json:"contract_valid_count"`
+	SnapshotCompleteCount        int32              `json:"snapshot_complete_count"`
+	PromotionAppliedCount        int32              `json:"promotion_applied_count"`
+	PromotionSkippedCount        int32              `json:"promotion_skipped_count"`
+	PolicyChangedCount           int32              `json:"policy_changed_count"`
+	AbandonedCount               int32              `json:"abandoned_count"`
+	DegradedCount                int32              `json:"degraded_count"`
+	FirstPromotionAt             pgtype.Timestamptz `json:"first_promotion_at"`
+	LastPromotionAt              pgtype.Timestamptz `json:"last_promotion_at"`
+	CoverageNumerator            int32              `json:"coverage_numerator"`
+	CoverageDenominator          int32              `json:"coverage_denominator"`
+	CoverageRatio                pgtype.Numeric     `json:"coverage_ratio"`
+	CoverageThresholdBasisPoints int32              `json:"coverage_threshold_basis_points"`
+	CoverageStatus               string             `json:"coverage_status"`
+	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
+}
+
+type AccountInventoryDailyRollupRun struct {
+	RollupRunID           pgtype.UUID        `json:"rollup_run_id"`
+	SummaryDate           pgtype.Date        `json:"summary_date"`
+	InstanceID            pgtype.UUID        `json:"instance_id"`
+	Status                string             `json:"status"`
+	ClaimOwner            pgtype.Text        `json:"claim_owner"`
+	LeaseExpiresAt        pgtype.Timestamptz `json:"lease_expires_at"`
+	FencingToken          pgtype.UUID        `json:"fencing_token"`
+	CompletedFencingToken pgtype.UUID        `json:"completed_fencing_token"`
+	AttemptCount          int32              `json:"attempt_count"`
+	ExpectedSegmentCount  pgtype.Int4        `json:"expected_segment_count"`
+	CompletedSegmentCount pgtype.Int4        `json:"completed_segment_count"`
+	ChecksumVersion       pgtype.Int2        `json:"checksum_version"`
+	SegmentChecksum       []byte             `json:"segment_checksum"`
+	FailureReason         pgtype.Text        `json:"failure_reason"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	CompletedAt           pgtype.Timestamptz `json:"completed_at"`
+	FailedAt              pgtype.Timestamptz `json:"failed_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AccountInventoryDailySummary struct {
+	SummaryID             pgtype.UUID        `json:"summary_id"`
+	CompactionRunID       pgtype.UUID        `json:"compaction_run_id"`
+	SummaryDate           pgtype.Date        `json:"summary_date"`
+	InstanceID            pgtype.UUID        `json:"instance_id"`
+	Provider              string             `json:"provider"`
+	AccountKey            string             `json:"account_key"`
+	ProviderPolicyVersion pgtype.UUID        `json:"provider_policy_version"`
+	FirstScheduledAt      pgtype.Timestamptz `json:"first_scheduled_at"`
+	LastScheduledAt       pgtype.Timestamptz `json:"last_scheduled_at"`
+	FirstObservedAt       pgtype.Timestamptz `json:"first_observed_at"`
+	LastObservedAt        pgtype.Timestamptz `json:"last_observed_at"`
+	LastBasicStatus       string             `json:"last_basic_status"`
+	SampleCount           int32              `json:"sample_count"`
+	DisabledCount         int32              `json:"disabled_count"`
+	UnavailableCount      int32              `json:"unavailable_count"`
+	ErrorCount            int32              `json:"error_count"`
+	ActiveCount           int32              `json:"active_count"`
+	UnknownCount          int32              `json:"unknown_count"`
+	FirstSuccessCount     int64              `json:"first_success_count"`
+	LastSuccessCount      int64              `json:"last_success_count"`
+	SuccessResetCount     int32              `json:"success_reset_count"`
+	FirstFailedCount      int64              `json:"first_failed_count"`
+	LastFailedCount       int64              `json:"last_failed_count"`
+	FailedResetCount      int32              `json:"failed_reset_count"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type AccountInventoryHistoryRetiredDay struct {
+	SummaryDate pgtype.Date        `json:"summary_date"`
+	InstanceID  pgtype.UUID        `json:"instance_id"`
+	RetiredAt   pgtype.Timestamptz `json:"retired_at"`
+}
+
 type AccountInventoryPollDuplicate struct {
 	PollRunID       pgtype.UUID        `json:"poll_run_id"`
 	InstanceID      pgtype.UUID        `json:"instance_id"`
@@ -109,6 +272,9 @@ type AccountInventoryProviderState struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	MonitoringStatus   string             `json:"monitoring_status"`
 	OutOfScopeSince    pgtype.Timestamptz `json:"out_of_scope_since"`
+	HealthScheduledAt  pgtype.Timestamptz `json:"health_scheduled_at"`
+	HealthDegraded     bool               `json:"health_degraded"`
+	HealthReason       string             `json:"health_reason"`
 }
 
 type AccountInventoryScopeTransitionAudit struct {
