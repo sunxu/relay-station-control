@@ -28,6 +28,9 @@ func TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState(t
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatal("prepare isolated Migration 8 database")
+	}
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
 		t.Fatal("prepare isolated Migration 7 database")
 	}
 	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 7)
@@ -64,7 +67,7 @@ func TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState(t
 	requireReadonlyQueryMigrationSeedShape(t, before)
 	requireReadonlyQueryIdentityColumnShape(t, before.columns)
 
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
 		t.Fatal("apply Migration 8 to existing lifecycle state")
 	}
 	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)

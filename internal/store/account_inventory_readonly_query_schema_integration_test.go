@@ -20,7 +20,12 @@ func TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility(
 		t.Fatal("create readonly query repository")
 	}
 	if err := repository.CheckCompatibility(ctx); err != nil {
-		t.Fatal("Migration 8 compatibility is unavailable before protected down")
+		t.Fatal("readonly query compatibility is unavailable before protected down")
+	}
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatal("prepare isolated Migration 8 database")
 	}
 	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
 
@@ -35,7 +40,7 @@ func TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility(
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
 		t.Fatal("readonly query Migration 8 up after protected down failed")
 	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
 	if err := repository.CheckCompatibility(ctx); err != nil {
 		t.Fatal("readonly query compatibility did not recover after Migration 8 up")
 	}
@@ -145,9 +150,9 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	degraded, err := repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
 		InstanceID: fixture.instanceID, Limit: 10,
 	}, audit)
-	if err != nil || len(degraded.Items) != 3 || !degraded.Items[0].ProviderDegraded ||
+	if err != nil || len(degraded.Items) != 3 || degraded.Items[0].ProviderDegraded ||
 		degraded.Items[0].SnapshotFreshness != productstore.AccountInventorySnapshotFreshnessFresh {
-		t.Fatalf("degraded and fresh projection: page=%+v err=%v", degraded, err)
+		t.Fatalf("historical source mutation changed denormalized health: page=%+v err=%v", degraded, err)
 	}
 	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_provider_states
 		DISABLE TRIGGER account_inventory_provider_states_guard`); err != nil {
@@ -166,9 +171,25 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	stale, err := repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
 		InstanceID: fixture.instanceID, Limit: 10,
 	}, audit)
-	if err != nil || len(stale.Items) != 3 || !stale.Items[0].ProviderDegraded ||
+	if err != nil || len(stale.Items) != 3 || stale.Items[0].ProviderDegraded ||
 		stale.Items[0].SnapshotFreshness != productstore.AccountInventorySnapshotFreshnessStale {
-		t.Fatalf("degraded and stale projection: page=%+v err=%v", stale, err)
+		t.Fatalf("stale denormalized health projection: page=%+v err=%v", stale, err)
+	}
+	// Restore the immutable source fixture before exercising Migration 9
+	// down/up. Otherwise its safe backfill would intentionally import this
+	// owner-only corruption and obscure the current-source retention check.
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_poll_provider_results
+		SET degraded=false,reason='complete'
+		WHERE poll_run_id=$1 AND provider='openai'`, currentPollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
 	}
 
 	var auditCount int
@@ -191,13 +212,17 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 			t.Fatalf("audit contains forbidden key %q", forbidden)
 		}
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "7"); err == nil {
 		t.Fatal("protected down removed a query schema with immutable view audits")
 	}
 	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
 	if err := repository.CheckCompatibility(ctx); err != nil {
 		t.Fatalf("failed protected down changed compatibility: %v", err)
 	}
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
+		t.Fatal("restore Migration 9 after protected Migration 8 down")
+	}
+	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
 
 	if _, err := database.runtime.Exec(ctx, `SELECT * FROM account_inventory LIMIT 1`); err == nil {
 		t.Fatal("runtime role directly selected account inventory")
@@ -232,10 +257,15 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 		SET current_poll_run_id=NULL WHERE instance_id=$1 AND provider='openai'`, fixture.instanceID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
+	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory
+		SET current_poll_run_id=NULL WHERE instance_id=$1`, fixture.instanceID); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
 		InstanceID: fixture.instanceID, Limit: 10,
 	}, audit)
-	if !errors.Is(err, productstore.ErrAccountInventoryInconsistent) {
-		t.Fatalf("inconsistent Provider state error=%v", err)
+	if err != nil || len(retained.Items) != 3 || retained.Items[0].ProviderDegraded ||
+		retained.Items[0].SnapshotFreshness != productstore.AccountInventorySnapshotFreshnessStale {
+		t.Fatalf("retention-cleared source changed current projection: page=%+v err=%v", retained, err)
 	}
 }

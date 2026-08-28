@@ -497,7 +497,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 		if err := connection.QueryRow(ctx, `SELECT max(version_id) FILTER (WHERE is_applied), to_regclass('public.async_job_kinds')::text FROM goose_db_version`).Scan(&version, &tableName); err != nil {
 			t.Fatal(err)
 		}
-		if stage == "after-up" && (version != 7 || tableName == nil) {
+		if stage == "after-up" && (version != 9 || tableName == nil) {
 			t.Fatalf("%s version/table = %d/%v", stage, version, tableName)
 		}
 		if stage == "after-down" && (version != 3 || tableName != nil) {
