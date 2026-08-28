@@ -25,6 +25,7 @@ import (
 	controlapi "github.com/sunxu/relay-station-control/internal/api"
 	controlauth "github.com/sunxu/relay-station-control/internal/auth"
 	controlenv "github.com/sunxu/relay-station-control/internal/environment"
+	controlhistory "github.com/sunxu/relay-station-control/internal/historyruntime"
 	controljobs "github.com/sunxu/relay-station-control/internal/jobs"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
 	generatedstore "github.com/sunxu/relay-station-control/internal/store/sqlc"
@@ -32,6 +33,12 @@ import (
 )
 
 var version = "dev"
+
+const (
+	databaseMaxConnsEnvironment = "CONTROL_DATABASE_MAX_CONNS"
+	databaseMaxConnsMinimum     = int32(1)
+	databaseMaxConnsMaximum     = int32(100)
+)
 
 type jobRuntimeConfig struct {
 	workerConcurrency     int
@@ -145,6 +152,11 @@ func main() {
 		logger.Error("invalid control configuration", "component", "account_inventory_poll", "reason", "invalid_runtime_config")
 		os.Exit(1)
 	}
+	historyConfig, err := loadAccountInventoryHistoryRuntimeConfig()
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "account_inventory_history", "reason", "invalid_runtime_config")
+		os.Exit(1)
+	}
 	config, err := (controlauth.Config{
 		Environment:         controlauth.Environment(environmentIdentity.Type),
 		BindAddress:         address,
@@ -196,6 +208,11 @@ func main() {
 	inventoryPollRuntime, err := newAccountInventoryPollRuntime(pool, nodeDrivers, inventoryPollConfig, logger)
 	if err != nil {
 		logger.Error("account inventory poll initialization failed", "component", "account_inventory_poll", "reason", "initialization_failed")
+		os.Exit(1)
+	}
+	historyRuntime, err := newAccountInventoryHistoryRuntime(pool, historyConfig)
+	if err != nil {
+		logger.Error("account inventory history initialization failed", "component", "account_inventory_history", "reason", "initialization_failed")
 		os.Exit(1)
 	}
 	jobRepository, err := assetstore.NewJobRepository(pool)
@@ -254,6 +271,12 @@ func main() {
 	metricsRegistry.MustRegister(controlapi.NewAssetPrometheusCollector(assetMetrics))
 	metricsRegistry.MustRegister(nodeDrivers.metrics)
 	metricsRegistry.MustRegister(inventoryPollRuntime.collector)
+	historyCollector, err := controlhistory.NewCollector(historyRuntime.repository)
+	if err != nil {
+		logger.Error("account inventory history metrics initialization failed", "component", "account_inventory_history")
+		os.Exit(1)
+	}
+	metricsRegistry.MustRegister(historyCollector)
 	jobCollector, err := controljobs.NewCollector(jobRepository)
 	if err != nil {
 		logger.Error("durable job metrics initialization failed", "component", "jobs")
@@ -304,6 +327,11 @@ func main() {
 			logger.Error("durable job reconciler stopped", "component", "jobs", "reason", "reconciler_stopped")
 		}
 	}()
+	controlLoops.Add(1)
+	go func() {
+		defer controlLoops.Done()
+		_ = runAccountInventoryHistoryRuntime(shutdownContext, historyRuntime, logger)
+	}()
 	if inventoryPollRuntime.enabled {
 		controlLoops.Add(1)
 		go func() {
@@ -334,15 +362,30 @@ func main() {
 }
 
 func newDatabasePool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	config, err := newDatabasePoolConfig(databaseURL, os.Getenv(databaseMaxConnsEnvironment))
+	if err != nil {
+		return nil, err
+	}
+	return pgxpool.NewWithConfig(ctx, config)
+}
+
+func newDatabasePoolConfig(databaseURL, maximumConnections string) (*pgxpool.Config, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, errors.New("database configuration is invalid")
+	}
+	if maximumConnections != "" {
+		parsed, parseErr := strconv.ParseInt(maximumConnections, 10, 32)
+		if parseErr != nil || parsed < int64(databaseMaxConnsMinimum) || parsed > int64(databaseMaxConnsMaximum) {
+			return nil, errors.New("database configuration is invalid")
+		}
+		config.MaxConns = int32(parsed)
 	}
 	config.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
 		_, err := connection.Exec(ctx, "SET TIME ZONE 'UTC'")
 		return err
 	}
-	return pgxpool.NewWithConfig(ctx, config)
+	return config, nil
 }
 
 func envBool(name string, fallback bool) (bool, error) {

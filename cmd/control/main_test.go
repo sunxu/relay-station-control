@@ -5,9 +5,12 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	controljobs "github.com/sunxu/relay-station-control/internal/jobs"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
@@ -20,6 +23,61 @@ func TestNewDatabasePoolRejectsInvalidURLWithoutLeaking(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "postgres://") {
 		t.Fatalf("database configuration error leaked URL: %v", err)
+	}
+}
+
+func TestNewDatabasePoolConfigMaximumConnections(t *testing.T) {
+	const databaseURL = "postgres://control@127.0.0.1/control?sslmode=disable"
+	baseline, err := newDatabasePoolConfig(databaseURL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgxDefault, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.MaxConns != pgxDefault.MaxConns {
+		t.Fatalf("missing maximum changed pgx default: got %d want %d", baseline.MaxConns, pgxDefault.MaxConns)
+	}
+
+	for _, maximum := range []int32{databaseMaxConnsMinimum, databaseMaxConnsMaximum} {
+		config, configErr := newDatabasePoolConfig(databaseURL, strconv.FormatInt(int64(maximum), 10))
+		if configErr != nil {
+			t.Fatalf("maximum %d: %v", maximum, configErr)
+		}
+		if config.MaxConns != maximum {
+			t.Fatalf("maximum %d produced %d", maximum, config.MaxConns)
+		}
+	}
+
+	for _, invalid := range []string{"0", "101", "-1", "invalid"} {
+		if _, configErr := newDatabasePoolConfig(databaseURL, invalid); configErr == nil || configErr.Error() != "database configuration is invalid" {
+			t.Fatalf("invalid maximum %q returned %v", invalid, configErr)
+		}
+	}
+}
+
+func TestNewDatabasePoolReadsMaximumConnectionsEnvironment(t *testing.T) {
+	t.Setenv(databaseMaxConnsEnvironment, "1")
+	pool, err := newDatabasePool(context.Background(), "postgres://control@127.0.0.1/control?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if pool.Stat().MaxConns() != databaseMaxConnsMinimum {
+		t.Fatalf("pool maximum = %d, want %d", pool.Stat().MaxConns(), databaseMaxConnsMinimum)
+	}
+}
+
+func TestNewDatabasePoolRejectsInvalidMaximumWithoutLeaking(t *testing.T) {
+	const canary = "101-database-pool-canary"
+	t.Setenv(databaseMaxConnsEnvironment, canary)
+	_, err := newDatabasePool(context.Background(), "postgres://control@127.0.0.1/control?sslmode=disable")
+	if err == nil || err.Error() != "database configuration is invalid" {
+		t.Fatalf("invalid maximum returned %v", err)
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Fatalf("database configuration error leaked value: %v", err)
 	}
 }
 
