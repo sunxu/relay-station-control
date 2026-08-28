@@ -1050,8 +1050,8 @@ func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testin
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
-		t.Fatalf("lifecycle compatibility down before snapshot protection: %v", err)
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err != nil {
+		t.Fatalf("forward compatibility down before snapshot protection: %v", err)
 	}
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
 		t.Fatal("snapshot migration down unexpectedly removed promotion evidence")
@@ -1069,10 +1069,8 @@ func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testin
 func TestAccountInventorySnapshotLegacyV5UpgradePreservesUnevaluatedPromotion(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
-	for range 2 {
-		if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
-			t.Fatal(err)
-		}
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "5"); err != nil {
+		t.Fatal(err)
 	}
 	fixture := insertSnapshotPollFixture(t, ctx, database)
 	repository, err := pollstore.NewInventoryPollRepository(database.runtime)

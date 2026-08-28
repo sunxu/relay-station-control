@@ -104,6 +104,71 @@ require_test() {
   grep -Fxq "$exact_name" "$listing" || fixed_failure 'required_test_unavailable'
 }
 
+classify_grouped_go_test_failure() {
+  local log="$1" gate="$2" event package test_name
+  local failure_event_pattern='^\{"Time":"[^"]+","Action":"fail","Package":"github\.com/sunxu/relay-station-control/(internal/store|internal/api)","Test":"(TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState|TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix|TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix|TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback|TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics|TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)"(,"Elapsed":[0-9]+(\.[0-9]+)?)?\}$'
+
+  while IFS= read -r event; do
+    if [[ "$event" =~ $failure_event_pattern ]]; then
+      package="${BASH_REMATCH[1]}"
+      test_name="${BASH_REMATCH[2]}"
+      case "$gate:$package:$test_name" in
+        store:internal/store:TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility)
+          fixed_failure 'store_test_migration_empty_down_up_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState)
+          fixed_failure 'store_test_migration_state_preservation_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix)
+          fixed_failure 'store_test_store_permission_matrix_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix)
+          fixed_failure 'store_test_runtime_unauthorized_permissions_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback)
+          fixed_failure 'store_test_committed_scope_rollback_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics)
+          fixed_failure 'store_test_audit_disconnect_failed'
+          ;;
+        store:internal/store:TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover)
+          fixed_failure 'store_test_database_fault_recovery_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility)
+          fixed_failure 'race_test_migration_empty_down_up_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState)
+          fixed_failure 'race_test_migration_state_preservation_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix)
+          fixed_failure 'race_test_store_permission_matrix_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix)
+          fixed_failure 'race_test_runtime_unauthorized_permissions_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback)
+          fixed_failure 'race_test_committed_scope_rollback_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics)
+          fixed_failure 'race_test_audit_disconnect_failed'
+          ;;
+        race:internal/store:TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover)
+          fixed_failure 'race_test_database_fault_recovery_failed'
+          ;;
+        race:internal/api:TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)
+          fixed_failure 'race_test_http_authorization_pagination_failed'
+          ;;
+      esac
+    fi
+  done <"$log"
+
+  case "$gate" in
+    store) fixed_failure 'store_gate_failed' ;;
+    race) fixed_failure 'race_gate_failed' ;;
+    *) fixed_failure 'grouped_go_test_gate_invalid' ;;
+  esac
+}
+
 main() {
   local port capacity_summary capacity_one capacity_ten capacity_fifty
   trap cleanup EXIT
@@ -156,10 +221,10 @@ main() {
   require_test ./internal/api TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping
 
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    go test ./internal/store \
+    go test -json ./internal/store \
       -run '^TestAccountInventoryReadonlyQuery(MigrationEmptyDownUpRestoresCompatibility|MigrationPreservesExistingLifecycleState|StoreAndPermissionMatrix|RuntimeAndUnauthorizedPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)$' \
       -count=1 >"$runtime_directory/store.log" 2>&1; then
-    fixed_failure 'store_gate_failed'
+    classify_grouped_go_test_failure "$runtime_directory/store.log" store
   fi
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     CONTROL_READONLY_QUERY_CAPACITY_ACCEPTANCE=1 go test ./internal/store \
@@ -190,10 +255,10 @@ main() {
     fixed_failure 'http_gate_failed'
   fi
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    go test -race ./internal/store ./internal/api \
+    go test -json -race ./internal/store ./internal/api \
       -run '^(TestAccountInventoryReadonlyQuery(MigrationEmptyDownUpRestoresCompatibility|MigrationPreservesExistingLifecycleState|StoreAndPermissionMatrix|RuntimeAndUnauthorizedPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)$' \
       -count=1 >"$runtime_directory/race.log" 2>&1; then
-    fixed_failure 'race_gate_failed'
+    classify_grouped_go_test_failure "$runtime_directory/race.log" race
   fi
 
   strict_cleanup

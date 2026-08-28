@@ -379,6 +379,77 @@ func TestReadonlyQuerySuccessfulPathsStrictlyVerifyCleanup(t *testing.T) {
 	}
 }
 
+func TestReadonlyQueryPostgresClassifiesGroupedGoTestFailuresWithoutPrintingLogs(t *testing.T) {
+	script := readFile(t, filepath.Join(acceptanceRoot(t), "account-inventory-readonly-query-postgres.sh"))
+	for _, required := range []string{
+		"go test -json ./internal/store",
+		"go test -json -race ./internal/store ./internal/api",
+		`classify_grouped_go_test_failure "$runtime_directory/store.log" store`,
+		`classify_grouped_go_test_failure "$runtime_directory/race.log" race`,
+		`"Action":"fail"`,
+		`"Package":"github\.com/sunxu/relay-station-control/(internal/store|internal/api)"`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("readonly query PostgreSQL acceptance lacks safe grouped-test classification contract %q", required)
+		}
+	}
+
+	mappings := map[string][2]string{
+		"TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility": {
+			"store_test_migration_empty_down_up_failed", "race_test_migration_empty_down_up_failed",
+		},
+		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState": {
+			"store_test_migration_state_preservation_failed", "race_test_migration_state_preservation_failed",
+		},
+		"TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix": {
+			"store_test_store_permission_matrix_failed", "race_test_store_permission_matrix_failed",
+		},
+		"TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix": {
+			"store_test_runtime_unauthorized_permissions_failed", "race_test_runtime_unauthorized_permissions_failed",
+		},
+		"TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback": {
+			"store_test_committed_scope_rollback_failed", "race_test_committed_scope_rollback_failed",
+		},
+		"TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics": {
+			"store_test_audit_disconnect_failed", "race_test_audit_disconnect_failed",
+		},
+		"TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover": {
+			"store_test_database_fault_recovery_failed", "race_test_database_fault_recovery_failed",
+		},
+	}
+	for testName, reasons := range mappings {
+		if strings.Count(script, testName) < 3 {
+			t.Errorf("grouped-test classifier does not exactly allowlist %q", testName)
+		}
+		for index, gate := range []string{"store", "race"} {
+			mapping := regexp.MustCompile(
+				regexp.QuoteMeta(gate+":internal/store:"+testName) +
+					`\)\s+fixed_failure '` + regexp.QuoteMeta(reasons[index]) + `'`,
+			)
+			if !mapping.MatchString(script) {
+				t.Errorf("grouped-test classifier lacks fixed mapping %q -> %q", testName, reasons[index])
+			}
+		}
+	}
+	httpMapping := regexp.MustCompile(
+		`race:internal/api:TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping\)\s+` +
+			`fixed_failure 'race_test_http_authorization_pagination_failed'`,
+	)
+	if !httpMapping.MatchString(script) {
+		t.Fatal("race grouped-test classifier lacks the fixed HTTP test mapping")
+	}
+
+	for _, logName := range []string{"store.log", "race.log"} {
+		unsafeLogOutput := regexp.MustCompile(`(?m)\b(cat|tail|head|less|more)\b[^\n]*` + regexp.QuoteMeta(logName))
+		if unsafeLogOutput.MatchString(script) {
+			t.Errorf("readonly query PostgreSQL acceptance can print protected %s contents", logName)
+		}
+	}
+	if regexp.MustCompile(`(?m)(echo|printf)[^\n]*(store|race)\.log`).MatchString(script) {
+		t.Fatal("readonly query PostgreSQL acceptance can print a protected grouped-test log path")
+	}
+}
+
 func TestReadonlyQueryRecoveryUsesOfficialDataPlane(t *testing.T) {
 	root := acceptanceRoot(t)
 	script := readFile(t, filepath.Join(root, "account-inventory-readonly-query-recovery.sh"))

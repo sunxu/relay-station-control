@@ -488,7 +488,7 @@ func TestAccountInventoryLifecyclePermissionsAndProtectedWrites(t *testing.T) {
 			t.Fatal("missing or invalid scope transition reason was accepted")
 		}
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err == nil {
 		t.Fatal("protected lifecycle migration down accepted nonempty state")
 	}
 }
@@ -496,7 +496,7 @@ func TestAccountInventoryLifecyclePermissionsAndProtectedWrites(t *testing.T) {
 func TestAccountInventoryLifecycleMigrationDoesNotBackfillSnapshotHistory(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err != nil {
 		t.Fatal("empty lifecycle migration down failed")
 	}
 	fixture := insertSnapshotPollFixture(t, ctx, database)
@@ -528,7 +528,7 @@ func TestAccountInventoryLifecycleMigrationDoesNotBackfillSnapshotHistory(t *tes
 		)`, fixture.pollRunID, fence, providerJSON, snapshotJSON).Scan(&finalized); err != nil || finalized != 1 {
 		t.Fatal(err)
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
 		t.Fatal("lifecycle migration up over snapshot history failed")
 	}
 	var lifecycleRows, snapshotRows int
@@ -696,7 +696,7 @@ func TestAccountInventoryLifecycleFailedPromotionAndAtomicRollbackDoNotChangeAcc
 func TestAccountInventoryLifecycleMigrationRejectsPreexistingFuturePolicyBinding(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err != nil {
 		t.Fatal("empty lifecycle migration down failed")
 	}
 	nodeType, contract := "future-policy-test", "v1"
@@ -721,7 +721,7 @@ func TestAccountInventoryLifecycleMigrationRejectsPreexistingFuturePolicyBinding
 		$3)`, nodeType, contract, futureEffectiveAt).Scan(&activationID); err != nil {
 		t.Fatal(err)
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err == nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err == nil {
 		t.Fatal("lifecycle migration accepted a binding that points at a future policy")
 	}
 	var appliedVersion int64
@@ -739,7 +739,7 @@ func TestAccountInventoryLifecycleMigrationRejectsPreexistingFuturePolicyBinding
 	)`, futureEffectiveAt); err != nil {
 		t.Fatal(err)
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
 		t.Fatal("lifecycle migration remained blocked after the scheduled policy became effective")
 	}
 	if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version
@@ -768,7 +768,7 @@ func TestAccountInventoryLifecycleScopeAuditAloneProtectsDown(t *testing.T) {
 	if lifecycleRows != 0 || providerRows != 0 || auditRows != 1 {
 		t.Fatal("audit-only fixture unexpectedly created lifecycle state")
 	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err == nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err == nil {
 		t.Fatal("protected lifecycle down accepted a nonempty scope audit")
 	}
 }
