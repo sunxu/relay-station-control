@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -2404,6 +2405,252 @@ func TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource(t *t
 			finalStatus, finalChecksum != checksumHex, sourceCount, deletedCount,
 			remainingSnapshots, summarizedAudits,
 			finalAccountSummary != originalAccountSummary || finalProviderSummary != originalProviderSummary)
+	}
+}
+
+func TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	remainingDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -40)
+	emptyDate := remainingDate.AddDate(0, 0, -1)
+	remainingSlot := remainingDate.Add(12 * time.Hour)
+	emptySlot := emptyDate.Add(12 * time.Hour)
+	remainingPollID := uuid.MustParse("30000000-0000-4000-8000-000000000001")
+	emptyPollID := uuid.MustParse("30000000-0000-4000-8000-000000000002")
+
+	// Fixture-only owner writes build two already-terminal historical poll days.
+	fixtureTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fixtureTx.Rollback(ctx) }()
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+		provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
+		created_at,first_started_at,last_started_at,finalized_at,observed_at,
+		transport_success,response_shape_valid,contract_valid,inventory_mode,
+		node_identity_complete,snapshot_complete,degraded,result,reason,
+		source_record_count,identifiable_record_count,unidentified_record_count,
+		unsupported_provider_count,out_of_scope_provider_count,node_version,node_commit
+	) VALUES
+		($1,$2,$3,$4,$5::timestamptz,$6,'finalized',1,2,299,
+		 $5::timestamptz+interval '1 second',$5::timestamptz+interval '2 seconds',
+		 $5::timestamptz+interval '2 seconds',$5::timestamptz+interval '4 seconds',
+		 $5::timestamptz+interval '3 seconds',true,true,true,'runtime',true,true,false,
+		 'success','none',1,1,0,0,0,'unknown','unknown'),
+		($7,$2,$3,$4,$8::timestamptz,$6,'finalized',1,2,299,
+		 $8::timestamptz+interval '1 second',$8::timestamptz+interval '2 seconds',
+		 $8::timestamptz+interval '2 seconds',$8::timestamptz+interval '4 seconds',
+		 $8::timestamptz+interval '3 seconds',true,true,true,'runtime',true,true,false,
+		 'success','none',0,0,0,0,0,'unknown','unknown')`, remainingPollID,
+		fixture.instanceID, fixture.nodeType, fixture.contract, remainingSlot,
+		fixture.policyID, emptyPollID, emptySlot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,
+		duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason,
+		promotion_applied,promotion_skipped_reason
+	) VALUES
+		($1,'openai',1,0,0,true,true,false,'complete',true,NULL),
+		($2,'openai',0,0,0,true,true,false,'complete',true,NULL)`,
+		remainingPollID, emptyPollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES($1,$2,'openai','openai:completion-mismatch@example.invalid',
+		'completion-mismatch@example.invalid','active',1,0,0,
+		$3::timestamptz+interval '3 seconds')`, remainingPollID,
+		fixture.instanceID, remainingSlot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	remainingRunID, emptyRunID := uuid.New(), uuid.New()
+	remainingFence, emptyFence := uuid.New(), uuid.New()
+	if _, err := database.owner.Exec(ctx, `WITH stamp AS (
+		SELECT clock_timestamp() AS value
+	) INSERT INTO account_inventory_compaction_runs(
+		compaction_run_id,summary_date,instance_id,provider_policy_version,status,
+		claim_owner,lease_expires_at,fencing_token,attempt_count,checksum_version,
+		source_snapshot_count,source_poll_count,source_provider_result_count,
+		source_duplicate_count,source_checksum,deleted_snapshot_count,
+		created_at,summarized_at,deleting_at,updated_at
+	) SELECT $1::uuid,$2::date,$3::uuid,$4::uuid,'deleting','completion-remaining-worker',
+		stamp.value+interval '30 minutes',$5::uuid,1,1,1,1,1,0,
+		decode(repeat('31',32),'hex'),1,stamp.value-interval '3 seconds',
+		stamp.value-interval '2 seconds',stamp.value-interval '1 second',stamp.value FROM stamp
+	UNION ALL
+	SELECT $6::uuid,$7::date,$3::uuid,$4::uuid,'deleting','completion-empty-worker',
+		stamp.value+interval '30 minutes',$8::uuid,1,1,1,1,1,0,
+		decode(repeat('32',32),'hex'),0,stamp.value-interval '3 seconds',
+		stamp.value-interval '2 seconds',stamp.value-interval '1 second',stamp.value FROM stamp`,
+		remainingRunID, remainingDate, fixture.instanceID, fixture.policyID, remainingFence,
+		emptyRunID, emptyDate, emptyFence); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+		summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
+		completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
+	) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat('33',32),'hex'),
+		$1::date+interval '1 day',$1::date+interval '2 days',$1::date+interval '2 days')`,
+		emptyDate, fixture.instanceID, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name, checksum string
+		runID, fence   uuid.UUID
+		wantDeleted    int
+	}{
+		{"remaining_snapshot", "31", remainingRunID, remainingFence, 1},
+		{"empty_count_mismatch", "32", emptyRunID, emptyFence, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var status, reason, checksum string
+			var idempotent bool
+			if err := database.runtime.QueryRow(ctx, `WITH completed AS (
+				SELECT public.control_complete_account_inventory_compaction_v1(
+					$1,$2,decode(repeat($3,32),'hex')) AS value
+			) SELECT value->>'status',value->>'failure_reason',value->>'source_checksum_hex',
+				(value->>'idempotent')::boolean
+			FROM completed`, test.runID, test.fence, test.checksum).Scan(
+				&status, &reason, &checksum, &idempotent); err != nil {
+				t.Fatal(err)
+			}
+			if status != "failed" || reason != "source_count_mismatch" ||
+				checksum != strings.Repeat(test.checksum, 32) || idempotent {
+				t.Fatalf("completion status=%s reason=%s checksum=%s idempotent=%t",
+					status, reason, checksum, idempotent)
+			}
+			var persistedStatus, failedFrom, persistedReason, persistedChecksum string
+			var claimOwner *string
+			var leaseExpiresAt, completedAt *time.Time
+			var persistedFence *uuid.UUID
+			var failedAt time.Time
+			var sourceCount, deletedCount, failedAudits, completedAudits int
+			if err := database.owner.QueryRow(ctx, `SELECT run.status,run.failed_from,run.failure_reason,
+				encode(run.source_checksum,'hex'),run.source_snapshot_count,run.deleted_snapshot_count,
+				run.claim_owner,run.lease_expires_at,run.fencing_token,run.completed_at,run.failed_at,
+				(SELECT count(*) FROM audit_logs
+				 WHERE action='account_inventory_history.failed'
+				   AND details->>'instance'=run.instance_id::text
+				   AND details->>'summary_date'=run.summary_date::text
+				   AND details->>'phase'='fail_deleting'),
+				(SELECT count(*) FROM audit_logs
+				 WHERE action='account_inventory_history.completed'
+				   AND details->>'instance'=run.instance_id::text
+				   AND details->>'summary_date'=run.summary_date::text
+				   AND details->>'phase'='complete')
+			FROM account_inventory_compaction_runs AS run WHERE run.compaction_run_id=$1`,
+				test.runID).Scan(&persistedStatus, &failedFrom, &persistedReason,
+				&persistedChecksum, &sourceCount, &deletedCount, &claimOwner,
+				&leaseExpiresAt, &persistedFence, &completedAt, &failedAt,
+				&failedAudits, &completedAudits); err != nil {
+				t.Fatal(err)
+			}
+			if persistedStatus != "failed" || failedFrom != "deleting" ||
+				persistedReason != "source_count_mismatch" ||
+				persistedChecksum != strings.Repeat(test.checksum, 32) ||
+				sourceCount != 1 || deletedCount != test.wantDeleted ||
+				claimOwner != nil || leaseExpiresAt != nil || persistedFence != nil ||
+				completedAt != nil || failedAt.IsZero() || failedAudits != 1 || completedAudits != 0 {
+				t.Fatalf("persisted status=%s failed_from=%s reason=%s checksum_changed=%t source=%d deleted=%d owner=%v lease=%v fence=%v completed=%v failed=%s audits=%d/%d",
+					persistedStatus, failedFrom, persistedReason,
+					persistedChecksum != strings.Repeat(test.checksum, 32), sourceCount, deletedCount,
+					claimOwner, leaseExpiresAt, persistedFence, completedAt, failedAt,
+					failedAudits, completedAudits)
+			}
+		})
+	}
+
+	var claimable int
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_claim_account_inventory_compaction_v1($1,30)`, uuid.New()).
+		Scan(&claimable); err != nil || claimable != 0 {
+		t.Fatalf("fixed count mismatches claimable=%d err=%v", claimable, err)
+	}
+	// Fixture-only repair isolates the failed-status retention gate after the
+	// completion test has already proved and persisted the count mismatch.
+	eligibilityTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = eligibilityTx.Rollback(ctx) }()
+	if _, err := eligibilityTx.Exec(ctx, `ALTER TABLE account_inventory_compaction_runs
+		DISABLE TRIGGER account_inventory_compaction_runs_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eligibilityTx.Exec(ctx, `UPDATE account_inventory_compaction_runs
+		SET deleted_snapshot_count=source_snapshot_count WHERE compaction_run_id=$1`, emptyRunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eligibilityTx.Exec(ctx, `ALTER TABLE account_inventory_compaction_runs
+		ENABLE TRIGGER account_inventory_compaction_runs_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if err := eligibilityTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var retentionOtherwiseEligible bool
+	if err := database.owner.QueryRow(ctx, `SELECT run.status='failed'
+		AND run.deleted_snapshot_count=run.source_snapshot_count
+		AND run.deleted_poll_count+1=run.source_poll_count
+		AND run.deleted_provider_result_count+1=run.source_provider_result_count
+		AND run.deleted_duplicate_count=run.source_duplicate_count
+		AND EXISTS(SELECT 1 FROM account_inventory_daily_rollup_runs
+		 WHERE summary_date=run.summary_date AND instance_id=run.instance_id AND status='completed')
+		AND NOT EXISTS(SELECT 1 FROM account_inventory_snapshot_items WHERE poll_run_id=$2)
+		FROM account_inventory_compaction_runs AS run WHERE run.compaction_run_id=$1`,
+		emptyRunID, emptyPollID).Scan(&retentionOtherwiseEligible); err != nil || !retentionOtherwiseEligible {
+		t.Fatalf("failed poll fixture is not otherwise retention eligible=%t err=%v",
+			retentionOtherwiseEligible, err)
+	}
+	var processed, deletedRows int
+	if err := database.runtime.QueryRow(ctx, `WITH retained AS (
+		SELECT public.control_delete_account_inventory_poll_retention_v1(10) AS value
+	) SELECT (value->>'processed_count')::integer,(value->>'deleted_row_count')::integer
+	FROM retained`).Scan(&processed, &deletedRows); err != nil {
+		t.Fatal(err)
+	}
+	var remainingPolls, providerResults, remainingSnapshots, emptyPolls int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM account_inventory_poll_runs
+		 WHERE poll_run_id=ANY($1::uuid[])),
+		(SELECT count(*) FROM account_inventory_poll_provider_results
+		 WHERE poll_run_id=ANY($1::uuid[])),
+		(SELECT count(*) FROM account_inventory_snapshot_items
+		 WHERE poll_run_id=$2),
+		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$3)`,
+		[]uuid.UUID{remainingPollID, emptyPollID}, remainingPollID, emptyPollID).Scan(
+		&remainingPolls, &providerResults, &remainingSnapshots, &emptyPolls); err != nil {
+		t.Fatal(err)
+	}
+	if processed != 0 || deletedRows != 0 || remainingPolls != 2 || providerResults != 2 ||
+		remainingSnapshots != 1 || emptyPolls != 1 {
+		t.Fatalf("retention processed=%d deleted=%d polls=%d providers=%d snapshots=%d empty_poll=%d",
+			processed, deletedRows, remainingPolls, providerResults, remainingSnapshots, emptyPolls)
 	}
 }
 

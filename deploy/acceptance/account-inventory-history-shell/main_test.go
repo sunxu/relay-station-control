@@ -196,6 +196,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"snapshot_delete_selection=covered",
 		"TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource",
 		"snapshot_delete_resume=covered",
+		"TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls",
+		"compaction_complete_count_gate=covered",
 		"finalize_atomicity=covered",
 		"final_immutability=covered",
 		"metrics_completed_only=covered",
