@@ -20,6 +20,7 @@ runtime_directory=''
 project_name=''
 control_binary=''
 control_log=''
+summary_lock_pid=''
 bootstrap_file=''
 keyring_file=''
 bootstrap_value=''
@@ -35,6 +36,8 @@ fixture_provider='openai'
 restart_fixture_instance_id='00000000-0000-4000-8000-000000000910'
 restart_fixture_summary_date=''
 restart_fixture_provider='openai'
+shutdown_drain_instance_id='00000000-0000-4000-8000-000000000911'
+shutdown_timeout_instance_id='00000000-0000-4000-8000-000000000912'
 
 fixed_failure() {
   echo "account_inventory_history_process=failed reason=$1" >&2
@@ -53,6 +56,10 @@ compose() {
 cleanup() {
   local exit_code=$? attempts=100
   trap - EXIT HUP INT TERM
+  if [ -n "$summary_lock_pid" ]; then
+    kill -TERM "$summary_lock_pid" >/dev/null 2>&1 || true
+    wait "$summary_lock_pid" >/dev/null 2>&1 || true
+  fi
   if [ -n "$control_pid" ]; then
     kill -TERM "$control_pid" >/dev/null 2>&1 || true
     while kill -0 "$control_pid" >/dev/null 2>&1 && [ "$attempts" -gt 0 ]; do
@@ -150,7 +157,7 @@ write_secrets() {
 
 migrate_up() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
+    DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
     make --silent migrate-up >"$runtime_directory/migration.log" 2>&1; then
     fixed_failure 'migration_up_failed'
   fi
@@ -173,7 +180,7 @@ assert_migration_and_seed_environment() {
 
 build_control() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go build -trimpath -o "$control_binary" ./cmd/control \
+    go build -trimpath -o "$control_binary" ./cmd/control \
     >"$runtime_directory/control-build.log" 2>&1; then
     fixed_failure 'control_build_failed'
   fi
@@ -183,7 +190,7 @@ require_process_test() {
   local exact_name="$1" listing
   listing="$runtime_directory/$(printf '%s' "$exact_name" | tr -c '[:alnum:]' '_').tests"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
+    go test ./deploy/acceptance/account-inventory-history-process \
     -list "^${exact_name}$" >"$listing" 2>&1; then
     fixed_failure 'process_test_discovery_failed'
   fi
@@ -250,7 +257,7 @@ verify_disabled_metrics() {
   if ! CONTROL_HISTORY_PROCESS_URL="http://127.0.0.1:${control_port}" \
     CONTROL_HISTORY_PROCESS_RUNTIME_DATABASE_URL="$CONTROL_HISTORY_PROCESS_RUNTIME_URL" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
+      go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessDisabledCompatibleMetrics$' -count=1 \
       >"$runtime_directory/disabled-process-probe.log" 2>&1; then
     fixed_failure 'disabled_process_probe_failed'
@@ -280,7 +287,7 @@ verify_disabled_metrics_failure_isolation() {
     CONTROL_HISTORY_PROCESS_EXPECT_REASON='disabled' \
     CONTROL_HISTORY_PROCESS_FORBIDDEN_MARKER='control_account_inventory_history_metrics_snapshot_v1' \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
+      go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessMetricsFailureIsolation$' -count=1 \
       >"$runtime_directory/disabled-metrics-failure-probe.log" 2>&1; then
     fixed_failure 'disabled_metrics_failure_isolation_failed'
@@ -308,9 +315,10 @@ stop_control() {
 }
 
 seed_eligible_source() {
+  local age_days="${1:-4}"
   fixture_summary_date="$(compose exec -T postgres psql --username relay_control_migrator \
     --dbname relay_station_control --tuples-only --no-align --command \
-    "SELECT (current_date - 4)::text" 2>/dev/null)" \
+    "SELECT (current_date - ${age_days})::text" 2>/dev/null)" \
     || fixed_failure 'fixture_date_unavailable'
   case "$fixture_summary_date" in
     ????-??-??) ;;
@@ -322,7 +330,7 @@ seed_eligible_source() {
     CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$fixture_summary_date" \
     CONTROL_HISTORY_PROCESS_PROVIDER="$fixture_provider" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
+      go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessSeedEligibleSource$' -count=1 \
       >"$runtime_directory/seed-eligible-source.log" 2>&1; then
     for class in reference_violation duplicate constraint_violation permission_denied guard_rejected database_failure
@@ -356,7 +364,7 @@ seed_claimed_for_restart() {
     CONTROL_HISTORY_PROCESS_RESTART_SUMMARY_DATE="$restart_fixture_summary_date" \
     CONTROL_HISTORY_PROCESS_RESTART_PROVIDER="$restart_fixture_provider" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
+      go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessSeedClaimedForRestart$' -count=1 \
       >"$runtime_directory/seed-claimed-for-restart.log" 2>&1; then
     if grep -Fq 'history process restart planner did not create phase matrix' \
@@ -411,6 +419,8 @@ assert_restart_claim_active() {
 }
 
 start_enabled_control() {
+  local maximum_connections="${1:-}" statement_timeout="${2:-1s}"
+  local shutdown_grace="${3:-2s}" claim_lease="${4:-5s}"
   CONTROL_HTTP_ADDR="127.0.0.1:${control_port}" \
   CONTROL_ENVIRONMENT_ID='history-process' \
   CONTROL_ENVIRONMENT='dev' \
@@ -419,20 +429,205 @@ start_enabled_control() {
   CONTROL_BOOTSTRAP_SECRET_FILE="$bootstrap_file" \
   CONTROL_AUTH_KEYRING_FILE="$keyring_file" \
   CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED='false' \
+  CONTROL_DATABASE_MAX_CONNS="$maximum_connections" \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED='true' \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_SCAN_INTERVAL='1s' \
-  CONTROL_ACCOUNT_INVENTORY_HISTORY_CLAIM_LEASE='5s' \
+  CONTROL_ACCOUNT_INVENTORY_HISTORY_CLAIM_LEASE="$claim_lease" \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_CONCURRENCY='1' \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_DELETE_BATCH_SIZE='1' \
-  CONTROL_ACCOUNT_INVENTORY_HISTORY_STATEMENT_TIMEOUT='1s' \
+  CONTROL_ACCOUNT_INVENTORY_HISTORY_STATEMENT_TIMEOUT="$statement_timeout" \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_DATABASE_BACKOFF_INITIAL='100ms' \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_DATABASE_BACKOFF_MAXIMUM='1s' \
-  CONTROL_ACCOUNT_INVENTORY_HISTORY_SHUTDOWN_GRACE='2s' \
-  DATABASE_URL="$CONTROL_HISTORY_PROCESS_RUNTIME_URL" \
+  CONTROL_ACCOUNT_INVENTORY_HISTORY_SHUTDOWN_GRACE="$shutdown_grace" \
+  DATABASE_URL="${CONTROL_HISTORY_PROCESS_RUNTIME_URL}&application_name=history_process_control" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       "$control_binary" >>"$control_log" 2>&1 &
   control_pid=$!
   wait_for_control
+}
+
+start_summary_lock() {
+  local label="$1"
+  compose exec -T --env PGAPPNAME=history_process_summary_lock postgres \
+    psql --username relay_control_migrator --dbname relay_station_control \
+    --set ON_ERROR_STOP=1 --command \
+    "BEGIN; LOCK TABLE public.account_inventory_daily_provider_summaries IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(60); COMMIT" \
+    >"$runtime_directory/${label}-summary-lock.log" 2>&1 &
+  summary_lock_pid=$!
+  local attempts=50 held
+  while [ "$attempts" -gt 0 ]; do
+    held="$(compose exec -T postgres psql --username relay_control_migrator \
+      --dbname relay_station_control --tuples-only --no-align --command \
+      "SELECT count(*) FROM pg_stat_activity WHERE application_name='history_process_summary_lock' AND state='active'" 2>/dev/null)" \
+      || fixed_failure 'summary_lock_inspection_failed'
+    [ "$held" = '1' ] && return
+    attempts=$((attempts - 1))
+    sleep 0.1
+  done
+  fixed_failure 'summary_lock_start_timeout'
+}
+
+release_summary_lock() {
+  local attempts=50 held
+  if ! compose exec -T postgres psql --username relay_control_migrator \
+    --dbname relay_station_control --set ON_ERROR_STOP=1 --command \
+    "SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE application_name='history_process_summary_lock'" \
+    >/dev/null 2>&1; then
+    fixed_failure 'summary_lock_release_failed'
+  fi
+  while [ "$attempts" -gt 0 ]; do
+    held="$(compose exec -T postgres psql --username relay_control_migrator \
+      --dbname relay_station_control --tuples-only --no-align --command \
+      "SELECT count(*) FROM pg_stat_activity WHERE application_name='history_process_summary_lock'" 2>/dev/null)" \
+      || fixed_failure 'summary_lock_release_inspection_failed'
+    [ "$held" = '0' ] && break
+    attempts=$((attempts - 1))
+    sleep 0.1
+  done
+  [ "$held" = '0' ] || fixed_failure 'summary_lock_release_timeout'
+  wait "$summary_lock_pid" >/dev/null 2>&1 || true
+  summary_lock_pid=''
+}
+
+wait_for_control_summarize_lock() {
+  local attempts=50 waiting
+  while [ "$attempts" -gt 0 ]; do
+    waiting="$(compose exec -T postgres psql --username relay_control_migrator \
+      --dbname relay_station_control --tuples-only --no-align --command \
+      "SELECT count(*) FROM pg_stat_activity WHERE application_name='history_process_control' AND state='active' AND wait_event_type='Lock' AND query LIKE '%control_summarize_account_inventory_compaction_v1%'" 2>/dev/null)" \
+      || fixed_failure 'held_transaction_inspection_failed'
+    [ "$waiting" = '1' ] && return
+    if [ -z "$control_pid" ] || ! kill -0 "$control_pid" >/dev/null 2>&1; then
+      fixed_failure 'control_exited_before_held_transaction'
+    fi
+    attempts=$((attempts - 1))
+    sleep 0.1
+  done
+  fixed_failure 'held_transaction_start_timeout'
+}
+
+verify_held_transaction_pool_exhaustion() {
+  if ! CONTROL_HISTORY_PROCESS_OWNER_DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
+    CONTROL_HISTORY_PROCESS_INSTANCE_ID="$fixture_instance_id" \
+    CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$fixture_summary_date" \
+    CONTROL_HISTORY_PROCESS_PROVIDER="$fixture_provider" \
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      go test ./deploy/acceptance/account-inventory-history-process \
+      -run '^TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion$' -count=1 \
+      >"$runtime_directory/held-transaction-pool-exhaustion.log" 2>&1; then
+    fixed_failure 'held_transaction_pool_exhaustion_failed'
+  fi
+}
+
+verify_pool_wait_is_bounded() {
+  if curl --noproxy '*' --silent --show-error --fail --max-time 1 \
+    "http://127.0.0.1:${control_port}/metrics" \
+    >"$runtime_directory/pool-wait.prom" 2>"$runtime_directory/pool-wait.log"; then
+    fixed_failure 'max_conns_1_did_not_exhaust_pool'
+  fi
+  if [ -z "$control_pid" ] || ! kill -0 "$control_pid" >/dev/null 2>&1; then
+    fixed_failure 'control_exited_during_pool_wait'
+  fi
+}
+
+verify_claim_retained() {
+  local expected_phase="$1" label="$2"
+  if ! CONTROL_HISTORY_PROCESS_OWNER_DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
+    CONTROL_HISTORY_PROCESS_INSTANCE_ID="$fixture_instance_id" \
+    CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$fixture_summary_date" \
+    CONTROL_HISTORY_PROCESS_PROVIDER="$fixture_provider" \
+    CONTROL_HISTORY_PROCESS_EXPECT_PHASE="$expected_phase" \
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      go test ./deploy/acceptance/account-inventory-history-process \
+      -run '^TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry$' -count=1 \
+      >"$runtime_directory/${label}-claim-retained.log" 2>&1; then
+    fixed_failure "${label}_claim_not_retained"
+  fi
+}
+
+verify_reconciler_recovered_claim() {
+  local label="$1"
+  if ! CONTROL_HISTORY_PROCESS_OWNER_DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
+    CONTROL_HISTORY_PROCESS_INSTANCE_ID="$fixture_instance_id" \
+    CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$fixture_summary_date" \
+    CONTROL_HISTORY_PROCESS_PROVIDER="$fixture_provider" \
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      go test ./deploy/acceptance/account-inventory-history-process \
+      -run '^TestAccountInventoryHistoryProcessReconcilerRecoveredClaim$' -count=1 \
+      >"$runtime_directory/${label}-reconciler-recovery.log" 2>&1; then
+    fixed_failure "${label}_reconciler_recovery_failed"
+  fi
+}
+
+verify_held_transaction_timeout_atomicity() {
+  if ! CONTROL_HISTORY_PROCESS_OWNER_DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
+    CONTROL_HISTORY_PROCESS_INSTANCE_ID="$fixture_instance_id" \
+    CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$fixture_summary_date" \
+    CONTROL_HISTORY_PROCESS_PROVIDER="$fixture_provider" \
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      go test ./deploy/acceptance/account-inventory-history-process \
+      -run '^TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic$' -count=1 \
+      >"$runtime_directory/held-transaction-timeout-atomicity.log" 2>&1; then
+    if grep -Fq 'history process held transaction timeout run state invalid' \
+      "$runtime_directory/held-transaction-timeout-atomicity.log"; then
+      fixed_failure 'held_transaction_timeout_run_state_invalid'
+    fi
+    if grep -Fq 'history process held transaction timeout left partial history' \
+      "$runtime_directory/held-transaction-timeout-atomicity.log"; then
+      fixed_failure 'held_transaction_timeout_partial_history'
+    fi
+    if grep -Fq 'history process held transaction timeout audit invalid' \
+      "$runtime_directory/held-transaction-timeout-atomicity.log"; then
+      fixed_failure 'held_transaction_timeout_audit_invalid'
+    fi
+    fixed_failure 'held_transaction_timeout_atomicity_failed'
+  fi
+}
+
+stop_control_with_held_transaction() {
+  local release_during_grace="$1" attempts=120 exit_code=0
+  kill -TERM "$control_pid" >/dev/null 2>&1 || fixed_failure 'held_transaction_sigterm_failed'
+  if [ "$release_during_grace" = true ]; then
+    sleep 0.2
+    release_summary_lock
+  fi
+  while kill -0 "$control_pid" >/dev/null 2>&1; do
+    attempts=$((attempts - 1))
+    [ "$attempts" -gt 0 ] || fixed_failure 'held_transaction_stop_timeout'
+    sleep 0.1
+  done
+  wait "$control_pid" >/dev/null 2>&1 || exit_code=$?
+  control_pid=''
+  [ "$exit_code" -eq 0 ] || fixed_failure 'held_transaction_control_exit_failed'
+  if [ "$release_during_grace" = false ]; then
+    release_summary_lock
+  fi
+}
+
+run_held_transaction_shutdown_case() {
+  local label="$1" instance_id="$2" age_days="$3" expected_phase="$4"
+  local release_during_grace="$5"
+  fixture_instance_id="$instance_id"
+  seed_eligible_source "$age_days"
+  start_summary_lock "$label"
+  start_enabled_control 1 10s 11s 20s
+  wait_for_control_summarize_lock
+  verify_held_transaction_pool_exhaustion
+  verify_pool_wait_is_bounded
+  stop_control_with_held_transaction "$release_during_grace"
+  if [ "$release_during_grace" = true ]; then
+    verify_claim_retained "$expected_phase" "${label}-stopped"
+    start_enabled_control 1 10s 11s 20s
+    wait_for_history_ready
+    verify_claim_retained "$expected_phase" "${label}-restarted"
+    verify_enabled_convergence "$fixture_instance_id" "$fixture_summary_date" \
+      "$fixture_provider" "$runtime_directory/${label}-convergence.log" \
+      "${label}_convergence" 'false'
+    verify_reconciler_recovered_claim "$label"
+    stop_control
+  else
+    verify_held_transaction_timeout_atomicity
+  fi
 }
 
 verify_enabled_convergence() {
@@ -449,7 +644,7 @@ verify_enabled_convergence() {
     CONTROL_HISTORY_PROCESS_PROVIDER="$provider" \
     CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX="$restart_phase_matrix" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
+      go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource$' -count=1 \
       >"$probe_log" 2>&1; then
     for class in database_unavailable compaction_failed compaction_deleting compaction_summarized \
@@ -572,6 +767,10 @@ main() {
   require_process_test TestAccountInventoryHistoryProcessSeedEligibleSource
   require_process_test TestAccountInventoryHistoryProcessSeedClaimedForRestart
   require_process_test TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource
+  require_process_test TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion
+  require_process_test TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry
+  require_process_test TestAccountInventoryHistoryProcessReconcilerRecoveredClaim
+  require_process_test TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic
   start_default_disabled_control
   verify_disabled_metrics
   set_metrics_snapshot_execute revoke
@@ -596,9 +795,11 @@ main() {
     "$restart_fixture_provider" "$runtime_directory/restart-convergence-probe.log" \
     'postgres_restart_convergence' 'true'
   stop_control
+  run_held_transaction_shutdown_case drain "$shutdown_drain_instance_id" 8 summarized true
+  run_held_transaction_shutdown_case timeout "$shutdown_timeout_instance_id" 9 pending false
   verify_redacted_log
   strict_cleanup
-  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered sigterm_exit=bounded log_redaction=covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
+  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered held_sql_sigterm_drain=covered held_sql_statement_timeout_atomicity=covered max_conns_1_pool_wait=covered unexpired_lease=preserved reconciler_restart_takeover=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered sigterm_exit=bounded log_redaction=covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"

@@ -94,10 +94,11 @@
 - [x] 7.1 新增默认关闭的history enabled、scan/lease/in-process concurrency/batch/timeout配置与安全上下限，72小时/30天/95%不开放配置；以缺失、边界和非法组合config测试验证
 - [x] 7.2 实现history service启动compatibility gate，检查Migration9表/函数/ACL/core-sha256/provider-health/query签名；disabled也执行只读探测，不兼容时只禁用history并仅导出enabled/reason、既有服务继续，避免把不可读取的oldest/backlog伪装为零
 - [x] 7.3 接线planner/compaction/rollup/retention循环及有界退避，证明不注册`async_job_kinds`、不依赖Redis且生产durable-job registry继续为空
-- [ ] 7.4 实现停止顺序和有限事务收尾，覆盖SIGTERM、lease未到期、连接耗尽与重启后Reconciler接管
+- [x] 7.4 实现停止顺序和有限事务收尾，覆盖SIGTERM、lease未到期、连接耗尽与重启后Reconciler接管
 - [x] 7.5 验证应用rollback：完成真实snapshot/poll删除并使current FK为NULL后停止history、运行固定旧二进制、保留forward schema/summary/run并继续poll/current query且不修改history，生产不执行down
 
 > 第六批新增真实Control process验收：覆盖默认disabled compatibility、metrics权限故障隔离、合法zero-poll日enabled收敛、消失执行者claim跨PostgreSQL stop/start与lease过期后的持久恢复，以及实际PID SIGTERM有界退出；第十五批已将恢复扩展为20秒pending/summarized/deleting三阶段组合Control/PostgreSQL重启，并以数据库函数矩阵独立证明Reconciler独占接管。另有可选`CONTROL_DATABASE_MAX_CONNS=1..100`环境覆盖且缺失保持现有pgx URL/default行为，为真实pool exhaustion提供确定性注入。7.4仍缺持锁事务SIGTERM drain/timeout和真实pool exhaustion矩阵，因此保持未勾选。
+> 第二十六批在真实Control与PostgreSQL18中将`CONTROL_DATABASE_MAX_CONNS=1`，以独立owner锁住Provider summary表并由`pg_stat_activity`确认唯一Control连接正阻塞于生产summarize函数；并发metrics请求固定在客户端期限内等待且Control保持存活。SIGTERM后，grace内释放锁只提交这一份summarized事务、不启动下一阶段；重启时未到期lease的owner/fence/attempt保持，过期后只能由Reconciler接管并以attempt 2完成。持续持锁分支由固定statement timeout原子回滚summary并只写`failed_from=pending/statement_timeout`，无segment、rollup或summarized/completed audit，进程同样有界正常退出。该矩阵完成7.4，但不替代9.4的完整双scheduler/worker、权限、trigger和数据库故障矩阵，也不关闭9.6全仓race。
 
 ## 8. 指标、隐私与安全负向门禁
 

@@ -73,6 +73,10 @@ var requiredHistoryProcessTests = []string{
 	"TestAccountInventoryHistoryProcessSeedEligibleSource",
 	"TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource",
 	"TestAccountInventoryHistoryProcessSeedClaimedForRestart",
+	"TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion",
+	"TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry",
+	"TestAccountInventoryHistoryProcessReconcilerRecoveredClaim",
+	"TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic",
 }
 
 const (
@@ -407,6 +411,9 @@ func assertHistoryProcessContract(t *testing.T) {
 		"postgres_restart_recovery=covered",
 		"CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX", "restart_phase_matrix",
 		"control_postgres_restart_phase_matrix=covered",
+		"held_sql_sigterm_drain=covered", "held_sql_statement_timeout_atomicity=covered",
+		"max_conns_1_pool_wait=covered", "unexpired_lease=preserved",
+		"reconciler_restart_takeover=covered",
 		"sigterm_exit=bounded", "log_redaction=covered",
 		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
 		"cleanup_temp=0", "cleanup_lock=0",

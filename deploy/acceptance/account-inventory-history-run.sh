@@ -112,6 +112,10 @@ run_static() {
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessSeedEligibleSource
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessSeedClaimedForRestart
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessReconcilerRecoveredClaim
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic
   require_test ./deploy/acceptance/account-inventory-history-shell TestHistoryAcceptanceBundleContract
 
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \

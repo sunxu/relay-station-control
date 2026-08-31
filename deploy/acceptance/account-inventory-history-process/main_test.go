@@ -36,6 +36,7 @@ const (
 	restartProviderEnvironment = "CONTROL_HISTORY_PROCESS_RESTART_PROVIDER"
 	restartMatrixEnvironment   = "CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX"
 	forbiddenMarkerEnvironment = "CONTROL_HISTORY_PROCESS_FORBIDDEN_MARKER"
+	expectedPhaseEnvironment   = "CONTROL_HISTORY_PROCESS_EXPECT_PHASE"
 
 	processProbeTimeout = 35 * time.Second
 	httpRequestTimeout  = 3 * time.Second
@@ -382,6 +383,132 @@ func TestAccountInventoryHistoryProcessSeedClaimedForRestart(t *testing.T) {
 			WHERE instance_id=$2 AND summary_date BETWEEN $1::date AND $1::date+2)`,
 		seeded.dayStart, fixture.instanceID).Scan(&validMatrix); err != nil || !validMatrix {
 		t.Fatal("history process restart phase matrix verification failed")
+	}
+}
+
+func TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion(t *testing.T) {
+	if !processSeedConfigured() {
+		t.Skip("history process held transaction acceptance is not enabled")
+	}
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+
+	var valid bool
+	if err := ownerPool.QueryRow(ctx, `WITH target AS (
+		SELECT * FROM public.account_inventory_compaction_runs
+		WHERE summary_date=$1::date AND instance_id=$2
+	), control_connection AS (
+		SELECT * FROM pg_stat_activity
+		WHERE datname=current_database() AND application_name='history_process_control'
+	) SELECT
+		(SELECT count(*)=1 AND bool_and(status='pending' AND attempt_count=1
+			AND claim_owner IS NOT NULL AND fencing_token IS NOT NULL
+			AND lease_expires_at>clock_timestamp()) FROM target)
+		AND (SELECT count(*)=1 FROM control_connection)
+		AND (SELECT count(*)=1 FROM control_connection
+			WHERE state='active' AND wait_event_type='Lock'
+			  AND query LIKE '%control_summarize_account_inventory_compaction_v1%')`,
+		fixture.summaryDate, fixture.instanceID).Scan(&valid); err != nil || !valid {
+		t.Fatal("history process held transaction or single-connection exhaustion not observed")
+	}
+}
+
+func TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry(t *testing.T) {
+	if !processSeedConfigured() {
+		t.Skip("history process held transaction acceptance is not enabled")
+	}
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	expectedPhase := os.Getenv(expectedPhaseEnvironment)
+	if expectedPhase != "pending" && expectedPhase != "summarized" {
+		t.Fatal("history process expected retained phase invalid")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+
+	var valid bool
+	if err := ownerPool.QueryRow(ctx, `SELECT count(*)=1 AND bool_and(
+		status=$3 AND attempt_count=1 AND claim_owner IS NOT NULL
+		AND fencing_token IS NOT NULL AND lease_expires_at>clock_timestamp())
+		FROM public.account_inventory_compaction_runs
+		WHERE summary_date=$1::date AND instance_id=$2`,
+		fixture.summaryDate, fixture.instanceID, expectedPhase).Scan(&valid); err != nil || !valid {
+		t.Fatal("history process unexpired claim was changed or taken over")
+	}
+}
+
+func TestAccountInventoryHistoryProcessReconcilerRecoveredClaim(t *testing.T) {
+	if !processSeedConfigured() {
+		t.Skip("history process held transaction acceptance is not enabled")
+	}
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+
+	var valid bool
+	if err := ownerPool.QueryRow(ctx, `SELECT
+		(SELECT count(*)=1 AND bool_and(status='completed' AND attempt_count=2
+			AND claim_owner IS NULL AND fencing_token IS NULL AND lease_expires_at IS NULL)
+		 FROM public.account_inventory_compaction_runs
+		 WHERE summary_date=$1::date AND instance_id=$2)
+		AND (SELECT count(*)=1 AND bool_and(status='completed')
+		 FROM public.account_inventory_daily_rollup_runs
+		 WHERE summary_date=$1::date AND instance_id=$2)`,
+		fixture.summaryDate, fixture.instanceID).Scan(&valid); err != nil || !valid {
+		t.Fatal("history process reconciler did not recover the retained claim exactly once")
+	}
+}
+
+func TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic(t *testing.T) {
+	if !processSeedConfigured() {
+		t.Skip("history process held transaction acceptance is not enabled")
+	}
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+
+	var runValid, historyEmpty, auditValid bool
+	if err := ownerPool.QueryRow(ctx, `WITH target AS (
+		SELECT * FROM public.account_inventory_compaction_runs
+		WHERE summary_date=$1::date AND instance_id=$2
+	) SELECT
+		(SELECT count(*)=1 AND bool_and(status='failed' AND failed_from='pending'
+			AND failure_reason='statement_timeout' AND attempt_count=1
+			AND claim_owner IS NULL AND fencing_token IS NULL AND lease_expires_at IS NULL
+			AND source_checksum IS NULL AND source_snapshot_count IS NULL) FROM target),
+		(SELECT count(*)=0 FROM public.account_inventory_daily_provider_summaries AS summary
+			JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_summaries AS summary
+			JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_rollup_runs
+			WHERE summary_date=$1::date AND instance_id=$2),
+		(SELECT count(*)=1 FROM public.audit_logs
+			WHERE category='account_inventory_history'
+			  AND action='account_inventory_history.failed'
+			  AND details->>'instance'=$2::uuid::text
+			  AND details->>'summary_date'=$1::date::text
+			  AND details->>'phase'='fail_pending')
+		AND (SELECT count(*)=0 FROM public.audit_logs
+			WHERE category='account_inventory_history'
+			  AND action IN ('account_inventory_history.summarized','account_inventory_history.completed')
+			  AND details->>'instance'=$2::uuid::text
+			  AND details->>'summary_date'=$1::date::text)`, fixture.summaryDate, fixture.instanceID).Scan(
+		&runValid, &historyEmpty, &auditValid,
+	); err != nil {
+		t.Fatal("history process held transaction timeout verification failed")
+	}
+	if !runValid {
+		t.Fatal("history process held transaction timeout run state invalid")
+	}
+	if !historyEmpty {
+		t.Fatal("history process held transaction timeout left partial history")
+	}
+	if !auditValid {
+		t.Fatal("history process held transaction timeout audit invalid")
 	}
 }
 
