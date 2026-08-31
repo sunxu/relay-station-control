@@ -16,5 +16,10 @@ services:
       retries: 20
     tmpfs:
       - /var/lib/postgresql
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
