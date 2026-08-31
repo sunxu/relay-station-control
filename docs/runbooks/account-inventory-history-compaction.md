@@ -153,7 +153,7 @@ Final rollup只读取不可变completed segments。账号final逐项求和，边
 2. 生产执行 additive Migration 9，保留受保护down约束。
 3. 部署理解 forward schema 的新二进制，但保持 history disabled。此阶段既有 poll/lifecycle/current query必须继续；durable-job production registry保持不变。
 4. Compatibility gate通过后，先在 staging启用 `concurrency=1` 和批准的小 batch，处理一个已达72小时的合成 UTC 日。
-5. 保留已通过的 PostgreSQL 18 `1/10/50 Node、每档总计1,000账号`短slot功能矩阵，并继续完成状态/崩溃/并发/保留、86.4万/115.2万snapshot nightly/manual容量、完整敏感canary、旧二进制forward-schema和独立数据面隔离门禁。
+5. 保留已通过的 PostgreSQL 18 `1/10/50 Node、每档总计1,000账号`短slot功能矩阵、完整敏感canary和旧二进制forward-schema门禁，并继续完成状态/崩溃/并发/保留、86.4万/115.2万snapshot nightly/manual容量及独立数据面隔离门禁。
 6. 生产从单 Worker逐步启用，观察 unfinished age、failed_from、WAL、locks、batch duration与守恒；异常立即回到 disabled。
 
 应用回滚：
@@ -188,7 +188,11 @@ History audit的180天是最低不可变保留边界，不是本change的自动�
 
 错误字典按状态机分开：compaction只允许`source_day_mismatch/source_count_mismatch/source_checksum_mismatch/activation_inconsistent`及`statement_timeout/lease_expired/database_unavailable/internal`；rollup只允许`segment_incomplete/segment_count_mismatch/segment_checksum_mismatch/activation_inconsistent`及同四项运行时原因。跨字典值在Store边界拒绝。Control顶层history结构化失败日志的reason精确只有`service_stopped/runtime_stopped/shutdown_timed_out`，固定component/message之外不附加`error`或raw error。
 
-以上关闭2.11和8.3，但不关闭1.5/8.4：成功、零数据、partial、权限、超时、重启和清理失败的数据库非身份列、日志、指标、错误与artifact仍需完整唯一canary扫描。
+以上关闭2.11和8.3；这组错误/audit证据本身不关闭1.5/8.4，后者由下面的独立双门禁完成。
+
+敏感canary矩阵为endpoint/IP、Secret引用/值、email、account key、response body/header、run/fence/checksum、raw error、SQL参数和poll/policy ID分别使用唯一值。真实PostgreSQL18路径覆盖partial compaction→rollup→retention，以及zero、permission、statement timeout和backend reconnect。数据库扫描只允许account key出现在受保护account segment/final identity列，只允许policy/run/fence/checksum出现在既有受保护identity/proof列；七张history表的其他非身份列、history audit details、Repository返回和安全错误均不得命中。
+
+本地sink路径固定为`success/zero_data/partial/permission/timeout/restart/cleanup_failure`七类。每类最终artifact只含固定scenario/result；测试回读日志、指标、错误和artifact后，再由有界scanner扫描整个artifact目录。Safety runner只输出`local_sink_canary=covered scenarios=7`，PostgreSQL runner只输出`sensitive_canary_database_sinks=covered`；aggregate `all`在两者及其前置门禁均成功后才输出`sensitive_canary=covered`。这完成1.5/8.4，但不完成8.6：direct-network-import静态负向和敏感值零命中都不能代替真实fake network请求计数。
 
 验收 artifact只保留候选commit、UTC窗口、退出码、固定分类、聚合计数/时延、PostgreSQL major/Migration、请求计数和清理计数。任何canary命中只输出固定失败类，不输出值、文件名或上下文。
 
@@ -205,9 +209,9 @@ History audit的180天是最低不可变保留边界，不是本change的自动�
 - metrics provider只在compatibility通过后读取受控M9快照，导出固定state/failure/oldest/backlog/delete与最多`50×64`的instance/provider coverage；schema不兼容时只保留enabled/reason族，不伪造数据库派生零值；
 - 真实Control process runner已覆盖Migration9、默认disabled+compatible、metrics函数权限撤销时HTTP 200与其他collector隔离、合法zero-poll日的enabled planner→compaction→rollup、`MAX_CONNS=1`持锁SQL的SIGTERM drain/statement-timeout原子路径，以及pending/summarized/deleting三阶段claim组合跨Control重启、PostgreSQL stop/start和lease过期后的Reconciler独占恢复；实际PID均有界正常退出，动态secret/连接串日志扫描及container/volume/network/temp/lock零残留；
 - change-specific acceptance runner已通过PostgreSQL 18 schema `up/down/up`、core SHA-256、PostgreSQL↔Go checksum golden、ACL/gate、compaction主路径与恢复、retention/current-query主路径、Migration8 legacy poll首次收敛与retired-day cut-off、exact discovery、race、百万行观察和零容器/卷/网络残留；新增的 PostgreSQL 18短slot功能矩阵也已分别通过1/10/50 Node、每档总计1,000账号的compaction/rollup守恒。该矩阵不记录nightly/manual大规模样本的WAL/RSS/buffer/lock分位数，百万行最大RSS也仍只作为观测，不构成容量阈值；
-- 局部safety gate已覆盖7类in-process成功/零数据/partial/固定失败输出、history runtime值格式化、最终本地artifact扫描及production history源码direct network client import边界；它尚未覆盖数据库非身份列sink、真实Control process/fake endpoint请求计数或完整网络路径，因此不能声明完整敏感canary或零外部请求门禁通过；
+- 敏感canary双门禁已覆盖7类本地success/zero/partial/permission/timeout/restart/cleanup-failure sink和真实PostgreSQL18 partial/zero/permission/timeout/reconnect数据库非身份列扫描，aggregate仅在两者成功后声明covered；production history源码direct network client import仍只是一条静态边界，真实Control process/fake endpoint零请求属于8.6；
 - pinned旧代码forward-schema rollback runner已在隔离PostgreSQL 18通过：Migration 9完成受控snapshot/poll清理并使current FK为NULL后，固定`d431002`旧Control在隔离网络自行发起唯一CLIProxyAPI账号清单GET，完成poll/promotion并恢复两个current FK；同一旧进程的认证HTTP current query返回唯一账号并原子写入唯一view audit。运行前后history表和history audit指纹不变，generic job三表保持空，fake Node请求精确为1，且container/volume/network/temp/lock残留均为零。生产未执行down；OpenSpec 2.10/7.5据此通过；
-- 因此 `CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED=true` 已具有候选执行效果，但在剩余故障/nightly容量、完整canary与发布门禁完成前仍禁止用于生产，也禁止把接线或单次process smoke通过记录为阶段 3完成。
+- 因此 `CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED=true` 已具有候选执行效果，但在剩余故障/nightly容量、零外部请求与发布门禁完成前仍禁止用于生产，也禁止把接线或单次process smoke通过记录为阶段 3完成。
 
 最终候选至少必须执行：两次可复现生成、全部Go/test/race/vet/build、前端typecheck/test/build、OpenSpec strict、Migration 9 PostgreSQL 18 up/down/up与ACL、history状态/故障/容量/retention、旧二进制forward-schema、敏感canary、外部请求零和data-plane isolation。所有Go/npm/Docker/make命令显式清除大小写HTTP/HTTPS/ALL proxy；PostgreSQL使用隔离测试资源且不把连接串、SQL参数或原始日志保留到artifact。
 

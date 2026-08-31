@@ -4,7 +4,7 @@
 - [x] 1.2 固化账号snapshot按UTC observed日、Provider coverage/abandoned按UTC scheduled日、72小时day-end资格及跨日source fail-closed规则，以DST/主机非UTC/午夜跨界表驱动测试验证
 - [x] 1.3 固化compaction/rollup状态转换、lease/fencing、未知commit结果、failed_from恢复和completed不可变矩阵，以状态机模型测试覆盖每条合法/非法边
 - [x] 1.4 定义账号/Provider segment、final rollup、source/segment checksum的版本化字段编码与稳定tie-breaker，使用golden vectors验证重复计算一致
-- [ ] 1.5 建立敏感数据流图，证明新summary/rollup只复制受保护account key而不复制email，checksum/identity不进入日志、指标、history审计details、错误或artifact
+- [x] 1.5 建立敏感数据流图，证明新summary/rollup只复制受保护account key而不复制email，checksum/identity不进入日志、指标、history审计details、错误或artifact
 - [x] 1.6 明确OpenAPI/UI/alerts/HMAC/current-lifecycle-cleanup零变更边界，以OpenAPI diff、route/DOM负向测试和OpenSpec strict验证未扩展产品范围
 
 ## 2. Additive Migration 9、Schema 与最小权限
@@ -105,13 +105,15 @@
 - [x] 8.1 增加最近completed final Provider coverage ratio/complete指标，确保同日多策略只产生一组instance/provider序列且不含date/policy/run标签
 - [x] 8.2 增加compaction/rollup固定state/result、oldest eligible unfinished、failure by failed_from、delete backlog/rows/duration指标，使用registry测试锁定低基数标签allowlist
 - [x] 8.3 定义固定错误分类、结构化日志与actor-null history audit allowlist，验证每个summary/rollup/delete状态与审计同事务、180天边界且checksum/identity/SQL参数/raw error不进入日志或audit details
-- [ ] 8.4 向email/account key、poll/policy/run/fencing/checksum、endpoint、Secret和raw error注入唯一canary，扫描成功、零数据、partial、权限、超时、重启和清理失败的最终数据库非身份列/日志/指标/错误/artifact
+- [x] 8.4 向email/account key、poll/policy/run/fencing/checksum、endpoint、Secret和raw error注入唯一canary，扫描成功、零数据、partial、权限、超时、重启和清理失败的最终数据库非身份列/日志/指标/错误/artifact
 - [ ] 8.5 用runtime/migrator/未授权角色覆盖SET LOCAL伪造gate、savepoint rollback、函数异常、连接池复用、owner直接DML、嵌套函数/search_path、超大batch、未来日期和旧fencing，验证gate不泄漏且只有合法受控函数可产生预期变化
 - [ ] 8.6 使用fake network counters证明planner、summary、rollup、metrics、retention和全部错误路径对Node/Gateway/Prometheus/互联网/模型数据面请求均为零
 
 > 第二十七批锁定history audit的12个固定phase：`summarize`、`snapshot_delete`、`complete`、`fail_pending`、`fail_summarized`、`fail_deleting`、`rollup_complete`、`rollup_fail_pending`及四个`retention_*`；每条只允许actor-null system事件和`instance/summary_date/phase/row_count`四个details键，action/result/phase/row-count错配、未知键、身份/checksum、非NULL actor/target/fingerprint/reason均被拒绝。生产函数catalog逐phase证明状态mutation、精确audit gate和audit INSERT位于同一函数/事务；既有summarize、rollup finalize、poll retention及rollup-run retention的audit失败注入代表性证明mutation整体回滚。位于数据库时钟180天前、等于及之后的三条合法history audit经过本change四个cleaner后全部保留，且owner `UPDATE/DELETE/TRUNCATE`仍固定拒绝`42501`。这只证明至少180天不可变保留和本change没有audit cleaner，不声称第181天自动删除。
 >
 > 同批将错误投影锁为两套各8项字典：compaction只接受source day/count/checksum、activation及`statement_timeout/lease_expired/database_unavailable/internal`；rollup只接受segment incomplete/count/checksum、activation及同四项运行时原因，跨字典原因在Store边界失败关闭。Control结构化顶层日志仅允许`service_stopped`、`runtime_stopped`、`shutdown_timed_out`三种reason，并精确省略raw error和`error`字段。由此完成2.11和8.3；数据库非身份列、日志、指标、错误与artifact的全路径唯一canary扫描仍属于1.5/8.4，不能据此提前关闭。
+>
+> 第二十八批把endpoint/IP、Secret引用/值、email、account key、response body/header、run/fence/checksum、raw error、SQL参数及poll/policy ID分别作为唯一canary。真实PostgreSQL18矩阵覆盖partial主链到rollup/retention，以及zero、permission、statement-timeout和backend reconnect；逐值只允许account key出现在受保护account segment/final identity、policy/run/fence/checksum出现在既有受保护identity/proof列，七张history表的其余非身份列、history audit details及Repository安全返回均零命中。独立local-sink gate对`success/zero_data/partial/permission/timeout/restart/cleanup_failure`七条路径各生成只含固定scenario/result的artifact，回读后扫描日志、指标、错误和最终artifact；aggregate `all`只有在local marker和database marker都成功后才输出`sensitive_canary=covered`。这完成1.5/8.4；源码direct-network-import为零和本次canary零泄漏均不等价于真实fake network counters，8.6仍保持开放。
 
 ## 9. PostgreSQL 18 恢复、并发与容量验收
 

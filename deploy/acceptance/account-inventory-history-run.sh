@@ -173,6 +173,6 @@ case "$mode" in
     "$script_directory/account-inventory-history-process.sh"
     "$script_directory/account-inventory-history-rollback.sh"
     strict_cleanup
-    echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=partial_local_sinks external_requests=not_covered'
+    echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered external_requests=not_covered'
     ;;
 esac

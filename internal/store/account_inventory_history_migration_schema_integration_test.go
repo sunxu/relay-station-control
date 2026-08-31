@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	history "github.com/sunxu/relay-station-control/internal/history"
+	historyruntime "github.com/sunxu/relay-station-control/internal/historyruntime"
 	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
@@ -4655,6 +4656,386 @@ func TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary(t *testi
 			t.Fatalf("migration owner %s history audit", operation)
 		} else {
 			requireHistorySQLState(t, err, "42501")
+		}
+	}
+}
+
+func TestAccountInventoryHistorySensitiveCanaryDatabaseSinks(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	repository, err := productstore.NewAccountInventoryHistoryRepository(database.runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -40)
+	slot := targetDate.Add(12 * time.Hour)
+	pollID := uuid.New()
+	emailCanary := "canary-email-8-4@example.invalid"
+	accountKeyCanary := "openai:" + emailCanary
+	endpointCanary := "https://canary-endpoint-8-4.invalid"
+	secretCanary := "docker-secret://canary-secret-8-4"
+	rawErrorCanary := "raw-postgres-error-canary-8-4"
+
+	if _, err := database.owner.Exec(ctx, `UPDATE relay_node_assets
+		SET management_endpoint=$1,reader_secret_ref=$2 WHERE instance_id=$3`,
+		endpointCanary, secretCanary, fixture.instanceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `UPDATE provider_inventory_policy_activations
+		SET effective_from=$1::timestamptz,
+			effective_to=$1::timestamptz+interval '1 day',created_at=$1::timestamptz
+		WHERE policy_version_id=$2`, targetDate, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,effective_to,reason,actor,end_reason,end_actor,
+		end_recorded_at,created_at
+	) VALUES($1,$2::timestamptz,$2::timestamptz+interval '1 day','reconciliation',
+		'canary-test','reconciliation','canary-test',$2::timestamptz+interval '1 day',
+		$2::timestamptz)`, fixture.instanceID, targetDate); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+		provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
+		created_at,first_started_at,last_started_at,finalized_at,observed_at,
+		transport_success,response_shape_valid,contract_valid,inventory_mode,
+		node_identity_complete,snapshot_complete,degraded,result,reason,
+		source_record_count,identifiable_record_count,unidentified_record_count,
+		unsupported_provider_count,out_of_scope_provider_count,node_version,node_commit
+	) VALUES($1,$2,$3,$4,$5::timestamptz,$6,'finalized',1,2,299,
+		$5::timestamptz,$5::timestamptz,$5::timestamptz,
+		$5::timestamptz+interval '4 seconds',$5::timestamptz+interval '3 seconds',
+		true,true,true,'runtime',true,true,false,'success','none',
+		1,1,0,0,0,'v1.0.0','abcdef1')`, pollID, fixture.instanceID, fixture.nodeType,
+		fixture.contract, slot, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	fixtureTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fixtureTx.Rollback(ctx)
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard;
+		ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,duplicate_identity_count,
+		identity_complete,snapshot_complete,degraded,reason,promotion_applied
+	) VALUES($1,'openai',1,0,0,true,true,false,'complete',true)`, pollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES($1,$2,'openai',$3,$4,'active',7,0,0,
+		$5::timestamptz+interval '3 seconds')`,
+		pollID, fixture.instanceID, accountKeyCanary, emailCanary, slot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard;
+		ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	safeOutputs := make([]string, 0, 16)
+	plan, err := repository.Plan(ctx, historyruntime.PlanRequest{Limit: 10})
+	if err != nil || plan.CompactionRunsCreated != 1 {
+		t.Fatalf("canary plan=%v err=%v", plan, err)
+	}
+	safeOutputs = append(safeOutputs, fmt.Sprint(plan))
+	claim, err := repository.ClaimCompaction(ctx, historyruntime.ClaimRequest{
+		WorkerToken: uuid.New(), Lease: 5 * time.Minute,
+	})
+	if err != nil || claim.SummaryDate != targetDate {
+		t.Fatalf("canary claim=%v err=%v", claim, err)
+	}
+	safeOutputs = append(safeOutputs, fmt.Sprint(claim))
+
+	_, permissionErr := database.runtime.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+		compaction_run_id,summary_date,instance_id,provider_policy_version
+	) VALUES($1,$2,$3,$4)`, uuid.New(), targetDate, fixture.instanceID, fixture.policyID)
+	if permissionErr == nil {
+		t.Fatal("runtime permission canary unexpectedly wrote a history run")
+	}
+	safeOutputs = append(safeOutputs, permissionErr.Error())
+
+	if _, err := database.owner.Exec(ctx, fmt.Sprintf(`CREATE FUNCTION public.test_history_raw_canary()
+		RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $function$
+		BEGIN RAISE EXCEPTION '%s'; END $function$;
+		CREATE TRIGGER zz_test_history_raw_canary BEFORE INSERT
+		ON account_inventory_daily_summaries FOR EACH STATEMENT
+		EXECUTE FUNCTION public.test_history_raw_canary()`, rawErrorCanary)); err != nil {
+		t.Fatal(err)
+	}
+	_, rawErr := repository.SummarizeCompaction(ctx, historyruntime.FencedRequest{
+		RunID: claim.RunID, FencingToken: claim.FencingToken,
+	})
+	if rawErr == nil || strings.Contains(rawErr.Error(), rawErrorCanary) {
+		t.Fatalf("raw PostgreSQL error was not projected safely: %v", rawErr)
+	}
+	safeOutputs = append(safeOutputs, rawErr.Error())
+	if _, err := database.owner.Exec(ctx, `DROP TRIGGER zz_test_history_raw_canary
+		ON account_inventory_daily_summaries;
+		DROP FUNCTION public.test_history_raw_canary()`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_history_timeout_canary()
+		RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $function$
+		BEGIN PERFORM pg_sleep(0.2); RETURN NULL; END $function$;
+		CREATE TRIGGER zz_test_history_timeout_canary BEFORE INSERT
+		ON account_inventory_daily_summaries FOR EACH STATEMENT
+		EXECUTE FUNCTION public.test_history_timeout_canary()`); err != nil {
+		t.Fatal(err)
+	}
+	timeoutConnection, err := database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeoutTx, err := timeoutConnection.Begin(ctx)
+	if err != nil {
+		timeoutConnection.Release()
+		t.Fatal(err)
+	}
+	if _, err := timeoutTx.Exec(ctx, `SET LOCAL statement_timeout='20ms'`); err != nil {
+		t.Fatal(err)
+	}
+	_, timeoutErr := timeoutTx.Exec(ctx, `SELECT
+		public.control_summarize_account_inventory_compaction_v1($1,$2)`,
+		claim.RunID, claim.FencingToken)
+	_ = timeoutTx.Rollback(ctx)
+	timeoutConnection.Release()
+	if timeoutErr == nil {
+		t.Fatal("history timeout canary did not time out")
+	}
+	requireHistorySQLState(t, timeoutErr, "57014")
+	safeOutputs = append(safeOutputs, timeoutErr.Error())
+	if _, err := database.owner.Exec(ctx, `DROP TRIGGER zz_test_history_timeout_canary
+		ON account_inventory_daily_summaries;
+		DROP FUNCTION public.test_history_timeout_canary()`); err != nil {
+		t.Fatal(err)
+	}
+
+	summarized, err := repository.SummarizeCompaction(ctx, historyruntime.FencedRequest{
+		RunID: claim.RunID, FencingToken: claim.FencingToken,
+	})
+	if err != nil || summarized.SourceSnapshotCount != 1 || len(summarized.SourceChecksum) != 32 {
+		t.Fatalf("canary summarize=%v err=%v", summarized, err)
+	}
+	checksumCanary := hex.EncodeToString(summarized.SourceChecksum)
+	safeOutputs = append(safeOutputs, fmt.Sprint(summarized))
+	deleted, err := repository.DeleteSnapshotBatch(ctx, historyruntime.DeleteBatchRequest{
+		RunID: claim.RunID, FencingToken: claim.FencingToken, Limit: 1,
+	})
+	if err != nil || deleted.DeletedRows != 1 || deleted.RemainingRows != 0 {
+		t.Fatalf("canary delete=%v err=%v", deleted, err)
+	}
+	safeOutputs = append(safeOutputs, fmt.Sprint(deleted))
+	completed, err := repository.CompleteCompaction(ctx, historyruntime.CompleteRequest{
+		RunID: claim.RunID, FencingToken: claim.FencingToken,
+		ExpectedChecksum: summarized.SourceChecksum,
+	})
+	if err != nil || !completed.Completed {
+		t.Fatalf("canary complete=%v err=%v", completed, err)
+	}
+	safeOutputs = append(safeOutputs, fmt.Sprint(completed))
+	plan, err = repository.Plan(ctx, historyruntime.PlanRequest{Limit: 10})
+	if err != nil || plan.RollupRunsCreated != 1 {
+		t.Fatalf("canary rollup plan=%v err=%v", plan, err)
+	}
+	rollupClaim, err := repository.ClaimRollup(ctx, historyruntime.RollupClaimRequest{
+		WorkerToken: uuid.New(), Lease: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolledUp, err := repository.FinalizeRollup(ctx, historyruntime.RollupFencedRequest{
+		RunID: rollupClaim.RunID, FencingToken: rollupClaim.FencingToken,
+	})
+	if err != nil || !rolledUp.Completed {
+		t.Fatalf("canary rollup=%v err=%v", rolledUp, err)
+	}
+	safeOutputs = append(safeOutputs, fmt.Sprint(plan), fmt.Sprint(rollupClaim), fmt.Sprint(rolledUp))
+	var coverageStatus string
+	if err := database.owner.QueryRow(ctx, `SELECT coverage_status
+		FROM account_inventory_daily_provider_rollups WHERE rollup_run_id=$1`,
+		rollupClaim.RunID).Scan(&coverageStatus); err != nil || coverageStatus != "partial" {
+		t.Fatalf("canary partial coverage=%q err=%v", coverageStatus, err)
+	}
+
+	restartConnection, err := database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restartPID int32
+	if err := restartConnection.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&restartPID); err != nil {
+		t.Fatal(err)
+	}
+	var terminated bool
+	if err := database.owner.QueryRow(ctx, `SELECT pg_terminate_backend($1,5000)`, restartPID).
+		Scan(&terminated); err != nil || !terminated {
+		t.Fatalf("terminate canary backend=%t err=%v", terminated, err)
+	}
+	_, restartErr := restartConnection.Exec(ctx, `SELECT 1`)
+	restartConnection.Release()
+	if restartErr == nil {
+		t.Fatal("terminated canary backend remained usable")
+	}
+	safeOutputs = append(safeOutputs, restartErr.Error())
+	plan, err = repository.Plan(ctx, historyruntime.PlanRequest{Limit: 10})
+	if err != nil || plan.CompactionRunsCreated != 0 || plan.RollupRunsCreated != 0 {
+		t.Fatalf("post-restart zero plan=%v err=%v", plan, err)
+	}
+	safeOutputs = append(safeOutputs, fmt.Sprint(plan))
+
+	canaries := map[string]string{
+		"email": emailCanary, "account_key": accountKeyCanary,
+		"policy": fixture.policyID.String(), "poll": pollID.String(),
+		"run": claim.RunID.String(), "fence": rollupClaim.FencingToken.String(),
+		"checksum": checksumCanary, "endpoint": endpointCanary,
+		"secret": secretCanary, "raw_error": rawErrorCanary,
+	}
+	historyJSON := make(map[string]string, len(historyTables))
+	for _, table := range historyTables {
+		var encoded string
+		if err := database.owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(row_value)),
+			'[]'::jsonb)::text FROM public.`+table+` AS row_value`).Scan(&encoded); err != nil {
+			t.Fatal(err)
+		}
+		historyJSON[table] = encoded
+	}
+	for table, encoded := range historyJSON {
+		wantAccountKey := table == "account_inventory_daily_summaries" ||
+			table == "account_inventory_daily_account_rollups"
+		if strings.Contains(encoded, accountKeyCanary) != wantAccountKey {
+			t.Fatalf("account identity canary location table=%s present=%t", table,
+				strings.Contains(encoded, accountKeyCanary))
+		}
+		withoutAccountIdentity := strings.ReplaceAll(encoded, accountKeyCanary, "")
+		for _, name := range []string{"email", "poll", "endpoint", "secret", "raw_error"} {
+			if strings.Contains(withoutAccountIdentity, canaries[name]) {
+				t.Fatalf("%s canary leaked into history table %s", name, table)
+			}
+		}
+		if strings.Contains(encoded, canaries["fence"]) !=
+			(table == "account_inventory_daily_rollup_runs") {
+			t.Fatalf("fence proof canary location table=%s present=%t", table,
+				strings.Contains(encoded, canaries["fence"]))
+		}
+	}
+	allHistory := strings.Join([]string{
+		historyJSON[historyTables[0]], historyJSON[historyTables[1]], historyJSON[historyTables[2]],
+		historyJSON[historyTables[3]], historyJSON[historyTables[4]], historyJSON[historyTables[5]],
+		historyJSON[historyTables[6]],
+	}, "")
+	for _, name := range []string{"policy", "run", "checksum"} {
+		if !strings.Contains(allHistory, canaries[name]) {
+			t.Fatalf("protected %s canary was not exercised", name)
+		}
+	}
+	var auditDetails string
+	if err := database.owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(details),'[]'::jsonb)::text
+		FROM audit_logs WHERE category='account_inventory_history'`).Scan(&auditDetails); err != nil {
+		t.Fatal(err)
+	}
+	for name, canary := range canaries {
+		if strings.Contains(auditDetails, canary) {
+			t.Fatalf("%s canary leaked into history audit details", name)
+		}
+		for _, output := range safeOutputs {
+			if strings.Contains(output, canary) {
+				t.Fatalf("%s canary leaked into safe function output %q", name, output)
+			}
+		}
+	}
+
+	ageTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ageTx.Rollback(ctx)
+	if _, err := ageTx.Exec(ctx, `ALTER TABLE account_inventory_compaction_runs
+		DISABLE TRIGGER account_inventory_compaction_runs_guard;
+	ALTER TABLE account_inventory_daily_rollup_runs
+		DISABLE TRIGGER account_inventory_daily_rollup_runs_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ageTx.Exec(ctx, `UPDATE account_inventory_compaction_runs
+		SET created_at=$1::date+interval '1 hour',
+		summarized_at=$1::date+interval '2 hours',deleting_at=$1::date+interval '3 hours',
+		completed_at=$1::date+interval '4 hours',updated_at=$1::date+interval '4 hours'
+		WHERE compaction_run_id=$2`, targetDate, claim.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ageTx.Exec(ctx, `UPDATE account_inventory_daily_rollup_runs
+		SET created_at=$1::date+interval '5 hours',
+		completed_at=$1::date+interval '6 hours',updated_at=$1::date+interval '6 hours'
+		WHERE rollup_run_id=$2`, targetDate, rollupClaim.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ageTx.Exec(ctx, `ALTER TABLE account_inventory_compaction_runs
+		ENABLE TRIGGER account_inventory_compaction_runs_guard;
+	ALTER TABLE account_inventory_daily_rollup_runs
+		ENABLE TRIGGER account_inventory_daily_rollup_runs_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ageTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	cleaners := []func(context.Context, historyruntime.RetentionRequest) (historyruntime.RetentionResult, error){
+		repository.DeletePollRetention, repository.DeleteRollupRowRetention,
+		repository.DeleteRollupRunRetention, repository.DeleteCompactionRunRetention,
+	}
+	for index, cleaner := range cleaners {
+		result, err := cleaner(ctx, historyruntime.RetentionRequest{Limit: 100})
+		if err != nil || result.Processed == 0 || result.DeletedRows == 0 {
+			t.Fatalf("canary cleanup stage=%d result=%v err=%v", index, result, err)
+		}
+		safeOutputs = append(safeOutputs, fmt.Sprint(result))
+	}
+	for index, cleaner := range cleaners {
+		result, err := cleaner(ctx, historyruntime.RetentionRequest{Limit: 100})
+		if err != nil || result.Processed != 0 || result.DeletedRows != 0 {
+			t.Fatalf("canary zero cleanup stage=%d result=%v err=%v", index, result, err)
+		}
+		safeOutputs = append(safeOutputs, fmt.Sprint(result))
+	}
+	var remainingHistory int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM account_inventory_compaction_runs)
+		+(SELECT count(*) FROM account_inventory_daily_rollup_runs)
+		+(SELECT count(*) FROM account_inventory_daily_summaries)
+		+(SELECT count(*) FROM account_inventory_daily_provider_summaries)
+		+(SELECT count(*) FROM account_inventory_daily_account_rollups)
+		+(SELECT count(*) FROM account_inventory_daily_provider_rollups)`).Scan(&remainingHistory); err != nil {
+		t.Fatal(err)
+	}
+	if remainingHistory != 0 {
+		t.Fatalf("canary cleanup left history rows=%d", remainingHistory)
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT coalesce(jsonb_agg(details),'[]'::jsonb)::text
+		FROM audit_logs WHERE category='account_inventory_history'`).Scan(&auditDetails); err != nil {
+		t.Fatal(err)
+	}
+	for name, canary := range canaries {
+		if strings.Contains(auditDetails, canary) {
+			t.Fatalf("%s canary leaked after cleanup", name)
+		}
+		for _, output := range safeOutputs {
+			if strings.Contains(output, canary) {
+				t.Fatalf("%s canary leaked from cleanup/zero output %q", name, output)
+			}
 		}
 	}
 }

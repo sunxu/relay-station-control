@@ -48,7 +48,7 @@ require_test() {
   local exact_name="$1" listing
   listing="$runtime_directory/${exact_name}.tests"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./internal/historyruntime \
+    go test ./internal/historyruntime \
       -list "^${exact_name}$" >"$listing" 2>&1; then
     fixed_failure 'test_discovery_failed'
   fi
@@ -100,19 +100,19 @@ main() {
   require_test TestHistoryLocalOutputsExcludeCanaries
   require_test TestHistoryProductionSourcesHaveNoDirectNetworkImports
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./internal/historyruntime \
+    go test ./internal/historyruntime \
       -run '^(TestHistoryLocalOutputsExcludeCanaries|TestHistoryProductionSourcesHaveNoDirectNetworkImports)$' \
       -count=1 >"$runtime_directory/artifacts/history-safety.log" 2>&1; then
     fixed_failure 'history_safety_test_failed'
   fi
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go run ./deploy/acceptance/account-inventory-lifecycle-canary-scan \
+    go run ./deploy/acceptance/account-inventory-lifecycle-canary-scan \
       >"$runtime_directory/scanner.log" 2>&1; then
     fixed_failure 'local_sink_canary_found'
   fi
 
   strict_cleanup
-  echo 'account_inventory_history_safety=success scenarios=7 local_sink_canary=covered direct_network_client_imports=0 sensitive_canary_complete=not_covered external_requests=not_covered process_fake_endpoint_counter=not_covered database_non_identity_sink=not_covered cleanup_temp=0'
+  echo 'account_inventory_history_safety=success local_sink_canary=covered scenarios=7 direct_network_client_imports=0 sensitive_canary_complete=not_covered external_requests=not_covered process_fake_endpoint_counter=not_covered database_non_identity_sink=not_covered cleanup_temp=0'
 }
 
 cd "$repository_root"

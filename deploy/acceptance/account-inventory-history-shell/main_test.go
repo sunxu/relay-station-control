@@ -165,6 +165,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-safety-run.sh", "sensitive_canary=partial_local_sinks", "external_requests=not_covered",
 		"go test -race ./internal/history ./internal/historyruntime ./internal/store ./cmd/control",
 		"exact_discovery=covered race=covered million_rows=covered", "process=covered",
+		"sensitive_canary=covered", "sensitive_canary_database_sinks=covered",
 	} {
 		if !strings.Contains(runner, required) {
 			t.Errorf("history runner lacks %q", required)
@@ -237,6 +238,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
 		"TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary",
 		"history_audit_allowlist_retention_atomicity=covered",
+		"TestAccountInventoryHistorySensitiveCanaryDatabaseSinks",
+		"sensitive_canary_database_sinks=covered",
 		"TestAccountInventoryHistoryCapacityOneTenFifty",
 		"TestAccountInventoryRowsFailClosed",
 		"TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState",
@@ -367,7 +370,7 @@ func assertHistorySafetyContract(t *testing.T) {
 		"CONTROL_HISTORY_CANARY_POLICY_ID", "TestHistoryLocalOutputsExcludeCanaries",
 		"TestHistoryProductionSourcesHaveNoDirectNetworkImports",
 		"account-inventory-lifecycle-canary-scan", "local_sink_canary_found",
-		"local_sink_canary=covered", "direct_network_client_imports=0",
+		"local_sink_canary=covered scenarios=7", "direct_network_client_imports=0",
 		"sensitive_canary_complete=not_covered", "external_requests=not_covered",
 		"process_fake_endpoint_counter=not_covered", "database_non_identity_sink=not_covered",
 		"cleanup_temp=0",

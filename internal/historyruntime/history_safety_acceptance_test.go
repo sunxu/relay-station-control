@@ -1,10 +1,13 @@
 package historyruntime
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/parser"
 	"go/token"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +15,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 )
 
 var historyCanaryEnvironmentNames = []string{
@@ -36,6 +41,7 @@ var historyCanaryEnvironmentNames = []string{
 func TestHistoryLocalOutputsExcludeCanaries(t *testing.T) {
 	artifactDirectory, canaries := historySafetyConfiguration(t)
 	raw := strings.Join(canaries, " ")
+	var sinks strings.Builder
 
 	for _, fixed := range []error{
 		ErrHistoryRepositoryFailure,
@@ -44,56 +50,123 @@ func TestHistoryLocalOutputsExcludeCanaries(t *testing.T) {
 	} {
 		err := fixedHistoryError(fmt.Errorf("%s: %w", raw, fixed))
 		assertHistoryCanariesAbsent(t, err.Error(), canaries)
+		sinks.WriteString(err.Error())
 	}
 
-	checksum := []byte(canaries[10])
+	runID, runErr := uuid.Parse(canaries[8])
+	fencingToken, fenceErr := uuid.Parse(canaries[9])
+	policyID, policyErr := uuid.Parse(canaries[14])
+	if runErr != nil || fenceErr != nil || policyErr != nil || len(canaries[10]) > 32 {
+		t.Fatal("history canary identifiers are invalid")
+	}
+	checksum := make([]byte, 32)
+	copy(checksum, canaries[10])
+	claim := validRuntimeCompactionClaim(CompactionPending, "")
+	claim.RunID, claim.FencingToken, claim.ProviderPolicyVersion = runID, fencingToken, policyID
 	values := []any{
-		CompactionClaim{SourceChecksum: checksum},
+		claim,
 		SummarizeResult{SourceChecksum: checksum},
-		CompleteRequest{ExpectedChecksum: checksum},
+		CompleteRequest{RunID: runID, FencingToken: fencingToken, ExpectedChecksum: checksum},
 		RollupFinalizeResult{SegmentChecksum: checksum},
 	}
 	for _, value := range values {
-		assertHistoryCanariesAbsent(t, fmt.Sprintf("%+v", value), canaries)
+		formatted := fmt.Sprintf("%+v", value)
+		assertHistoryCanariesAbsent(t, formatted, canaries)
+		sinks.WriteString(formatted)
 	}
 
+	sourceCalls := 0
+	sourceBoundary := func() error {
+		sourceCalls++
+		for _, canary := range canaries {
+			if !strings.Contains(raw, canary) {
+				return ErrHistoryRepositoryFailure
+			}
+		}
+		return nil
+	}
 	for _, scenario := range []struct {
 		name string
-		run  func() error
+		run  func() (string, error)
+		want error
 	}{
-		{name: "success", run: historyCanaryCompactionSuccess},
-		{name: "zero_data", run: historyCanaryCompactionSuccess},
-		{name: "partial", run: historyCanaryPartialMetrics},
-		{name: "permission", run: func() error { return historyCanaryCompactionFailure(raw, ErrHistoryRepositoryFailure) }},
-		{name: "timeout", run: func() error { return historyCanaryCompactionFailure(raw, ErrHistoryStatementTimeout) }},
-		{name: "restart", run: func() error { return historyCanaryCompactionFailure(raw, ErrHistoryDatabaseUnavailable) }},
-		{name: "cleanup_failure", run: func() error { return historyCanaryRetentionFailure(raw) }},
+		{name: "success", run: func() (string, error) {
+			return "", historyCanaryCompaction(claim, checksum, 1, sourceBoundary)
+		}},
+		{name: "zero_data", run: func() (string, error) {
+			return historyCanaryZeroMetrics()
+		}},
+		{name: "partial", run: func() (string, error) {
+			return historyCanaryPartialMetrics(sourceBoundary)
+		}},
+		{name: "permission", run: func() (string, error) {
+			return "", historyCanaryCompactionFailure(raw, ErrHistoryRepositoryFailure)
+		}, want: ErrHistoryRepositoryFailure},
+		{name: "timeout", run: func() (string, error) {
+			return "", historyCanaryCompactionFailure(raw, ErrHistoryStatementTimeout)
+		}, want: ErrHistoryStatementTimeout},
+		{name: "restart", run: func() (string, error) {
+			return "", historyCanaryCompactionFailure(raw, ErrHistoryDatabaseUnavailable)
+		}, want: ErrHistoryDatabaseUnavailable},
+		{name: "cleanup_failure", run: func() (string, error) {
+			return "", historyCanaryRetentionFailure(raw)
+		}, want: ErrHistoryRepositoryFailure},
 	} {
-		err := scenario.run()
+		output, err := scenario.run()
+		if (scenario.want == nil && err != nil) || (scenario.want != nil && !errors.Is(err, scenario.want)) {
+			t.Fatal("history canary scenario result mismatch")
+		}
+		assertHistoryCanariesAbsent(t, output, canaries)
+		sinks.WriteString(output)
 		if err != nil {
 			assertHistoryCanariesAbsent(t, err.Error(), canaries)
+			sinks.WriteString(err.Error())
 		}
 		artifact := "scenario=" + scenario.name + " result=covered\n"
 		if err := os.WriteFile(filepath.Join(artifactDirectory, scenario.name+".log"), []byte(artifact), 0o600); err != nil {
 			t.Fatal("history safety artifact write failed")
 		}
 	}
+	if sourceCalls != 2 {
+		t.Fatal("history fake source boundary coverage is incomplete")
+	}
 
-	collector, err := NewCollector(staticMetricsProvider{
-		snapshot: MetricsSnapshot{Runtime: RuntimeStatus{
-			Configured: true, Enabled: true, Compatible: true, Reason: ReasonReady,
-		}},
-		err: fmt.Errorf("%s: metrics unavailable", raw),
-	})
+	metricsText, metricsErr := historyCanaryMetricsText(MetricsSnapshot{Runtime: RuntimeStatus{
+		Configured: true, Enabled: true, Compatible: true, Reason: ReasonReady,
+	}}, fmt.Errorf("%s: metrics unavailable", raw))
+	if metricsErr != nil {
+		assertHistoryCanariesAbsent(t, metricsErr.Error(), canaries)
+		sinks.WriteString(metricsErr.Error())
+	}
+	assertHistoryCanariesAbsent(t, metricsText, canaries)
+	sinks.WriteString(metricsText)
+
+	var historyLog bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&historyLog, nil))
+	for _, reason := range []string{"service_stopped", "runtime_stopped", "shutdown_timed_out"} {
+		logger.Error("account inventory history stopped",
+			"component", "account_inventory_history", "reason", reason)
+	}
+	assertHistoryCanariesAbsent(t, historyLog.String(), canaries)
+	sinks.WriteString(historyLog.String())
+
+	marker := "local_sink_canary=covered scenarios=7\n"
+	if err := os.WriteFile(filepath.Join(artifactDirectory, "local-sink.log"), []byte(marker), 0o600); err != nil {
+		t.Fatal("history safety marker write failed")
+	}
+	entries, err := os.ReadDir(artifactDirectory)
 	if err != nil {
-		t.Fatal("history metrics collector construction failed")
+		t.Fatal("history safety artifact read failed")
 	}
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(collector)
-	_, gatherErr := registry.Gather()
-	if gatherErr != nil {
-		assertHistoryCanariesAbsent(t, gatherErr.Error(), canaries)
+	for _, entry := range entries {
+		contents, readErr := os.ReadFile(filepath.Join(artifactDirectory, entry.Name()))
+		if readErr != nil {
+			t.Fatal("history safety artifact read failed")
+		}
+		assertHistoryCanariesAbsent(t, string(contents), canaries)
+		sinks.Write(contents)
 	}
+	assertHistoryCanariesAbsent(t, sinks.String(), canaries)
 }
 
 func TestHistoryProductionSourcesHaveNoDirectNetworkImports(t *testing.T) {
@@ -126,14 +199,41 @@ func historySafetyConfiguration(t *testing.T) (string, []string) {
 	return directory, canaries
 }
 
-func historyCanaryCompactionSuccess() error {
-	loops := &fakeHistoryRepository{}
-	runtimeLoops, err := NewRepositoryLoops(testLoopsConfig(), loops)
+func historyCanaryCompaction(
+	claim CompactionClaim, checksum []byte, sourceCount uint64, source func() error,
+) error {
+	repository := &fakeHistoryRepository{
+		summarize: func(_ context.Context, request FencedRequest) (SummarizeResult, error) {
+			if request.RunID != claim.RunID || request.FencingToken != claim.FencingToken {
+				return SummarizeResult{}, ErrHistoryRepositoryFailure
+			}
+			if source != nil {
+				if err := source(); err != nil {
+					return SummarizeResult{}, err
+				}
+			}
+			return SummarizeResult{SourceChecksum: append([]byte(nil), checksum...), SourceSnapshotCount: sourceCount}, nil
+		},
+		deleteBatch: func(_ context.Context, request DeleteBatchRequest) (DeleteBatchResult, error) {
+			if request.RunID != claim.RunID || request.FencingToken != claim.FencingToken {
+				return DeleteBatchResult{}, ErrHistoryRepositoryFailure
+			}
+			return DeleteBatchResult{DeletedRows: sourceCount, TotalDeletedRows: sourceCount}, nil
+		},
+		complete: func(_ context.Context, request CompleteRequest) (CompleteResult, error) {
+			if request.RunID != claim.RunID || request.FencingToken != claim.FencingToken ||
+				!bytes.Equal(request.ExpectedChecksum, checksum) {
+				return CompleteResult{}, ErrHistoryRepositoryFailure
+			}
+			return CompleteResult{Completed: true}, nil
+		},
+	}
+	runtimeLoops, err := NewRepositoryLoops(testLoopsConfig(), repository)
 	if err != nil {
 		return err
 	}
 	return runtimeLoops.processCompaction(
-		context.Background(), context.Background(), validRuntimeCompactionClaim(CompactionPending, ""),
+		context.Background(), context.Background(), claim,
 	)
 }
 
@@ -162,21 +262,47 @@ func historyCanaryRetentionFailure(raw string) error {
 	return err
 }
 
-func historyCanaryPartialMetrics() error {
-	collector, err := NewCollector(staticMetricsProvider{snapshot: MetricsSnapshot{
+func historyCanaryZeroMetrics() (string, error) {
+	output, err := historyCanaryMetricsText(MetricsSnapshot{
+		Runtime: RuntimeStatus{Configured: true, Enabled: true, Compatible: true, Reason: ReasonReady},
+	}, nil)
+	if err == nil && strings.Contains(output, "provider_coverage") {
+		return "", ErrHistoryRepositoryFailure
+	}
+	return output, err
+}
+
+func historyCanaryPartialMetrics(source func() error) (string, error) {
+	if err := source(); err != nil {
+		return "", err
+	}
+	return historyCanaryMetricsText(MetricsSnapshot{
 		Runtime: RuntimeStatus{Configured: true, Enabled: true, Compatible: true, Reason: ReasonReady},
 		ProviderCoverage: []ProviderCoverage{{
 			InstanceID: validRuntimeRollupClaim().InstanceID,
 			Provider:   "openai", Ratio: 0.9499, Complete: false,
 		}},
-	}})
+	}, nil)
+}
+
+func historyCanaryMetricsText(snapshot MetricsSnapshot, providerErr error) (string, error) {
+	collector, err := NewCollector(staticMetricsProvider{snapshot: snapshot, err: providerErr})
 	if err != nil {
-		return err
+		return "", err
 	}
 	registry := prometheus.NewPedanticRegistry()
 	registry.MustRegister(collector)
-	_, err = registry.Gather()
-	return err
+	families, err := registry.Gather()
+	if err != nil {
+		return "", err
+	}
+	var output strings.Builder
+	for _, family := range families {
+		if _, err := expfmt.MetricFamilyToText(&output, family); err != nil {
+			return "", err
+		}
+	}
+	return output.String(), nil
 }
 
 func assertHistoryCanariesAbsent(t *testing.T, value string, canaries []string) {
