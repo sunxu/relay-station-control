@@ -114,6 +114,24 @@ run_probe() {
   fi
 }
 
+run_planner_catalog_gate() {
+  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-postgres \
+      -run '^TestAccountInventoryHistoryPostgresPlannerCatalogGate$' -count=1 \
+      >"$runtime_directory/planner-catalog-gate.log" 2>&1; then
+    fixed_failure 'postgres_planner_catalog_gate_failed'
+  fi
+}
+
+run_rollup_matrix() {
+  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-postgres \
+      -run '^TestAccountInventoryHistoryPostgresRollupPublicationMatrix$' -count=1 \
+      >"$runtime_directory/rollup-publication-matrix.log" 2>&1; then
+    fixed_failure 'postgres_rollup_publication_matrix_failed'
+  fi
+}
+
 require_store_test() {
   local exact_name="$1" listing="$runtime_directory/store.tests"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
@@ -127,7 +145,7 @@ require_store_test() {
 run_store_probe() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     GOCACHE="$runtime_directory/go-build" go test ./internal/store \
-      -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryCapacityOneTenFifty)$' \
+      -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryCapacityOneTenFifty)$' \
       -count=1 >"$runtime_directory/store-main-path.log" 2>&1; then
     fixed_failure 'postgres_compaction_main_path_failed'
   fi
@@ -174,7 +192,10 @@ main() {
   grep -Eq '^18[0-9]{4}$' "$runtime_directory/server-version.log" || fixed_failure 'postgres_major_invalid'
 
   require_test TestAccountInventoryHistoryPostgresSchemaSmoke
+  require_test TestAccountInventoryHistoryPostgresPlannerCatalogGate
+  require_test TestAccountInventoryHistoryPostgresRollupPublicationMatrix
   require_store_test TestAccountInventoryHistoryCompactionMainPathAndRecovery
+  require_store_test TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic
   require_store_test TestAccountInventoryDailyRollupNoProviderAtomicFinalize
   require_store_test TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage
   require_store_test TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains
@@ -189,6 +210,8 @@ main() {
   require_store_test TestAccountInventoryHistoryFailedShapesAndProviderDayBound
   require_store_test TestAccountInventoryHistoryCapacityOneTenFifty
   run_probe schema-first-up.log
+  run_planner_catalog_gate
+  run_rollup_matrix
   run_store_probe
 
   migrate down migration-down.log
@@ -204,7 +227,7 @@ main() {
   run_probe schema-second-up.log
 
   strict_cleanup
-  echo 'account_inventory_history_postgres=success server_major=18 migration=9 up_down_up=covered core_sha256=covered canonical_golden=covered compaction_main_path=covered final_rollup=covered zero_provider=covered policy_boundary=covered metrics_backlog_drain=covered retention_batches=covered retention_planner_lock=covered planner_limit_progress=covered retired_day_poll_lock=covered legacy_retention_bootstrap=covered zero_poll_lineage_bootstrap=covered retired_day_no_resurrection=covered current_query_after_retention=covered lease_expiry=covered capacity_1_10_50_total_accounts=1000 audit_gate=covered runtime_table_dml=denied runtime_functions=allowlisted cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
+  echo 'account_inventory_history_postgres=success server_major=18 migration=9 up_down_up=covered core_sha256=covered canonical_golden=covered compaction_main_path=covered summarize_atomicity=covered summarize_immutability=covered final_rollup=covered finalize_atomicity=covered final_immutability=covered metrics_completed_only=covered zero_provider=covered planner_catalog_utc_inclusive_72h=covered finalize_catalog_9500=covered utc_dst_72h_expression=covered slot_provider_matrix=covered incomplete_segment_gates=covered coverage_expression_9499_finalize_9474_9500_10000=covered last_segment_concurrency=covered policy_boundary=covered metrics_backlog_drain=covered retention_batches=covered retention_planner_lock=covered planner_limit_progress=covered retired_day_poll_lock=covered legacy_retention_bootstrap=covered zero_poll_lineage_bootstrap=covered retired_day_no_resurrection=covered current_query_after_retention=covered lease_expiry=covered capacity_1_10_50_total_accounts=1000 audit_gate=covered runtime_table_dml=denied runtime_functions=allowlisted cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
 }
 
 cd "$repository_root"

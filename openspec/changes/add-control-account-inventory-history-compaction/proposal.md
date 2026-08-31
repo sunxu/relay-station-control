@@ -13,7 +13,7 @@
 - 在 `account_inventory_provider_states` 冗余 current query 所需的最近 Provider degraded 状态/固定原因；Migration 从仍存在的 current poll source 安全回填非身份健康字段。之后只有仍属当前active策略、scheduled slot严格较新、非`policy_changed|stale_poll|out_of_scope`且已有current state的finalized Provider结果才能原子刷新健康字段；从未promotion的Provider不由本change创建空current state。只读查询不再要求历史poll/provider-result永久存在，来源外键被合法清理后仍返回相同产品字段语义。
 - 初始保留策略固定为：全量 snapshot items 至少 72 小时，poll runs/Provider results/duplicates 30 天，策略分段摘要、最终日级汇总和 completed compaction/rollup runs 30 天；failed、pending、summarized 或 deleting 任务不得被自动清理。本 change 不自动删除 current `account_inventory`、missing/out-of-scope 账号、认证审计或未来告警历史。
 - 新增 PostgreSQL 专用表、约束、受控 `SECURITY DEFINER` 函数、sqlc/Store adapter、进程内 scheduler/worker/reconciler 和有界配置；PostgreSQL 时间、唯一键、行锁与状态转换是唯一真相，不使用 Redis 或普通 `async_jobs` 代替专用状态机。
-- 新增低基数最终日级覆盖率和压缩健康指标；Prometheus只读取retained completed最终rollup，不导出日期、策略版本、run ID、email或account key，策略分段仅供受保护的内部Store、验收和排障使用。
+- 新增低基数最终日级覆盖率和压缩健康指标；Prometheus只读取retained completed最终rollup，partial仅以`complete=false`表示健康缺口。本change不提供趋势读取；未来正常趋势reader必须同时限定rollup run completed且coverage complete。指标不导出日期、策略版本、run ID、email或account key，策略分段仅供受保护的内部Store、验收和排障使用。
 - 每次compaction、rollup和retention成功/失败都原子写入actor-null、不可变、初始保留180天的系统审计；审计details只允许instance、summary date、固定phase和实际聚合/删除行数，不保存account identity、policy/poll/run ID、checksum或原始错误。
 - 新增 history compaction Runbook 与 PostgreSQL 18 验收，覆盖策略/监控区间交集、零数据分段、崩溃恢复、并发 runner、分批删除、30 天清理、1/10/50 Node 与 1,000 合成账号容量、旧应用 forward-schema 兼容和数据面隔离。
 - 不新增历史 OpenAPI、React 趋势/详情/导出页面、账号或 Provider 告警路由、HMAC `account_id`/逐账号指标、人工重建/删除入口、当前账号生命周期清理、跨 Node 重复归属、Gateway/Node 写操作或任何新外部请求。

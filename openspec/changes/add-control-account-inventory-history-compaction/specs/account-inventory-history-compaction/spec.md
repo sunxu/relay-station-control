@@ -90,7 +90,7 @@ Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock
 
 ### Requirement: 最终日级 rollup MUST 等待全部预期分段并只消费不可变摘要
 
-`account_inventory_daily_rollup_runs` SHALL以`(summary_date, instance_id)`唯一保存`pending|completed|failed`、预期/完成分段数、分段校验、固定错误和阶段时间。只有该Node/日全部去重后的预期compaction runs completed，Control才能从不可变分段摘要生成最终账号与Provider rollup；最终rows、分段计数/校验与run completed MUST同事务提交，completed后MUST NOT被覆盖。账号rollup以`(date, instance, account_key)`唯一，合并计数和首末时间；末次字段先按最新`last_scheduled_at`、再按固定唯一键决定，final reset count为各段reset之和加相邻segment边界累计计数下降次数。Provider rollup以`(date, instance, provider)`唯一逐项求和并按`sum(promotion_applied_count) / sum(expected_poll_count)`计算覆盖率，初始`>=0.95`为complete，否则为partial。Segment/final rows只有满足history retention全部前置条件的固定受控函数MAY有界DELETE，UPDATE/TRUNCATE始终禁止。
+`account_inventory_daily_rollup_runs` SHALL以`(summary_date, instance_id)`唯一保存`pending|completed|failed`、预期/完成分段数、分段校验、固定错误和阶段时间。只有该Node/日全部去重后的预期compaction runs completed，Control才能从不可变分段摘要生成最终账号与Provider rollup；最终rows、分段计数/校验与run completed MUST同事务提交，completed后MUST NOT被覆盖。账号rollup以`(date, instance, account_key)`唯一，合并计数和首末时间；末次字段先按最新`last_scheduled_at`、再按固定唯一键决定，final reset count为各段reset之和加相邻segment边界累计计数下降次数。Provider rollup以`(date, instance, provider)`唯一逐项求和并按`sum(promotion_applied_count) / sum(expected_poll_count)`计算覆盖率，初始`>=0.95`为complete，否则为partial；0/0 MUST NOT生成Provider rollup。当前Prometheus健康读取MAY导出completed rollup中的partial，但必须同时导出`complete=false`。本change MUST NOT提供趋势reader；未来正常趋势reader MUST只读取run `status='completed'` 且Provider rollup `coverage_status='complete'`的行。Segment/final rows只有满足history retention全部前置条件的固定受控函数MAY有界DELETE，UPDATE/TRUNCATE始终禁止。
 
 #### Scenario: 预期分段缺失或失败
 - **WHEN** 任一预期 compaction key 不存在、未完成或 failed
@@ -102,7 +102,7 @@ Control MUST以PostgreSQL UTC时间判断资格，只处理`UTC day_end <= clock
 
 #### Scenario: 最终事务失败或 partial
 - **WHEN** 最终账号/Provider rows 或 run 完成写入失败，或覆盖率低于 95%
-- **THEN** 失败不留下部分 completed rollup；成功但不足的日期固定标记 partial，不补零、不外推且不得进入正常趋势比较
+- **THEN** 失败不留下部分 completed rollup；成功但不足的日期固定标记 partial，不补零、不外推，当前只可作为`complete=false`健康指标且不得进入未来正常趋势比较
 
 ### Requirement: 历史保留清理 MUST 按依赖顺序且保护当前真相
 

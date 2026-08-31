@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -950,6 +951,268 @@ func TestAccountInventoryHistorySchemaACLAndProtectedDown(t *testing.T) {
 	}
 	if runs != 1 {
 		t.Fatal("protected down changed history state")
+	}
+}
+
+func TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	targetDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -4)
+	slot := targetDate.Add(12 * time.Hour)
+
+	if _, err := database.owner.Exec(ctx, `UPDATE provider_inventory_policy_activations
+		SET effective_from=$1,created_at=$1 WHERE policy_version_id=$2`,
+		targetDate, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) VALUES($1,$2,'reconciliation','summarize-atomic-test',$2)`,
+		fixture.instanceID, targetDate); err != nil {
+		t.Fatal(err)
+	}
+	pollID := uuid.New()
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+		provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
+		created_at,first_started_at,last_started_at,finalized_at,observed_at,
+		transport_success,response_shape_valid,contract_valid,inventory_mode,
+		node_identity_complete,snapshot_complete,degraded,result,reason,
+		source_record_count,identifiable_record_count,unidentified_record_count,
+		unsupported_provider_count,out_of_scope_provider_count,node_version,node_commit
+	) VALUES($1,$2,$3,$4,$5,$6,'finalized',1,2,299,
+		$5::timestamptz+interval '1 second',$5::timestamptz+interval '2 seconds',
+		$5::timestamptz+interval '2 seconds',$5::timestamptz+interval '4 seconds',
+		$5::timestamptz+interval '3 seconds',true,true,true,'runtime',true,true,false,
+		'success','none',1,1,0,0,0,'unknown','unknown')`, pollID, fixture.instanceID,
+		fixture.nodeType, fixture.contract, slot, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,
+		duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason,
+		promotion_applied,promotion_skipped_reason
+	) VALUES($1,'openai',1,0,0,true,true,false,'complete',true,NULL)`, pollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES($1,$2,'openai','openai:summarize-atomic@example.invalid',
+		'summarize-atomic@example.invalid','active',1,0,0,$3::timestamptz+interval '3 seconds')`,
+		pollID, fixture.instanceID, slot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+
+	var runID uuid.UUID
+	if err := database.owner.QueryRow(ctx, `INSERT INTO account_inventory_compaction_runs(
+		summary_date,instance_id,provider_policy_version
+	) VALUES($1,$2,$3) RETURNING compaction_run_id`, targetDate,
+		fixture.instanceID, fixture.policyID).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	var claimedID, fence uuid.UUID
+	if err := database.runtime.QueryRow(ctx, `SELECT compaction_run_id,fencing_token
+		FROM public.control_claim_account_inventory_compaction_v1($1,300)`, uuid.New()).
+		Scan(&claimedID, &fence); err != nil || claimedID != runID {
+		t.Fatalf("claim run=%s want=%s err=%v", claimedID, runID, err)
+	}
+	var originalRun string
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`, runID).
+		Scan(&originalRun); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_reject_history_summarize_write()
+		RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+		BEGIN
+			IF TG_TABLE_NAME <> 'audit_logs'
+			   OR to_jsonb(NEW)->'details'->>'phase'='summarize' THEN
+				RAISE EXCEPTION 'synthetic summarize write failure' USING ERRCODE='P0001';
+			END IF;
+			RETURN NEW;
+		END;
+		$$`); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name, operation, table, level string
+	}{
+		{"account_segment", "INSERT", "account_inventory_daily_summaries", "STATEMENT"},
+		{"provider_segment", "INSERT", "account_inventory_daily_provider_summaries", "STATEMENT"},
+		{"source_counts_checksum_and_status", "UPDATE", "account_inventory_compaction_runs", "STATEMENT"},
+		{"summarized_audit", "INSERT", "audit_logs", "ROW"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := database.owner.Exec(ctx, fmt.Sprintf(`CREATE TRIGGER zz_test_reject_history_summarize_write
+				BEFORE %s ON %s FOR EACH %s
+				EXECUTE FUNCTION public.test_reject_history_summarize_write()`,
+				test.operation, test.table, test.level)); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				_, _ = database.owner.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS
+					zz_test_reject_history_summarize_write ON %s`, test.table))
+			}()
+			if _, err := database.runtime.Exec(ctx, `SELECT
+				public.control_summarize_account_inventory_compaction_v1($1,$2)`, runID, fence); err == nil {
+				t.Fatal("summarize ignored the injected write failure")
+			} else {
+				requireHistorySQLState(t, err, "P0001")
+			}
+			var persistedRun string
+			var accountSegments, providerSegments, audits int
+			if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text,
+				(SELECT count(*) FROM account_inventory_daily_summaries WHERE compaction_run_id=$1),
+				(SELECT count(*) FROM account_inventory_daily_provider_summaries WHERE compaction_run_id=$1),
+				(SELECT count(*) FROM audit_logs
+				 WHERE action='account_inventory_history.summarized'
+				   AND details->>'instance'=$2::uuid::text
+				   AND details->>'summary_date'=$3::date::text)
+			FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`,
+				runID, fixture.instanceID, targetDate).Scan(
+				&persistedRun, &accountSegments, &providerSegments, &audits); err != nil {
+				t.Fatal(err)
+			}
+			if persistedRun != originalRun || accountSegments != 0 || providerSegments != 0 || audits != 0 {
+				t.Fatalf("partial summarize state: run_changed=%t account=%d provider=%d audits=%d",
+					persistedRun != originalRun, accountSegments, providerSegments, audits)
+			}
+		})
+	}
+	if _, err := database.owner.Exec(ctx,
+		`DROP FUNCTION public.test_reject_history_summarize_write()`); err != nil {
+		t.Fatal(err)
+	}
+	var status, checksumHex string
+	var accountSegments, providerSegments int
+	if err := database.runtime.QueryRow(ctx, `WITH summarized AS (
+		SELECT public.control_summarize_account_inventory_compaction_v1($1,$2) AS value
+	) SELECT value->>'status',(value->>'account_segment_count')::integer,
+		(value->>'provider_segment_count')::integer,value->>'source_checksum_hex'
+		FROM summarized`, runID, fence).
+		Scan(&status, &accountSegments, &providerSegments, &checksumHex); err != nil {
+		t.Fatal(err)
+	}
+	if status != "summarized" || accountSegments != 1 || providerSegments != 1 || len(checksumHex) != 64 {
+		t.Fatalf("retry status=%s account=%d provider=%d checksum=%q",
+			status, accountSegments, providerSegments, checksumHex)
+	}
+
+	readSegments := func() (string, string) {
+		t.Helper()
+		var accounts, providers string
+		if err := database.owner.QueryRow(ctx, `SELECT
+			(SELECT jsonb_agg(to_jsonb(summary) ORDER BY summary_id)::text
+			 FROM account_inventory_daily_summaries AS summary WHERE compaction_run_id=$1),
+			(SELECT jsonb_agg(to_jsonb(summary) ORDER BY provider_summary_id)::text
+			 FROM account_inventory_daily_provider_summaries AS summary
+			 WHERE compaction_run_id=$1)`, runID).Scan(&accounts, &providers); err != nil {
+			t.Fatal(err)
+		}
+		return accounts, providers
+	}
+	originalAccounts, originalProviders := readSegments()
+	var replayStatus, replayChecksum string
+	if err := database.runtime.QueryRow(ctx, `WITH summarized AS (
+		SELECT public.control_summarize_account_inventory_compaction_v1($1,$2) AS value
+	) SELECT value->>'status',value->>'source_checksum_hex' FROM summarized`, runID, fence).
+		Scan(&replayStatus, &replayChecksum); err != nil {
+		t.Fatal(err)
+	}
+	var summarizedAudits, compactionsCreated, compactionRuns int
+	if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM audit_logs
+		WHERE action='account_inventory_history.summarized'
+		  AND details->>'instance'=$1::uuid::text
+		  AND details->>'summary_date'=$2::date::text`, fixture.instanceID, targetDate).
+		Scan(&summarizedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_plan_account_inventory_history_v1(10)->>'compaction_runs_created')::integer`).
+		Scan(&compactionsCreated); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory_compaction_runs
+		WHERE summary_date=$1 AND instance_id=$2 AND provider_policy_version=$3`,
+		targetDate, fixture.instanceID, fixture.policyID).Scan(&compactionRuns); err != nil {
+		t.Fatal(err)
+	}
+	if replayStatus != "summarized" || replayChecksum != checksumHex || summarizedAudits != 1 ||
+		compactionsCreated != 0 || compactionRuns != 1 {
+		t.Fatalf("summarized replay status=%s checksum_changed=%t audits=%d created=%d runs=%d",
+			replayStatus, replayChecksum != checksumHex, summarizedAudits,
+			compactionsCreated, compactionRuns)
+	}
+
+	rejectDirectDML := func(phase string) {
+		t.Helper()
+		for _, table := range []string{
+			"account_inventory_daily_summaries",
+			"account_inventory_daily_provider_summaries",
+		} {
+			if _, err := database.runtime.Exec(ctx, fmt.Sprintf(`INSERT INTO %s DEFAULT VALUES`, table)); err == nil {
+				t.Fatalf("runtime directly inserted %s segment %s", phase, table)
+			} else {
+				requireHistorySQLState(t, err, "42501")
+			}
+			for _, statement := range []string{
+				fmt.Sprintf(`UPDATE %s SET created_at=created_at`, table),
+				fmt.Sprintf(`DELETE FROM %s`, table),
+				fmt.Sprintf(`TRUNCATE %s`, table),
+			} {
+				if _, err := database.owner.Exec(ctx, statement); err == nil {
+					t.Fatalf("migration owner directly mutated %s segment with %s", phase, statement)
+				} else {
+					requireHistorySQLState(t, err, "42501")
+				}
+			}
+		}
+	}
+	rejectDirectDML("summarized")
+	if accounts, providers := readSegments(); accounts != originalAccounts || providers != originalProviders {
+		t.Fatal("ordinary DML changed summarized segment rows")
+	}
+
+	var deleteStatus, completeStatus string
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1)->>'status'`,
+		runID, fence).Scan(&deleteStatus); err != nil || deleteStatus != "deleting" {
+		t.Fatalf("delete status=%q err=%v", deleteStatus, err)
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		public.control_complete_account_inventory_compaction_v1(
+			$1,$2,decode($3,'hex'))->>'status'`, runID, fence, checksumHex).
+		Scan(&completeStatus); err != nil || completeStatus != "completed" {
+		t.Fatalf("complete status=%q err=%v", completeStatus, err)
+	}
+	if _, err := database.runtime.Exec(ctx, `SELECT
+		public.control_summarize_account_inventory_compaction_v1($1,$2)`, runID, fence); err == nil {
+		t.Fatal("completed compaction accepted summarize replay")
+	} else {
+		requireHistorySQLState(t, err, "P0002")
+	}
+	rejectDirectDML("completed")
+	if accounts, providers := readSegments(); accounts != originalAccounts || providers != originalProviders {
+		t.Fatal("completed summarize replay changed segment rows")
 	}
 }
 

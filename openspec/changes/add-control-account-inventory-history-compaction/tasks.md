@@ -25,13 +25,16 @@
 
 - [x] 3.1 新增history sqlc查询与Store DTO/adapter，只调用受控函数并让全部DTO formatter脱敏，以生成代码、compile和fmt canary测试验证
 - [ ] 3.2 实现eligible UTC day发现和预期compaction key幂等创建：正常扫描限定30天horizon，旧日仅以仍存source poll或既有compaction lineage bootstrap，durable retired-day cutoff永久排除；覆盖72小时边界、Migration8超过30天旧poll首次收敛且删后不复活、未来日期、同版本多段、日内策略切换和无交集不创建
-- [ ] 3.3 实现Node monitoring与Provider policy半开交集的五分钟slot planner，覆盖00:02非对齐起点、边界关闭、暂停/重入和多Provider active集合
-- [ ] 3.4 实现零数据segment规划，仅在激活交集包含至少一个scheduled slot但无poll时生成expected>0/promotion=0；以无slot短区间不创建、漏槽和纯abandoned日期测试验证
+- [x] 3.3 实现Node monitoring与Provider policy半开交集的五分钟slot planner，覆盖00:02非对齐起点、边界关闭、暂停/重入和多Provider active集合
+- [x] 3.4 实现零数据segment规划，仅在激活交集包含至少一个scheduled slot但无poll时生成expected>0/promotion=0；以无slot短区间不创建、漏槽和纯abandoned日期测试验证
 - [x] 3.5 实现账号segment聚合，覆盖首末scheduled/observed、last basic status、sample/status counts、first/last cumulative counters和reset counts，以正常/乱序/计数下降golden测试验证
-- [ ] 3.6 实现Provider segment聚合，覆盖transport/contract/snapshot/promotion/skipped/abandoned/degraded、首末promotion、expected和95% coverage，以Provider独立降级和policy_changed测试验证
+- [x] 3.6 实现Provider segment聚合，覆盖transport/contract/snapshot/promotion/skipped/abandoned/degraded、首末promotion、expected和95% coverage，以Provider独立降级和policy_changed测试验证
 - [x] 3.7 实现版本1链式checksum：`H0=zero32`、`R_i=sha256(length-prefixed canonical row)`、`H_i=sha256(H_(i-1)||R_i)`，以空/单/多行golden、读取计划一致、字段变化和百万行max RSS观测验证
-- [ ] 3.8 将两类segment、source counts/checksum和run summarized置于同一事务，以每个写入点故障注入证明全有或全无
-- [ ] 3.9 对summarized/completed摘要实施不可覆盖门禁，验证重复scheduler/worker和残余源行重试不能INSERT/UPDATE/TRUNCATE或普通DELETE，仅满足30天与依赖条件的固定retention函数可删
+- [x] 3.8 将两类segment、source counts/checksum和run summarized置于同一事务，以每个写入点故障注入证明全有或全无
+- [x] 3.9 对summarized/completed摘要实施不可覆盖门禁，验证重复scheduler/worker和残余源行重试不能INSERT/UPDATE/TRUNCATE或普通DELETE，仅满足30天与依赖条件的固定retention函数可删
+
+> 第八批对账号segment INSERT、Provider segment INSERT、source counts/checksum/status UPDATE和summarized audit INSERT逐点注入失败，均证明run原样且segment/audit零残留，并在解除trigger后成功重试，完成3.8。
+> 同fence残余source重放不增写segment/run/audit，重复planner不建新run；summarized/completed两状态下两类segment的非受控INSERT/UPDATE/DELETE/TRUNCATE均被拒绝，且既有retention批次仅通过精确gate删除，完成3.9。
 
 ## 4. Compaction Scheduler、Worker 与断点续删
 
@@ -45,14 +48,14 @@
 
 ## 5. 最终日级 Rollup 与 Coverage 发布边界
 
-- [ ] 5.1 实现daily rollup expected segment枚举和幂等run创建，缺少/pending/deleting/failed segment时保持未发布，以最后segment并发完成竞态测试验证
+- [x] 5.1 实现daily rollup expected segment枚举和幂等run创建，缺少/pending/deleting/failed segment时保持未发布，以最后segment并发完成竞态测试验证
 - [x] 5.2 实现account final rollup的计数求和、首末时间、按latest last_scheduled_at/固定唯一键选择末值，以及`sum(segment resets)+segment边界下降`规则，以日内策略切换golden测试验证
 - [x] 5.3 实现Provider final rollup逐项求和并按总applied/总expected重算ratio，禁止平均segment ratio，以部分时段active和重新加入测试验证
-- [ ] 5.4 固化9500 basis-point阈值及`complete|partial`，覆盖0/0无虚假记录、94.99%、95%、100%边界和partial不进入正常趋势读取
-- [ ] 5.5 将两类final rows、segment count/checksum和rollup completed同事务提交，以每个写入点/commit故障注入证明无部分发布
-- [ ] 5.6 实施completed final rollup不可覆盖且只读指标只消费completed结果，以重复Worker、segment篡改尝试和未完成日负向测试验证
+- [x] 5.4 固化9500 basis-point阈值及`complete|partial`，覆盖0/0无虚假记录、94.99%、95%、100%边界；当前partial只以`complete=false`健康指标发布，不提供趋势reader，并固化未来正常趋势reader的completed+complete-only边界
+- [x] 5.5 将两类final rows、segment count/checksum和rollup completed同事务提交，以每个写入点/commit故障注入证明无部分发布
+- [x] 5.6 实施completed final rollup不可覆盖且只读指标只消费completed结果，以重复Worker、segment篡改尝试和未完成日负向测试验证
 
-> 第三批已有部分证据：daily-rollup planner/claim/renew/reconcile/finalize/fail、两类final rows与run/audit同事务、全字段segment checksum PostgreSQL↔Go一致、同fence幂等finalize、unknown-commit有界重放及纯聚合边界均已验证。5.1仍缺“最后segment并发完成”专项竞态；5.4仍缺完整发布/趋势读取矩阵；5.5仍缺每个写入点故障注入；5.6仍缺全部segment篡改和未完成日读取负向矩阵，因此本批次不提前勾选这些复合项。
+> 第三批已有部分证据：daily-rollup planner/claim/renew/reconcile/finalize/fail、两类final rows与run/audit同事务、全字段segment checksum PostgreSQL↔Go一致、同fence幂等finalize、unknown-commit有界重放及纯聚合边界均已验证。第七批以PostgreSQL锁屏障证明最后segment完成期间不发布，并在完成后验证双planner只创建唯一run；同时覆盖missing/pending/deleting/failed不发布，完成5.1。Go边界测试与PG18 truth table锁定0/0、94.99%、95%、100%，catalog检查证明生产finalizer使用同一`applied*10000 >= expected*9500`算式，并以可持久的18/19、19/20、7/7经真实finalize验证partial/complete发布；生产API路由无趋势入口、runtime无history表权限，唯一metrics函数只读completed rollup并将partial发布为`complete=false`，完成5.4。第八批对两类final INSERT、run proof/completed UPDATE及deferred audit commit逐点注入失败，均证明无部分发布并在解除trigger后成功收敛，完成5.5。本批以同fence重复finalize证明final/run全量快照不变，segment篡改与final UPDATE/DELETE/TRUNCATE均被拒绝；即使pending/failed run下预先存在final-looking Provider row，metrics仍全部省略，只在completed后发布1 partial/2 complete，完成5.6。
 
 ## 6. Retention、级联清理与 Current Query 兼容
 
@@ -90,13 +93,15 @@
 ## 9. PostgreSQL 18 恢复、并发与容量验收
 
 - [x] 9.1 新增change-specific PostgreSQL18 acceptance runner，要求exact test discovery、固定安全failure mapping、禁止go/raw PostgreSQL日志直出、受保护mktemp与EXIT trap、唯一资源前缀、固定镜像digest/受限角色、清六类代理并严格清理container/volume/network/temp
-- [ ] 9.2 覆盖72小时边界、UTC/DST、日内策略切换、非对齐activation、暂停/重入、零数据、漏槽、abandoned、Provider独立降级和95% partial/complete矩阵
+- [x] 9.2 覆盖72小时边界、UTC/DST、日内策略切换、非对齐activation、暂停/重入、零数据、漏槽、abandoned、Provider独立降级和95% partial/complete矩阵
 - [ ] 9.3 在summarize事务前/中/commit未知、summarized后、每批delete前/后、complete前、final rollup事务中注入崩溃，验证恢复不重算/不多删/不部分发布
 - [ ] 9.4 注入stale fencing、同一Control内双scheduler/worker、statement timeout、PostgreSQL重启、pool exhaustion及repository/SQL权限/trigger故障，不执行宿主机disk-full，验证固定failed_from、源证据保留和最终收敛
 - [ ] 9.5 Permanent CI运行1/10/50 Node、总计1,000账号的短slot功能矩阵；nightly/manual对86.4万/115.2万snapshot运行至少5次summary/rollup与20个delete batch，按nearest-rank记录P50/P95/P99、DB/index/WAL/max RSS/buffers/lock wait/守恒，硬门禁仅为无OOM/timeout/deadlock和正确性
 - [ ] 9.6 运行全仓Go race覆盖planner/worker/reconciler/Store/metrics并并发current query/promotion/retention，确认无race、死锁或高基数series
 - [ ] 9.7 在Control与PostgreSQL同时停止窗口，对独立pinned官方CLIProxyAPI digest执行认证`/v1/models` baseline 1/1和outage 100/100，记录这是data-plane isolation而非Gateway inference E2E
 - [ ] 9.8 验证所有acceptance成功/失败路径最终container/volume/network/temp residual为零，报告仅保存固定计数、时延和状态且不含身份
+
+> 第七批以生产planner catalog门禁锁定`clock_timestamp()`、UTC归日和inclusive 72小时资格公式，并在PostgreSQL18行为矩阵覆盖非UTC/DST、策略切换、slot/零数据/abandoned/Provider独立及95%发布边界，完成9.2。
 
 ## 10. Runbook、证据与最终门禁
 

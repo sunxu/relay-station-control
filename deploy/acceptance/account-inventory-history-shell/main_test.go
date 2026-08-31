@@ -176,6 +176,21 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose \"$direction\"",
 		"assert_version 9", "assert_version 8", "migrate down", "migrate up",
 		"TestAccountInventoryHistoryPostgresSchemaSmoke", "core_sha256=covered",
+		"TestAccountInventoryHistoryPostgresPlannerCatalogGate",
+		"TestAccountInventoryHistoryPostgresRollupPublicationMatrix",
+		"planner_catalog_utc_inclusive_72h=covered",
+		"finalize_catalog_9500=covered",
+		"utc_dst_72h_expression=covered",
+		"slot_provider_matrix=covered",
+		"incomplete_segment_gates=covered",
+		"coverage_expression_9499_finalize_9474_9500_10000=covered",
+		"last_segment_concurrency=covered",
+		"TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic",
+		"summarize_atomicity=covered",
+		"summarize_immutability=covered",
+		"finalize_atomicity=covered",
+		"final_immutability=covered",
+		"metrics_completed_only=covered",
 		"TestAccountInventoryDailyRollupNoProviderAtomicFinalize",
 		"TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage",
 		"TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains",
@@ -199,6 +214,12 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		if !strings.Contains(postgres, required) {
 			t.Errorf("history PostgreSQL runner lacks %q", required)
 		}
+	}
+	if strings.Count(postgres, "run_rollup_matrix") != 2 {
+		t.Error("history PostgreSQL runner must define and invoke the rollup matrix exactly once")
+	}
+	if strings.Count(postgres, "run_planner_catalog_gate") != 2 {
+		t.Error("history PostgreSQL runner must define and invoke the planner catalog gate exactly once")
 	}
 	if strings.Contains(postgres, "go tool goose -dir") {
 		t.Fatal("history PostgreSQL runner exposes the database URL via goose argv pattern")

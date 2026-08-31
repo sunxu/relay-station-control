@@ -105,7 +105,7 @@ Checksum复用仓库已使用的PostgreSQL core `sha256(bytea)`，不新增exten
 
 Planner 每次从 activation truth 重算预期去重 key，并与 completed compaction runs 比较。缺少、pending、deleting 或 failed 的 segment 阻止发布。Rollup Worker 在 fencing 事务内只读取 immutable segment summaries，生成账号/Provider final rows、segment count/checksum，并与 run completed 同事务提交。
 
-Completed final rows和rollup run不可覆盖。普通趋势和Prometheus以后只能读取retained completed final rollup；没有retained完成日时省略coverage样本。当前change不提供账号历史产品读取。Coverage threshold固定为9500 basis points，未来变化需要新change且不重解释旧日。
+Completed final rows和rollup run不可覆盖。当前change只有Prometheus健康读取：它只读retained completed final rollup，允许partial样本但必须导出`complete=false`；没有retained完成日时省略coverage样本。当前change不提供账号历史或趋势产品读取；未来正常趋势reader必须同时限定rollup run `completed`且Provider rollup `coverage_status='complete'`，不得消费partial。Coverage threshold固定为9500 basis points，未来变化需要新change且不重解释旧日。
 
 ### 9. retention 顺序保留可证明的删除资格
 
