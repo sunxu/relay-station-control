@@ -1369,13 +1369,14 @@ DECLARE
     poll_retention_gate text := coalesce(
         current_setting('relay_control.history_poll_retention_delete', true), '');
 BEGIN
-    IF TG_OP = 'DELETE'
-       AND current_user = 'relay_control_migrator'
-       AND session_user <> current_user
-       AND pg_has_role(session_user, 'relay_control_runtime', 'member')
-       AND NOT pg_has_role(session_user, 'relay_control_migrator', 'member')
-       AND poll_retention_gate = OLD.poll_run_id::text THEN
-        RETURN OLD;
+    IF TG_OP = 'DELETE' THEN
+        IF current_user = 'relay_control_migrator'
+           AND session_user <> current_user
+           AND pg_has_role(session_user, 'relay_control_runtime', 'member')
+           AND NOT pg_has_role(session_user, 'relay_control_migrator', 'member')
+           AND poll_retention_gate = OLD.poll_run_id::text THEN
+            RETURN OLD;
+        END IF;
     END IF;
     IF TG_TABLE_NAME = 'account_inventory_snapshot_items'
        AND TG_OP = 'DELETE' THEN

@@ -226,7 +226,7 @@ main() {
     'SELECT max(version_id) FROM goose_db_version WHERE is_applied' >"$runtime_directory/migration-version.log" 2>&1; then
     fixed_failure 'migration_version_check_failed'
   fi
-  grep -Fxq '8' "$runtime_directory/migration-version.log" || fixed_failure 'migration_version_invalid'
+  grep -Fxq '9' "$runtime_directory/migration-version.log" || fixed_failure 'migration_version_invalid'
 
   require_test ./internal/store TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility
   require_test ./internal/store TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState
