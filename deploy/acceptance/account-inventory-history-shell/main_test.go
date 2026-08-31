@@ -191,6 +191,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"compaction_claim_fencing=covered",
 		"summarize_atomicity=covered",
 		"summarize_immutability=covered",
+		"snapshot_delete_atomicity=covered",
 		"finalize_atomicity=covered",
 		"final_immutability=covered",
 		"metrics_completed_only=covered",

@@ -1399,40 +1399,212 @@ func TestAccountInventoryHistoryCompactionMainPathAndRecovery(t *testing.T) {
 	}
 	requireHistorySQLState(t, err, "42501")
 	_ = ownerTransaction.Rollback(ctx)
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_renew_account_inventory_compaction_v1($1,$2,300)`, runID, fence).
+		Scan(&renewed); err != nil || renewed != 1 {
+		t.Fatalf("renew delete fault lease=%d err=%v", renewed, err)
+	}
+
+	var deleteBaseline string
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`, runID).
+		Scan(&deleteBaseline); err != nil {
+		t.Fatal(err)
+	}
+	assertDeleteRollback := func(phase string) {
+		t.Helper()
+		var persistedRun string
+		var snapshots, audits int
+		if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text,
+			(SELECT count(*) FROM account_inventory_snapshot_items
+			 WHERE poll_run_id=$2 AND instance_id=$3),
+			(SELECT count(*) FROM audit_logs
+			 WHERE action='account_inventory_history.snapshot_delete_batch'
+			   AND details->>'instance'=$3::uuid::text
+			   AND details->>'summary_date'=$4::date::text)
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`,
+			runID, pollID, fixture.instanceID, targetDate).
+			Scan(&persistedRun, &snapshots, &audits); err != nil {
+			t.Fatal(err)
+		}
+		if persistedRun != deleteBaseline || snapshots != 1 || audits != 0 {
+			t.Fatalf("%s left partial delete state: run_changed=%t snapshots=%d audits=%d",
+				phase, persistedRun != deleteBaseline, snapshots, audits)
+		}
+	}
+	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_reject_history_delete_batch_write()
+		RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+		BEGIN
+			RAISE EXCEPTION 'synthetic snapshot delete batch failure' USING ERRCODE='P0001';
+		END;
+		$$`); err != nil {
+		t.Fatal(err)
+	}
+	for _, fault := range []struct {
+		name, createTrigger, table string
+	}{
+		{
+			"snapshot_delete",
+			`CREATE TRIGGER zz_test_reject_history_delete_batch_write
+			 BEFORE DELETE ON account_inventory_snapshot_items FOR EACH ROW
+			 EXECUTE FUNCTION public.test_reject_history_delete_batch_write()`,
+			"account_inventory_snapshot_items",
+		},
+		{
+			"deleted_snapshot_count_update",
+			`CREATE TRIGGER zz_test_reject_history_delete_batch_write
+			 BEFORE UPDATE OF deleted_snapshot_count ON account_inventory_compaction_runs FOR EACH ROW
+			 EXECUTE FUNCTION public.test_reject_history_delete_batch_write()`,
+			"account_inventory_compaction_runs",
+		},
+	} {
+		if _, err := database.owner.Exec(ctx, fault.createTrigger); err != nil {
+			t.Fatal(err)
+		}
+		_, deleteErr := database.runtime.Exec(ctx, `SELECT
+			public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1)`, runID, fence)
+		if _, err := database.owner.Exec(ctx, fmt.Sprintf(`DROP TRIGGER
+			zz_test_reject_history_delete_batch_write ON %s`, fault.table)); err != nil {
+			t.Fatal(err)
+		}
+		if deleteErr == nil {
+			t.Fatalf("%s fault did not reject snapshot delete batch", fault.name)
+		}
+		requireHistorySQLState(t, deleteErr, "P0001")
+		assertDeleteRollback(fault.name)
+	}
+	if _, err := database.owner.Exec(ctx,
+		`DROP FUNCTION public.test_reject_history_delete_batch_write()`); err != nil {
+		t.Fatal(err)
+	}
+
+	beforeCommitConnection, err := database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var beforeCommitPID int32
+	if err := beforeCommitConnection.QueryRow(ctx, `SELECT pg_backend_pid()`).
+		Scan(&beforeCommitPID); err != nil {
+		beforeCommitConnection.Release()
+		t.Fatal(err)
+	}
+	beforeCommit, err := beforeCommitConnection.Begin(ctx)
+	if err != nil {
+		beforeCommitConnection.Release()
+		t.Fatal(err)
+	}
+	var stagedStatus string
+	var stagedDeleted, stagedTotal, stagedRemaining int
+	if err := beforeCommit.QueryRow(ctx, `WITH deleted AS (
+		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1) AS value
+	) SELECT value->>'status',(value->>'deleted_count')::integer,
+		(value->>'total_deleted_count')::integer,(value->>'remaining_count')::integer
+	FROM deleted`, runID, fence).
+		Scan(&stagedStatus, &stagedDeleted, &stagedTotal, &stagedRemaining); err != nil {
+		_ = beforeCommit.Rollback(ctx)
+		beforeCommitConnection.Release()
+		t.Fatal(err)
+	}
+	if stagedStatus != "deleting" || stagedDeleted != 1 || stagedTotal != 1 || stagedRemaining != 0 {
+		_ = beforeCommit.Rollback(ctx)
+		beforeCommitConnection.Release()
+		t.Fatalf("pre-commit staged status=%s deleted=%d total=%d remaining=%d",
+			stagedStatus, stagedDeleted, stagedTotal, stagedRemaining)
+	}
+	var terminated bool
+	if err := database.owner.QueryRow(ctx, `SELECT pg_terminate_backend($1,5000)`, beforeCommitPID).
+		Scan(&terminated); err != nil || !terminated {
+		_ = beforeCommit.Rollback(ctx)
+		beforeCommitConnection.Release()
+		t.Fatalf("terminate pre-commit delete backend: terminated=%t err=%v", terminated, err)
+	}
+	if err := beforeCommit.Rollback(ctx); err == nil {
+		beforeCommitConnection.Release()
+		t.Fatal("terminated pre-commit delete transaction remained usable")
+	}
+	beforeCommitConnection.Release()
+	assertDeleteRollback("pre_commit_termination")
 
 	connection, err := database.runtime.Acquire(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer connection.Release()
+	committed, err := connection.Begin(ctx)
+	if err != nil {
+		connection.Release()
+		t.Fatal(err)
+	}
 	var deleteStatus string
 	var deleted, totalDeleted, remaining int64
-	if err := connection.QueryRow(ctx, `WITH deleted AS (
+	if err := committed.QueryRow(ctx, `WITH deleted AS (
 		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1) AS value
 	) SELECT value->>'status',(value->>'deleted_count')::bigint,
 		(value->>'total_deleted_count')::bigint,(value->>'remaining_count')::bigint
 	FROM deleted`, runID, fence).Scan(&deleteStatus, &deleted, &totalDeleted, &remaining); err != nil {
+		_ = committed.Rollback(ctx)
+		connection.Release()
 		t.Fatal(err)
 	}
 	if deleteStatus != "deleting" || deleted != 1 || totalDeleted != 1 || remaining != 0 {
+		_ = committed.Rollback(ctx)
+		connection.Release()
 		t.Fatalf("delete status=%s deleted=%d total=%d remaining=%d",
 			deleteStatus, deleted, totalDeleted, remaining)
 	}
 	var leakedDeleteGate string
-	if err := connection.QueryRow(ctx, `SELECT coalesce(current_setting(
+	if err := committed.QueryRow(ctx, `SELECT coalesce(current_setting(
 		'relay_control.history_snapshot_delete',true),'')`).Scan(&leakedDeleteGate); err != nil {
+		_ = committed.Rollback(ctx)
+		connection.Release()
 		t.Fatal(err)
 	}
 	if leakedDeleteGate != "" {
+		_ = committed.Rollback(ctx)
+		connection.Release()
 		t.Fatalf("snapshot delete gate leaked: %q", leakedDeleteGate)
 	}
 	var leakedAuditGate string
-	if err := connection.QueryRow(ctx, `SELECT coalesce(current_setting(
+	if err := committed.QueryRow(ctx, `SELECT coalesce(current_setting(
 		'relay_control.history_audit_write',true),'')`).Scan(&leakedAuditGate); err != nil {
+		_ = committed.Rollback(ctx)
+		connection.Release()
 		t.Fatal(err)
 	}
 	if leakedAuditGate != "" {
+		_ = committed.Rollback(ctx)
+		connection.Release()
 		t.Fatalf("history audit gate leaked: %q", leakedAuditGate)
+	}
+	if err := committed.Commit(ctx); err != nil {
+		connection.Release()
+		t.Fatal(err)
+	}
+	if _, err := connection.Exec(ctx, `SELECT pg_terminate_backend(pg_backend_pid())`); err == nil {
+		connection.Release()
+		t.Fatal("terminated post-commit delete connection remained usable")
+	}
+	connection.Release()
+	var committedStatus string
+	var persistedSourceSnapshots, persistedDeleted, persistedSnapshots, persistedAudits int64
+	if err := database.owner.QueryRow(ctx, `SELECT run.status,run.source_snapshot_count,
+		run.deleted_snapshot_count,
+		(SELECT count(*) FROM account_inventory_snapshot_items
+		 WHERE poll_run_id=$2 AND instance_id=$3),
+		(SELECT count(*) FROM audit_logs
+		 WHERE action='account_inventory_history.snapshot_delete_batch'
+		   AND details->>'instance'=$3::uuid::text
+		   AND details->>'summary_date'=$4::date::text)
+	FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`,
+		runID, pollID, fixture.instanceID, targetDate).Scan(
+		&committedStatus, &persistedSourceSnapshots, &persistedDeleted,
+		&persistedSnapshots, &persistedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if committedStatus != "deleting" || persistedSourceSnapshots != 1 || persistedDeleted != 1 ||
+		persistedSnapshots != 0 || persistedAudits != 1 ||
+		persistedDeleted+persistedSnapshots != persistedSourceSnapshots {
+		t.Fatalf("post-commit status=%s source=%d deleted=%d snapshots=%d audits=%d",
+			committedStatus, persistedSourceSnapshots, persistedDeleted, persistedSnapshots, persistedAudits)
 	}
 
 	var completeStatus string
