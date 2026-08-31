@@ -219,6 +219,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"poll_candidate_rejections=covered",
 		"TestAccountInventoryHistoryRetentionEligibilityBoundaries",
 		"retention_eligibility_boundaries=covered",
+		"retention_ordered_chain_coverage_omission=covered",
 		"TestAccountInventoryHistoryPlannerSerializesRetentionBoundary",
 		"TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress",
 		"TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion",

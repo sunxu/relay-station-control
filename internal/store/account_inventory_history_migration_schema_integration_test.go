@@ -3355,6 +3355,36 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 		summaryDate, fixture.instanceID, uuid.New()).Scan(&rollupID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_provider_rollups(
+		rollup_run_id,summary_date,instance_id,provider,expected_poll_count,
+		transport_success_count,contract_valid_count,snapshot_complete_count,
+		promotion_applied_count,promotion_skipped_count,policy_changed_count,
+		abandoned_count,degraded_count,first_promotion_at,last_promotion_at,
+		coverage_numerator,coverage_denominator,coverage_ratio,
+		coverage_threshold_basis_points,coverage_status,created_at
+	) VALUES($1,$2,$3,'openai',1,1,1,1,1,0,0,0,0,
+		$2::date+interval '1 hour',$2::date+interval '1 hour',1,1,1,9500,
+		'complete',$2::date+interval '2 days')`,
+		rollupID, summaryDate, fixture.instanceID); err != nil {
+		t.Fatal(err)
+	}
+	var coverageRows, processed int
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_list_account_inventory_history_metrics_v1()
+		WHERE instance_id=$1`, fixture.instanceID).Scan(&coverageRows); err != nil || coverageRows != 1 {
+		t.Fatalf("retained coverage rows=%d err=%v", coverageRows, err)
+	}
+	for _, function := range []string{
+		"control_delete_account_inventory_rollup_row_retention_v1",
+		"control_delete_account_inventory_rollup_run_retention_v1",
+		"control_delete_account_inventory_compaction_run_retention_v1",
+	} {
+		if err := database.runtime.QueryRow(ctx, `SELECT (public.`+function+`(1)
+			->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 0 {
+			t.Fatalf("%s crossed retained poll dependency: processed=%d err=%v",
+				function, processed, err)
+		}
+	}
 
 	var beforeQuery, beforeCurrentState string
 	beforePage, err := repository.QueryPageAndAudit(ctx, query, audit)
@@ -3601,20 +3631,6 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 		rollupID, summaryDate, fixture.instanceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_provider_rollups(
-		rollup_run_id,summary_date,instance_id,provider,expected_poll_count,
-		transport_success_count,contract_valid_count,snapshot_complete_count,
-		promotion_applied_count,promotion_skipped_count,policy_changed_count,
-		abandoned_count,degraded_count,first_promotion_at,last_promotion_at,
-		coverage_numerator,coverage_denominator,coverage_ratio,
-		coverage_threshold_basis_points,coverage_status,created_at
-	) VALUES($1,$2,$3,'openai',1,1,1,1,1,0,0,0,0,
-		$2::date+interval '1 hour',$2::date+interval '1 hour',1,1,1,9500,
-		'complete',$2::date+interval '2 days')`,
-		rollupID, summaryDate, fixture.instanceID); err != nil {
-		t.Fatal(err)
-	}
-	var processed int
 	for batch := 1; batch <= 4; batch++ {
 		if err := database.runtime.QueryRow(ctx, `SELECT
 			(public.control_delete_account_inventory_rollup_row_retention_v1(1)
@@ -3647,6 +3663,11 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 					processed, err)
 			}
 		}
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_list_account_inventory_history_metrics_v1()
+		WHERE instance_id=$1`, fixture.instanceID).Scan(&coverageRows); err != nil || coverageRows != 0 {
+		t.Fatalf("expired coverage rows=%d err=%v", coverageRows, err)
 	}
 	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_reject_retired_marker_audit()
 		RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -4041,6 +4062,41 @@ func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
 	var databaseNow time.Time
 	if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&databaseNow); err != nil {
 		t.Fatal(err)
+	}
+	retentionCatalog := map[string]map[string]int{
+		"public.control_delete_account_inventory_poll_retention_v1(integer)": {
+			"retention_cutoff := clock_timestamp() - interval '30 days';": 1,
+			"poll.scheduled_at <= retention_cutoff":                       2,
+		},
+		"public.control_delete_account_inventory_rollup_row_retention_v1(integer)": {
+			"retention_cutoff := clock_timestamp() - interval '30 days';":                   1,
+			"rollup.completed_at <= retention_cutoff":                                       1,
+			"((rollup.summary_date + 1)::timestamp AT TIME ZONE 'UTC') <= retention_cutoff": 1,
+		},
+		"public.control_delete_account_inventory_rollup_run_retention_v1(integer)": {
+			"retention_cutoff := clock_timestamp() - interval '30 days';":                 1,
+			"rollup.completed_at <= retention_cutoff":                                     1,
+			"((rollup.summary_date+1)::timestamp AT TIME ZONE 'UTC') <= retention_cutoff": 1,
+		},
+		"public.control_delete_account_inventory_compaction_run_retention_v1(integer)": {
+			"retention_cutoff := clock_timestamp() - interval '30 days';":                     1,
+			"compaction.completed_at <= retention_cutoff":                                     1,
+			"((compaction.summary_date+1)::timestamp AT TIME ZONE 'UTC') <= retention_cutoff": 1,
+		},
+	}
+	for function, requirements := range retentionCatalog {
+		var definition string
+		if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef($1::regprocedure)`, function).
+			Scan(&definition); err != nil {
+			t.Fatal(err)
+		}
+		normalized := strings.Join(strings.Fields(definition), " ")
+		for fragment, count := range requirements {
+			fragment = strings.Join(strings.Fields(fragment), " ")
+			if strings.Count(normalized, fragment) != count {
+				t.Fatalf("retention boundary catalog drift for %s: %q", function, fragment)
+			}
+		}
 	}
 
 	newPollInstance, rowInstance := uuid.New(), uuid.New()

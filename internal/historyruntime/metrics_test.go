@@ -70,6 +70,27 @@ func TestCollectorExportsOnlyClosedLowCardinalityLabels(t *testing.T) {
 	}
 }
 
+func TestCollectorOmitsEmptyCoverage(t *testing.T) {
+	collector, err := NewCollector(staticMetricsProvider{snapshot: MetricsSnapshot{
+		Runtime: RuntimeStatus{Configured: true, Enabled: true, Compatible: true, Reason: ReasonReady},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := prometheus.NewPedanticRegistry()
+	registry.MustRegister(collector)
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() == "relay_control_account_inventory_history_provider_coverage_ratio" ||
+			family.GetName() == "relay_control_account_inventory_history_provider_coverage_complete" {
+			t.Fatalf("coverage family emitted for an empty snapshot: %s", family.GetName())
+		}
+	}
+}
+
 func TestCollectorSchemaIncompatibleOmitsDatabaseDerivedFamilies(t *testing.T) {
 	collector, err := NewCollector(staticMetricsProvider{snapshot: MetricsSnapshot{
 		Runtime: RuntimeStatus{Configured: true, Reason: ReasonSchemaIncompatible},
