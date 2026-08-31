@@ -2,27 +2,41 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	controlauth "github.com/sunxu/relay-station-control/internal/auth"
 	"github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/inventorypoll"
 	controlstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 const (
-	ownerURLEnvironment   = "CONTROL_HISTORY_ROLLBACK_OWNER_URL"
-	runtimeURLEnvironment = "CONTROL_HISTORY_ROLLBACK_RUNTIME_URL"
-	fixtureProvider       = "openai"
-	fixtureNodeType       = "history-rollback"
-	fixtureContract       = "v1"
-	fixtureEmail          = "history-rollback@example.invalid"
+	ownerURLEnvironment       = "CONTROL_HISTORY_ROLLBACK_OWNER_URL"
+	runtimeURLEnvironment     = "CONTROL_HISTORY_ROLLBACK_RUNTIME_URL"
+	nodeEndpointEnvironment   = "CONTROL_HISTORY_ROLLBACK_NODE_ENDPOINT"
+	nodeSecretRefEnvironment  = "CONTROL_HISTORY_ROLLBACK_NODE_SECRET_REFERENCE"
+	keyringFileEnvironment    = "CONTROL_HISTORY_ROLLBACK_KEYRING_FILE"
+	sessionFileEnvironment    = "CONTROL_HISTORY_ROLLBACK_SESSION_FILE"
+	processStartedEnvironment = "CONTROL_HISTORY_ROLLBACK_PROCESS_STARTED_FILE"
+	controlURLEnvironment     = "CONTROL_HISTORY_ROLLBACK_CONTROL_URL"
+	fixtureProvider           = "openai"
+	fixtureNodeType           = "cliproxyapi"
+	fixtureContract           = "cliproxyapi.auth-files.v1"
+	fixtureEmail              = "history-rollback@example.invalid"
+	httpQueryTimeout          = 5 * time.Second
+	processPollInterval       = 100 * time.Millisecond
 )
 
 var (
@@ -31,9 +45,12 @@ var (
 	fixtureAdminID    = uuid.MustParse("00000000-0000-4000-8000-000000000933")
 	initialPollID     = uuid.MustParse("00000000-0000-4000-8000-000000000934")
 	initialFence      = uuid.MustParse("00000000-0000-4000-8000-000000000935")
-	oldPollID         = uuid.MustParse("00000000-0000-4000-8000-000000000936")
-	oldFence          = uuid.MustParse("00000000-0000-4000-8000-000000000937")
 )
+
+type httpSessionFixture struct {
+	Session string `json:"session"`
+	CSRF    string `json:"csrf"`
+}
 
 type harness struct {
 	owner   *pgxpool.Pool
@@ -67,8 +84,10 @@ func main() {
 	switch os.Args[1] {
 	case "prepare":
 		err = h.prepare(ctx)
-	case "old-probe":
-		err = h.oldProbe(ctx)
+	case "wait":
+		err = h.waitForProcessPoll(ctx)
+	case "http-query":
+		err = h.httpQuery(ctx)
 	case "verify":
 		err = h.verifyAfterStop(ctx)
 	default:
@@ -115,6 +134,10 @@ func (h *harness) close() {
 }
 
 func (h *harness) prepare(ctx context.Context) error {
+	endpoint, secretReference := os.Getenv(nodeEndpointEnvironment), os.Getenv(nodeSecretRefEnvironment)
+	if endpoint == "" || secretReference == "" {
+		return gateError{reason: "fixture_environment"}
+	}
 	var targetDay time.Time
 	if err := h.owner.QueryRow(ctx, `SELECT date_trunc('day',clock_timestamp() AT TIME ZONE 'UTC')
 		- interval '31 days'`).Scan(&targetDay); err != nil {
@@ -132,16 +155,16 @@ func (h *harness) prepare(ctx context.Context) error {
 	}{
 		{`INSERT INTO environments(singleton_id,environment_id,name,environment_type)
 			VALUES(1,'history-forward','History Forward Schema','dev')`, nil},
-		{`INSERT INTO control_admin_users(admin_id,login_name,display_name)
-			VALUES($1,'history_forward','History Forward Operator')`, []any{fixtureAdminID}},
+		{`INSERT INTO control_admin_users(admin_id,login_name,display_name,status,activated_at)
+			VALUES($1,'history_forward','History Forward Operator','enabled',clock_timestamp())`, []any{fixtureAdminID}},
 		{`INSERT INTO node_drivers(node_type,driver_contract_version,display_name)
 			VALUES($1,$2,'History Forward Driver')`, []any{fixtureNodeType, fixtureContract}},
 		{`INSERT INTO driver_capabilities(node_type,driver_contract_version,capability)
 			VALUES($1,$2,'management_account_inventory_read')`, []any{fixtureNodeType, fixtureContract}},
 		{`INSERT INTO relay_node_assets(instance_id,display_name,node_type,
 			driver_contract_version,management_endpoint,reader_secret_ref)
-			VALUES($1,'History Forward Node',$2,$3,'http://127.0.0.1:9',
-			'docker-secret://synthetic/history-forward')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
+			VALUES($1,'History Forward Node',$2,$3,$4,$5)`,
+			[]any{fixtureInstanceID, fixtureNodeType, fixtureContract, endpoint, secretReference}},
 		{`INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability)
 			VALUES($1,$2,$3,'management_account_inventory_read')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,
@@ -264,76 +287,183 @@ func (h *harness) prepare(ctx context.Context) error {
 	if err := h.verifyRetainedForwardState(ctx); err != nil {
 		return gateError{reason: "retained_state"}
 	}
+	if err := h.seedHTTPSession(ctx); err != nil {
+		return gateError{reason: "http_session"}
+	}
 	fingerprint, err := h.historyFingerprint(ctx)
 	if err != nil {
 		return gateError{reason: "history_fingerprint"}
 	}
 	if _, err := h.owner.Exec(ctx, `CREATE TABLE history_rollback_acceptance_baseline(
-		singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),fingerprint text NOT NULL)`); err != nil {
+		singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),fingerprint text NOT NULL,
+		poll_count bigint NOT NULL)`); err != nil {
 		return gateError{reason: "history_baseline"}
 	}
-	if _, err := h.owner.Exec(ctx, `INSERT INTO history_rollback_acceptance_baseline(fingerprint)
-		VALUES($1)`, fingerprint); err != nil {
+	if _, err := h.owner.Exec(ctx, `INSERT INTO history_rollback_acceptance_baseline(fingerprint,poll_count)
+		SELECT $1,count(*) FROM account_inventory_poll_runs WHERE instance_id=$2`,
+		fingerprint, fixtureInstanceID); err != nil {
 		return gateError{reason: "history_baseline"}
 	}
 	return nil
 }
 
-func (h *harness) oldProbe(ctx context.Context) error {
-	var slot time.Time
-	if err := h.owner.QueryRow(ctx, `SELECT date_bin(interval '5 minutes',clock_timestamp(),
-		timestamptz '1970-01-01')`).Scan(&slot); err != nil {
-		return err
+func (h *harness) waitForProcessPoll(ctx context.Context) error {
+	startedAt, err := processStartedAt()
+	if err != nil {
+		return gateError{reason: "process_started"}
 	}
-	if _, err := h.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
-		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
-		provider_policy_version,max_attempts,poll_start_grace_seconds,created_at)
-		VALUES($1,$2,$3,$4,$5,$6,2,299,clock_timestamp())`, oldPollID, fixtureInstanceID,
-		fixtureNodeType, fixtureContract, slot, fixturePolicyID); err != nil {
-		return err
+	ticker := time.NewTicker(processPollInterval)
+	defer ticker.Stop()
+	for {
+		complete, err := h.processPollComplete(ctx, startedAt)
+		if err != nil {
+			return err
+		}
+		if complete {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
 	}
-	if _, err := h.owner.Exec(ctx, `UPDATE account_inventory_poll_runs SET status='running',
-		attempt_count=1,first_started_at=clock_timestamp(),last_started_at=clock_timestamp(),
-		lease_expires_at=clock_timestamp()+interval '60 seconds',lease_fencing_token=$2
-		WHERE poll_run_id=$1`, oldPollID, oldFence); err != nil {
-		return err
-	}
-	if err := h.finalize(ctx, oldPollID, oldFence, 9); err != nil {
-		return err
-	}
+}
 
-	repository, err := controlstore.NewAccountInventoryRepository(h.runtime)
+func (h *harness) processPollComplete(ctx context.Context, startedAt time.Time) (bool, error) {
+	var baselineCount, count int
+	if err := h.owner.QueryRow(ctx, `SELECT poll_count FROM history_rollback_acceptance_baseline
+		WHERE singleton`).Scan(&baselineCount); err != nil {
+		return false, err
+	}
+	if err := h.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory_poll_runs
+		WHERE instance_id=$1 AND created_at >= $2`, fixtureInstanceID, startedAt).Scan(&count); err != nil {
+		return false, err
+	}
+	if count == 0 {
+		return false, nil
+	}
+	if count != 1 {
+		return false, gateError{reason: "process_poll_count"}
+	}
+	var pollID uuid.UUID
+	var status string
+	var attempt int
+	err := h.owner.QueryRow(ctx, `SELECT poll_run_id,status,attempt_count
+		FROM account_inventory_poll_runs
+		WHERE instance_id=$1 AND created_at >= $2
+		  AND scheduled_at=date_bin(interval '5 minutes',created_at,timestamptz '1970-01-01')`,
+		fixtureInstanceID, startedAt).Scan(&pollID, &status, &attempt)
+	if errors.Is(err, pgx.ErrNoRows) && count == 1 {
+		return false, gateError{reason: "process_poll_slot"}
+	}
+	if err != nil {
+		return false, err
+	}
+	if status != "finalized" {
+		if status == "pending" || status == "running" || status == "retry_wait" {
+			return false, nil
+		}
+		return false, gateError{reason: "process_poll_terminal"}
+	}
+	var mode, result, reason string
+	var source, identifiable int
+	if err := h.owner.QueryRow(ctx, `SELECT inventory_mode,result,reason,
+		source_record_count,identifiable_record_count FROM account_inventory_poll_runs
+		WHERE poll_run_id=$1`, pollID).Scan(&mode, &result, &reason, &source, &identifiable); err != nil {
+		return false, err
+	}
+	if attempt != 1 || mode != "runtime" || result != "success" || reason != "none" || source != 1 || identifiable != 1 {
+		return false, gateError{reason: "process_poll_evidence"}
+	}
+	var totalPolls, providerEvidence, snapshotEvidence, currentPointers int
+	if err := h.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id=$1),
+		(SELECT count(*) FROM account_inventory_poll_provider_results
+		 WHERE poll_run_id=$2 AND provider=$3 AND identifiable_count=1 AND promotion_applied),
+		(SELECT count(*) FROM account_inventory_snapshot_items
+		 WHERE poll_run_id=$2 AND instance_id=$1 AND provider=$3 AND normalized_email=$4
+		   AND success_count=9),
+		(SELECT count(*) FROM account_inventory_provider_states
+		 WHERE instance_id=$1 AND provider=$3 AND current_poll_run_id=$2)
+		+(SELECT count(*) FROM account_inventory
+		  WHERE instance_id=$1 AND provider=$3 AND normalized_email=$4 AND current_poll_run_id=$2)`,
+		fixtureInstanceID, pollID, fixtureProvider, fixtureEmail).
+		Scan(&totalPolls, &providerEvidence, &snapshotEvidence, &currentPointers); err != nil {
+		return false, err
+	}
+	if totalPolls != baselineCount+1 || providerEvidence != 1 || snapshotEvidence != 1 || currentPointers != 2 {
+		return false, gateError{reason: "process_poll_promotion"}
+	}
+	return true, nil
+}
+
+func (h *harness) httpQuery(ctx context.Context) error {
+	controlURL := strings.TrimRight(os.Getenv(controlURLEnvironment), "/")
+	sessionPath := os.Getenv(sessionFileEnvironment)
+	encodedSession, err := os.ReadFile(sessionPath)
+	if controlURL == "" || sessionPath == "" || err != nil {
+		return gateError{reason: "http_configuration"}
+	}
+	var session httpSessionFixture
+	if err := json.Unmarshal(encodedSession, &session); err != nil || session.Session == "" || session.CSRF == "" {
+		return gateError{reason: "http_session"}
+	}
+	body, err := json.Marshal(map[string]any{"instance_id": fixtureInstanceID, "limit": 10})
 	if err != nil {
 		return err
 	}
-	if err := repository.CheckCompatibility(ctx); err != nil {
-		return err
+	requestContext, cancel := context.WithTimeout(ctx, httpQueryTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestContext, http.MethodPost,
+		controlURL+"/api/account-inventory/query", strings.NewReader(string(body)))
+	if err != nil {
+		return gateError{reason: "http_request"}
 	}
-	page, err := repository.QueryPageAndAudit(ctx, controlstore.AccountInventoryQuery{
-		InstanceID: fixtureInstanceID, Limit: 10,
-	}, controlstore.AccountInventoryViewAudit{
-		ActorAdminID: fixtureAdminID, SourceFingerprint: make([]byte, 32),
-		RequestID: "history-forward-old-query",
-	})
-	if err != nil || len(page.Items) != 1 || page.Items[0].Email != fixtureEmail ||
-		page.Items[0].Provider != fixtureProvider || page.Items[0].ProviderDegraded ||
-		page.Items[0].Lifecycle != controlstore.AccountInventoryPresent ||
-		page.Items[0].SnapshotFreshness != controlstore.AccountInventorySnapshotFreshnessFresh {
-		return errors.New("old current query result invalid")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", session.CSRF)
+	request.AddCookie(&http.Cookie{Name: controlauth.SessionCookieName, Value: session.Session})
+	client := &http.Client{
+		Timeout: httpQueryTimeout, Transport: &http.Transport{Proxy: nil},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	var currentPointers, promoted int
-	if err := h.owner.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM account_inventory_provider_states
-		 WHERE instance_id=$1 AND current_poll_run_id=$2)
-		+(SELECT count(*) FROM account_inventory
-		  WHERE instance_id=$1 AND current_poll_run_id=$2),
-		(SELECT count(*) FROM account_inventory_poll_provider_results
-		 WHERE poll_run_id=$2 AND provider=$3 AND promotion_applied)`, fixtureInstanceID,
-		oldPollID, fixtureProvider).Scan(&currentPointers, &promoted); err != nil {
-		return err
+	response, err := client.Do(request)
+	if err != nil {
+		return gateError{reason: "http_transport"}
 	}
-	if currentPointers != 2 || promoted != 1 {
-		return errors.New("old poll promotion invalid")
+	defer response.Body.Close()
+	encoded, readErr := io.ReadAll(io.LimitReader(response.Body, 64*1024))
+	if readErr != nil || response.StatusCode != http.StatusOK || response.Header.Get("Cache-Control") != "no-store" {
+		return gateError{reason: "http_response"}
+	}
+	var result struct {
+		Items []struct {
+			InstanceID        uuid.UUID `json:"instance_id"`
+			Provider          string    `json:"provider"`
+			Email             string    `json:"email"`
+			BasicStatus       string    `json:"basic_status"`
+			Lifecycle         string    `json:"lifecycle"`
+			SnapshotFreshness string    `json:"snapshot_freshness"`
+		} `json:"items"`
+		NextCursor *string `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(encoded, &result); err != nil || len(result.Items) != 1 || result.NextCursor != nil ||
+		result.Items[0].InstanceID != fixtureInstanceID || result.Items[0].Provider != fixtureProvider ||
+		result.Items[0].Email != fixtureEmail || result.Items[0].BasicStatus != "reported_active" ||
+		result.Items[0].Lifecycle != "present" || result.Items[0].SnapshotFreshness != "fresh" {
+		return gateError{reason: "http_query_result"}
+	}
+	requestID := response.Header.Get("X-Request-ID")
+	var audits, matchingAudits int
+	if requestID == "" {
+		return gateError{reason: "http_request_id"}
+	}
+	if err := h.owner.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE
+		category='account_inventory' AND action='account_inventory.view' AND result='success'
+		AND actor_admin_id=$2 AND details->>'result_count'='1')
+		FROM audit_logs WHERE request_id=$1`, requestID, fixtureAdminID).
+		Scan(&audits, &matchingAudits); err != nil || audits != 1 || matchingAudits != 1 {
+		return gateError{reason: "http_query_audit"}
 	}
 	return nil
 }
@@ -351,8 +481,83 @@ func (h *harness) verifyAfterStop(ctx context.Context) error {
 	if baseline != current {
 		return gateError{reason: "history_changed"}
 	}
+	var genericJobs int
+	if err := h.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM async_job_kinds)
+		+(SELECT count(*) FROM async_jobs)
+		+(SELECT count(*) FROM async_job_events)`).Scan(&genericJobs); err != nil {
+		return err
+	}
+	if genericJobs != 0 {
+		return gateError{reason: "generic_jobs_created"}
+	}
 	_, err = h.owner.Exec(ctx, `DROP TABLE history_rollback_acceptance_baseline`)
 	return err
+}
+
+func (h *harness) seedHTTPSession(ctx context.Context) error {
+	keyringPath, sessionPath := os.Getenv(keyringFileEnvironment), os.Getenv(sessionFileEnvironment)
+	if keyringPath == "" || sessionPath == "" {
+		return errors.New("session configuration unavailable")
+	}
+	keyring, err := controlauth.LoadKeyringFile(keyringPath, controlauth.EnvironmentDev)
+	if err != nil {
+		return err
+	}
+	sessionToken, err := controlauth.GenerateBearerToken()
+	if err != nil {
+		return err
+	}
+	csrfToken, err := controlauth.GenerateBearerToken()
+	if err != nil {
+		return err
+	}
+	sessionDigest, err := controlauth.ComputeDigest(keyring, controlauth.DomainSessionDigest, sessionToken)
+	if err != nil {
+		return err
+	}
+	csrfDigest, err := controlauth.ComputeDigest(keyring, controlauth.DomainCSRFDigest, csrfToken)
+	if err != nil {
+		return err
+	}
+	if _, err := h.owner.Exec(ctx, `INSERT INTO control_admin_sessions(
+		session_id,admin_id,token_digest,csrf_digest,key_version,mfa_method,
+		created_at,last_activity_at,absolute_expires_at)
+		VALUES($1,$2,$3,$4,$5,'none',clock_timestamp(),clock_timestamp(),
+		clock_timestamp()+interval '11 hours')`, uuid.New(), fixtureAdminID, sessionDigest.Sum[:],
+		csrfDigest.Sum[:], int32(sessionDigest.KeyVersion)); err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(httpSessionFixture{Session: sessionToken, CSRF: csrfToken})
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(sessionPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(append(encoded, '\n')); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func processStartedAt() (time.Time, error) {
+	path := os.Getenv(processStartedEnvironment)
+	encoded, err := os.ReadFile(path)
+	if path == "" || err != nil {
+		return time.Time{}, errors.New("process start unavailable")
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(encoded)))
+	if err != nil {
+		return time.Time{}, err
+	}
+	_, offset := startedAt.Zone()
+	if offset != 0 {
+		return time.Time{}, errors.New("process start is not UTC")
+	}
+	return startedAt.UTC(), nil
 }
 
 func (h *harness) finalize(ctx context.Context, pollID, fence uuid.UUID, success uint64) error {

@@ -18,7 +18,7 @@
 - [ ] 2.7 创建固定签名、schema-qualified、固定search_path/UTC的planner/claim/summarize/delete/rollup/retention/metrics `SECURITY DEFINER`函数，撤销PUBLIC并仅授runtime EXECUTE，以ACL catalog和绕过测试验证
 - [ ] 2.8 验证Migration不生成summary/run/retired marker、不删除或改写poll/snapshot/promotion/lifecycle/audit、不复制身份，只新增并回填允许的Provider健康字段；以Migration8旧列值/行数fingerprint保持和新增列来源等价测试通过
 - [x] 2.9 实现受保护down，仅允许无history row、无删除计数和无后续依赖的隔离新环境；以空环境成功、已有summary/run/delete进度环境拒绝且数据保持测试验证
-- [ ] 2.10 在至少完成一次snapshot/poll清理且current FK已NULL、history summary/run已存在的Migration9 schema运行固定旧二进制，验证启动、poll/promotion/current query和停止正常、不修改history表且不要求generic job kind
+- [x] 2.10 在至少完成一次snapshot/poll清理且current FK已NULL、history summary/run已存在的Migration9 schema运行固定旧二进制，验证启动、poll/promotion/current query和停止正常、不修改history表且不要求generic job kind
 - [ ] 2.11 扩展audit category/action/details allowlist，允许actor-null history summarized/completed/failed与retention事件并保持180天不可变边界，以未知detail/identity/checksum拒绝和事务原子性测试验证
 
 ## 3. sqlc、Planner 与策略分段摘要
@@ -74,7 +74,7 @@
 - [x] 7.2 实现history service启动compatibility gate，检查Migration9表/函数/ACL/core-sha256/provider-health/query签名；disabled也执行只读探测，不兼容时只禁用history并仅导出enabled/reason、既有服务继续，避免把不可读取的oldest/backlog伪装为零
 - [x] 7.3 接线planner/compaction/rollup/retention循环及有界退避，证明不注册`async_job_kinds`、不依赖Redis且生产durable-job registry继续为空
 - [ ] 7.4 实现停止顺序和有限事务收尾，覆盖SIGTERM、lease未到期、连接耗尽与重启后Reconciler接管
-- [ ] 7.5 验证应用rollback：完成真实snapshot/poll删除并使current FK为NULL后停止history、运行固定旧二进制、保留forward schema/summary/run并继续poll/current query且不修改history，生产不执行down
+- [x] 7.5 验证应用rollback：完成真实snapshot/poll删除并使current FK为NULL后停止history、运行固定旧二进制、保留forward schema/summary/run并继续poll/current query且不修改history，生产不执行down
 
 > 第六批新增真实Control process验收：覆盖默认disabled compatibility、metrics权限故障隔离、合法zero-poll日enabled收敛、仍有效的10秒消失执行者claim跨PostgreSQL stop/start与lease过期后的持久恢复，以及实际PID SIGTERM有界退出；该恢复不独立区分Reconciler和claim函数。另新增可选`CONTROL_DATABASE_MAX_CONNS=1..100`环境覆盖且缺失保持现有pgx URL/default行为，为真实pool exhaustion提供确定性注入。7.4仍缺持锁事务SIGTERM drain/timeout、Reconciler独占接管证明和真实pool exhaustion矩阵，因此保持未勾选。
 

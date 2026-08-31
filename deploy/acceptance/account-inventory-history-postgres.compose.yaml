@@ -39,5 +39,7 @@ volumes:
 
 networks:
   isolated:
+    name: ${CONTROL_HISTORY_POSTGRES_PROJECT:?set CONTROL_HISTORY_POSTGRES_PROJECT}_isolated
     internal: true
   host-access:
+    name: ${CONTROL_HISTORY_POSTGRES_PROJECT:?set CONTROL_HISTORY_POSTGRES_PROJECT}_host-access

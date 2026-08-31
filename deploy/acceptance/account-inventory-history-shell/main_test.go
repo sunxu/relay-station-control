@@ -204,20 +204,59 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 func assertHistoryRollbackContract(t *testing.T) {
 	t.Helper()
 	rollback := readAcceptanceFile(t, "account-inventory-history-rollback.sh")
+	harness := readAcceptanceFile(t, "account-inventory-history-rollback/main.go")
+	fakeNode := readAcceptanceFile(t, "account-inventory-history-fake-node/main.go")
 	for _, required := range []string{
 		"d4310023b3128199e485670d4bde84da7607412f",
-		"git archive --format=tar", "./cmd/control", "./cmd/history-forward-probe",
+		"git archive --format=tar", `-o "$runtime_directory/control-old" ./cmd/control`,
+		`CGO_ENABLED=0 GOOS=linux GOCACHE="$runtime_directory/go-build" go build -trimpath \
+      -o "$runtime_directory/history-fake-node" ./deploy/acceptance/account-inventory-history-fake-node`,
+		"CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED=true",
+		"CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED=true", "CONTROL_CLIPROXYAPI_DRIVER_ENABLED=true",
+		"CONTROL_COOKIE_SECURE=true",
+		`history-harness" wait`, `history-harness" http-query`, `history-harness" verify`,
+		`session_value="$(sed -n`, `csrf_value="$(sed -n`,
+		`"$management_key" "$fake_token" "$session_value" "$csrf_value"`, `"$runtime_directory"/*.log`,
+		"account_inventory_history_fake_node=stopped total=1 health=0 inventory=1 unauthorized=0 rejected=0",
 		"lock_acquired=false", `[ "$lock_acquired" = true ]`,
-		"history-prepare\" prepare", "history-old-probe\" old-probe",
-		"history-prepare\" verify", "kill -TERM", "wait \"$control_pid\"",
 		"snapshot_cleanup=controlled", "poll_cleanup=controlled", "current_fk_null=covered",
-		"pinned_old_store_probe_poll_promotion=covered", "pinned_old_store_probe_current_query=covered",
+		"old_control_poll_promotion=covered", "old_control_http_current_query=covered",
 		"history_and_history_audit_unchanged=covered", "production_down=not_used",
+		`if [ -n "$old_control_name" ]`, `if [ -n "$fake_node_name" ]`,
+		`docker_no_proxy rm --force`, `docker_no_proxy container inspect`,
+		"down --volumes --remove-orphans", "docker ps --all", "docker volume ls", "docker network ls",
+		"cleanup_runtime_residual", `rmdir "$lock_directory"`,
 		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
 		"cleanup_temp=0", "cleanup_lock=0",
 	} {
 		if !strings.Contains(rollback, required) {
 			t.Errorf("history rollback runner lacks %q", required)
+		}
+	}
+	for _, required := range []string{
+		`case "wait":`, `case "http-query":`, `case "verify":`,
+		`controlauth.SessionCookieName`, `request.Header.Set("X-CSRF-Token", session.CSRF)`,
+		"promotion_applied", "current_poll_run_id=$2",
+		"category='account_inventory' AND action='account_inventory.view' AND result='success'",
+	} {
+		if !strings.Contains(harness, required) {
+			t.Errorf("history rollback harness lacks %q", required)
+		}
+	}
+	for _, required := range []string{
+		`case "/v0/management/auth-files":`, `bump(&node.counts.inventory)`,
+		"total=%d health=%d inventory=%d unauthorized=%d rejected=%d",
+	} {
+		if !strings.Contains(fakeNode, required) {
+			t.Errorf("history rollback fake node lacks %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"history-forward-probe", "history-old-probe", "old-probe",
+		"POLL_ENABLED=false", "POLL_ENABLED='false'", `POLL_ENABLED="false"`,
+	} {
+		if strings.Contains(rollback+"\n"+harness, forbidden) {
+			t.Errorf("history rollback gate contains forbidden %q", forbidden)
 		}
 	}
 	if strings.Contains(rollback, "git checkout") || strings.Contains(rollback, "git worktree") ||
