@@ -104,6 +104,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-run.sh",
 		"account-inventory-history-postgres.sh",
 		"account-inventory-history-process.sh",
+		"account-inventory-history-rollback.sh",
+		"account-inventory-history-safety-run.sh",
 	}
 	for _, name := range scripts {
 		path := filepath.Join(acceptanceRoot(t), name)
@@ -125,8 +127,10 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 
 	runner := readAcceptanceFile(t, scripts[0])
 	for _, required := range []string{
-		`mode="${1:-static}"`, "static)", "postgres)", "process)", "all)",
+		`mode="${1:-static}"`, "static)", "postgres)", "process)", "rollback)", "all)",
 		"account-inventory-history-postgres.sh", "account-inventory-history-process.sh", "-list \"^${exact_name}$\"",
+		"account-inventory-history-rollback.sh", "rollback_gate=covered",
+		"account-inventory-history-safety-run.sh", "sensitive_canary=partial_local_sinks", "external_requests=not_covered",
 		"go test -race ./internal/history ./internal/historyruntime ./internal/store ./cmd/control",
 		"exact_discovery=covered race=covered million_rows=covered", "process=covered",
 	} {
@@ -161,6 +165,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion",
 		"TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection",
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
+		"TestAccountInventoryHistoryCapacityOneTenFifty",
+		"capacity_1_10_50_total_accounts=1000",
 		"retention_planner_lock=covered",
 		"planner_limit_progress=covered",
 		"retired_day_poll_lock=covered",
@@ -191,6 +197,65 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	}
 
 	assertHistoryProcessContract(t)
+	assertHistoryRollbackContract(t)
+	assertHistorySafetyContract(t)
+}
+
+func assertHistoryRollbackContract(t *testing.T) {
+	t.Helper()
+	rollback := readAcceptanceFile(t, "account-inventory-history-rollback.sh")
+	for _, required := range []string{
+		"d4310023b3128199e485670d4bde84da7607412f",
+		"git archive --format=tar", "./cmd/control", "./cmd/history-forward-probe",
+		"lock_acquired=false", `[ "$lock_acquired" = true ]`,
+		"history-prepare\" prepare", "history-old-probe\" old-probe",
+		"history-prepare\" verify", "kill -TERM", "wait \"$control_pid\"",
+		"snapshot_cleanup=controlled", "poll_cleanup=controlled", "current_fk_null=covered",
+		"pinned_old_store_probe_poll_promotion=covered", "pinned_old_store_probe_current_query=covered",
+		"history_and_history_audit_unchanged=covered", "production_down=not_used",
+		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
+		"cleanup_temp=0", "cleanup_lock=0",
+	} {
+		if !strings.Contains(rollback, required) {
+			t.Errorf("history rollback runner lacks %q", required)
+		}
+	}
+	if strings.Contains(rollback, "git checkout") || strings.Contains(rollback, "git worktree") ||
+		strings.Count(rollback, "label=com.docker.compose.project=") < 3 {
+		t.Fatal("history rollback export or cleanup contract is invalid")
+	}
+}
+
+func assertHistorySafetyContract(t *testing.T) {
+	t.Helper()
+	safety := readAcceptanceFile(t, "account-inventory-history-safety-run.sh")
+	for _, required := range []string{
+		"mktemp -d /tmp/relay-control-history-safety.",
+		"CONTROL_HISTORY_CANARY_SCAN_DIR", "CONTROL_HISTORY_CANARY_ENDPOINT",
+		"CONTROL_HISTORY_CANARY_SECRET_REFERENCE", "CONTROL_HISTORY_CANARY_SECRET_VALUE",
+		"CONTROL_HISTORY_CANARY_EMAIL", "CONTROL_HISTORY_CANARY_ACCOUNT_KEY",
+		"CONTROL_HISTORY_CANARY_RUN_ID", "CONTROL_HISTORY_CANARY_FENCING_TOKEN",
+		"CONTROL_HISTORY_CANARY_CHECKSUM", "CONTROL_HISTORY_CANARY_RAW_ERROR",
+		"CONTROL_HISTORY_CANARY_SQL_PARAMETER", "CONTROL_HISTORY_CANARY_POLL_ID",
+		"CONTROL_HISTORY_CANARY_POLICY_ID", "TestHistoryLocalOutputsExcludeCanaries",
+		"TestHistoryProductionSourcesHaveNoDirectNetworkImports",
+		"account-inventory-lifecycle-canary-scan", "local_sink_canary_found",
+		"local_sink_canary=covered", "direct_network_client_imports=0",
+		"sensitive_canary_complete=not_covered", "external_requests=not_covered",
+		"process_fake_endpoint_counter=not_covered", "database_non_identity_sink=not_covered",
+		"cleanup_temp=0",
+	} {
+		if !strings.Contains(safety, required) {
+			t.Errorf("history safety runner lacks %q", required)
+		}
+	}
+	for _, testName := range []string{
+		"TestHistoryLocalOutputsExcludeCanaries", "TestHistoryProductionSourcesHaveNoDirectNetworkImports",
+	} {
+		if strings.Count(safety, "require_test "+testName) != 1 {
+			t.Errorf("history safety exact discovery count for %s is invalid", testName)
+		}
+	}
 }
 
 func assertHistoryProcessContract(t *testing.T) {

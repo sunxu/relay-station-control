@@ -278,7 +278,7 @@ describe("account inventory read-only view", () => {
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     const table = await screen.findByRole("table");
-    const forbidden = /导出|下载|复制|详情|查看详情|批量|选择全部|编辑|修改|删除|补采|重试采集|promotion|提升/i;
+    const forbidden = /历史|压缩|导出|下载|复制|详情|查看详情|批量|选择全部|编辑|修改|删除|补采|重试采集|promotion|提升/i;
     expect(screen.queryByRole("button", { name: forbidden })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: forbidden })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: forbidden })).not.toBeInTheDocument();

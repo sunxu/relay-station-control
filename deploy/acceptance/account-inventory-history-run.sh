@@ -119,10 +119,11 @@ run_static() {
       -count=1 >"$runtime_directory/shell-contract.log" 2>&1; then
     fixed_failure 'shell_contract_gate_failed'
   fi
+  "$script_directory/account-inventory-history-safety-run.sh"
 }
 
 case "$mode" in
-  static|postgres|process|all) ;;
+  static|postgres|process|rollback|all) ;;
   *)
     echo 'account_inventory_history_acceptance=failed reason=invalid_mode' >&2
     exit 1
@@ -138,7 +139,7 @@ case "$mode" in
   static)
     run_static
     strict_cleanup
-    echo 'account_inventory_history_acceptance=success mode=static exact_discovery=covered race=covered million_rows=covered'
+    echo 'account_inventory_history_acceptance=success mode=static exact_discovery=covered race=covered million_rows=covered sensitive_canary=partial_local_sinks external_requests=not_covered'
     ;;
   postgres)
     "$script_directory/account-inventory-history-postgres.sh"
@@ -150,11 +151,17 @@ case "$mode" in
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=process'
     ;;
+  rollback)
+    "$script_directory/account-inventory-history-rollback.sh"
+    strict_cleanup
+    echo 'account_inventory_history_acceptance=success mode=rollback'
+    ;;
   all)
     run_static
     "$script_directory/account-inventory-history-postgres.sh"
     "$script_directory/account-inventory-history-process.sh"
+    "$script_directory/account-inventory-history-rollback.sh"
     strict_cleanup
-    echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered million_rows=covered process=covered'
+    echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=partial_local_sinks external_requests=not_covered'
     ;;
 esac
