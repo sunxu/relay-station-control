@@ -3613,6 +3613,140 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	}
 }
 
+func TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	if err := database.owner.QueryRow(ctx, `SELECT date_bin(
+		interval '5 minutes',clock_timestamp()-interval '31 days',
+		timestamptz '1970-01-01')`).Scan(&fixture.baseSlot); err != nil {
+		t.Fatal(err)
+	}
+	mode := "runtime"
+	evidence := lifecycleGuardrailEvidence{
+		transportSuccess: true, responseShapeValid: true, contractValid: true,
+		inventoryMode: &mode, nodeIdentityComplete: true, snapshotComplete: false,
+		degraded: true, result: "degraded", reason: "none",
+		sourceCount: 2, identifiableCount: 2,
+		providerResults: []map[string]any{{
+			"provider": fixtureProviderName, "identifiable_count": 2,
+			"missing_identity_count": 0, "duplicate_identity_count": 1,
+			"identity_complete": false, "snapshot_complete": false,
+			"degraded": true, "reason": "identity_incomplete",
+		}},
+		snapshotItems: []map[string]any{},
+		duplicateEvidence: []map[string]any{{
+			"provider":         fixtureProviderName,
+			"account_key":      fixtureProviderName + ":duplicate@example.invalid",
+			"occurrence_count": 2,
+		}},
+	}
+	for range 2 {
+		pollID, fence := insertLifecycleGuardrailPoll(t, ctx, database, fixture, uuid.Nil, false)
+		if finalized, err := finalizeLifecycleGuardrailPoll(
+			ctx, database, pollID, fence, evidence,
+		); err != nil || finalized != 1 {
+			t.Fatalf("finalize duplicate poll rows=%d err=%v", finalized, err)
+		}
+	}
+
+	summaryDate := fixture.baseSlot.UTC().Truncate(24 * time.Hour)
+	var compactionID uuid.UUID
+	if err := database.owner.QueryRow(ctx, `INSERT INTO account_inventory_compaction_runs(
+		summary_date,instance_id,provider_policy_version,status,checksum_version,
+		source_snapshot_count,source_poll_count,source_provider_result_count,
+		source_duplicate_count,source_checksum,deleted_snapshot_count,created_at,
+		summarized_at,deleting_at,completed_at,updated_at
+	) VALUES($1,$2,$3,'completed',1,0,2,2,2,decode(repeat('71',32),'hex'),0,
+		$1::date+interval '1 day',$1::date+interval '1 day 1 hour',
+		$1::date+interval '1 day 2 hours',$1::date+interval '1 day 3 hours',
+		$1::date+interval '1 day 3 hours') RETURNING compaction_run_id`,
+		summaryDate, fixture.instanceID, fixture.policyID).Scan(&compactionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+		summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
+		completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
+	) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat('72',32),'hex'),
+		$1::date+interval '1 hour',$1::date+interval '2 hours',$1::date+interval '2 hours')`,
+		summaryDate, fixture.instanceID, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCounts := func(stage string, remaining, progress, audits int) {
+		t.Helper()
+		var polls, providers, duplicates, deletedPolls, deletedProviders, deletedDuplicates, auditRows int
+		if err := database.owner.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id=$1),
+			(SELECT count(*) FROM account_inventory_poll_provider_results AS result
+			 JOIN account_inventory_poll_runs AS poll ON poll.poll_run_id=result.poll_run_id
+			 WHERE poll.instance_id=$1),
+			(SELECT count(*) FROM account_inventory_poll_duplicates WHERE instance_id=$1),
+			deleted_poll_count,deleted_provider_result_count,deleted_duplicate_count,
+			(SELECT count(*) FROM audit_logs
+			 WHERE action='account_inventory_history.retention_delete_batch'
+			   AND details->>'phase'='retention_poll')
+			FROM account_inventory_compaction_runs WHERE compaction_run_id=$2`,
+			fixture.instanceID, compactionID).Scan(&polls, &providers, &duplicates,
+			&deletedPolls, &deletedProviders, &deletedDuplicates, &auditRows); err != nil {
+			t.Fatal(err)
+		}
+		if polls != remaining || providers != remaining || duplicates != remaining ||
+			deletedPolls != progress || deletedProviders != progress ||
+			deletedDuplicates != progress || auditRows != audits {
+			t.Fatalf("%s remaining=%d/%d/%d progress=%d/%d/%d audits=%d",
+				stage, polls, providers, duplicates, deletedPolls, deletedProviders,
+				deletedDuplicates, auditRows)
+		}
+	}
+
+	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_reject_retention_child_delete()
+		RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+			RAISE EXCEPTION 'synthetic retention child failure';
+		END $$;
+		CREATE TRIGGER zz_test_reject_retention_provider_delete
+		BEFORE DELETE ON account_inventory_poll_provider_results
+		FOR EACH ROW EXECUTE FUNCTION public.test_reject_retention_child_delete()`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.runtime.Exec(ctx,
+		`SELECT public.control_delete_account_inventory_poll_retention_v1(1)`); err == nil {
+		t.Fatal("poll retention ignored Provider-result delete failure")
+	}
+	assertCounts("provider failure", 2, 0, 0)
+	if _, err := database.owner.Exec(ctx, `DROP TRIGGER zz_test_reject_retention_provider_delete
+		ON account_inventory_poll_provider_results;
+		CREATE TRIGGER zz_test_reject_retention_duplicate_delete
+		BEFORE DELETE ON account_inventory_poll_duplicates
+		FOR EACH ROW EXECUTE FUNCTION public.test_reject_retention_child_delete()`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.runtime.Exec(ctx,
+		`SELECT public.control_delete_account_inventory_poll_retention_v1(1)`); err == nil {
+		t.Fatal("poll retention ignored duplicate delete failure")
+	}
+	assertCounts("duplicate failure", 2, 0, 0)
+	if _, err := database.owner.Exec(ctx, `DROP TRIGGER zz_test_reject_retention_duplicate_delete
+		ON account_inventory_poll_duplicates;
+		DROP FUNCTION public.test_reject_retention_child_delete()`); err != nil {
+		t.Fatal(err)
+	}
+
+	for batch := 1; batch <= 2; batch++ {
+		var processed, deleted int
+		if err := database.runtime.QueryRow(ctx, `WITH result AS (
+			SELECT public.control_delete_account_inventory_poll_retention_v1(1) AS value
+		) SELECT (value->>'processed_count')::integer,
+			(value->>'deleted_row_count')::integer FROM result`).Scan(&processed, &deleted); err != nil {
+			t.Fatal(err)
+		}
+		if processed != 1 || deleted != 3 {
+			t.Fatalf("retention batch=%d processed=%d deleted=%d", batch, processed, deleted)
+		}
+		assertCounts(fmt.Sprintf("batch %d", batch), 2-batch, batch, batch)
+	}
+}
+
 func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)

@@ -213,6 +213,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains",
 		"TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun",
 		"TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery",
+		"TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume",
+		"retention_child_atomicity=covered",
 		"TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates",
 		"poll_candidate_rejections=covered",
 		"TestAccountInventoryHistoryRetentionEligibilityBoundaries",
