@@ -5,7 +5,7 @@
 - [x] 1.3 固化compaction/rollup状态转换、lease/fencing、未知commit结果、failed_from恢复和completed不可变矩阵，以状态机模型测试覆盖每条合法/非法边
 - [x] 1.4 定义账号/Provider segment、final rollup、source/segment checksum的版本化字段编码与稳定tie-breaker，使用golden vectors验证重复计算一致
 - [ ] 1.5 建立敏感数据流图，证明新summary/rollup只复制受保护account key而不复制email，checksum/identity不进入日志、指标、history审计details、错误或artifact
-- [ ] 1.6 明确OpenAPI/UI/alerts/HMAC/current-lifecycle-cleanup零变更边界，以OpenAPI diff、route/DOM负向测试和OpenSpec strict验证未扩展产品范围
+- [x] 1.6 明确OpenAPI/UI/alerts/HMAC/current-lifecycle-cleanup零变更边界，以OpenAPI diff、route/DOM负向测试和OpenSpec strict验证未扩展产品范围
 
 ## 2. Additive Migration 9、Schema 与最小权限
 
@@ -102,8 +102,8 @@
 
 - [x] 10.1 编写history compaction Runbook，覆盖UTC资格、状态解释、partial、积压/失败、WAL/lock、暂停恢复、checksum/count不一致、只增不删处置和禁止人工SQL重建
 - [ ] 10.2 固化rollout/rollback：Migration→新二进制disabled→compatibility gate→staging单Worker→逐步启用；回滚先停runner、保留forward schema且生产禁止down，并逐项dry run
-- [ ] 10.3 更新README/config reference和现有poll/snapshot/lifecycle/query Runbook，说明受控历史删除、合法空current source、Provider health冗余与当前产品字段兼容
-- [ ] 10.4 运行`make generate`两次确认OpenAPI/Go/TypeScript生成物零差异，并运行`make test`、`make build`、全部Go tests、full race、vet、前端typecheck/test/build和actionlint；新增独立PG18 history CI job、明确timeout并与其他container jobs使用唯一资源前缀隔离
+- [x] 10.3 更新README/config reference和现有poll/snapshot/lifecycle/query Runbook，说明受控历史删除、合法空current source、Provider health冗余与当前产品字段兼容
+- [x] 10.4 运行`make generate`两次确认OpenAPI/Go/TypeScript生成物零差异，并运行`make test`、`make build`、全部Go tests、full race、vet、前端typecheck/test/build和actionlint；新增独立PG18 history CI job、明确timeout并与其他container jobs使用唯一资源前缀隔离
 - [ ] 10.5 运行Migration9 schema/ACL/rollback、旧二进制forward-schema、PostgreSQL18功能/故障/容量、零外部请求、敏感canary和数据面隔离完整验收，保存脱敏证据摘要
-- [ ] 10.6 运行本change strict、全部canonical specs strict、`git diff --check`和generated diff检查，对照proposal/design/spec/tasks与系统设计确认无漂移
-- [ ] 10.7 检查`git status --short`、Migration编号、临时容器/volume/network/目录和敏感内容扫描，确认worktree只包含本change计划/实现并整理Conventional Commits分层提交计划
+- [x] 10.6 运行本change strict、全部canonical specs strict、`git diff --check`和generated diff检查，对照proposal/design/spec/tasks与系统设计确认无漂移
+- [x] 10.7 检查`git status --short`、Migration编号、临时容器/volume/network/目录和敏感内容扫描，确认worktree只包含本change计划/实现并整理Conventional Commits分层提交计划

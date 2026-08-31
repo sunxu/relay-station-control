@@ -8,6 +8,8 @@
 
 本功能没有导出、复制、详情、批量选择、编辑、删除、补采或 promotion 控件。排障时不得用临时 SQL、临时 HTTP route 或扩大数据库权限绕过这些边界。
 
+Migration 9 清理到期 poll 后，current source 外键可以合法为 `NULL`；查询函数此时从 Provider current state 的冗余健康字段读取 degraded/freshness，并保持既有 HTTP 响应字段不变。历史压缩不新增查询路由或页面，详见 [`account-inventory-history-compaction.md`](account-inventory-history-compaction.md)。
+
 ## 2. 权限与实例范围
 
 一次查询必须同时满足：

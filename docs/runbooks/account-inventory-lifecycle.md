@@ -8,6 +8,8 @@
 
 标准化 email 和 `account_key` 只允许进入受保护的 snapshot、duplicate、lifecycle 列以及授权内部读取值。普通日志、指标、错误、SQL 参数日志、测试输出和验收 artifact 禁止出现逐账号 identity、poll/policy ID、endpoint/IP、Secret/Management Key、header/body、Node version/commit、未知字段或原始错误。
 
+Migration 9 的 history retention 不重算或删除当前 lifecycle；到期 poll 清理可使 current source 外键合法变为 `NULL`，但已冗余的来源元数据、基础状态、missing 计数和 lifecycle 必须保持。不要把空 source 外键当成当前状态损坏，详见 [`account-inventory-history-compaction.md`](account-inventory-history-compaction.md)。
+
 ## 2. 状态机与证据来源
 
 只有 `promotion_applied=true` 的完整 runtime Provider 快照是 lifecycle 证据。完整空集合也是有效证据；transport/contract 失败、disk fallback、identity/duplicate 不完整、`policy_changed`、`stale_poll`、abandoned 槽和未提交事务都不是证据。

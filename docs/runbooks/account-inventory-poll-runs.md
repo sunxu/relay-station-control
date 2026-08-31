@@ -6,6 +6,8 @@
 
 本 change 只保存 Node/Provider 聚合结果，不保存账号明细、email、account key、endpoint/IP、Secret 引用或值、Management Key、header/body、原始错误，也不创建 snapshot/current state、promotion、missing/out-of-scope 生命周期、压缩、告警、OpenAPI/UI 或人工重试入口。自动 poll 不是实名管理员操作，不写管理员 audit row。
 
+Migration 9 之后，已终态 poll 只有在对应历史压缩完成、snapshot 已清空且达到固定 30 天保留期后，才可由 history retention 受控删除；普通 poll 运行时仍不得删除。顺序、暂停和恢复见 [`account-inventory-history-compaction.md`](account-inventory-history-compaction.md)。
+
 ## 2. 固定槽与状态机
 
 `scheduled_at` 只能由 PostgreSQL UTC 时钟计算并按 300 秒对齐。Scheduler 只创建仍处于 120 秒启动宽限的当前槽，不枚举过去空槽，也不把当前响应挂到历史槽。

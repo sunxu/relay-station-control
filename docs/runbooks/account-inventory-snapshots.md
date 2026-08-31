@@ -10,6 +10,8 @@
 
 运行时角色不能直接 SELECT/INSERT/UPDATE/DELETE/TRUNCATE 快照、重复或 Provider state 表。后续内部生命周期只能通过固定 `instance_id`、规范 Provider、有界 `account_key` cursor 和最多 500 行的受控读取函数访问当前快照；本 change 没有把该函数接到产品 HTTP API，也没有任意历史枚举入口。
 
+Migration 9 允许 history compactor 在固化不可变摘要后分批删除至少 72 小时前的 snapshot，并在满足固定 30 天门禁后清理 poll 历史。清理只会让 current source 外键合法变为 `NULL`；Provider/current 行中冗余的来源时间、版本、提交、基础状态和生命周期必须保持。操作边界见 [`account-inventory-history-compaction.md`](account-inventory-history-compaction.md)。
+
 ## 2. Promotion 决策
 
 finalize 固定先锁 poll run 并验证 running、lease 和 fencing，再锁该 run 对应的当前 Provider policy binding。promotion 与 poll completeness 是不同证据：
