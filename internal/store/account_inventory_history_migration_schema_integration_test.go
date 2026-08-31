@@ -1862,6 +1862,238 @@ func TestAccountInventoryHistoryCompactionMainPathAndRecovery(t *testing.T) {
 	}
 }
 
+func TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	targetDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -4)
+	lowPollID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
+	highPollID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
+	lowSlot := targetDate.Add(12 * time.Hour)
+	highSlot := lowSlot.Add(5 * time.Minute)
+
+	fixtureTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fixtureTx.Rollback(ctx) }()
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+		provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
+		created_at,first_started_at,last_started_at,finalized_at,observed_at,
+		transport_success,response_shape_valid,contract_valid,inventory_mode,
+		node_identity_complete,snapshot_complete,degraded,result,reason,
+		source_record_count,identifiable_record_count,unidentified_record_count,
+		unsupported_provider_count,out_of_scope_provider_count,node_version,node_commit
+	) VALUES
+		($1,$2,$3,$4,$5::timestamptz,$6,'finalized',1,2,299,
+		 $5::timestamptz+interval '1 second',$5::timestamptz+interval '2 seconds',$5::timestamptz+interval '2 seconds',
+		 $5::timestamptz+interval '4 seconds',$5::timestamptz+interval '3 seconds',
+		 true,true,true,'runtime',true,true,false,'success','none',
+		 2,2,0,0,0,'unknown','unknown'),
+		($7,$2,$3,$4,$8::timestamptz,$6,'finalized',1,2,299,
+		 $8::timestamptz+interval '1 second',$8::timestamptz+interval '2 seconds',$8::timestamptz+interval '2 seconds',
+		 $8::timestamptz+interval '4 seconds',$8::timestamptz+interval '3 seconds',
+		 true,true,true,'runtime',true,true,false,'success','none',
+		 1,1,0,0,0,'unknown','unknown')`, lowPollID, fixture.instanceID,
+		fixture.nodeType, fixture.contract, lowSlot, fixture.policyID, highPollID, highSlot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,
+		duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason,
+		promotion_applied,promotion_skipped_reason
+	) VALUES
+		($1,'openai',2,0,0,true,true,false,'complete',true,NULL),
+		($2,'openai',1,0,0,true,true,false,'complete',true,NULL)`,
+		lowPollID, highPollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES
+		($1,$2,'openai','openai:a@example.invalid','a@example.invalid','active',1,0,0,$3::timestamptz+interval '3 seconds'),
+		($1,$2,'openai','openai:z@example.invalid','z@example.invalid','active',2,0,0,$3::timestamptz+interval '3 seconds'),
+		($4,$2,'openai','openai:m@example.invalid','m@example.invalid','active',3,0,0,$5::timestamptz+interval '3 seconds')`,
+		lowPollID, fixture.instanceID, lowSlot, highPollID, highSlot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	fence := uuid.New()
+	var runID uuid.UUID
+	if err := database.owner.QueryRow(ctx, `WITH stamp AS (
+		SELECT clock_timestamp() AS value
+	) INSERT INTO account_inventory_compaction_runs(
+		summary_date,instance_id,provider_policy_version,status,claim_owner,
+		lease_expires_at,fencing_token,attempt_count,checksum_version,
+		source_snapshot_count,source_poll_count,source_provider_result_count,
+		source_duplicate_count,source_checksum,created_at,summarized_at,updated_at
+	) SELECT $1,$2,$3,'summarized','selection-boundary-worker',
+		stamp.value+interval '30 minutes',$4,1,1,3,2,2,0,
+		decode(repeat('44',32),'hex'),stamp.value-interval '1 second',stamp.value,stamp.value
+	FROM stamp RETURNING compaction_run_id`, targetDate, fixture.instanceID,
+		fixture.policyID, fence).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = database.runtime.Exec(ctx, `SELECT
+		public.control_delete_account_inventory_snapshot_batch_v1($1,$2,5001)`, runID, fence)
+	if err == nil {
+		t.Fatal("snapshot delete accepted limit 5001")
+	}
+	requireHistorySQLState(t, err, "22023")
+	var rejectedStatus string
+	var rejectedDeletingAt *time.Time
+	var rejectedSnapshots int
+	if err := database.owner.QueryRow(ctx, `SELECT run.status,run.deleting_at,
+		(SELECT count(*) FROM account_inventory_snapshot_items AS snapshot
+		 JOIN account_inventory_poll_runs AS poll ON poll.poll_run_id=snapshot.poll_run_id
+		 WHERE poll.instance_id=run.instance_id
+		   AND poll.provider_policy_version=run.provider_policy_version
+		   AND (poll.scheduled_at AT TIME ZONE 'UTC')::date=run.summary_date)
+	FROM account_inventory_compaction_runs AS run WHERE run.compaction_run_id=$1`, runID).
+		Scan(&rejectedStatus, &rejectedDeletingAt, &rejectedSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if rejectedStatus != "summarized" || rejectedDeletingAt != nil || rejectedSnapshots != 3 {
+		t.Fatalf("rejected limit changed fixture: status=%s deleting_at=%v snapshots=%d",
+			rejectedStatus, rejectedDeletingAt, rejectedSnapshots)
+	}
+
+	deleteTx, err := database.runtime.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = deleteTx.Rollback(ctx) }()
+	var firstStatus string
+	var firstDeleted, firstTotal, firstRemaining int
+	if err := deleteTx.QueryRow(ctx, `WITH deleted AS (
+		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1) AS value
+	) SELECT value->>'status',(value->>'deleted_count')::integer,
+		(value->>'total_deleted_count')::integer,(value->>'remaining_count')::integer
+	FROM deleted`, runID, fence).Scan(
+		&firstStatus, &firstDeleted, &firstTotal, &firstRemaining); err != nil {
+		_ = deleteTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if firstStatus != "deleting" || firstDeleted != 1 || firstTotal != 1 || firstRemaining != 2 {
+		_ = deleteTx.Rollback(ctx)
+		t.Fatalf("limit 1 status=%s deleted=%d total=%d remaining=%d",
+			firstStatus, firstDeleted, firstTotal, firstRemaining)
+	}
+	var replayed int
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
+			$1,$2,true,true,false,NULL,true,false,true,'failed','contract_invalid',
+			0,0,0,0,0,'v1.0.0','abcdef1',
+			'[{
+			  "provider":"openai","identifiable_count":0,"missing_identity_count":0,
+			  "duplicate_identity_count":0,"identity_complete":true,
+			  "snapshot_complete":false,"degraded":true,"reason":"contract_invalid"
+			}]'::jsonb,'[]'::jsonb,'[]'::jsonb
+		)`, lowPollID, uuid.New()).Scan(&replayed); err != nil || replayed != 0 {
+		_ = deleteTx.Rollback(ctx)
+		t.Fatalf("finalized poll replay rows=%d err=%v", replayed, err)
+	}
+	_, err = database.owner.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES($1,$2,'openai','openai:late@example.invalid','late@example.invalid',
+		'active',4,0,0,$3::timestamptz+interval '4 seconds')`, lowPollID, fixture.instanceID, lowSlot)
+	if err == nil {
+		_ = deleteTx.Rollback(ctx)
+		t.Fatal("finalized poll accepted a late snapshot during deletion")
+	}
+	requireHistorySQLState(t, err, "23514")
+	if err := deleteTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var firstDeletingAt time.Time
+	var firstKeyRemaining, secondKeyRemaining, highKeyRemaining bool
+	if err := database.owner.QueryRow(ctx, `SELECT run.deleting_at,
+		EXISTS(SELECT 1 FROM account_inventory_snapshot_items
+		 WHERE poll_run_id=$2 AND instance_id=$3 AND account_key='openai:a@example.invalid'),
+		EXISTS(SELECT 1 FROM account_inventory_snapshot_items
+		 WHERE poll_run_id=$2 AND instance_id=$3 AND account_key='openai:z@example.invalid'),
+		EXISTS(SELECT 1 FROM account_inventory_snapshot_items
+		 WHERE poll_run_id=$4 AND instance_id=$3 AND account_key='openai:m@example.invalid')
+	FROM account_inventory_compaction_runs AS run WHERE run.compaction_run_id=$1`,
+		runID, lowPollID, fixture.instanceID, highPollID).Scan(
+		&firstDeletingAt, &firstKeyRemaining, &secondKeyRemaining, &highKeyRemaining); err != nil {
+		t.Fatal(err)
+	}
+	if firstKeyRemaining || !secondKeyRemaining || !highKeyRemaining {
+		t.Fatalf("limit 1 selected wrong stable key: low_a=%t low_z=%t high_m=%t",
+			firstKeyRemaining, secondKeyRemaining, highKeyRemaining)
+	}
+
+	var maximumStatus string
+	var maximumDeleted, maximumTotal, maximumRemaining int
+	if err := database.runtime.QueryRow(ctx, `WITH deleted AS (
+		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,5000) AS value
+	) SELECT value->>'status',(value->>'deleted_count')::integer,
+		(value->>'total_deleted_count')::integer,(value->>'remaining_count')::integer
+	FROM deleted`, runID, fence).Scan(
+		&maximumStatus, &maximumDeleted, &maximumTotal, &maximumRemaining); err != nil {
+		t.Fatal(err)
+	}
+	if maximumStatus != "deleting" || maximumDeleted != 2 || maximumTotal != 3 || maximumRemaining != 0 {
+		t.Fatalf("limit 5000 status=%s deleted=%d total=%d remaining=%d",
+			maximumStatus, maximumDeleted, maximumTotal, maximumRemaining)
+	}
+	var maximumDeletingAt time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT deleting_at
+		FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, runID).
+		Scan(&maximumDeletingAt); err != nil {
+		t.Fatal(err)
+	}
+
+	var emptyStatus string
+	var emptyDeleted, emptyTotal, emptyRemaining int
+	if err := database.runtime.QueryRow(ctx, `WITH deleted AS (
+		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,5000) AS value
+	) SELECT value->>'status',(value->>'deleted_count')::integer,
+		(value->>'total_deleted_count')::integer,(value->>'remaining_count')::integer
+	FROM deleted`, runID, fence).Scan(
+		&emptyStatus, &emptyDeleted, &emptyTotal, &emptyRemaining); err != nil {
+		t.Fatal(err)
+	}
+	if emptyStatus != "deleting" || emptyDeleted != 0 || emptyTotal != 3 || emptyRemaining != 0 {
+		t.Fatalf("empty batch status=%s deleted=%d total=%d remaining=%d",
+			emptyStatus, emptyDeleted, emptyTotal, emptyRemaining)
+	}
+	var emptyDeletingAt time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT deleting_at
+		FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, runID).
+		Scan(&emptyDeletingAt); err != nil {
+		t.Fatal(err)
+	}
+	if !firstDeletingAt.Equal(maximumDeletingAt) || !firstDeletingAt.Equal(emptyDeletingAt) {
+		t.Fatalf("deleting_at changed across batches: first=%s maximum=%s empty=%s",
+			firstDeletingAt, maximumDeletingAt, emptyDeletingAt)
+	}
+}
+
 func TestAccountInventoryDailyRollupNoProviderAtomicFinalize(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
