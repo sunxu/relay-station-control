@@ -43,13 +43,14 @@
 - [ ] 4.2 实现`pending|failed_from=pending` summarize执行与固定错误映射，以statement timeout、连接断开、commit结果未知和重启测试验证安全重做/识别已提交
 - [x] 4.3 实现summarized到deleting转换和稳定主键有界snapshot选择，以batch 1/边界上限/空批次/并发插入不可发生测试验证
 - [x] 4.4 实现单批`DELETE ... RETURNING`与actual deleted count同事务累计，以删除失败、计数更新失败、提交前/后崩溃测试验证守恒
-- [ ] 4.5 实现从summarized/deleting及对应failed_from只续删、不重聚合，以部分删除后篡改残余fixture仍不能缩小summary测试验证
+- [x] 4.5 实现从summarized/deleting及对应failed_from只续删、不重聚合，以部分删除后篡改残余fixture仍不能缩小summary测试验证
 - [ ] 4.6 实现completed gate，只有remaining=0且source snapshot count等于deleted count/checksum身份不变才完成，以不一致进入fixed failed且poll仍保留测试验证
 - [ ] 4.7 实现过期lease Reconciler和优雅停止，覆盖Control/PostgreSQL在pending/summarized/deleting各阶段重启且最终单份完成
 
 > 第十批以两个独立runtime事务证明首个compaction run持锁时第二Worker通过`SKIP LOCKED`领取下一run，并验证数据库时间生成的有界lease、唯一随机fence和attempt；过期run经Reconciler reclaim后生成新fence，旧fence续租影响零行且run快照不变，完成4.1。
 > 第十一批在真实summarized run分别注入snapshot DELETE与deleted count UPDATE失败，均证明run、source和audit全量回滚；提交前终止backend同样回滚，明确commit后再终止backend则actual DELETE、持久计数和source守恒保持，完成4.4。
 > 第十二批以真实PostgreSQL18函数证明snapshot删除按稳定复合主键选择，拒绝5001上限、接受batch 1与5000并在空批次保持零删除；终态来源poll的晚到snapshot插入被既有不可变门禁拒绝，完成4.3。
+> 第十三批以真实PostgreSQL18恢复链证明summarized和deleting失败均从持久阶段续删并更换fence；首批删除后即使测试夹具篡改残余snapshot，固化summary、source checksum和summarized audit仍不变，完成4.5。
 
 ## 5. 最终日级 Rollup 与 Coverage 发布边界
 

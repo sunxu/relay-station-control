@@ -2094,6 +2094,319 @@ func TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert
 	}
 }
 
+func TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	targetDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -4)
+	firstPollID := uuid.MustParse("20000000-0000-4000-8000-000000000001")
+	secondPollID := uuid.MustParse("20000000-0000-4000-8000-000000000002")
+	firstSlot := targetDate.Add(12 * time.Hour)
+	secondSlot := firstSlot.Add(5 * time.Minute)
+
+	if _, err := database.owner.Exec(ctx, `UPDATE provider_inventory_policy_activations
+		SET effective_from=$1,created_at=$1 WHERE policy_version_id=$2`,
+		targetDate, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) VALUES($1,$2,'reconciliation','resume-delete-test',$2)`,
+		fixture.instanceID, targetDate); err != nil {
+		t.Fatal(err)
+	}
+	fixtureTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fixtureTx.Rollback(ctx) }()
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+		provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
+		created_at,first_started_at,last_started_at,finalized_at,observed_at,
+		transport_success,response_shape_valid,contract_valid,inventory_mode,
+		node_identity_complete,snapshot_complete,degraded,result,reason,
+		source_record_count,identifiable_record_count,unidentified_record_count,
+		unsupported_provider_count,out_of_scope_provider_count,node_version,node_commit
+	) VALUES
+		($1,$2,$3,$4,$5::timestamptz,$6,'finalized',1,2,299,
+		 $5::timestamptz+interval '1 second',$5::timestamptz+interval '2 seconds',
+		 $5::timestamptz+interval '2 seconds',$5::timestamptz+interval '4 seconds',
+		 $5::timestamptz+interval '3 seconds',true,true,true,'runtime',true,true,false,
+		 'success','none',1,1,0,0,0,'unknown','unknown'),
+		($7,$2,$3,$4,$8::timestamptz,$6,'finalized',1,2,299,
+		 $8::timestamptz+interval '1 second',$8::timestamptz+interval '2 seconds',
+		 $8::timestamptz+interval '2 seconds',$8::timestamptz+interval '4 seconds',
+		 $8::timestamptz+interval '3 seconds',true,true,true,'runtime',true,true,false,
+		 'success','none',1,1,0,0,0,'unknown','unknown')`, firstPollID, fixture.instanceID,
+		fixture.nodeType, fixture.contract, firstSlot, fixture.policyID, secondPollID, secondSlot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,
+		duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason,
+		promotion_applied,promotion_skipped_reason
+	) VALUES
+		($1,'openai',1,0,0,true,true,false,'complete',true,NULL),
+		($2,'openai',1,0,0,true,true,false,'complete',true,NULL)`,
+		firstPollID, secondPollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES
+		($1,$2,'openai','openai:resume@example.invalid','resume@example.invalid',
+		 'active',7,1,0,$3::timestamptz+interval '3 seconds'),
+		($4,$2,'openai','openai:resume@example.invalid','resume@example.invalid',
+		 'active',9,2,0,$5::timestamptz+interval '3 seconds')`,
+		firstPollID, fixture.instanceID, firstSlot, secondPollID, secondSlot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var runID, fence uuid.UUID
+	if err := database.owner.QueryRow(ctx, `INSERT INTO account_inventory_compaction_runs(
+		summary_date,instance_id,provider_policy_version
+	) VALUES($1,$2,$3) RETURNING compaction_run_id`, targetDate,
+		fixture.instanceID, fixture.policyID).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT fencing_token
+		FROM public.control_claim_account_inventory_compaction_v1($1,300)`, uuid.New()).
+		Scan(&fence); err != nil {
+		t.Fatal(err)
+	}
+	var checksumHex, summarizeStatus string
+	var sourceSnapshots, accountSegments, providerSegments int
+	if err := database.runtime.QueryRow(ctx, `WITH summarized AS (
+		SELECT public.control_summarize_account_inventory_compaction_v1($1,$2) AS value
+	) SELECT value->>'status',value->>'source_checksum_hex',
+		(value->>'source_snapshot_count')::integer,
+		(value->>'account_segment_count')::integer,
+		(value->>'provider_segment_count')::integer FROM summarized`, runID, fence).Scan(
+		&summarizeStatus, &checksumHex, &sourceSnapshots, &accountSegments, &providerSegments); err != nil {
+		t.Fatal(err)
+	}
+	if summarizeStatus != "summarized" || len(checksumHex) != 64 || sourceSnapshots != 2 ||
+		accountSegments != 1 || providerSegments != 1 {
+		t.Fatalf("summarize status=%s checksum=%q snapshots=%d account=%d provider=%d",
+			summarizeStatus, checksumHex, sourceSnapshots, accountSegments, providerSegments)
+	}
+	var originalAccountSummary, originalProviderSummary string
+	var originalSamples int
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(account_summary)::text,
+		to_jsonb(provider_summary)::text,account_summary.sample_count
+	FROM account_inventory_daily_summaries AS account_summary
+	JOIN account_inventory_daily_provider_summaries AS provider_summary
+	  ON provider_summary.compaction_run_id=account_summary.compaction_run_id
+	WHERE account_summary.compaction_run_id=$1`, runID).Scan(
+		&originalAccountSummary, &originalProviderSummary, &originalSamples); err != nil {
+		t.Fatal(err)
+	}
+	if originalSamples != 2 {
+		t.Fatalf("summarized sample count=%d want=2", originalSamples)
+	}
+
+	if _, err := database.runtime.Exec(ctx, `SELECT
+		public.control_fail_account_inventory_compaction_v1($1,$2,'database_unavailable')`,
+		runID, fence); err != nil {
+		t.Fatal(err)
+	}
+	var failedStatus, failedFrom string
+	if err := database.owner.QueryRow(ctx, `SELECT status,failed_from
+		FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, runID).
+		Scan(&failedStatus, &failedFrom); err != nil {
+		t.Fatal(err)
+	}
+	if failedStatus != "failed" || failedFrom != "summarized" {
+		t.Fatalf("summarized failure status=%s failed_from=%s", failedStatus, failedFrom)
+	}
+	var resumedStatus, resumedFailedFrom, resumedChecksum string
+	var resumedFence uuid.UUID
+	var resumedDeleted int
+	if err := database.runtime.QueryRow(ctx, `SELECT status,coalesce(failed_from,''),
+		fencing_token,encode(source_checksum,'hex'),deleted_snapshot_count
+	FROM public.control_claim_account_inventory_compaction_v1($1,300)`, uuid.New()).Scan(
+		&resumedStatus, &resumedFailedFrom, &resumedFence, &resumedChecksum, &resumedDeleted); err != nil {
+		t.Fatal(err)
+	}
+	if resumedStatus != "summarized" || resumedFailedFrom != "" || resumedFence == fence ||
+		resumedChecksum != checksumHex || resumedDeleted != 0 {
+		t.Fatalf("summarized resume status=%s failed_from=%q fence_changed=%t checksum_changed=%t deleted=%d",
+			resumedStatus, resumedFailedFrom, resumedFence != fence,
+			resumedChecksum != checksumHex, resumedDeleted)
+	}
+	fence = resumedFence
+	var deleteStatus string
+	var deleted, totalDeleted, remaining int
+	if err := database.runtime.QueryRow(ctx, `WITH deleted AS (
+		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1) AS value
+	) SELECT value->>'status',(value->>'deleted_count')::integer,
+		(value->>'total_deleted_count')::integer,(value->>'remaining_count')::integer
+	FROM deleted`, runID, fence).Scan(&deleteStatus, &deleted, &totalDeleted, &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if deleteStatus != "deleting" || deleted != 1 || totalDeleted != 1 || remaining != 1 {
+		t.Fatalf("partial delete status=%s deleted=%d total=%d remaining=%d",
+			deleteStatus, deleted, totalDeleted, remaining)
+	}
+	var firstDeletingAt time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT deleting_at
+		FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, runID).
+		Scan(&firstDeletingAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.runtime.Exec(ctx, `SELECT
+		public.control_fail_account_inventory_compaction_v1($1,$2,'database_unavailable')`,
+		runID, fence); err != nil {
+		t.Fatal(err)
+	}
+	var failedDeletingAt time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT status,failed_from,deleting_at
+		FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, runID).
+		Scan(&failedStatus, &failedFrom, &failedDeletingAt); err != nil {
+		t.Fatal(err)
+	}
+	if failedStatus != "failed" || failedFrom != "deleting" || !failedDeletingAt.Equal(firstDeletingAt) {
+		t.Fatalf("deleting failure status=%s failed_from=%s", failedStatus, failedFrom)
+	}
+
+	tamperTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tamperTx.Rollback(ctx) }()
+	if _, err := tamperTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_immutable`); err != nil {
+		t.Fatal(err)
+	}
+	result, err := tamperTx.Exec(ctx, `UPDATE account_inventory_snapshot_items
+		SET basic_status='disabled',success_count=999,failed_count=999
+		WHERE poll_run_id=$1 AND instance_id=$2
+		  AND account_key='openai:resume@example.invalid'`, secondPollID, fixture.instanceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RowsAffected() != 1 {
+		t.Fatalf("tampered residual snapshots=%d want=1", result.RowsAffected())
+	}
+	if _, err := tamperTx.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_immutable`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tamperTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var deletingFence uuid.UUID
+	var resumedDeletingAt time.Time
+	if err := database.runtime.QueryRow(ctx, `SELECT status,coalesce(failed_from,''),
+		fencing_token,encode(source_checksum,'hex'),deleted_snapshot_count,deleting_at
+	FROM public.control_claim_account_inventory_compaction_v1($1,300)`, uuid.New()).Scan(
+		&resumedStatus, &resumedFailedFrom, &deletingFence, &resumedChecksum, &resumedDeleted,
+		&resumedDeletingAt); err != nil {
+		t.Fatal(err)
+	}
+	if resumedStatus != "deleting" || resumedFailedFrom != "" || deletingFence == fence ||
+		resumedChecksum != checksumHex || resumedDeleted != 1 || !resumedDeletingAt.Equal(firstDeletingAt) {
+		t.Fatalf("deleting resume status=%s failed_from=%q fence_changed=%t checksum_changed=%t deleted=%d",
+			resumedStatus, resumedFailedFrom, deletingFence != fence,
+			resumedChecksum != checksumHex, resumedDeleted)
+	}
+	_, err = database.runtime.Exec(ctx, `SELECT
+		public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1)`, runID, fence)
+	if err == nil {
+		t.Fatal("stale deleting fence resumed snapshot deletion")
+	}
+	requireHistorySQLState(t, err, "P0002")
+	fence = deletingFence
+	var persistedAccountSummary, persistedProviderSummary string
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(account_summary)::text,
+		to_jsonb(provider_summary)::text
+	FROM account_inventory_daily_summaries AS account_summary
+	JOIN account_inventory_daily_provider_summaries AS provider_summary
+	  ON provider_summary.compaction_run_id=account_summary.compaction_run_id
+	WHERE account_summary.compaction_run_id=$1`, runID).Scan(
+		&persistedAccountSummary, &persistedProviderSummary); err != nil {
+		t.Fatal(err)
+	}
+	if persistedAccountSummary != originalAccountSummary || persistedProviderSummary != originalProviderSummary {
+		t.Fatal("resumed deleting reaggregated immutable summaries")
+	}
+	if err := database.runtime.QueryRow(ctx, `WITH deleted AS (
+		SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,5000) AS value
+	) SELECT value->>'status',(value->>'deleted_count')::integer,
+		(value->>'total_deleted_count')::integer,(value->>'remaining_count')::integer
+	FROM deleted`, runID, fence).Scan(&deleteStatus, &deleted, &totalDeleted, &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if deleteStatus != "deleting" || deleted != 1 || totalDeleted != 2 || remaining != 0 {
+		t.Fatalf("resumed delete status=%s deleted=%d total=%d remaining=%d",
+			deleteStatus, deleted, totalDeleted, remaining)
+	}
+	var completeStatus string
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		public.control_complete_account_inventory_compaction_v1(
+			$1,$2,decode($3,'hex'))->>'status'`, runID, fence, checksumHex).
+		Scan(&completeStatus); err != nil {
+		t.Fatal(err)
+	}
+	if completeStatus != "completed" {
+		t.Fatalf("completion status=%s", completeStatus)
+	}
+	var finalStatus, finalChecksum, finalAccountSummary, finalProviderSummary string
+	var sourceCount, deletedCount, remainingSnapshots, summarizedAudits int
+	if err := database.owner.QueryRow(ctx, `SELECT run.status,encode(run.source_checksum,'hex'),
+		run.source_snapshot_count,run.deleted_snapshot_count,
+		(SELECT count(*) FROM account_inventory_snapshot_items AS snapshot
+		 JOIN account_inventory_poll_runs AS poll ON poll.poll_run_id=snapshot.poll_run_id
+		 WHERE poll.instance_id=run.instance_id
+		   AND poll.provider_policy_version=run.provider_policy_version
+		   AND (poll.scheduled_at AT TIME ZONE 'UTC')::date=run.summary_date),
+		to_jsonb(account_summary)::text,to_jsonb(provider_summary)::text,
+		(SELECT count(*) FROM audit_logs
+		 WHERE action='account_inventory_history.summarized'
+		   AND details->>'instance'=run.instance_id::text
+		   AND details->>'summary_date'=run.summary_date::text)
+	FROM account_inventory_compaction_runs AS run
+	JOIN account_inventory_daily_summaries AS account_summary
+	  ON account_summary.compaction_run_id=run.compaction_run_id
+	JOIN account_inventory_daily_provider_summaries AS provider_summary
+	  ON provider_summary.compaction_run_id=run.compaction_run_id
+	WHERE run.compaction_run_id=$1`, runID).Scan(
+		&finalStatus, &finalChecksum, &sourceCount, &deletedCount, &remainingSnapshots,
+		&finalAccountSummary, &finalProviderSummary, &summarizedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if finalStatus != "completed" || finalChecksum != checksumHex || sourceCount != 2 ||
+		deletedCount != 2 || remainingSnapshots != 0 || summarizedAudits != 1 ||
+		finalAccountSummary != originalAccountSummary || finalProviderSummary != originalProviderSummary {
+		t.Fatalf("final status=%s checksum_changed=%t source=%d deleted=%d remaining=%d audits=%d summaries_changed=%t",
+			finalStatus, finalChecksum != checksumHex, sourceCount, deletedCount,
+			remainingSnapshots, summarizedAudits,
+			finalAccountSummary != originalAccountSummary || finalProviderSummary != originalProviderSummary)
+	}
+}
+
 func TestAccountInventoryDailyRollupNoProviderAtomicFinalize(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
