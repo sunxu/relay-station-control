@@ -232,6 +232,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"legacy_retention_bootstrap=covered",
 		"zero_poll_lineage_bootstrap=covered",
 		"retired_day_no_resurrection=covered",
+		"current_fields_after_retention=covered",
+		"current_query_after_retention=covered",
 		"metrics_backlog_drain=covered",
 	} {
 		if !strings.Contains(postgres, required) {

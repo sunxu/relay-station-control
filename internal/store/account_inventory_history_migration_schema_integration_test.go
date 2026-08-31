@@ -3290,11 +3290,22 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 		t.Fatal(err)
 	}
 
-	var beforeQuery string
+	var beforeQuery, beforeCurrentState string
 	if err := database.runtime.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(row_value)
 		ORDER BY row_value.account_key),'[]'::jsonb)::text
 		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10) AS row_value`,
 		fixture.instanceID).Scan(&beforeQuery); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT jsonb_build_object(
+		'provider',to_jsonb(provider_state)-'current_poll_run_id',
+		'account',to_jsonb(account)-'current_poll_run_id')::text
+		FROM account_inventory_provider_states AS provider_state
+		JOIN account_inventory AS account
+		  ON account.instance_id=provider_state.instance_id
+		 AND account.provider=provider_state.provider
+		WHERE provider_state.instance_id=$1 AND provider_state.provider='openai'`, fixture.instanceID).
+		Scan(&beforeCurrentState); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3356,7 +3367,7 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 			t.Fatalf("poll retention batch=%d processed=%d deleted=%d", batch, processed, deleted)
 		}
 	}
-	var afterQuery string
+	var afterQuery, afterCurrentState string
 	if err := database.runtime.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(row_value)
 		ORDER BY row_value.account_key),'[]'::jsonb)::text
 		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10) AS row_value`,
@@ -3365,6 +3376,21 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	}
 	if afterQuery != beforeQuery {
 		t.Fatalf("current query changed across poll retention\nbefore=%s\nafter=%s", beforeQuery, afterQuery)
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT jsonb_build_object(
+		'provider',to_jsonb(provider_state)-'current_poll_run_id',
+		'account',to_jsonb(account)-'current_poll_run_id')::text
+		FROM account_inventory_provider_states AS provider_state
+		JOIN account_inventory AS account
+		  ON account.instance_id=provider_state.instance_id
+		 AND account.provider=provider_state.provider
+		WHERE provider_state.instance_id=$1 AND provider_state.provider='openai'`, fixture.instanceID).
+		Scan(&afterCurrentState); err != nil {
+		t.Fatal(err)
+	}
+	if afterCurrentState != beforeCurrentState {
+		t.Fatalf("current rows changed beyond source FK clearing\nbefore=%s\nafter=%s",
+			beforeCurrentState, afterCurrentState)
 	}
 	var mismatchScheduled time.Time
 	if err := database.owner.QueryRow(ctx, `SELECT date_bin(
