@@ -342,7 +342,14 @@ seed_eligible_source() {
 }
 
 seed_claimed_for_restart() {
-  restart_fixture_summary_date="$fixture_summary_date"
+  restart_fixture_summary_date="$(compose exec -T postgres psql --username relay_control_migrator \
+    --dbname relay_station_control --tuples-only --no-align --command \
+    "SELECT (current_date - 6)::text" 2>/dev/null)" \
+    || fixed_failure 'restart_fixture_date_unavailable'
+  case "$restart_fixture_summary_date" in
+    ????-??-??) ;;
+    *) fixed_failure 'restart_fixture_date_invalid' ;;
+  esac
   if ! CONTROL_HISTORY_PROCESS_OWNER_DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
     CONTROL_HISTORY_PROCESS_RUNTIME_DATABASE_URL="$CONTROL_HISTORY_PROCESS_RUNTIME_URL" \
     CONTROL_HISTORY_PROCESS_RESTART_INSTANCE_ID="$restart_fixture_instance_id" \
@@ -352,9 +359,9 @@ seed_claimed_for_restart() {
       GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessSeedClaimedForRestart$' -count=1 \
       >"$runtime_directory/seed-claimed-for-restart.log" 2>&1; then
-    if grep -Fq 'history process restart planner did not create target' \
+    if grep -Fq 'history process restart planner did not create phase matrix' \
       "$runtime_directory/seed-claimed-for-restart.log"; then
-      fixed_failure 'restart_claim_planner_empty'
+      fixed_failure 'restart_claim_planner_matrix_invalid'
     fi
     if grep -Fq 'history process restart planner failed' \
       "$runtime_directory/seed-claimed-for-restart.log"; then
@@ -376,6 +383,10 @@ seed_claimed_for_restart() {
       "$runtime_directory/seed-claimed-for-restart.log"; then
       fixed_failure 'restart_claim_verification_failed'
     fi
+    if grep -Fq 'history process restart phase matrix verification failed' \
+      "$runtime_directory/seed-claimed-for-restart.log"; then
+      fixed_failure 'restart_claim_phase_matrix_invalid'
+    fi
     fixed_failure 'restart_claim_seed_failed'
   fi
 }
@@ -384,14 +395,19 @@ assert_restart_claim_active() {
   local active
   active="$(compose exec -T postgres psql --username relay_control_migrator \
     --dbname relay_station_control --tuples-only --no-align --command \
-    "SELECT count(*) FROM account_inventory_compaction_runs
-      WHERE summary_date='${restart_fixture_summary_date}'::date
-        AND instance_id='${restart_fixture_instance_id}'::uuid
-        AND status='pending' AND claim_owner IS NOT NULL
-        AND fencing_token IS NOT NULL
-        AND lease_expires_at >= clock_timestamp() + interval '5 seconds'" 2>/dev/null)" \
+    "SELECT (count(*)=3
+        AND count(DISTINCT summary_date)=3
+        AND count(*) FILTER (WHERE status='pending')=1
+        AND count(*) FILTER (WHERE status='summarized')=1
+        AND count(*) FILTER (WHERE status='deleting')=1
+        AND bool_and(claim_owner IS NOT NULL AND fencing_token IS NOT NULL
+          AND lease_expires_at >= clock_timestamp() + interval '5 seconds'))::integer
+      FROM account_inventory_compaction_runs
+      WHERE summary_date BETWEEN '${restart_fixture_summary_date}'::date
+            AND '${restart_fixture_summary_date}'::date+2
+        AND instance_id='${restart_fixture_instance_id}'::uuid" 2>/dev/null)" \
     || fixed_failure 'restart_claim_active_check_failed'
-  [ "$active" = '1' ] || fixed_failure 'restart_claim_not_active_before_outage'
+  [ "$active" = '1' ] || fixed_failure 'restart_phase_matrix_not_active_before_outage'
 }
 
 start_enabled_control() {
@@ -425,17 +441,20 @@ verify_enabled_convergence() {
   local provider="${3:-$fixture_provider}"
   local probe_log="${4:-$runtime_directory/enabled-convergence-probe.log}"
   local failure_prefix="${5:-enabled_convergence}"
+  local restart_phase_matrix="${6:-false}"
   if ! CONTROL_HISTORY_PROCESS_URL="http://127.0.0.1:${control_port}" \
     CONTROL_HISTORY_PROCESS_OWNER_DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
     CONTROL_HISTORY_PROCESS_INSTANCE_ID="$instance_id" \
     CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$summary_date" \
     CONTROL_HISTORY_PROCESS_PROVIDER="$provider" \
+    CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX="$restart_phase_matrix" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource$' -count=1 \
       >"$probe_log" 2>&1; then
     for class in database_unavailable compaction_failed compaction_deleting compaction_summarized \
-      compaction_pending compaction_missing rollup_failed rollup_pending rollup_missing metrics_missing
+      compaction_pending compaction_missing rollup_failed rollup_pending rollup_missing metrics_missing \
+      restart_phase_matrix
     do
       if grep -Fq "history process enabled convergence timed out class=${class}" \
         "$probe_log"; then
@@ -463,7 +482,7 @@ verify_enabled_convergence() {
 }
 
 stop_postgres_and_wait_for_lease() {
-  local checks=105
+  local checks=205
   if ! compose stop --timeout 1 postgres >"$runtime_directory/postgres-stop.log" 2>&1; then
     fixed_failure 'postgres_stop_failed'
   fi
@@ -567,15 +586,19 @@ main() {
   start_enabled_control
   wait_for_history_ready
   assert_restart_claim_active
+  stop_control
+  start_enabled_control
+  wait_for_history_ready
+  assert_restart_claim_active
   stop_postgres_and_wait_for_lease
   restart_postgres
   verify_enabled_convergence "$restart_fixture_instance_id" "$restart_fixture_summary_date" \
     "$restart_fixture_provider" "$runtime_directory/restart-convergence-probe.log" \
-    'postgres_restart_convergence'
+    'postgres_restart_convergence' 'true'
   stop_control
   verify_redacted_log
   strict_cleanup
-  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered postgres_restart_recovery=covered sigterm_exit=bounded log_redaction=covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
+  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered sigterm_exit=bounded log_redaction=covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"

@@ -34,6 +34,7 @@ const (
 	restartInstanceEnvironment = "CONTROL_HISTORY_PROCESS_RESTART_INSTANCE_ID"
 	restartDateEnvironment     = "CONTROL_HISTORY_PROCESS_RESTART_SUMMARY_DATE"
 	restartProviderEnvironment = "CONTROL_HISTORY_PROCESS_RESTART_PROVIDER"
+	restartMatrixEnvironment   = "CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX"
 	forbiddenMarkerEnvironment = "CONTROL_HISTORY_PROCESS_FORBIDDEN_MARKER"
 
 	processProbeTimeout = 35 * time.Second
@@ -175,13 +176,22 @@ func TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource(t *testing
 	processURL := requireProcessURL(t)
 	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
 	fixture := requireProcessFixture(t)
+	restartMatrix := os.Getenv(restartMatrixEnvironment)
+	if restartMatrix != "" && restartMatrix != "false" && restartMatrix != "true" {
+		t.Fatal("history process restart phase matrix configuration invalid")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
 	defer cancel()
 
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		converged, sourceSnapshots := historyFixtureConverged(t, ctx, ownerPool, fixture)
+		converged, sourceSnapshots := false, int64(0)
+		if restartMatrix == "true" {
+			converged = historyRestartPhaseMatrixConverged(t, ctx, ownerPool, fixture)
+		} else {
+			converged, sourceSnapshots = historyFixtureConverged(t, ctx, ownerPool, fixture)
+		}
 		if converged {
 			families, _ := readProcessMetrics(t, ctx, processURL)
 			if enabled, exists := metricValue(families,
@@ -191,6 +201,9 @@ func TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource(t *testing
 		}
 		select {
 		case <-ctx.Done():
+			if restartMatrix == "true" {
+				t.Fatal("history process enabled convergence timed out class=restart_phase_matrix")
+			}
 			t.Fatalf("history process enabled convergence timed out class=%s",
 				historyFixtureStateClass(ownerPool, fixture))
 		case <-ticker.C:
@@ -288,10 +301,9 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	}
 }
 
-// TestAccountInventoryHistoryProcessSeedClaimedForRestart leaves one real
-// compaction claim with a bounded ten-second lease. The acceptance shell
-// starts Control after this probe exits, so the process must reconcile the
-// expired claim and finish the same zero-poll history segment.
+// TestAccountInventoryHistoryProcessSeedClaimedForRestart leaves three real
+// compaction claims at pending, summarized, and deleting with bounded leases.
+// The acceptance shell restarts Control and PostgreSQL before they converge.
 func TestAccountInventoryHistoryProcessSeedClaimedForRestart(t *testing.T) {
 	if !processRestartSeedConfigured() {
 		t.Skip("history process restart seed acceptance is not enabled")
@@ -309,51 +321,67 @@ func TestAccountInventoryHistoryProcessSeedClaimedForRestart(t *testing.T) {
 			->>'compaction_runs_created')::integer`).Scan(&planned); err != nil {
 		t.Fatal("history process restart planner failed")
 	}
-	if planned < 1 {
-		t.Fatal("history process restart planner did not create target")
+	if planned != 3 {
+		t.Fatal("history process restart planner did not create phase matrix")
 	}
 
-	workerToken := uuid.New()
-	var claimedRunID, claimedInstanceID, claimedPolicyID, fencingToken uuid.UUID
-	var summaryDate time.Time
-	var status, claimOwner string
-	var leaseExpiresAt time.Time
-	if err := runtimePool.QueryRow(ctx, `SELECT
-		compaction_run_id,instance_id,provider_policy_version,summary_date,
-		status,claim_owner,fencing_token,lease_expires_at
-		FROM public.control_claim_account_inventory_compaction_v1($1,10)`, workerToken).Scan(
-		&claimedRunID, &claimedInstanceID, &claimedPolicyID, &summaryDate,
-		&status, &claimOwner, &fencingToken, &leaseExpiresAt,
-	); err != nil {
-		t.Fatal("history process restart claim failed")
-	}
-	if claimedRunID == uuid.Nil || claimedInstanceID != fixture.instanceID ||
-		claimedPolicyID != seeded.policyID || summaryDate.Format("2006-01-02") != fixture.summaryDate ||
-		status != "pending" || claimOwner != workerToken.String() || fencingToken == uuid.Nil ||
-		leaseExpiresAt.IsZero() {
-		t.Fatal("history process restart claim target invalid")
+	for index, phase := range []string{"pending", "summarized", "deleting"} {
+		workerToken := uuid.New()
+		var runID, claimedInstanceID, claimedPolicyID, fencingToken uuid.UUID
+		var summaryDate, leaseExpiresAt time.Time
+		var status, claimOwner string
+		if err := runtimePool.QueryRow(ctx, `SELECT
+			compaction_run_id,instance_id,provider_policy_version,summary_date,
+			status,claim_owner,fencing_token,lease_expires_at
+			FROM public.control_claim_account_inventory_compaction_v1($1,20)`, workerToken).Scan(
+			&runID, &claimedInstanceID, &claimedPolicyID, &summaryDate,
+			&status, &claimOwner, &fencingToken, &leaseExpiresAt,
+		); err != nil {
+			t.Fatal("history process restart claim failed")
+		}
+		if runID == uuid.Nil || claimedInstanceID != fixture.instanceID ||
+			claimedPolicyID != seeded.policyID || !summaryDate.Equal(seeded.dayStart.AddDate(0, 0, index)) ||
+			status != "pending" || claimOwner != workerToken.String() || fencingToken == uuid.Nil ||
+			leaseExpiresAt.IsZero() {
+			t.Fatal("history process restart claim target invalid")
+		}
+		if phase != "pending" {
+			if err := runtimePool.QueryRow(ctx, `SELECT
+				public.control_summarize_account_inventory_compaction_v1($1,$2)->>'status'`,
+				runID, fencingToken).Scan(&status); err != nil || status != "summarized" {
+				t.Fatal("history process restart summarize failed")
+			}
+		}
+		if phase == "deleting" {
+			if err := runtimePool.QueryRow(ctx, `SELECT
+				public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1)->>'status'`,
+				runID, fencingToken).Scan(&status); err != nil || status != "deleting" {
+				t.Fatal("history process restart delete failed")
+			}
+		}
 	}
 
-	var summaries, providerSummaries, rollups int
-	var leaseActive, leaseBounded bool
-	if err := ownerPool.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM public.account_inventory_daily_summaries
-		 WHERE compaction_run_id=$1),
-		(SELECT count(*) FROM public.account_inventory_daily_provider_summaries
-		 WHERE compaction_run_id=$1),
-		(SELECT count(*) FROM public.account_inventory_daily_rollup_runs
-		 WHERE summary_date=$2::date AND instance_id=$3),
-		(SELECT lease_expires_at > clock_timestamp()
-		 FROM public.account_inventory_compaction_runs WHERE compaction_run_id=$1),
-		(SELECT lease_expires_at <= clock_timestamp() + interval '11 seconds'
-		 FROM public.account_inventory_compaction_runs WHERE compaction_run_id=$1)`, claimedRunID,
-		fixture.summaryDate, fixture.instanceID).Scan(
-		&summaries, &providerSummaries, &rollups, &leaseActive, &leaseBounded,
-	); err != nil {
-		t.Fatal("history process restart claim verification failed")
-	}
-	if summaries != 0 || providerSummaries != 0 || rollups != 0 || !leaseActive || !leaseBounded {
-		t.Fatal("history process restart claim produced history output")
+	var validMatrix bool
+	if err := ownerPool.QueryRow(ctx, `WITH target AS (
+		SELECT * FROM public.account_inventory_compaction_runs
+		WHERE instance_id=$2 AND summary_date BETWEEN $1::date AND $1::date+2
+	) SELECT
+		(SELECT count(*)=3 AND count(DISTINCT summary_date)=3
+		 AND count(*) FILTER (WHERE status='pending')=1
+		 AND count(*) FILTER (WHERE status='summarized')=1
+		 AND count(*) FILTER (WHERE status='deleting')=1
+		 AND bool_and(claim_owner IS NOT NULL AND fencing_token IS NOT NULL
+			AND lease_expires_at > clock_timestamp()
+			AND lease_expires_at <= clock_timestamp()+interval '21 seconds'
+			AND attempt_count=1) FROM target)
+		AND (SELECT count(*)=2 FROM public.account_inventory_daily_provider_summaries AS summary
+			JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_summaries AS summary
+			JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_rollup_runs
+			WHERE instance_id=$2 AND summary_date BETWEEN $1::date AND $1::date+2)`,
+		seeded.dayStart, fixture.instanceID).Scan(&validMatrix); err != nil || !validMatrix {
+		t.Fatal("history process restart phase matrix verification failed")
 	}
 }
 
@@ -677,6 +705,54 @@ func historyFixtureConverged(
 	return completedCompactions > 0 && completedRollups > 0 && remainingSnapshots == 0 &&
 			sourcePolls == 0 && sourceSnapshots == 0,
 		sourceSnapshots
+}
+
+func historyRestartPhaseMatrixConverged(
+	t *testing.T, ctx context.Context, pool *pgxpool.Pool, fixture processFixture,
+) bool {
+	t.Helper()
+	var converged bool
+	err := pool.QueryRow(ctx, `WITH target AS (
+		SELECT * FROM public.account_inventory_compaction_runs
+		WHERE instance_id=$2::uuid AND summary_date BETWEEN $1::date AND $1::date+2
+	) SELECT
+		(SELECT count(*)=3 AND count(DISTINCT summary_date)=3
+		 AND count(*) FILTER (WHERE status='completed' AND attempt_count=2
+			AND source_poll_count=0 AND source_snapshot_count=0
+			AND deleted_snapshot_count=0 AND claim_owner IS NULL
+			AND lease_expires_at IS NULL AND fencing_token IS NULL)=3 FROM target)
+		AND (SELECT count(*)=3 FROM public.account_inventory_daily_provider_summaries AS summary
+			JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_summaries AS summary
+			JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+		AND (SELECT count(*)=3 AND count(DISTINCT summary_date)=3
+			FROM public.account_inventory_daily_rollup_runs
+			WHERE instance_id=$2 AND summary_date BETWEEN $1::date AND $1::date+2
+			  AND status='completed')
+		AND (SELECT count(*)=3 FROM public.account_inventory_daily_provider_rollups
+			WHERE instance_id=$2 AND summary_date BETWEEN $1::date AND $1::date+2)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_account_rollups
+			WHERE instance_id=$2 AND summary_date BETWEEN $1::date AND $1::date+2)
+		AND (SELECT count(*)=3 FROM public.audit_logs
+			WHERE category='account_inventory_history'
+			  AND action='account_inventory_history.summarized'
+			  AND details->>'instance'=$2::uuid::text
+			  AND (details->>'summary_date')::date BETWEEN $1::date AND $1::date+2)
+		AND (SELECT count(*)=3 FROM public.audit_logs
+			WHERE category='account_inventory_history'
+			  AND action='account_inventory_history.completed'
+			  AND details->>'phase'='complete' AND details->>'instance'=$2::uuid::text
+			  AND (details->>'summary_date')::date BETWEEN $1::date AND $1::date+2)
+		AND (SELECT count(*)=3 FROM public.audit_logs
+			WHERE category='account_inventory_history'
+			  AND action='account_inventory_history.completed'
+			  AND details->>'phase'='rollup_complete' AND details->>'instance'=$2::uuid::text
+			  AND (details->>'summary_date')::date BETWEEN $1::date AND $1::date+2)`,
+		fixture.summaryDate, fixture.instanceID).Scan(&converged)
+	if err != nil {
+		t.Fatalf("history process convergence database read failed class=%s", processDatabaseErrorClass(err))
+	}
+	return converged
 }
 
 func enabledFixtureMetricsVisible(

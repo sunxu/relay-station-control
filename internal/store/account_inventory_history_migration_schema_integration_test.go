@@ -3981,6 +3981,229 @@ func TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing(t *testing.T)
 	}
 }
 
+func TestAccountInventoryHistoryExpiredLeaseRequiresReconcileAcrossCompactionPhases(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	firstDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -6)
+	if _, err := database.owner.Exec(ctx, `UPDATE provider_inventory_policy_activations
+		SET effective_from=$1,created_at=$1 WHERE policy_version_id=$2`,
+		firstDate, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) VALUES($1,$2,'reconciliation','integration-test',$2)`,
+		fixture.instanceID, firstDate); err != nil {
+		t.Fatal(err)
+	}
+
+	type phaseRun struct {
+		phase       string
+		date        time.Time
+		runID       uuid.UUID
+		oldFence    uuid.UUID
+		checksumHex string
+	}
+	phases := []phaseRun{
+		{phase: "pending", date: firstDate, runID: uuid.New()},
+		{phase: "summarized", date: firstDate.AddDate(0, 0, 1), runID: uuid.New()},
+		{phase: "deleting", date: firstDate.AddDate(0, 0, 2), runID: uuid.New()},
+	}
+	for _, phase := range phases {
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+			compaction_run_id,summary_date,instance_id,provider_policy_version
+		) VALUES($1,$2,$3,$4)`, phase.runID, phase.date,
+			fixture.instanceID, fixture.policyID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index := range phases {
+		var claimedRunID uuid.UUID
+		var status string
+		var attempt int
+		if err := database.runtime.QueryRow(ctx, `SELECT
+			compaction_run_id,status,fencing_token,attempt_count
+			FROM public.control_claim_account_inventory_compaction_v1($1,5)`, uuid.New()).Scan(
+			&claimedRunID, &status, &phases[index].oldFence, &attempt); err != nil {
+			t.Fatal(err)
+		}
+		if claimedRunID != phases[index].runID || status != "pending" ||
+			phases[index].oldFence == uuid.Nil || attempt != 1 {
+			t.Fatalf("initial %s claim run=%s status=%s fence=%s attempt=%d",
+				phases[index].phase, claimedRunID, status, phases[index].oldFence, attempt)
+		}
+		if phases[index].phase == "pending" {
+			continue
+		}
+		if err := database.runtime.QueryRow(ctx, `SELECT
+			public.control_summarize_account_inventory_compaction_v1($1,$2)->>'source_checksum_hex'`,
+			phases[index].runID, phases[index].oldFence).Scan(&phases[index].checksumHex); err != nil {
+			t.Fatal(err)
+		}
+		if len(phases[index].checksumHex) != 64 {
+			t.Fatalf("%s checksum length=%d", phases[index].phase,
+				len(phases[index].checksumHex))
+		}
+		if phases[index].phase == "deleting" {
+			var deleteStatus string
+			var remaining int
+			if err := database.runtime.QueryRow(ctx, `WITH deleted AS (
+				SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1) AS value
+			) SELECT value->>'status',(value->>'remaining_count')::integer FROM deleted`,
+				phases[index].runID, phases[index].oldFence).Scan(
+				&deleteStatus, &remaining); err != nil {
+				t.Fatal(err)
+			}
+			if deleteStatus != "deleting" || remaining != 0 {
+				t.Fatalf("initial deleting status=%s remaining=%d", deleteStatus, remaining)
+			}
+		}
+	}
+
+	expiryContext, cancelExpiry := context.WithTimeout(ctx, 8*time.Second)
+	defer cancelExpiry()
+	for {
+		var expired int
+		if err := database.owner.QueryRow(expiryContext, `SELECT count(*)
+			FROM account_inventory_compaction_runs
+			WHERE compaction_run_id=ANY($1::uuid[])
+			  AND lease_expires_at<=clock_timestamp()`,
+			[]uuid.UUID{phases[0].runID, phases[1].runID, phases[2].runID}).Scan(&expired); err != nil {
+			t.Fatal(err)
+		}
+		if expired == len(phases) {
+			break
+		}
+		select {
+		case <-expiryContext.Done():
+			t.Fatal("phase leases did not expire on database time")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	var claimedWithoutReconcile int
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_claim_account_inventory_compaction_v1($1,30)`, uuid.New()).Scan(
+		&claimedWithoutReconcile); err != nil || claimedWithoutReconcile != 0 {
+		t.Fatalf("expired active run bypassed reconciler: rows=%d err=%v",
+			claimedWithoutReconcile, err)
+	}
+	var reconciled int
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_reconcile_account_inventory_compactions_v1(10)->>'failed_count')::integer`).Scan(
+		&reconciled); err != nil || reconciled != len(phases) {
+		t.Fatalf("reconciled=%d want=%d err=%v", reconciled, len(phases), err)
+	}
+	for _, phase := range phases {
+		var status, failedFrom, reason string
+		var owner *string
+		var lease *time.Time
+		var fence *uuid.UUID
+		var failedAudits int
+		if err := database.owner.QueryRow(ctx, `SELECT run.status,run.failed_from,
+			run.failure_reason,run.claim_owner,run.lease_expires_at,run.fencing_token,
+			(SELECT count(*) FROM audit_logs
+			 WHERE action='account_inventory_history.failed'
+			   AND details->>'instance'=run.instance_id::text
+			   AND details->>'summary_date'=run.summary_date::text
+			   AND details->>'phase'='fail_' || run.failed_from)
+			FROM account_inventory_compaction_runs AS run WHERE run.compaction_run_id=$1`,
+			phase.runID).Scan(&status, &failedFrom, &reason, &owner, &lease,
+			&fence, &failedAudits); err != nil {
+			t.Fatal(err)
+		}
+		if status != "failed" || failedFrom != phase.phase || reason != "lease_expired" ||
+			owner != nil || lease != nil || fence != nil || failedAudits != 1 {
+			t.Fatalf("reconciled %s status=%s failed_from=%s reason=%s owner=%v lease=%v fence=%v audits=%d",
+				phase.phase, status, failedFrom, reason, owner, lease, fence, failedAudits)
+		}
+	}
+
+	for index := range phases {
+		phase := &phases[index]
+		var claimedRunID, newFence uuid.UUID
+		var status, failedFrom, checksumHex string
+		var attempt int
+		if err := database.runtime.QueryRow(ctx, `SELECT compaction_run_id,status,
+			coalesce(failed_from,''),fencing_token,attempt_count,
+			coalesce(encode(source_checksum,'hex'),'')
+			FROM public.control_claim_account_inventory_compaction_v1($1,30)`, uuid.New()).Scan(
+			&claimedRunID, &status, &failedFrom, &newFence, &attempt, &checksumHex); err != nil {
+			t.Fatal(err)
+		}
+		if claimedRunID != phase.runID || status != phase.phase || failedFrom != "" ||
+			newFence == uuid.Nil || newFence == phase.oldFence || attempt != 2 ||
+			(phase.phase != "pending" && checksumHex != phase.checksumHex) {
+			t.Fatalf("reclaim %s run=%s status=%s failed_from=%q fence_changed=%t attempt=%d checksum_changed=%t",
+				phase.phase, claimedRunID, status, failedFrom, newFence != phase.oldFence,
+				attempt, phase.phase != "pending" && checksumHex != phase.checksumHex)
+		}
+		var staleRenewed int
+		if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+			FROM public.control_renew_account_inventory_compaction_v1($1,$2,30)`,
+			phase.runID, phase.oldFence).Scan(&staleRenewed); err != nil || staleRenewed != 0 {
+			t.Fatalf("old %s fence renewed rows=%d err=%v", phase.phase, staleRenewed, err)
+		}
+		if phase.phase == "pending" {
+			if err := database.runtime.QueryRow(ctx, `SELECT
+				public.control_summarize_account_inventory_compaction_v1($1,$2)->>'source_checksum_hex'`,
+				phase.runID, newFence).Scan(&phase.checksumHex); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var deleteStatus string
+		var remaining int
+		if err := database.runtime.QueryRow(ctx, `WITH deleted AS (
+			SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1) AS value
+		) SELECT value->>'status',(value->>'remaining_count')::integer FROM deleted`,
+			phase.runID, newFence).Scan(&deleteStatus, &remaining); err != nil {
+			t.Fatal(err)
+		}
+		if deleteStatus != "deleting" || remaining != 0 {
+			t.Fatalf("resumed %s delete status=%s remaining=%d",
+				phase.phase, deleteStatus, remaining)
+		}
+		var completeStatus string
+		var idempotent bool
+		if err := database.runtime.QueryRow(ctx, `WITH completed AS (
+			SELECT public.control_complete_account_inventory_compaction_v1(
+				$1,$2,decode($3,'hex')) AS value
+		) SELECT value->>'status',(value->>'idempotent')::boolean FROM completed`,
+			phase.runID, newFence, phase.checksumHex).Scan(
+			&completeStatus, &idempotent); err != nil {
+			t.Fatal(err)
+		}
+		if completeStatus != "completed" || idempotent {
+			t.Fatalf("resumed %s complete status=%s idempotent=%t",
+				phase.phase, completeStatus, idempotent)
+		}
+		var exact bool
+		if err := database.owner.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM account_inventory_compaction_runs
+			 WHERE compaction_run_id=$1)=1
+			AND run.status='completed' AND run.attempt_count=2
+			AND run.source_snapshot_count=0 AND run.deleted_snapshot_count=0
+			AND encode(run.source_checksum,'hex')=$2
+			AND (SELECT count(*) FROM account_inventory_daily_summaries
+			     WHERE compaction_run_id=$1)=0
+			AND (SELECT count(*) FROM account_inventory_daily_provider_summaries
+			     WHERE compaction_run_id=$1)=1
+			AND (SELECT count(*) FROM audit_logs
+			     WHERE action='account_inventory_history.summarized'
+			       AND details->>'instance'=run.instance_id::text
+			       AND details->>'summary_date'=run.summary_date::text)=1
+			AND (SELECT count(*) FROM audit_logs
+			     WHERE action='account_inventory_history.completed'
+			       AND details->>'instance'=run.instance_id::text
+			       AND details->>'summary_date'=run.summary_date::text)=1
+			FROM account_inventory_compaction_runs AS run WHERE run.compaction_run_id=$1`,
+			phase.runID, phase.checksumHex).Scan(&exact); err != nil || !exact {
+			t.Fatalf("resumed %s did not converge to one immutable result: exact=%t err=%v",
+				phase.phase, exact, err)
+		}
+	}
+}
+
 func TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)

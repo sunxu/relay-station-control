@@ -45,13 +45,14 @@
 - [x] 4.4 实现单批`DELETE ... RETURNING`与actual deleted count同事务累计，以删除失败、计数更新失败、提交前/后崩溃测试验证守恒
 - [x] 4.5 实现从summarized/deleting及对应failed_from只续删、不重聚合，以部分删除后篡改残余fixture仍不能缩小summary测试验证
 - [x] 4.6 实现completed gate，只有remaining=0且source snapshot count等于deleted count/checksum身份不变才完成，以不一致进入fixed failed且poll仍保留测试验证
-- [ ] 4.7 实现过期lease Reconciler和优雅停止，覆盖Control/PostgreSQL在pending/summarized/deleting各阶段重启且最终单份完成
+- [x] 4.7 实现过期lease Reconciler和优雅停止，覆盖Control/PostgreSQL在pending/summarized/deleting各阶段重启且最终单份完成
 
 > 第十批以两个独立runtime事务证明首个compaction run持锁时第二Worker通过`SKIP LOCKED`领取下一run，并验证数据库时间生成的有界lease、唯一随机fence和attempt；过期run经Reconciler reclaim后生成新fence，旧fence续租影响零行且run快照不变，完成4.1。
 > 第十一批在真实summarized run分别注入snapshot DELETE与deleted count UPDATE失败，均证明run、source和audit全量回滚；提交前终止backend同样回滚，明确commit后再终止backend则actual DELETE、持久计数和source守恒保持，完成4.4。
 > 第十二批以真实PostgreSQL18函数证明snapshot删除按稳定复合主键选择，拒绝5001上限、接受batch 1与5000并在空批次保持零删除；终态来源poll的晚到snapshot插入被既有不可变门禁拒绝，完成4.3。
 > 第十三批以真实PostgreSQL18恢复链证明summarized和deleting失败均从持久阶段续删并更换fence；首批删除后即使测试夹具篡改残余snapshot，固化summary、source checksum和summarized audit仍不变，完成4.5。
 > 第十四批以真实PostgreSQL18完成门禁分别隔离remaining非零与source/deleted计数不守恒，均固定进入`failed_from=deleting`且不可重新claim；即使snapshot已空，失败run仍阻止到期poll清理，结合既有checksum mismatch与成功完成证据完成4.6。
+> 第十五批收窄claim使过期active lease只能先由Reconciler固定为`failed/lease_expired`，真实PostgreSQL18三阶段矩阵证明reconcile前Worker不能绕过、`failed_from`精确、旧fence零影响且新fence从原阶段续做后每个run/segment/audit仅一份；真实Control进程把pending/summarized/deleting三个20秒claim组合经过一次Control重启和PostgreSQL停启，在lease过期后全部以attempt 2收敛为单份completed compaction/final rollup。既有runtime测试证明停止新claim后仅排空当前有界事务且不启动下一删除批；持锁事务SIGTERM drain/timeout和真实pool exhaustion仍属于7.4，不据此提前勾选。
 
 ## 5. 最终日级 Rollup 与 Coverage 发布边界
 
@@ -86,7 +87,7 @@
 - [ ] 7.4 实现停止顺序和有限事务收尾，覆盖SIGTERM、lease未到期、连接耗尽与重启后Reconciler接管
 - [x] 7.5 验证应用rollback：完成真实snapshot/poll删除并使current FK为NULL后停止history、运行固定旧二进制、保留forward schema/summary/run并继续poll/current query且不修改history，生产不执行down
 
-> 第六批新增真实Control process验收：覆盖默认disabled compatibility、metrics权限故障隔离、合法zero-poll日enabled收敛、仍有效的10秒消失执行者claim跨PostgreSQL stop/start与lease过期后的持久恢复，以及实际PID SIGTERM有界退出；该恢复不独立区分Reconciler和claim函数。另新增可选`CONTROL_DATABASE_MAX_CONNS=1..100`环境覆盖且缺失保持现有pgx URL/default行为，为真实pool exhaustion提供确定性注入。7.4仍缺持锁事务SIGTERM drain/timeout、Reconciler独占接管证明和真实pool exhaustion矩阵，因此保持未勾选。
+> 第六批新增真实Control process验收：覆盖默认disabled compatibility、metrics权限故障隔离、合法zero-poll日enabled收敛、消失执行者claim跨PostgreSQL stop/start与lease过期后的持久恢复，以及实际PID SIGTERM有界退出；第十五批已将恢复扩展为20秒pending/summarized/deleting三阶段组合Control/PostgreSQL重启，并以数据库函数矩阵独立证明Reconciler独占接管。另有可选`CONTROL_DATABASE_MAX_CONNS=1..100`环境覆盖且缺失保持现有pgx URL/default行为，为真实pool exhaustion提供确定性注入。7.4仍缺持锁事务SIGTERM drain/timeout和真实pool exhaustion矩阵，因此保持未勾选。
 
 ## 8. 指标、隐私与安全负向门禁
 

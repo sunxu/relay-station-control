@@ -1740,11 +1740,14 @@ BEGIN
     WITH candidate AS (
         SELECT run.compaction_run_id
         FROM public.account_inventory_compaction_runs AS run
-        WHERE run.status IN ('pending', 'summarized', 'deleting', 'failed')
-          AND (run.status <> 'failed' OR run.failure_reason IN (
-              'lease_expired', 'statement_timeout', 'database_unavailable'
-          ))
-          AND (run.lease_expires_at IS NULL OR run.lease_expires_at <= database_now)
+        WHERE (
+              (run.status = 'pending' AND run.lease_expires_at IS NULL)
+              OR (run.status = 'failed'
+                  AND run.failure_reason IN (
+                      'lease_expired', 'statement_timeout', 'database_unavailable'
+                  )
+                  AND run.lease_expires_at IS NULL)
+          )
           AND ((run.summary_date + 1)::timestamp AT TIME ZONE 'UTC')
                 <= database_now - interval '72 hours'
         ORDER BY run.summary_date, run.instance_id, run.provider_policy_version
