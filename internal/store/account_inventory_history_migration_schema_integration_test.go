@@ -5899,3 +5899,366 @@ func requireHistorySQLState(t *testing.T, err error, want string) {
 		t.Fatalf("PostgreSQL error=%v want SQLSTATE %s", err, want)
 	}
 }
+
+func TestAccountInventoryHistorySecurityBoundaryMatrix(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	futureActivation := today.AddDate(0, 0, 2)
+	if _, err := database.owner.Exec(ctx, `UPDATE provider_inventory_policy_activations
+		SET effective_from=$1 WHERE policy_version_id=$2`,
+		futureActivation, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+			instance_id,effective_from,reason,actor,created_at
+		) VALUES($1,$2,'reconciliation','history-security-test',$2)`,
+		fixture.instanceID, futureActivation); err != nil {
+		t.Fatal(err)
+	}
+
+	firstRunID, secondRunID, futureRunID := uuid.New(), uuid.New(), uuid.New()
+	pastRollupID, futureRollupID := uuid.New(), uuid.New()
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+		compaction_run_id,summary_date,instance_id,provider_policy_version
+	) VALUES
+		($1,$2,$4,$5),($3,$6,$4,$5),($7,$8,$4,$5)`,
+		firstRunID, today.AddDate(0, 0, -8), secondRunID, fixture.instanceID,
+		fixture.policyID, today.AddDate(0, 0, -7), futureRunID,
+		today.AddDate(0, 0, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+			rollup_run_id,summary_date,instance_id
+		) VALUES($1,$2,$3),($4,$5,$3)`,
+		pastRollupID, today.AddDate(0, 0, -6), fixture.instanceID,
+		futureRollupID, today.AddDate(0, 0, 1)); err != nil {
+		t.Fatal(err)
+	}
+
+	// The migrator owns the tables, but neither an exact transaction-local gate
+	// nor a savepoint can turn an owner session into a controlled runtime call.
+	ownerTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownerTx.Exec(ctx, `SAVEPOINT before_gate`); err != nil {
+		_ = ownerTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if _, err := ownerTx.Exec(ctx, `SELECT set_config('relay_control.history_run_write',
+			'account_inventory_compaction_runs',true)`); err != nil {
+		_ = ownerTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if _, err := ownerTx.Exec(ctx, `UPDATE account_inventory_compaction_runs
+		SET updated_at=clock_timestamp() WHERE compaction_run_id=$1`, firstRunID); err == nil {
+		_ = ownerTx.Rollback(ctx)
+		t.Fatal("migrator forged the run transition gate")
+	} else {
+		requireHistorySQLState(t, err, "42501")
+	}
+	if _, err := ownerTx.Exec(ctx, `ROLLBACK TO SAVEPOINT before_gate`); err != nil {
+		_ = ownerTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	var rolledBackGate string
+	if err := ownerTx.QueryRow(ctx, `SELECT coalesce(
+		current_setting('relay_control.history_run_write',true),'')`).Scan(&rolledBackGate); err != nil {
+		_ = ownerTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if rolledBackGate != "" {
+		_ = ownerTx.Rollback(ctx)
+		t.Fatalf("savepoint rollback leaked gate %q", rolledBackGate)
+	}
+	if err := ownerTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, direct := range []struct {
+		name      string
+		statement string
+		arguments []any
+	}{
+		{"delete", `DELETE FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, []any{firstRunID}},
+		{"truncate", `TRUNCATE account_inventory_daily_summaries`, nil},
+	} {
+		if _, err := database.owner.Exec(ctx, direct.statement, direct.arguments...); err == nil {
+			t.Fatalf("migrator direct %s succeeded", direct.name)
+		} else {
+			requireHistorySQLState(t, err, "42501")
+		}
+	}
+
+	var unauthorizedFunctionPrivileges, unauthorizedTablePrivileges int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM pg_proc AS procedure
+		 WHERE procedure.oid=ANY(ARRAY[
+			to_regprocedure('public.control_plan_account_inventory_history_v1(integer)'),
+			to_regprocedure('public.control_claim_account_inventory_compaction_v1(uuid,integer)'),
+			to_regprocedure('public.control_summarize_account_inventory_compaction_v1(uuid,uuid)'),
+			to_regprocedure('public.control_finalize_account_inventory_daily_rollup_v1(uuid,uuid)'),
+			to_regprocedure('public.control_delete_account_inventory_poll_retention_v1(integer)'),
+			to_regprocedure('public.control_list_account_inventory_history_metrics_v1()'),
+			to_regprocedure('public.control_history_schema_compatibility_v1()')
+		 ]) AND has_function_privilege('relay_control_asset_registrar',procedure.oid,'EXECUTE')),
+		(SELECT count(*) FROM unnest($1::text[]) AS history_table(name)
+		 WHERE has_any_column_privilege('relay_control_asset_registrar',
+			'public.' || history_table.name,'SELECT,INSERT,UPDATE,REFERENCES')
+		    OR has_table_privilege('relay_control_asset_registrar',
+			'public.' || history_table.name,'DELETE,TRUNCATE,TRIGGER'))`, historyTables).
+		Scan(&unauthorizedFunctionPrivileges, &unauthorizedTablePrivileges); err != nil {
+		t.Fatal(err)
+	}
+	if unauthorizedFunctionPrivileges != 0 || unauthorizedTablePrivileges != 0 {
+		t.Fatalf("unauthorized privileges functions=%d tables=%d",
+			unauthorizedFunctionPrivileges, unauthorizedTablePrivileges)
+	}
+	unauthorizedTx, err := database.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unauthorizedTx.Exec(ctx, `SET LOCAL ROLE relay_control_asset_registrar`); err != nil {
+		_ = unauthorizedTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if _, err := unauthorizedTx.Exec(ctx,
+		`SET LOCAL relay_control.history_run_write='account_inventory_compaction_runs'`); err != nil {
+		_ = unauthorizedTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if _, err := unauthorizedTx.Exec(ctx,
+		`SELECT public.control_plan_account_inventory_history_v1(1)`); err == nil {
+		_ = unauthorizedTx.Rollback(ctx)
+		t.Fatal("unauthorized role executed history planner")
+	} else {
+		requireHistorySQLState(t, err, "42501")
+	}
+	_ = unauthorizedTx.Rollback(ctx)
+
+	runtimeConnection, err := database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstPID int
+	if err := runtimeConnection.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&firstPID); err != nil {
+		runtimeConnection.Release()
+		t.Fatal(err)
+	}
+	gateNames := []string{
+		"history_run_write", "history_audit_write", "history_snapshot_delete",
+		"history_poll_retention_delete", "history_rollup_row_retention_delete",
+		"history_rollup_run_retention_delete", "history_compaction_run_retention_delete",
+		"history_retired_day_write",
+	}
+	requireNoGates := func() {
+		t.Helper()
+		for _, gate := range gateNames {
+			var value string
+			if err := runtimeConnection.QueryRow(ctx, `SELECT coalesce(
+				current_setting('relay_control.' || $1,true),'')`, gate).Scan(&value); err != nil {
+				t.Fatal(err)
+			}
+			if value != "" {
+				t.Fatalf("runtime gate %s leaked %q", gate, value)
+			}
+		}
+	}
+	expectRuntimeState := func(want, statement string, arguments ...any) {
+		t.Helper()
+		if _, err := runtimeConnection.Exec(ctx, statement, arguments...); err == nil {
+			t.Fatalf("statement succeeded, want SQLSTATE %s: %s", want, statement)
+		} else {
+			requireHistorySQLState(t, err, want)
+		}
+	}
+
+	var plannedCompactions, plannedRollups int
+	if err := runtimeConnection.QueryRow(ctx, `WITH planned AS (
+		SELECT public.control_plan_account_inventory_history_v1(100) AS value
+	) SELECT (value->>'compaction_runs_created')::integer,
+		(value->>'rollup_runs_created')::integer FROM planned`).Scan(
+		&plannedCompactions, &plannedRollups); err != nil {
+		runtimeConnection.Release()
+		t.Fatal(err)
+	}
+	if plannedCompactions != 0 || plannedRollups != 0 {
+		runtimeConnection.Release()
+		t.Fatalf("future activation planned compactions=%d rollups=%d",
+			plannedCompactions, plannedRollups)
+	}
+
+	var claimedRunID, currentFence uuid.UUID
+	if err := runtimeConnection.QueryRow(ctx, `SELECT compaction_run_id,fencing_token
+		FROM public.control_claim_account_inventory_compaction_v1($1,30)`, uuid.New()).
+		Scan(&claimedRunID, &currentFence); err != nil {
+		runtimeConnection.Release()
+		t.Fatal(err)
+	}
+	if claimedRunID != firstRunID || currentFence == uuid.Nil {
+		runtimeConnection.Release()
+		t.Fatalf("first controlled claim run=%s fence=%s", claimedRunID, currentFence)
+	}
+	var compactionBefore, compactionAfter string
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`, firstRunID).
+		Scan(&compactionBefore); err != nil {
+		runtimeConnection.Release()
+		t.Fatal(err)
+	}
+	staleFence := uuid.New()
+	var staleRenewed int
+	if err := runtimeConnection.QueryRow(ctx, `SELECT count(*) FROM
+		public.control_renew_account_inventory_compaction_v1($1,$2,30)`,
+		firstRunID, staleFence).Scan(&staleRenewed); err != nil || staleRenewed != 0 {
+		runtimeConnection.Release()
+		t.Fatalf("stale compaction renew rows=%d err=%v", staleRenewed, err)
+	}
+	for _, call := range []struct {
+		statement string
+		arguments []any
+	}{
+		{`SELECT public.control_summarize_account_inventory_compaction_v1($1,$2)`, []any{firstRunID, staleFence}},
+		{`SELECT public.control_delete_account_inventory_snapshot_batch_v1($1,$2,1)`, []any{firstRunID, staleFence}},
+		{`SELECT public.control_complete_account_inventory_compaction_v1($1,$2,$3)`, []any{firstRunID, staleFence, make([]byte, 32)}},
+		{`SELECT public.control_fail_account_inventory_compaction_v1($1,$2,'internal')`, []any{firstRunID, staleFence}},
+	} {
+		expectRuntimeState("P0002", call.statement, call.arguments...)
+		requireNoGates()
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`, firstRunID).
+		Scan(&compactionAfter); err != nil {
+		runtimeConnection.Release()
+		t.Fatal(err)
+	}
+	if compactionAfter != compactionBefore {
+		runtimeConnection.Release()
+		t.Fatal("stale compaction entry point changed its run")
+	}
+
+	requireNoGates()
+	runtimeConnection.Release()
+	runtimeConnection, err = database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimeConnection.Release()
+	var reusedPID int
+	if err := runtimeConnection.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&reusedPID); err != nil {
+		t.Fatal(err)
+	}
+	if reusedPID != firstPID {
+		t.Fatalf("pool did not reuse physical connection: before=%d after=%d", firstPID, reusedPID)
+	}
+	requireNoGates()
+	if _, err := runtimeConnection.Exec(ctx, `UPDATE account_inventory_compaction_runs
+		SET updated_at=clock_timestamp() WHERE compaction_run_id=$1`, firstRunID); err == nil {
+		t.Fatal("runtime direct DML succeeded on reused connection")
+	} else {
+		requireHistorySQLState(t, err, "42501")
+	}
+
+	if _, err := runtimeConnection.Exec(ctx,
+		`CREATE TEMP TABLE account_inventory_compaction_runs(marker text)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtimeConnection.Exec(ctx, `CREATE FUNCTION pg_temp.nested_history_claim(worker uuid) RETURNS integer
+		LANGUAGE sql AS 'SELECT count(*)::integer FROM public.control_claim_account_inventory_compaction_v1($1,30)'`); err != nil {
+		t.Fatal(err)
+	}
+	shadowTx, err := runtimeConnection.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shadowTx.Exec(ctx, `SET LOCAL search_path=pg_temp,public`); err != nil {
+		_ = shadowTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	var nestedClaims, shadowRows int
+	if err := shadowTx.QueryRow(ctx, `SELECT pg_temp.nested_history_claim($1),
+		(SELECT count(*) FROM account_inventory_compaction_runs)`, uuid.New()).
+		Scan(&nestedClaims, &shadowRows); err != nil {
+		_ = shadowTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if nestedClaims != 1 || shadowRows != 0 {
+		_ = shadowTx.Rollback(ctx)
+		t.Fatalf("nested shadow claim=%d temp_rows=%d", nestedClaims, shadowRows)
+	}
+	if err := shadowTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var furtherClaims int
+	if err := runtimeConnection.QueryRow(ctx, `SELECT count(*) FROM
+		public.control_claim_account_inventory_compaction_v1($1,30)`, uuid.New()).
+		Scan(&furtherClaims); err != nil || furtherClaims != 0 {
+		t.Fatalf("future compaction claim rows=%d err=%v", furtherClaims, err)
+	}
+	var claimedRollupID, rollupFence uuid.UUID
+	if err := runtimeConnection.QueryRow(ctx, `SELECT rollup_run_id,fencing_token FROM
+		public.control_claim_account_inventory_daily_rollup_v1($1,30)`, uuid.New()).
+		Scan(&claimedRollupID, &rollupFence); err != nil {
+		t.Fatal(err)
+	}
+	if claimedRollupID != pastRollupID || rollupFence == uuid.Nil {
+		t.Fatalf("controlled rollup claim run=%s fence=%s", claimedRollupID, rollupFence)
+	}
+	var staleRollupRenewed int
+	if err := runtimeConnection.QueryRow(ctx, `SELECT count(*) FROM
+		public.control_renew_account_inventory_daily_rollup_v1($1,$2,30)`,
+		pastRollupID, staleFence).Scan(&staleRollupRenewed); err != nil || staleRollupRenewed != 0 {
+		t.Fatalf("stale rollup renew rows=%d err=%v", staleRollupRenewed, err)
+	}
+	expectRuntimeState("P0002",
+		`SELECT public.control_finalize_account_inventory_daily_rollup_v1($1,$2)`,
+		pastRollupID, staleFence)
+	requireNoGates()
+	expectRuntimeState("P0002",
+		`SELECT public.control_fail_account_inventory_daily_rollup_v1($1,$2,'internal')`,
+		pastRollupID, staleFence)
+	requireNoGates()
+	var furtherRollupClaims int
+	if err := runtimeConnection.QueryRow(ctx, `SELECT count(*) FROM
+		public.control_claim_account_inventory_daily_rollup_v1($1,30)`, uuid.New()).
+		Scan(&furtherRollupClaims); err != nil || furtherRollupClaims != 0 {
+		t.Fatalf("future rollup claim rows=%d err=%v", furtherRollupClaims, err)
+	}
+
+	for _, statement := range []string{
+		`SELECT public.control_plan_account_inventory_history_v1(1001)`,
+		`SELECT public.control_reconcile_account_inventory_compactions_v1(1001)`,
+		`SELECT public.control_reconcile_account_inventory_daily_rollups_v1(1001)`,
+		`SELECT public.control_delete_account_inventory_snapshot_batch_v1(NULL,NULL,5001)`,
+		`SELECT public.control_delete_account_inventory_poll_retention_v1(5001)`,
+		`SELECT public.control_delete_account_inventory_rollup_row_retention_v1(5001)`,
+		`SELECT public.control_delete_account_inventory_rollup_run_retention_v1(5001)`,
+		`SELECT public.control_delete_account_inventory_compaction_run_retention_v1(5001)`,
+	} {
+		expectRuntimeState("22023", statement)
+	}
+	requireNoGates()
+
+	var exactState bool
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*)=2 FROM account_inventory_compaction_runs
+		 WHERE compaction_run_id=ANY($1::uuid[]) AND status='pending'
+		   AND attempt_count=1 AND fencing_token IS NOT NULL)
+		AND (SELECT attempt_count=0 AND fencing_token IS NULL
+		     FROM account_inventory_compaction_runs WHERE compaction_run_id=$2)
+		AND (SELECT status='pending' AND attempt_count=1 AND fencing_token=$3
+		     FROM account_inventory_daily_rollup_runs WHERE rollup_run_id=$4)
+		AND (SELECT attempt_count=0 AND fencing_token IS NULL
+		     FROM account_inventory_daily_rollup_runs WHERE rollup_run_id=$5)
+		AND NOT EXISTS(SELECT 1 FROM audit_logs WHERE category='account_inventory_history')
+		AND NOT EXISTS(SELECT 1 FROM account_inventory_daily_summaries)
+		AND NOT EXISTS(SELECT 1 FROM account_inventory_daily_provider_summaries)
+		AND NOT EXISTS(SELECT 1 FROM account_inventory_daily_account_rollups)
+		AND NOT EXISTS(SELECT 1 FROM account_inventory_daily_provider_rollups)`,
+		[]uuid.UUID{firstRunID, secondRunID}, futureRunID, rollupFence,
+		pastRollupID, futureRollupID).Scan(&exactState); err != nil || !exactState {
+		t.Fatalf("security boundary final state exact=%t err=%v", exactState, err)
+	}
+}
