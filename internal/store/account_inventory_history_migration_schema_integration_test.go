@@ -3307,9 +3307,9 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	audit := productstore.AccountInventoryViewAudit{
 		ActorAdminID: actorID, SourceFingerprint: fingerprint[:], RequestID: "retention-before",
 	}
-	if err := database.owner.QueryRow(ctx, `SELECT date_bin(
-		interval '5 minutes',clock_timestamp()-interval '31 days',timestamptz '1970-01-01'
-	)`).Scan(&fixture.baseSlot); err != nil {
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(((clock_timestamp() AT TIME ZONE 'UTC')::date-34)::timestamp
+		 AT TIME ZONE 'UTC')+interval '12 hours'`).Scan(&fixture.baseSlot); err != nil {
 		t.Fatal(err)
 	}
 	firstPoll := fixture.finalize(t, ctx, database, []lifecycleAccount{{
@@ -3332,6 +3332,24 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	}
 
 	summaryDate := fixture.baseSlot.UTC().Truncate(24 * time.Hour)
+	var adminAuditID, scopeAuditID uuid.UUID
+	if err := database.owner.QueryRow(ctx, `INSERT INTO audit_logs(
+		audit_id,occurred_at,category,action,result,actor_admin_id,request_id,details
+	) VALUES(gen_random_uuid(),$1::date-interval '200 days','authorization',
+		'authorization.check','success',$2,'history-retention-sentinel','{}'::jsonb)
+	RETURNING audit_id`, summaryDate, actorID).Scan(&adminAuditID); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.owner.QueryRow(ctx, `INSERT INTO account_inventory_scope_transition_audits(
+		audit_id,activation_id,node_type,driver_contract_version,actor,reason,
+		moved_out_providers,reactivated_providers,transitioned_at
+	) SELECT gen_random_uuid(),activation_id,node_type,driver_contract_version,
+		'history-retention','history retention sentinel',ARRAY['legacy'],ARRAY[]::text[],
+		$1::date-interval '200 days'
+	FROM provider_inventory_policy_activations WHERE policy_version_id=$2
+	RETURNING audit_id`, summaryDate, fixture.policyID).Scan(&scopeAuditID); err != nil {
+		t.Fatal(err)
+	}
 	var compactionID uuid.UUID
 	if err := database.owner.QueryRow(ctx, `INSERT INTO account_inventory_compaction_runs(
 		summary_date,instance_id,provider_policy_version,status,checksum_version,
@@ -3737,15 +3755,38 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 		t.Fatalf("planner resurrected retained lineage: compactions=%d rollups=%d lineage=%d",
 			plannedCompactions, plannedRollups, retiredLineage)
 	}
+	var finalCurrentState string
+	if err := database.owner.QueryRow(ctx, `SELECT jsonb_build_object(
+		'provider',to_jsonb(provider_state)-'current_poll_run_id',
+		'account',to_jsonb(account)-'current_poll_run_id')::text
+	FROM account_inventory_provider_states AS provider_state
+	JOIN account_inventory AS account
+	  ON account.instance_id=provider_state.instance_id
+	 AND account.provider=provider_state.provider
+	WHERE provider_state.instance_id=$1 AND provider_state.provider='openai'`, fixture.instanceID).
+		Scan(&finalCurrentState); err != nil {
+		t.Fatal(err)
+	}
+	var retainedAudits int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM audit_logs WHERE audit_id=$1)
+		+(SELECT count(*) FROM account_inventory_scope_transition_audits WHERE audit_id=$2)`,
+		adminAuditID, scopeAuditID).Scan(&retainedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if finalCurrentState != beforeCurrentState || retainedAudits != 2 {
+		t.Fatalf("history retention changed current or audits: current_changed=%t audits=%d",
+			finalCurrentState != beforeCurrentState, retainedAudits)
+	}
 }
 
 func TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
-	if err := database.owner.QueryRow(ctx, `SELECT date_bin(
-		interval '5 minutes',clock_timestamp()-interval '31 days',
-		timestamptz '1970-01-01')`).Scan(&fixture.baseSlot); err != nil {
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(((clock_timestamp() AT TIME ZONE 'UTC')::date-32)::timestamp
+		 AT TIME ZONE 'UTC')+interval '12 hours'`).Scan(&fixture.baseSlot); err != nil {
 		t.Fatal(err)
 	}
 	mode := "runtime"
@@ -3887,6 +3928,7 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 		summaryDate      time.Time
 		scheduledAt      time.Time
 		compactionStatus string
+		failedFrom       string
 		failureReason    string
 		extraPending     bool
 		snapshotPresent  bool
@@ -3896,11 +3938,14 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 	oldDay := databaseNow.UTC().Truncate(24*time.Hour).AddDate(0, 0, -50)
 	candidates := []candidate{
 		{name: "eligible", summaryDate: oldDay, compactionStatus: "completed", eligible: true},
-		{name: "unfinished", summaryDate: oldDay.AddDate(0, 0, 1), compactionStatus: "summarized"},
-		{name: "failed", summaryDate: oldDay.AddDate(0, 0, 2), compactionStatus: "failed", failureReason: "internal"},
-		{name: "cross_day_failed", summaryDate: oldDay.AddDate(0, 0, 3), compactionStatus: "failed", failureReason: "source_day_mismatch"},
-		{name: "non_terminal", summaryDate: oldDay.AddDate(0, 0, 4), compactionStatus: "completed", extraPending: true},
-		{name: "snapshot_present", summaryDate: oldDay.AddDate(0, 0, 5), compactionStatus: "completed", snapshotPresent: true},
+		{name: "pending", summaryDate: oldDay.AddDate(0, 0, 1), compactionStatus: "pending"},
+		{name: "summarized", summaryDate: oldDay.AddDate(0, 0, 2), compactionStatus: "summarized"},
+		{name: "deleting", summaryDate: oldDay.AddDate(0, 0, 3), compactionStatus: "deleting"},
+		{name: "failed", summaryDate: oldDay.AddDate(0, 0, 4), compactionStatus: "failed", failureReason: "internal"},
+		{name: "cross_day_failed", summaryDate: oldDay.AddDate(0, 0, 5), compactionStatus: "failed", failureReason: "source_day_mismatch"},
+		{name: "checksum_failed", summaryDate: oldDay.AddDate(0, 0, 6), compactionStatus: "failed", failedFrom: "deleting", failureReason: "source_checksum_mismatch"},
+		{name: "non_terminal", summaryDate: oldDay.AddDate(0, 0, 7), compactionStatus: "completed", extraPending: true},
+		{name: "snapshot_present", summaryDate: oldDay.AddDate(0, 0, 8), compactionStatus: "completed", snapshotPresent: true},
 		{name: "not_expired", compactionStatus: "completed"},
 	}
 	var extraPendingPoll uuid.UUID
@@ -3936,6 +3981,13 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 		}
 
 		switch item.compactionStatus {
+		case "pending":
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+				summary_date,instance_id,provider_policy_version,status,created_at,updated_at
+			) VALUES($1,$2,$3,'pending',$4,$4)`, item.summaryDate, fixture.instanceID,
+				fixture.policyID, item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
 		case "summarized":
 			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
 				summary_date,instance_id,provider_policy_version,status,checksum_version,
@@ -3946,8 +3998,32 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 				fmt.Sprintf("%02x", index+41), item.scheduledAt); err != nil {
 				t.Fatal(err)
 			}
-		case "failed":
+		case "deleting":
 			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+				summary_date,instance_id,provider_policy_version,status,checksum_version,
+				source_snapshot_count,source_poll_count,source_provider_result_count,
+				source_duplicate_count,source_checksum,deleted_snapshot_count,created_at,
+				summarized_at,deleting_at,updated_at
+			) VALUES($1,$2,$3,'deleting',1,0,1,0,0,decode(repeat($4,32),'hex'),0,
+				$5,$5,$5,$5)`, item.summaryDate, fixture.instanceID, fixture.policyID,
+				fmt.Sprintf("%02x", index+41), item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
+		case "failed":
+			if item.failedFrom == "deleting" {
+				if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+					summary_date,instance_id,provider_policy_version,status,failed_from,
+					checksum_version,source_snapshot_count,source_poll_count,
+					source_provider_result_count,source_duplicate_count,source_checksum,
+					deleted_snapshot_count,failure_reason,created_at,summarized_at,deleting_at,
+					failed_at,updated_at
+				) VALUES($1,$2,$3,'failed','deleting',1,0,1,0,0,
+					decode(repeat($4,32),'hex'),0,$5,$6,$6,$6,$6,$6)`, item.summaryDate,
+					fixture.instanceID, fixture.policyID, fmt.Sprintf("%02x", index+41),
+					item.failureReason, item.scheduledAt); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
 				summary_date,instance_id,provider_policy_version,status,failed_from,
 				failure_reason,created_at,failed_at,updated_at
 			) VALUES($1,$2,$3,'failed','pending',$4,$5,$5,$5)`, item.summaryDate,
@@ -3973,17 +4049,34 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 				t.Fatal(err)
 			}
 		}
-		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
-			summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
-			completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
-		) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat($4,32),'hex'),$5,$5,$5)`,
-			item.summaryDate, fixture.instanceID, uuid.New(), fmt.Sprintf("%02x", index+61),
-			item.scheduledAt); err != nil {
-			t.Fatal(err)
+		switch item.name {
+		case "pending":
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+				summary_date,instance_id,status,created_at,updated_at
+			) VALUES($1,$2,'pending',$3,$3)`, item.summaryDate, fixture.instanceID,
+				item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
+		case "checksum_failed":
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+				summary_date,instance_id,status,failure_reason,created_at,failed_at,updated_at
+			) VALUES($1,$2,'failed','segment_checksum_mismatch',$3,$3,$3)`,
+				item.summaryDate, fixture.instanceID, item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+				summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
+				completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
+			) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat($4,32),'hex'),$5,$5,$5)`,
+				item.summaryDate, fixture.instanceID, uuid.New(), fmt.Sprintf("%02x", index+61),
+				item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 
-	snapshotPoll := candidates[5]
+	snapshotPoll := candidates[8]
 	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
 		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
 		t.Fatal(err)
@@ -4032,8 +4125,23 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 		 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 0 {
 		t.Fatalf("ineligible candidates processed=%d err=%v", processed, err)
 	}
+	for _, cleaner := range []struct {
+		function string
+		want     int
+	}{
+		{"control_delete_account_inventory_poll_retention_v1", 0},
+		{"control_delete_account_inventory_rollup_row_retention_v1", 0},
+		{"control_delete_account_inventory_rollup_run_retention_v1", 1},
+		{"control_delete_account_inventory_compaction_run_retention_v1", 1},
+	} {
+		if err := database.runtime.QueryRow(ctx, `SELECT (public.`+cleaner.function+`(100)
+			->>'processed_count')::integer`).Scan(&processed); err != nil || processed != cleaner.want {
+			t.Fatalf("retention cleaner %s processed=%d want=%d err=%v",
+				cleaner.function, processed, cleaner.want, err)
+		}
+	}
 	for _, item := range candidates {
-		var remaining int
+		var remaining, compactionRuns, rollupRuns int
 		if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory_poll_runs
 			WHERE poll_run_id=$1`, item.pollID).Scan(&remaining); err != nil {
 			t.Fatal(err)
@@ -4044,6 +4152,18 @@ func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *test
 		}
 		if remaining != want {
 			t.Fatalf("%s remaining=%d want=%d", item.name, remaining, want)
+		}
+		if err := database.owner.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM account_inventory_compaction_runs
+			 WHERE summary_date=$1 AND instance_id=$2 AND provider_policy_version=$3),
+			(SELECT count(*) FROM account_inventory_daily_rollup_runs
+			 WHERE summary_date=$1 AND instance_id=$2)`, item.summaryDate,
+			fixture.instanceID, fixture.policyID).Scan(&compactionRuns, &rollupRuns); err != nil {
+			t.Fatal(err)
+		}
+		if compactionRuns != want || rollupRuns != want {
+			t.Fatalf("%s retained runs=%d/%d want=%d", item.name,
+				compactionRuns, rollupRuns, want)
 		}
 	}
 	var protectedRows int
@@ -4084,6 +4204,23 @@ func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
 			"((compaction.summary_date+1)::timestamp AT TIME ZONE 'UTC') <= retention_cutoff": 1,
 		},
 	}
+	retentionDeleteTargets := map[string][]string{
+		"public.control_delete_account_inventory_poll_retention_v1(integer)": {
+			"account_inventory_poll_runs",
+		},
+		"public.control_delete_account_inventory_rollup_row_retention_v1(integer)": {
+			"account_inventory_daily_summaries",
+			"account_inventory_daily_provider_summaries",
+			"account_inventory_daily_account_rollups",
+			"account_inventory_daily_provider_rollups",
+		},
+		"public.control_delete_account_inventory_rollup_run_retention_v1(integer)": {
+			"account_inventory_daily_rollup_runs",
+		},
+		"public.control_delete_account_inventory_compaction_run_retention_v1(integer)": {
+			"account_inventory_compaction_runs",
+		},
+	}
 	for function, requirements := range retentionCatalog {
 		var definition string
 		if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef($1::regprocedure)`, function).
@@ -4095,6 +4232,17 @@ func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
 			fragment = strings.Join(strings.Fields(fragment), " ")
 			if strings.Count(normalized, fragment) != count {
 				t.Fatalf("retention boundary catalog drift for %s: %q", function, fragment)
+			}
+		}
+		targets := retentionDeleteTargets[function]
+		if strings.Count(normalized, "DELETE FROM ") != len(targets) ||
+			strings.Count(normalized, "DELETE FROM public.") != len(targets) ||
+			strings.Contains(normalized, "EXECUTE ") {
+			t.Fatalf("retention DELETE target count drift for %s", function)
+		}
+		for _, table := range targets {
+			if strings.Count(normalized, "DELETE FROM public."+table+" WHERE") != 1 {
+				t.Fatalf("retention DELETE target drift for %s: %s", function, table)
 			}
 		}
 	}
@@ -4182,9 +4330,9 @@ func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
 	cutoff := databaseNow.Add(-30 * 24 * time.Hour)
 	boundaries := []rowBoundary{
 		{name: "inclusive_completed", summaryDate: dayStart.AddDate(0, 0, -35), completedAt: cutoff, eligible: true},
-		{name: "completed_too_new", summaryDate: dayStart.AddDate(0, 0, -34), completedAt: cutoff.Add(10 * time.Minute)},
+		{name: "completed_too_new", summaryDate: dayStart.AddDate(0, 0, -34), completedAt: cutoff.Add(24 * time.Hour)},
 		{name: "inclusive_day_end", summaryDate: dayStart.AddDate(0, 0, -31), completedAt: cutoff.Add(-24 * time.Hour), eligible: true},
-		{name: "day_end_too_new", summaryDate: dayStart.AddDate(0, 0, -30), completedAt: cutoff.Add(-24 * time.Hour)},
+		{name: "day_end_too_new", summaryDate: dayStart.AddDate(0, 0, -29), completedAt: cutoff.Add(-24 * time.Hour)},
 	}
 	for index := range boundaries {
 		boundary := &boundaries[index]
@@ -4499,7 +4647,7 @@ func TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion(t *testing
 			slot: summaryDate.Add(12 * time.Hour), rollupID: rollupID,
 		}
 	}
-	first := prepare(31)
+	first := prepare(32)
 	pollTransaction, err := database.runtime.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -4557,7 +4705,7 @@ func TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion(t *testing
 			firstMarkers, firstRollups, firstPolls)
 	}
 
-	second := prepare(32)
+	second := prepare(33)
 	retentionTransaction, err := database.runtime.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -4608,6 +4756,43 @@ func TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion(t *testing
 	if secondMarkers != 1 || secondRollups != 0 || secondPolls != 0 {
 		t.Fatalf("retention-won ordering marker=%d rollup=%d poll=%d",
 			secondMarkers, secondRollups, secondPolls)
+	}
+	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_history_retired_days
+		SET retired_at=retired_at WHERE summary_date=$1 AND instance_id=$2`,
+		second.summaryDate, second.lifecycle.instanceID); err == nil {
+		t.Fatal("migration owner updated a retired-day marker")
+	} else {
+		requireHistorySQLState(t, err, "42501")
+	}
+	if _, err := database.owner.Exec(ctx, `DELETE FROM account_inventory_history_retired_days
+		WHERE summary_date=$1 AND instance_id=$2`,
+		second.summaryDate, second.lifecycle.instanceID); err == nil {
+		t.Fatal("migration owner deleted a retired-day marker")
+	} else {
+		requireHistorySQLState(t, err, "42501")
+	}
+	if _, err := database.owner.Exec(ctx, `TRUNCATE account_inventory_history_retired_days`); err == nil {
+		t.Fatal("migration owner truncated retired-day markers")
+	} else {
+		requireHistorySQLState(t, err, "42501")
+	}
+	for _, function := range []string{
+		"control_delete_account_inventory_poll_retention_v1",
+		"control_delete_account_inventory_rollup_row_retention_v1",
+		"control_delete_account_inventory_rollup_run_retention_v1",
+		"control_delete_account_inventory_compaction_run_retention_v1",
+	} {
+		var processed int
+		if err := database.runtime.QueryRow(ctx, `SELECT (public.`+function+`(10)
+			->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 0 {
+			t.Fatalf("retired marker cleaner %s processed=%d err=%v", function, processed, err)
+		}
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT count(*)
+		FROM account_inventory_history_retired_days
+		WHERE summary_date=$1 AND instance_id=$2`, second.summaryDate, second.lifecycle.instanceID).
+		Scan(&secondMarkers); err != nil || secondMarkers != 1 {
+		t.Fatalf("retired marker after cleaners=%d err=%v", secondMarkers, err)
 	}
 }
 
