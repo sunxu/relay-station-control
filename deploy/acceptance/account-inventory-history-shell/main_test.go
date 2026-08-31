@@ -179,6 +179,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryPostgresPlannerCatalogGate",
 		"TestAccountInventoryHistoryPostgresRollupPublicationMatrix",
 		"planner_catalog_utc_inclusive_72h=covered",
+		"planner_eligibility_matrix=covered",
 		"finalize_catalog_9500=covered",
 		"utc_dst_72h_expression=covered",
 		"slot_provider_matrix=covered",

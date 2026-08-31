@@ -290,6 +290,7 @@ func newHistoryMatrixDatabase(t *testing.T) *historyMatrixDatabase {
 
 func TestAccountInventoryHistoryPostgresRollupPublicationMatrix(t *testing.T) {
 	t.Run("UTC eligibility boundary", testHistoryUTCEligibilityBoundary)
+	t.Run("planner eligibility", testHistoryPlannerEligibilityMatrix)
 	t.Run("planner and provider aggregation", testHistoryPlannerProviderMatrix)
 	t.Run("incomplete segment publication gates", testHistoryIncompleteSegmentPublicationGates)
 	t.Run("coverage boundaries", testHistoryCoveragePublicationMatrix)
@@ -611,6 +612,93 @@ func testHistoryUTCEligibilityBoundary(t *testing.T) {
 		FROM configured`, zone).Scan(&matched); err != nil || !matched {
 			t.Fatal("history UTC day changed with session timezone")
 		}
+	}
+}
+
+func testHistoryPlannerEligibilityMatrix(t *testing.T) {
+	ctx := context.Background()
+	database := newHistoryMatrixDatabase(t)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	oldDate := today.AddDate(0, 0, -32)
+	eligibleDate := today.AddDate(0, 0, -5)
+	futureDate := today.AddDate(0, 0, 2)
+	if _, err := database.owner.Exec(ctx, `
+		INSERT INTO node_drivers(node_type,driver_contract_version,display_name)
+		VALUES('history-planner-eligibility','v1','History Planner Eligibility');
+		INSERT INTO relay_node_assets(
+			instance_id,display_name,node_type,driver_contract_version,management_endpoint
+		) VALUES
+			('10000000-0000-0000-0000-000000000010','multi','history-planner-eligibility','v1','http://history-planner.invalid'),
+			('10000000-0000-0000-0000-000000000011','switch','history-planner-eligibility','v1','http://history-planner.invalid'),
+			('10000000-0000-0000-0000-000000000012','disjoint','history-planner-eligibility','v1','http://history-planner.invalid'),
+			('10000000-0000-0000-0000-000000000013','future','history-planner-eligibility','v1','http://history-planner.invalid'),
+			('10000000-0000-0000-0000-000000000014','old-empty','history-planner-eligibility','v1','http://history-planner.invalid'),
+			('10000000-0000-0000-0000-000000000015','old-lineage','history-planner-eligibility','v1','http://history-planner.invalid');
+		INSERT INTO provider_inventory_policy_versions(
+			policy_version_id,node_type,driver_contract_version,active_providers,
+			out_of_scope_providers,created_by,created_at
+		) VALUES
+			('20000000-0000-0000-0000-000000000010','history-planner-eligibility','v1',ARRAY['old-a'],ARRAY[]::text[],'acceptance',$1),
+			('20000000-0000-0000-0000-000000000011','history-planner-eligibility','v1',ARRAY['old-b'],ARRAY[]::text[],'acceptance',$1::timestamptz+interval '12 hours'),
+			('20000000-0000-0000-0000-000000000012','history-planner-eligibility','v1',ARRAY['eligible-a'],ARRAY[]::text[],'acceptance',$2),
+			('20000000-0000-0000-0000-000000000013','history-planner-eligibility','v1',ARRAY['eligible-b'],ARRAY[]::text[],'acceptance',$2::timestamptz+interval '12 hours'),
+			('20000000-0000-0000-0000-000000000014','history-planner-eligibility','v1',ARRAY['future'],ARRAY[]::text[],'acceptance',$3);
+		INSERT INTO provider_inventory_policy_activations(
+			node_type,driver_contract_version,policy_version_id,effective_from,effective_to,
+			activated_by,created_at
+		) VALUES
+			('history-planner-eligibility','v1','20000000-0000-0000-0000-000000000010',$1,$1::timestamptz+interval '12 hours','acceptance',$1),
+			('history-planner-eligibility','v1','20000000-0000-0000-0000-000000000011',$1::timestamptz+interval '12 hours',$1::timestamptz+interval '1 day','acceptance',$1::timestamptz+interval '12 hours'),
+			('history-planner-eligibility','v1','20000000-0000-0000-0000-000000000012',$2,$2::timestamptz+interval '12 hours','acceptance',$2),
+			('history-planner-eligibility','v1','20000000-0000-0000-0000-000000000013',$2::timestamptz+interval '12 hours',$2::timestamptz+interval '1 day','acceptance',$2::timestamptz+interval '12 hours'),
+			('history-planner-eligibility','v1','20000000-0000-0000-0000-000000000014',$3,$3::timestamptz+interval '1 day','acceptance',$3);
+		INSERT INTO relay_node_inventory_monitoring_activations(
+			instance_id,effective_from,effective_to,reason,actor,
+			end_reason,end_actor,end_recorded_at,created_at
+		) VALUES
+			('10000000-0000-0000-0000-000000000010',$2::timestamptz+interval '2 minutes',$2::timestamptz+interval '7 minutes','reconciliation','acceptance','reconciliation','acceptance',$2::timestamptz+interval '7 minutes',$2::timestamptz+interval '2 minutes'),
+			('10000000-0000-0000-0000-000000000010',$2::timestamptz+interval '9 minutes',$2::timestamptz+interval '16 minutes','reconciliation','acceptance','reconciliation','acceptance',$2::timestamptz+interval '16 minutes',$2::timestamptz+interval '9 minutes'),
+			('10000000-0000-0000-0000-000000000011',$2::timestamptz+interval '11 hours 50 minutes',$2::timestamptz+interval '12 hours 10 minutes','reconciliation','acceptance','reconciliation','acceptance',$2::timestamptz+interval '12 hours 10 minutes',$2::timestamptz+interval '11 hours 50 minutes'),
+			('10000000-0000-0000-0000-000000000012',$2::timestamptz-interval '1 day',$2::timestamptz-interval '1 day'+interval '10 minutes','reconciliation','acceptance','reconciliation','acceptance',$2::timestamptz-interval '1 day'+interval '10 minutes',$2::timestamptz-interval '1 day'),
+			('10000000-0000-0000-0000-000000000013',$3,$3::timestamptz+interval '10 minutes','reconciliation','acceptance','reconciliation','acceptance',$3::timestamptz+interval '10 minutes',$3),
+			('10000000-0000-0000-0000-000000000014',$1,$1::timestamptz+interval '1 day','reconciliation','acceptance','reconciliation','acceptance',$1::timestamptz+interval '1 day',$1),
+			('10000000-0000-0000-0000-000000000015',$1,$1::timestamptz+interval '1 day','reconciliation','acceptance','reconciliation','acceptance',$1::timestamptz+interval '1 day',$1);
+		INSERT INTO account_inventory_compaction_runs(
+			compaction_run_id,summary_date,instance_id,provider_policy_version
+		) VALUES('30000000-0000-0000-0000-000000000010',$1::date,
+			'10000000-0000-0000-0000-000000000015','20000000-0000-0000-0000-000000000010')`,
+		pgx.QueryExecModeSimpleProtocol, oldDate, eligibleDate, futureDate); err != nil {
+		t.Fatalf("history planner eligibility fixture failed SQLSTATE=%s", postgresSQLState(err))
+	}
+
+	var created, rollups int
+	if err := database.runtime.QueryRow(ctx, `WITH planned AS (
+		SELECT public.control_plan_account_inventory_history_v1(100) AS value
+	) SELECT (value->>'compaction_runs_created')::integer,
+		(value->>'rollup_runs_created')::integer FROM planned`).Scan(&created, &rollups); err != nil || created != 4 || rollups != 0 {
+		t.Fatalf("history planner eligibility first pass created=%d rollups=%d err=%v", created, rollups, err)
+	}
+	var multi, policySwitch, disjoint, future, oldEmpty, oldLineage int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE instance_id='10000000-0000-0000-0000-000000000010'),
+		count(*) FILTER (WHERE instance_id='10000000-0000-0000-0000-000000000011'),
+		count(*) FILTER (WHERE instance_id='10000000-0000-0000-0000-000000000012'),
+		count(*) FILTER (WHERE instance_id='10000000-0000-0000-0000-000000000013'),
+		count(*) FILTER (WHERE instance_id='10000000-0000-0000-0000-000000000014'),
+		count(*) FILTER (WHERE instance_id='10000000-0000-0000-0000-000000000015')
+		FROM account_inventory_compaction_runs`).Scan(
+		&multi, &policySwitch, &disjoint, &future, &oldEmpty, &oldLineage); err != nil {
+		t.Fatal("history planner eligibility runs unavailable")
+	}
+	if multi != 1 || policySwitch != 2 || disjoint != 0 || future != 0 || oldEmpty != 0 || oldLineage != 2 {
+		t.Fatalf("history planner eligibility runs multi=%d switch=%d disjoint=%d future=%d old_empty=%d old_lineage=%d",
+			multi, policySwitch, disjoint, future, oldEmpty, oldLineage)
+	}
+	if err := database.runtime.QueryRow(ctx, `WITH planned AS (
+		SELECT public.control_plan_account_inventory_history_v1(100) AS value
+	) SELECT (value->>'compaction_runs_created')::integer,
+		(value->>'rollup_runs_created')::integer FROM planned`).Scan(&created, &rollups); err != nil || created != 0 || rollups != 0 {
+		t.Fatalf("history planner eligibility replay created=%d rollups=%d err=%v", created, rollups, err)
 	}
 }
 

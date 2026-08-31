@@ -24,7 +24,7 @@
 ## 3. sqlc、Planner 与策略分段摘要
 
 - [x] 3.1 新增history sqlc查询与Store DTO/adapter，只调用受控函数并让全部DTO formatter脱敏，以生成代码、compile和fmt canary测试验证
-- [ ] 3.2 实现eligible UTC day发现和预期compaction key幂等创建：正常扫描限定30天horizon，旧日仅以仍存source poll或既有compaction lineage bootstrap，durable retired-day cutoff永久排除；覆盖72小时边界、Migration8超过30天旧poll首次收敛且删后不复活、未来日期、同版本多段、日内策略切换和无交集不创建
+- [x] 3.2 实现eligible UTC day发现和预期compaction key幂等创建：正常扫描限定30天horizon，旧日仅以仍存source poll或既有compaction lineage bootstrap，durable retired-day cutoff永久排除；覆盖72小时边界、Migration8超过30天旧poll首次收敛且删后不复活、未来日期、同版本多段、日内策略切换和无交集不创建
 - [x] 3.3 实现Node monitoring与Provider policy半开交集的五分钟slot planner，覆盖00:02非对齐起点、边界关闭、暂停/重入和多Provider active集合
 - [x] 3.4 实现零数据segment规划，仅在激活交集包含至少一个scheduled slot但无poll时生成expected>0/promotion=0；以无slot短区间不创建、漏槽和纯abandoned日期测试验证
 - [x] 3.5 实现账号segment聚合，覆盖首末scheduled/observed、last basic status、sample/status counts、first/last cumulative counters和reset counts，以正常/乱序/计数下降golden测试验证
@@ -35,6 +35,7 @@
 
 > 第八批对账号segment INSERT、Provider segment INSERT、source counts/checksum/status UPDATE和summarized audit INSERT逐点注入失败，均证明run原样且segment/audit零残留，并在解除trigger后成功重试，完成3.8。
 > 同fence残余source重放不增写segment/run/audit，重复planner不建新run；summarized/completed两状态下两类segment的非受控INSERT/UPDATE/DELETE/TRUNCATE均被拒绝，且既有retention批次仅通过精确gate删除，完成3.9。
+> 第九批以生产planner PostgreSQL18行为矩阵覆盖正常horizon、旧日无证据排除、既有lineage补齐、真正未来日、同版本多段去重、日内策略切换、完全无交集和重复调用幂等；结合既有Migration8旧poll bootstrap及retired cutoff删除窗口零复活证据，完成3.2。
 
 ## 4. Compaction Scheduler、Worker 与断点续删
 
