@@ -102,6 +102,8 @@ PostgreSQL 18 evidence runs poll retention twice with `limit=1`, records one pro
 
 The real retention fixture additionally fingerprints both current rows before and after deleting their source polls, removing only `current_poll_run_id`; every source timestamp/version/commit, base state, lifecycle/missing, and Provider-health field remains byte-for-byte equal while both source FKs become null. Its complete current-query JSON remains equal as the independent freshness proof.
 
+The production poll-retention fixture also keeps the real Repository page equal before and after deletion. A separate real Repository/HTTP fixture clears both current-source FKs to the legal null shape and keeps status/body equal; it does not rerun retention. The health fixture proves a newer degraded health slot may outlive an older promoted source, an older result cannot overwrite it, and missing health fails closed through Store and fixed HTTP 503 without identity.
+
 ## Coverage and failure classification
 
 | Item | Contract |

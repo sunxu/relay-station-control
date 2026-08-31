@@ -200,7 +200,7 @@ type accountInventoryRow struct {
 	NextRetryAt             *time.Time                        `json:"next_retry_at"`
 	SourceUpdatedAt         *time.Time                        `json:"source_updated_at"`
 	ProviderLastCompleteAt  time.Time                         `json:"provider_last_complete_at"`
-	ProviderDegraded        bool                              `json:"provider_degraded"`
+	ProviderDegraded        *bool                             `json:"provider_degraded"`
 	SnapshotFreshness       AccountInventorySnapshotFreshness `json:"snapshot_freshness"`
 }
 
@@ -224,7 +224,7 @@ func accountInventoryPageFromRows(query AccountInventoryQuery, rows [][]byte) (A
 			LastRefreshAt: utcTimePointer(row.LastRefreshAt), NextRetryAt: utcTimePointer(row.NextRetryAt),
 			SourceUpdatedAt:        utcTimePointer(row.SourceUpdatedAt),
 			ProviderLastCompleteAt: row.ProviderLastCompleteAt.UTC(),
-			ProviderDegraded:       row.ProviderDegraded, SnapshotFreshness: row.SnapshotFreshness,
+			ProviderDegraded:       *row.ProviderDegraded, SnapshotFreshness: row.SnapshotFreshness,
 		})
 		if page.HasMore && len(page.Items) == len(rows) {
 			page.ContinuationAccountKey = row.AccountKey
@@ -256,6 +256,7 @@ func validAccountInventoryRow(instanceID uuid.UUID, row accountInventoryRow) boo
 		!validAccountInventoryBasicStatus(row.BasicStatus) ||
 		!validAccountInventoryLifecycle(row.Lifecycle) ||
 		row.FirstSeenAt.IsZero() || row.LastSeenAt.IsZero() || row.ProviderLastCompleteAt.IsZero() ||
+		row.ProviderDegraded == nil ||
 		row.FirstSeenAt.After(row.LastSeenAt) ||
 		(row.MissingSince != nil && !row.MissingSince.After(row.LastSeenAt)) ||
 		(row.OutOfScopeSince != nil && row.OutOfScopeSince.Before(row.LastSeenAt)) {

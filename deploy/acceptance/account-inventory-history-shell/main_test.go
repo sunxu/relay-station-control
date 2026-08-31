@@ -223,8 +223,11 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress",
 		"TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion",
 		"TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection",
+		"TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy",
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
 		"TestAccountInventoryHistoryCapacityOneTenFifty",
+		"TestAccountInventoryRowsFailClosed",
+		"TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState",
 		"capacity_1_10_50_total_accounts=1000",
 		"retention_planner_lock=covered",
 		"planner_limit_progress=covered",
@@ -234,6 +237,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"retired_day_no_resurrection=covered",
 		"current_fields_after_retention=covered",
 		"current_query_after_retention=covered",
+		"current_health_query_matrix=covered",
+		"current_http_null_source=covered",
 		"metrics_backlog_drain=covered",
 	} {
 		if !strings.Contains(postgres, required) {
@@ -245,6 +250,9 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	}
 	if strings.Count(postgres, "run_planner_catalog_gate") != 2 {
 		t.Error("history PostgreSQL runner must define and invoke the planner catalog gate exactly once")
+	}
+	if strings.Count(postgres, "run_api_probe") != 2 {
+		t.Error("history PostgreSQL runner must define and invoke the API probe exactly once")
 	}
 	if strings.Contains(postgres, "go tool goose -dir") {
 		t.Fatal("history PostgreSQL runner exposes the database URL via goose argv pattern")

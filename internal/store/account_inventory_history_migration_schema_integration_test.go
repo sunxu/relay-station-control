@@ -2,10 +2,12 @@ package store_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	history "github.com/sunxu/relay-station-control/internal/history"
+	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 const historyCompatibilityFunction = "public.control_history_schema_compatibility_v1()"
@@ -223,8 +226,70 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 			historyRows, copiedEmailColumns)
 	}
 
-	// Model the ON DELETE SET NULL result without deleting immutable poll
-	// evidence.  Both current tables accept only this exact no-other-field shape.
+	// A newer finalized but non-promoted Provider observation refreshes health
+	// without moving the retained non-NULL current snapshot pointer.
+	failedPollID, fence := insertLifecycleGuardrailPoll(t, ctx, database, fixture, uuid.Nil, false)
+	failedEvidence := lifecycleGuardrailEvidence{
+		transportSuccess: true, responseShapeValid: true, nodeIdentityComplete: true,
+		degraded: true, result: "failed", reason: "contract_invalid",
+		providerResults: []map[string]any{{
+			"provider": fixtureProviderName, "identifiable_count": 0,
+			"missing_identity_count": 0, "duplicate_identity_count": 0,
+			"identity_complete": true, "snapshot_complete": false,
+			"degraded": true, "reason": "contract_invalid",
+		}}, snapshotItems: []map[string]any{}, duplicateEvidence: []map[string]any{},
+	}
+	finalized, err := finalizeLifecycleGuardrailPoll(ctx, database, failedPollID, fence, failedEvidence)
+	if err != nil || finalized != 1 {
+		t.Fatalf("finalize degraded health observation rows=%d err=%v", finalized, err)
+	}
+	var currentPointer uuid.UUID
+	var currentScheduled, healthScheduled time.Time
+	var healthReason string
+	if err := database.owner.QueryRow(ctx, `SELECT current_poll_run_id,
+		current_scheduled_at,health_scheduled_at,health_reason FROM account_inventory_provider_states
+		WHERE instance_id=$1 AND provider='openai'`, fixture.instanceID).
+		Scan(&currentPointer, &currentScheduled, &healthScheduled, &healthReason); err != nil {
+		t.Fatal(err)
+	}
+	if currentPointer != pollID || !healthScheduled.After(currentScheduled) || healthReason != "contract_invalid" {
+		t.Fatalf("degraded health moved pointer or lost ordering: pointer=%s current=%s health=%s reason=%s",
+			currentPointer, currentScheduled, healthScheduled, healthReason)
+	}
+
+	// A Provider result finalized after the health refresh but from an older
+	// slot cannot overwrite the newer health observation.
+	nextPoll := fixture.nextPoll
+	fixture.nextPoll = -1
+	oldPollID, oldFence := insertLifecycleGuardrailPoll(t, ctx, database, fixture, uuid.Nil, false)
+	fixture.nextPoll = nextPoll
+	if finalized, err = finalizeLifecycleGuardrailPoll(
+		ctx, database, oldPollID, oldFence, lifecycleGuardrailCompleteEmptyEvidence(),
+	); err != nil || finalized != 1 {
+		t.Fatalf("finalize old Provider observation rows=%d err=%v", finalized, err)
+	}
+	var retainedPointer uuid.UUID
+	var retainedHealth time.Time
+	var retainedReason string
+	if err := database.owner.QueryRow(ctx, `SELECT current_poll_run_id,
+		health_scheduled_at,health_reason FROM account_inventory_provider_states
+		WHERE instance_id=$1 AND provider='openai'`, fixture.instanceID).
+		Scan(&retainedPointer, &retainedHealth, &retainedReason); err != nil {
+		t.Fatal(err)
+	}
+	if retainedPointer != pollID || !retainedHealth.Equal(healthScheduled) || retainedReason != healthReason {
+		t.Fatalf("old Provider result overwrote health: pointer=%s health=%s reason=%s",
+			retainedPointer, retainedHealth, retainedReason)
+	}
+	var degraded bool
+	if err := database.runtime.QueryRow(ctx, `SELECT bool_and(provider_degraded)
+		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10)`,
+		fixture.instanceID).Scan(&degraded); err != nil || !degraded {
+		t.Fatalf("query did not consume newer Provider health: degraded=%t err=%v", degraded, err)
+	}
+
+	// Model the legal ON DELETE SET NULL retention result.  Health remains a
+	// current-state projection after immutable poll evidence is gone.
 	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_provider_states
 		SET current_poll_run_id=NULL WHERE instance_id=$1 AND provider='openai'`, fixture.instanceID); err != nil {
 		t.Fatal(err)
@@ -234,64 +299,14 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 		t.Fatal(err)
 	}
 	var queryRows int
-	var degraded bool
 	if err := database.runtime.QueryRow(ctx, `SELECT count(*),bool_or(provider_degraded)
 		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10)`,
 		fixture.instanceID).Scan(&queryRows, &degraded); err != nil {
 		t.Fatalf("query after legal current source cleanup: %v", err)
 	}
-	if queryRows != 1 || degraded {
+	if queryRows != 1 || !degraded {
 		t.Fatalf("query changed after current source cleanup: rows=%d degraded=%t poll=%s",
 			queryRows, degraded, pollID)
-	}
-
-	// A newer finalized but non-promoted Provider observation refreshes health
-	// without recreating or moving the retained current snapshot pointer.
-	failedPollID, fence := uuid.New(), uuid.New()
-	scheduledAt := fixture.baseSlot.Add(time.Duration(fixture.nextPoll) * 5 * time.Minute)
-	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
-		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
-		provider_policy_version,max_attempts,poll_start_grace_seconds,created_at
-	) VALUES($1,$2,$3,$4,$5,$6,2,299,clock_timestamp())`, failedPollID,
-		fixture.instanceID, fixture.nodeType, fixture.contract, scheduledAt, fixture.policyID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_poll_runs
-		SET status='running',attempt_count=1,first_started_at=clock_timestamp(),
-		last_started_at=clock_timestamp(),lease_expires_at=clock_timestamp()+interval '60 seconds',
-		lease_fencing_token=$2 WHERE poll_run_id=$1`, failedPollID, fence); err != nil {
-		t.Fatal(err)
-	}
-	var finalized int
-	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
-		FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
-			$1,$2,true,true,false,NULL,true,false,true,'failed','contract_invalid',
-			0,0,0,0,0,'v1.0.0','abcdef1',
-			'[{
-			  "provider":"openai","identifiable_count":0,"missing_identity_count":0,
-			  "duplicate_identity_count":0,"identity_complete":true,
-			  "snapshot_complete":false,"degraded":true,"reason":"contract_invalid"
-			}]'::jsonb,'[]'::jsonb,'[]'::jsonb
-		)`, failedPollID, fence).Scan(&finalized); err != nil || finalized != 1 {
-		t.Fatalf("finalize degraded health observation rows=%d err=%v", finalized, err)
-	}
-	var currentPointer *uuid.UUID
-	var healthScheduled time.Time
-	var healthReason string
-	if err := database.owner.QueryRow(ctx, `SELECT current_poll_run_id,
-		health_scheduled_at,health_reason FROM account_inventory_provider_states
-		WHERE instance_id=$1 AND provider='openai'`, fixture.instanceID).
-		Scan(&currentPointer, &healthScheduled, &healthReason); err != nil {
-		t.Fatal(err)
-	}
-	if currentPointer != nil || !healthScheduled.Equal(scheduledAt) || healthReason != "contract_invalid" {
-		t.Fatalf("degraded health moved pointer or lost reason: pointer=%v time=%s reason=%s",
-			currentPointer, healthScheduled, healthReason)
-	}
-	if err := database.runtime.QueryRow(ctx, `SELECT bool_and(provider_degraded)
-		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10)`,
-		fixture.instanceID).Scan(&degraded); err != nil || !degraded {
-		t.Fatalf("query did not consume newer Provider health: degraded=%t err=%v", degraded, err)
 	}
 }
 
@@ -3241,6 +3256,24 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 		fixture.instanceID, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
+	actorID := uuid.New()
+	if _, err := database.owner.Exec(ctx, `INSERT INTO control_admin_users(
+		admin_id,login_name,display_name
+	) VALUES($1,$2,'History Retention Reader')`, actorID, "history_"+assetFixtureSuffix(t)); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := productstore.NewAccountInventoryRepository(database.runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CheckCompatibility(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := sha256.Sum256([]byte("history-retention-repository"))
+	query := productstore.AccountInventoryQuery{InstanceID: fixture.instanceID, Limit: 10}
+	audit := productstore.AccountInventoryViewAudit{
+		ActorAdminID: actorID, SourceFingerprint: fingerprint[:], RequestID: "retention-before",
+	}
 	if err := database.owner.QueryRow(ctx, `SELECT date_bin(
 		interval '5 minutes',clock_timestamp()-interval '31 days',timestamptz '1970-01-01'
 	)`).Scan(&fixture.baseSlot); err != nil {
@@ -3291,6 +3324,10 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	}
 
 	var beforeQuery, beforeCurrentState string
+	beforePage, err := repository.QueryPageAndAudit(ctx, query, audit)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := database.runtime.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(row_value)
 		ORDER BY row_value.account_key),'[]'::jsonb)::text
 		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10) AS row_value`,
@@ -3368,6 +3405,15 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 		}
 	}
 	var afterQuery, afterCurrentState string
+	audit.RequestID = "retention-after"
+	afterPage, err := repository.QueryPageAndAudit(ctx, query, audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterPage, beforePage) {
+		t.Fatalf("Repository page changed across poll retention: before=%+v after=%+v",
+			beforePage, afterPage)
+	}
 	if err := database.runtime.QueryRow(ctx, `SELECT coalesce(jsonb_agg(to_jsonb(row_value)
 		ORDER BY row_value.account_key),'[]'::jsonb)::text
 		FROM public.control_query_current_account_inventory_v1($1,'','','','','',10) AS row_value`,

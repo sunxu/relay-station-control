@@ -62,13 +62,15 @@ func TestAccountInventoryRepositoryFailsClosedUntilCompatibilityPasses(t *testin
 func TestAccountInventoryPageUsesLimitPlusOneWithoutReturningAccountKey(t *testing.T) {
 	instanceID := uuid.New()
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	providerDegraded := false
 	row := func(email string) []byte {
 		t.Helper()
 		encoded, err := json.Marshal(accountInventoryRow{
 			InstanceID: instanceID, Provider: "openai", AccountKey: "openai:" + email,
 			NormalizedEmail: email, BasicStatus: AccountInventoryBasicStatusReportedActive,
 			Lifecycle: AccountInventoryPresent, FirstSeenAt: now, LastSeenAt: now,
-			ProviderLastCompleteAt: now, SnapshotFreshness: AccountInventorySnapshotFreshnessFresh,
+			ProviderLastCompleteAt: now, ProviderDegraded: &providerDegraded,
+			SnapshotFreshness: AccountInventorySnapshotFreshnessFresh,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -92,18 +94,21 @@ func TestAccountInventoryPageUsesLimitPlusOneWithoutReturningAccountKey(t *testi
 func TestAccountInventoryRowsFailClosed(t *testing.T) {
 	instanceID := uuid.New()
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	providerDegraded := false
 	base := accountInventoryRow{
 		InstanceID: instanceID, Provider: "openai", AccountKey: "openai:test@example.invalid",
 		NormalizedEmail: "test@example.invalid", BasicStatus: AccountInventoryBasicStatusReportedActive,
 		Lifecycle: AccountInventoryPresent, FirstSeenAt: now, LastSeenAt: now,
-		ProviderLastCompleteAt: now, SnapshotFreshness: AccountInventorySnapshotFreshnessFresh,
+		ProviderLastCompleteAt: now, ProviderDegraded: &providerDegraded,
+		SnapshotFreshness: AccountInventorySnapshotFreshnessFresh,
 	}
 	mutations := map[string]func(*accountInventoryRow){
-		"instance":      func(row *accountInventoryRow) { row.InstanceID = uuid.New() },
-		"identity":      func(row *accountInventoryRow) { row.AccountKey = "openai:other@example.invalid" },
-		"status":        func(row *accountInventoryRow) { row.BasicStatus = "active" },
-		"freshness":     func(row *accountInventoryRow) { row.SnapshotFreshness = "unknown" },
-		"provider time": func(row *accountInventoryRow) { row.ProviderLastCompleteAt = time.Time{} },
+		"instance":        func(row *accountInventoryRow) { row.InstanceID = uuid.New() },
+		"identity":        func(row *accountInventoryRow) { row.AccountKey = "openai:other@example.invalid" },
+		"status":          func(row *accountInventoryRow) { row.BasicStatus = "active" },
+		"freshness":       func(row *accountInventoryRow) { row.SnapshotFreshness = "unknown" },
+		"provider time":   func(row *accountInventoryRow) { row.ProviderLastCompleteAt = time.Time{} },
+		"provider health": func(row *accountInventoryRow) { row.ProviderDegraded = nil },
 		"lifecycle": func(row *accountInventoryRow) {
 			row.Lifecycle = AccountInventoryMissing
 			row.ConsecutiveMissingCount = 2
@@ -117,6 +122,30 @@ func TestAccountInventoryRowsFailClosed(t *testing.T) {
 				t.Fatal("inconsistent row was accepted")
 			}
 		})
+	}
+	encoded, err := json.Marshal(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []any{nil, "missing"} {
+		if value == "missing" {
+			delete(fields, "provider_degraded")
+		} else {
+			fields["provider_degraded"] = nil
+		}
+		malformed, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := accountInventoryPageFromRows(
+			AccountInventoryQuery{InstanceID: instanceID, Limit: 1}, [][]byte{malformed},
+		); !errors.Is(err, ErrAccountInventoryInconsistent) {
+			t.Fatalf("nullable Provider health error=%v", err)
+		}
 	}
 }
 
