@@ -104,6 +104,8 @@ The real retention fixture additionally fingerprints both current rows before an
 
 The production poll-retention fixture also keeps the real Repository page equal before and after deletion. A separate real Repository/HTTP fixture clears both current-source FKs to the legal null shape and keeps status/body equal; it does not rerun retention. The health fixture proves a newer degraded health slot may outlive an older promoted source, an older result cannot overwrite it, and missing health fails closed through Store and fixed HTTP 503 without identity.
 
+The fenced-finalize matrix uses current slot A, newer persisted health slot C, and an intermediate finalized slot B where A < B < C. B is retained as `stale_poll` evidence without moving health, snapshot pointers, lifecycle, or missing counts. A concurrent finalize/policy-scope transition permits only the two complete serial outcomes, and a failed observation for a never-promoted Provider creates no Provider current state, snapshot, or lifecycle row. This closes the Provider-health finalize matrix, not the still-open four-way retention/query/promotion/scope concurrency gate.
+
 ## Coverage and failure classification
 
 | Item | Contract |

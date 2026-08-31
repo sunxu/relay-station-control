@@ -73,7 +73,7 @@
 - [x] 6.3 实现有界poll删除及Provider result/duplicate级联，验证删除顺序、实际行数、batch重启和任一子trigger失败整体回滚
 - [x] 6.4 验证poll删除使Provider/account current FK `SET NULL`但来源时间/版本/提交、基础状态、lifecycle、missing计数和freshness逐字段保持
 - [x] 6.5 升级`control_query_current_account_inventory_v1`从Provider current health读取degraded并接受合法空source FK，以清理前后HTTP/Store响应等价、current source早于最近health、旧result不覆盖health和非法缺字段503测试验证
-- [ ] 6.6 更新fenced finalize仅对已有state、仍属当前active策略、严格更新slot、非policy_changed/stale/out-of-scope的Provider刷新health，覆盖迟到旧槽/并发策略切换/从未promotion且不错误推进snapshot/lifecycle
+- [x] 6.6 更新fenced finalize仅对已有state、仍属当前active策略、严格更新slot、非policy_changed/stale/out-of-scope的Provider刷新health，覆盖迟到旧槽/并发策略切换/从未promotion且不错误推进snapshot/lifecycle
 - [ ] 6.7 实现“poll先删、segment/final后删、completed rollup run与day-level retired cutoff同事务、completed compaction run最后删”的互异gate有界清理，以同为30天边界、依赖仍存在、compaction分批删除期间零复活和无retained rollup时coverage省略验证
 - [ ] 6.8 验证pending/summarized/deleting/failed、count/checksum异常及current lifecycle/audit/未来alerts无论年龄均不被本cleaner删除，并验证retired cutoff不可变、不会被cleaner删除且拒绝晚到同日poll
 - [ ] 6.9 并发运行retention、current query、promotion和Provider scope切换，验证稳定锁顺序、无死锁、query只见已提交current truth且promotion不被历史倒退
@@ -84,6 +84,7 @@
 > 第十九批以真实finalize生成两个各含一条Provider result和一条duplicate的到期terminal poll，分别在两类子表DELETE trigger注入失败，均证明poll/子证据、三项持久进度和audit全量回滚；解除故障后以`limit=1`两批逐次得到`processed=1/deleted=3`，每批剩余行、三项累计计数与audit同步递进，完成6.3。
 > 第二十批在既有真实poll retention两批删除前后，对Provider/account current整行分别移除唯一允许变化的`current_poll_run_id`后执行JSON指纹等价比较，并独立确认两个FK均为NULL；结合原有完整current-query JSON等价，逐字段覆盖来源时间/版本/提交、基础状态、lifecycle、missing计数、Provider health与freshness，完成6.4。
 > 第二十一批证明current source仍指向旧promotion时，更新槽的degraded Provider health独立推进，迟到旧result不能覆盖；真实poll retention前后生产Repository page完全等价，独立HTTP fixture在合法清空两个current-source FK前后status/body完全等价；缺失health及其他非法current形状均由Store fail closed，其中缺失health经真实Repository/Handler固定映射503且不泄露identity，完成6.5。
+> 第二十二批把Provider result的stale门禁统一到已持久health watermark：真实fenced finalize先建立A槽current promotion，再以C槽失败结果只刷新degraded health，随后finalize满足A<B<C的B槽；B固定为`stale_poll`，health保留C，snapshot pointer、current account lifecycle与missing计数均不推进。并发finalize与策略scope切换只产生两种完整串行结果，scope先行时不刷新health；从未promotion的失败结果只保留poll/Provider历史，不创建Provider current、snapshot或lifecycle。该矩阵完成6.6，但不替代6.9仍开放的retention/query/promotion/scope四路并发验收。
 
 ## 7. Runtime 配置、生命周期与兼容门禁
 

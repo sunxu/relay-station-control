@@ -76,6 +76,8 @@ Poll retention兼容fixture还在删除前后对Provider/account current整行�
 
 生产Store fixture还证明poll retention前后真实Repository page完全等价；独立HTTP fixture只将两个current-source FK合法置NULL，验证真实Repository/Handler的status/body等价，不重复执行retention。较新degraded health可在current source仍指向旧promotion时独立推进，迟到旧result不能覆盖；缺失health必须在Store fail closed，并经HTTP固定映射503且不泄露identity。
 
+真实fenced-finalize矩阵进一步以A槽current、C槽较新health和中间B槽证明stale判定使用已持久health watermark：A<B<C时B只保留`stale_poll`证据，不倒退health或推进snapshot/lifecycle。并发finalize与策略scope切换只允许完整串行结果，scope先行不刷新health；从未promotion的失败结果不创建Provider current、snapshot或lifecycle。该矩阵不覆盖retention、query、promotion与scope四路同时并发，后者仍须按6.9验收。
+
 Final rollup只读取不可变completed segments。账号final逐项求和，边界reset按`first_scheduled_at,last_scheduled_at,policy UUID`顺序计算，末值按最新`last_scheduled_at,policy UUID`选择；Provider final从总applied/expected重算coverage并省略0 expected。Finalize在一个事务内校验预期/完成segment数与版本1全字段segment checksum，写入全部account/Provider final rows、run completed和固定audit；任一步失败均不留下部分发布。未知finalize commit只以相同run/fence有界重放并读取持久化completed结果，不创建第二份真相。
 
 ### oldest eligible 或 backlog 持续增长

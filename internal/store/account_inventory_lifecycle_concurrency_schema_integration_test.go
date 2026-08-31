@@ -173,8 +173,8 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 			baselinePoll := fixture.finalize(t, ctx, database, []lifecycleAccount{{
 				email: "scope-race@example.invalid", successCount: 1,
 			}})
-			poll := prepareLifecyclePoll(t, ctx, database, fixture,
-				fixture.baseSlot.Add(time.Duration(fixture.nextPoll)*5*time.Minute))
+			pollSlot := fixture.baseSlot.Add(time.Duration(fixture.nextPoll) * 5 * time.Minute)
+			poll := prepareLifecyclePoll(t, ctx, database, fixture, pollSlot)
 			payload, err := makeLifecycleFinalizePayload(nil)
 			if err != nil {
 				t.Fatal(err)
@@ -256,10 +256,11 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 			var missingCount int
 			var promotionApplied bool
 			var skipReason *string
-			var providerOutAt, accountOutAt, auditAt time.Time
+			var providerOutAt, accountOutAt, auditAt, healthScheduledAt time.Time
 			var matchingAudits int
 			if err := database.owner.QueryRow(ctx, `SELECT
 				state.monitoring_status,state.current_poll_run_id,state.out_of_scope_since,
+				state.health_scheduled_at,
 				account.lifecycle,account.consecutive_missing_count,account.current_poll_run_id,
 				account.out_of_scope_since,result.promotion_applied,result.promotion_skipped_reason,
 				(SELECT transitioned_at FROM account_inventory_scope_transition_audits
@@ -273,7 +274,7 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 			  ON result.poll_run_id=$2 AND result.provider=state.provider
 			WHERE state.instance_id=$1 AND state.provider='openai'`,
 				fixture.instanceID, poll.pollID, scope.activationID).Scan(
-				&providerStatus, &providerPointer, &providerOutAt,
+				&providerStatus, &providerPointer, &providerOutAt, &healthScheduledAt,
 				&lifecycle, &missingCount, &accountPointer, &accountOutAt,
 				&promotionApplied, &skipReason, &auditAt, &matchingAudits,
 			); err != nil {
@@ -283,6 +284,13 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 				accountPointer != baselinePoll || !providerOutAt.Equal(accountOutAt) ||
 				!providerOutAt.Equal(auditAt) || matchingAudits != 1 {
 				t.Fatal("scope/finalize race left mixed Provider, account, or audit state")
+			}
+			expectedHealthSlot := pollSlot
+			if scopeFirst {
+				expectedHealthSlot = fixture.baseSlot
+			}
+			if !healthScheduledAt.Equal(expectedHealthSlot) {
+				t.Fatalf("scope/finalize health slot=%s, want %s", healthScheduledAt, expectedHealthSlot)
 			}
 			if scopeFirst {
 				if promotionApplied || skipReason == nil || *skipReason != "policy_changed" ||

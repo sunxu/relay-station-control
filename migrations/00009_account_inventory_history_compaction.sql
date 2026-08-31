@@ -1525,6 +1525,18 @@ BEGIN
         RAISE EXCEPTION 'provider evidence requires a running poll'
             USING ERRCODE = '23514';
     END IF;
+    IF NEW.promotion_applied AND EXISTS (
+        SELECT 1
+        FROM public.account_inventory_poll_runs AS run
+        JOIN public.account_inventory_provider_states AS state
+          ON state.instance_id = run.instance_id
+         AND state.provider = NEW.provider
+        WHERE run.poll_run_id = NEW.poll_run_id
+          AND state.health_scheduled_at >= run.scheduled_at
+    ) THEN
+        NEW.promotion_applied := false;
+        NEW.promotion_skipped_reason := 'stale_poll';
+    END IF;
     RETURN NEW;
 END;
 $$;

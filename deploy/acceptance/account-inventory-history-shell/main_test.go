@@ -224,6 +224,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion",
 		"TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection",
 		"TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy",
+		"TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition",
+		"TestInventorySnapshotContractFailureFinalizesWithoutPromotion",
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
 		"TestAccountInventoryHistoryCapacityOneTenFifty",
 		"TestAccountInventoryRowsFailClosed",
@@ -239,6 +241,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"current_query_after_retention=covered",
 		"current_health_query_matrix=covered",
 		"current_http_null_source=covered",
+		"provider_health_finalize_matrix=covered",
 		"metrics_backlog_drain=covered",
 	} {
 		if !strings.Contains(postgres, required) {

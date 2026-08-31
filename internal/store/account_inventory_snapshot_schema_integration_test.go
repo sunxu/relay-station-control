@@ -730,20 +730,22 @@ func TestInventorySnapshotContractFailureFinalizesWithoutPromotion(t *testing.T)
 	}
 	var status, reason string
 	var applied bool
-	var snapshotRows, stateRows int
+	var snapshotRows, stateRows, accountRows int
 	if err := database.owner.QueryRow(ctx, `SELECT run.status,
 		result.promotion_applied,result.promotion_skipped_reason,
 		(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$1),
-		(SELECT count(*) FROM account_inventory_provider_states WHERE instance_id=$2)
+		(SELECT count(*) FROM account_inventory_provider_states WHERE instance_id=$2),
+		(SELECT count(*) FROM account_inventory WHERE instance_id=$2)
 		FROM account_inventory_poll_runs AS run
 		JOIN account_inventory_poll_provider_results AS result USING (poll_run_id)
 		WHERE run.poll_run_id=$1`, fixture.pollRunID, fixture.instanceID).
-		Scan(&status, &applied, &reason, &snapshotRows, &stateRows); err != nil {
+		Scan(&status, &applied, &reason, &snapshotRows, &stateRows, &accountRows); err != nil {
 		t.Fatal(err)
 	}
-	if status != "finalized" || applied || reason != "contract_invalid" || snapshotRows != 0 || stateRows != 0 {
-		t.Fatalf("contract failure evidence = %s/%t/%s/%d/%d",
-			status, applied, reason, snapshotRows, stateRows)
+	if status != "finalized" || applied || reason != "contract_invalid" ||
+		snapshotRows != 0 || stateRows != 0 || accountRows != 0 {
+		t.Fatalf("contract failure evidence = %s/%t/%s/%d/%d/%d",
+			status, applied, reason, snapshotRows, stateRows, accountRows)
 	}
 }
 

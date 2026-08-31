@@ -171,8 +171,9 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 		fixture.instanceID, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
+	accountEmail := "history-health-backfill@example.invalid"
 	pollID := fixture.finalize(t, ctx, database, []lifecycleAccount{{
-		email: "history-health-backfill@example.invalid", successCount: 17,
+		email: accountEmail, successCount: 17,
 	}})
 
 	var beforeState string
@@ -226,6 +227,13 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 			historyRows, copiedEmailColumns)
 	}
 
+	// Prepare the middle slot before a newer failed observation wins the health
+	// slot, then finalize the middle slot late.
+	latePollID, lateFence := insertLifecycleGuardrailPoll(
+		t, ctx, database, fixture, uuid.Nil, false,
+	)
+	baselineAccount := readLifecycleGuardrailState(t, ctx, database, fixture, accountEmail)
+
 	// A newer finalized but non-promoted Provider observation refreshes health
 	// without moving the retained non-NULL current snapshot pointer.
 	failedPollID, fence := insertLifecycleGuardrailPoll(t, ctx, database, fixture, uuid.Nil, false)
@@ -257,16 +265,37 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 			currentPointer, currentScheduled, healthScheduled, healthReason)
 	}
 
-	// A Provider result finalized after the health refresh but from an older
-	// slot cannot overwrite the newer health observation.
-	nextPoll := fixture.nextPoll
-	fixture.nextPoll = -1
-	oldPollID, oldFence := insertLifecycleGuardrailPoll(t, ctx, database, fixture, uuid.Nil, false)
-	fixture.nextPoll = nextPoll
+	// The prepared complete middle slot is newer than the current snapshot but
+	// not newer than health, so it is stale before snapshot/lifecycle writes.
+	lateEvidence := lifecycleGuardrailCompleteEmptyEvidence()
+	lateEvidence.sourceCount = 1
+	lateEvidence.identifiableCount = 1
+	lateEvidence.providerResults[0]["identifiable_count"] = 1
+	lateEvidence.snapshotItems = []map[string]any{{
+		"provider": fixtureProviderName, "account_key": fixtureProviderName + ":" + accountEmail,
+		"email": accountEmail, "basic_status": "disabled",
+		"success_count": int64(99), "failed_count": int64(0),
+		"recent_request_count": int64(0), "last_refresh_unix": nil,
+		"next_retry_unix": nil, "updated_at_unix": nil,
+	}}
 	if finalized, err = finalizeLifecycleGuardrailPoll(
-		ctx, database, oldPollID, oldFence, lifecycleGuardrailCompleteEmptyEvidence(),
+		ctx, database, latePollID, lateFence, lateEvidence,
 	); err != nil || finalized != 1 {
-		t.Fatalf("finalize old Provider observation rows=%d err=%v", finalized, err)
+		t.Fatalf("finalize late Provider observation rows=%d err=%v", finalized, err)
+	}
+	var lateApplied bool
+	var lateReason string
+	var lateSnapshots int
+	if err := database.owner.QueryRow(ctx, `SELECT promotion_applied,promotion_skipped_reason,
+		(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$1)
+		FROM account_inventory_poll_provider_results
+		WHERE poll_run_id=$1 AND provider='openai'`, latePollID).
+		Scan(&lateApplied, &lateReason, &lateSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if lateApplied || lateReason != "stale_poll" || lateSnapshots != 0 {
+		t.Fatalf("late Provider result applied=%t reason=%q snapshots=%d",
+			lateApplied, lateReason, lateSnapshots)
 	}
 	var retainedPointer uuid.UUID
 	var retainedHealth time.Time
@@ -278,8 +307,12 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 		t.Fatal(err)
 	}
 	if retainedPointer != pollID || !retainedHealth.Equal(healthScheduled) || retainedReason != healthReason {
-		t.Fatalf("old Provider result overwrote health: pointer=%s health=%s reason=%s",
+		t.Fatalf("late Provider result overwrote current state: pointer=%s health=%s reason=%s",
 			retainedPointer, retainedHealth, retainedReason)
+	}
+	if account := readLifecycleGuardrailState(t, ctx, database, fixture, accountEmail); account != baselineAccount {
+		t.Fatalf("late Provider result advanced account state: got=%+v want=%+v",
+			account, baselineAccount)
 	}
 	var degraded bool
 	if err := database.runtime.QueryRow(ctx, `SELECT bool_and(provider_degraded)
