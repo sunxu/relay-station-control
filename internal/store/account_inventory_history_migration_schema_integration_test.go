@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	history "github.com/sunxu/relay-station-control/internal/history"
 )
@@ -2861,6 +2862,158 @@ func TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion(t *testing
 	if secondMarkers != 1 || secondRollups != 0 || secondPolls != 0 {
 		t.Fatalf("retention-won ordering marker=%d rollup=%d poll=%d",
 			secondMarkers, secondRollups, secondPolls)
+	}
+}
+
+func TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	firstRunID, secondRunID := uuid.New(), uuid.New()
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+		compaction_run_id,summary_date,instance_id,provider_policy_version
+	) VALUES
+		($1,(clock_timestamp() AT TIME ZONE 'UTC')::date-5,$3,$4),
+		($2,(clock_timestamp() AT TIME ZONE 'UTC')::date-4,$3,$4)`,
+		firstRunID, secondRunID, fixture.instanceID, fixture.policyID); err != nil {
+		t.Fatal(err)
+	}
+
+	type claimResult struct {
+		runID, fence uuid.UUID
+		owner        string
+		attempt      int
+		updatedAt    time.Time
+		leaseUntil   time.Time
+	}
+	claim := func(queryContext context.Context, transaction pgx.Tx, worker uuid.UUID, leaseSeconds int) claimResult {
+		t.Helper()
+		var result claimResult
+		if err := transaction.QueryRow(queryContext, `SELECT
+			compaction_run_id,claim_owner,fencing_token,attempt_count,updated_at,lease_expires_at
+			FROM public.control_claim_account_inventory_compaction_v1($1,$2)`,
+			worker, leaseSeconds).Scan(&result.runID, &result.owner, &result.fence,
+			&result.attempt, &result.updatedAt, &result.leaseUntil); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	firstWorker, secondWorker := uuid.New(), uuid.New()
+	firstTransaction, err := database.runtime.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstTransaction.Rollback(ctx)
+	first := claim(ctx, firstTransaction, firstWorker, 5)
+
+	secondTransaction, err := database.runtime.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondTransaction.Rollback(ctx)
+	secondContext, cancelSecond := context.WithTimeout(ctx, 2*time.Second)
+	second := claim(secondContext, secondTransaction, secondWorker, 30)
+	cancelSecond()
+
+	for _, item := range []struct {
+		claim       claimResult
+		wantRun     uuid.UUID
+		wantWorker  uuid.UUID
+		wantSeconds time.Duration
+	}{
+		{first, firstRunID, firstWorker, 5 * time.Second},
+		{second, secondRunID, secondWorker, 30 * time.Second},
+	} {
+		if item.claim.runID != item.wantRun || item.claim.owner != item.wantWorker.String() ||
+			item.claim.fence == uuid.Nil || item.claim.attempt != 1 ||
+			item.claim.leaseUntil.Sub(item.claim.updatedAt) != item.wantSeconds {
+			t.Fatalf("claim=%+v want_run=%s want_worker=%s want_lease=%s",
+				item.claim, item.wantRun, item.wantWorker, item.wantSeconds)
+		}
+	}
+	if first.fence == second.fence {
+		t.Fatal("independent claims reused a fencing token")
+	}
+	if err := secondTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := firstTransaction.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	expiryContext, cancelExpiry := context.WithTimeout(ctx, 8*time.Second)
+	defer cancelExpiry()
+	for {
+		var expired bool
+		if err := database.owner.QueryRow(expiryContext,
+			`SELECT clock_timestamp() >= $1`, first.leaseUntil).Scan(&expired); err != nil {
+			t.Fatal(err)
+		}
+		if expired {
+			break
+		}
+		select {
+		case <-expiryContext.Done():
+			t.Fatal("database-time lease did not expire")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+
+	var reconciled int
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_reconcile_account_inventory_compactions_v1(10)->>'failed_count')::integer`).
+		Scan(&reconciled); err != nil || reconciled != 1 {
+		t.Fatalf("reconciled=%d err=%v", reconciled, err)
+	}
+	var reconciledState bool
+	if err := database.owner.QueryRow(ctx, `SELECT status='failed' AND failed_from='pending'
+		AND failure_reason='lease_expired' AND claim_owner IS NULL
+		AND lease_expires_at IS NULL AND fencing_token IS NULL AND attempt_count=1
+		FROM account_inventory_compaction_runs WHERE compaction_run_id=$1`, firstRunID).
+		Scan(&reconciledState); err != nil || !reconciledState {
+		t.Fatalf("reconciled state=%t err=%v", reconciledState, err)
+	}
+
+	reclaimWorker := uuid.New()
+	var reclaimed claimResult
+	var status string
+	var failedFrom *string
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		compaction_run_id,claim_owner,fencing_token,attempt_count,updated_at,lease_expires_at,
+		status,failed_from
+		FROM public.control_claim_account_inventory_compaction_v1($1,30)`, reclaimWorker).Scan(
+		&reclaimed.runID, &reclaimed.owner, &reclaimed.fence, &reclaimed.attempt,
+		&reclaimed.updatedAt, &reclaimed.leaseUntil, &status, &failedFrom,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if reclaimed.runID != firstRunID || reclaimed.owner != reclaimWorker.String() ||
+		reclaimed.attempt != 2 || reclaimed.fence == uuid.Nil || reclaimed.fence == first.fence ||
+		reclaimed.leaseUntil.Sub(reclaimed.updatedAt) != 30*time.Second ||
+		status != "pending" || failedFrom != nil {
+		t.Fatalf("reclaimed=%+v status=%s failed_from=%v", reclaimed, status, failedFrom)
+	}
+
+	var before, after string
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`, firstRunID).
+		Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	var staleRenewed int
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_renew_account_inventory_compaction_v1($1,$2,30)`,
+		firstRunID, first.fence).Scan(&staleRenewed); err != nil || staleRenewed != 0 {
+		t.Fatalf("stale renew rows=%d err=%v", staleRenewed, err)
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`, firstRunID).
+		Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatal("stale fencing token changed reclaimed run")
 	}
 }
 

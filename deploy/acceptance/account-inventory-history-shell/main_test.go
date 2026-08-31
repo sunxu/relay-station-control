@@ -187,6 +187,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"coverage_expression_9499_finalize_9474_9500_10000=covered",
 		"last_segment_concurrency=covered",
 		"TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic",
+		"TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing",
+		"compaction_claim_fencing=covered",
 		"summarize_atomicity=covered",
 		"summarize_immutability=covered",
 		"finalize_atomicity=covered",
