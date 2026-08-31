@@ -107,17 +107,12 @@ func runRunner(t *testing.T, arguments ...string) (string, error) {
 func readonlyTemporaryDirectories(t *testing.T) map[string]struct{} {
 	t.Helper()
 	directories := make(map[string]struct{})
-	for _, pattern := range []string{
-		"/tmp/relay-control-readonly-query-*",
-		"/private/tmp/relay-control-readonly-query-*",
-	} {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			t.Fatal("invalid readonly-query temporary directory pattern")
-		}
-		for _, match := range matches {
-			directories[match] = struct{}{}
-		}
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "relay-control-readonly-query-*"))
+	if err != nil {
+		t.Fatal("invalid readonly-query temporary directory pattern")
+	}
+	for _, match := range matches {
+		directories[match] = struct{}{}
 	}
 	return directories
 }
@@ -338,9 +333,11 @@ func TestReadonlyQueryBundlePinsPostgresAndOwnsTemporaryCleanup(t *testing.T) {
 	for _, name := range resourceOwningScripts {
 		script := readFile(t, filepath.Join(root, name))
 		for _, required := range []string{
+			`temporary_root="${TMPDIR:-/tmp}"`,
+			`temporary_root="${temporary_root%/}"`,
 			"mktemp -d",
-			"/tmp/relay-control-readonly-query-",
-			"/private/tmp/relay-control-readonly-query-",
+			`${temporary_root}/relay-control-readonly-query-`,
+			`"${temporary_root}"/relay-control-readonly-query-`,
 			"trap cleanup EXIT",
 			"rm -rf -- \"$runtime_directory\"",
 			`[ -e "$runtime_directory" ]`,
@@ -501,6 +498,15 @@ func TestReadonlyQueryRecoveryUsesOfficialDataPlane(t *testing.T) {
 	script := readFile(t, filepath.Join(root, "account-inventory-readonly-query-recovery.sh"))
 	harness := readFile(t, filepath.Join(root, "account-inventory-readonly-query-postgres-recovery", "main.go"))
 	probe := readFile(t, filepath.Join(root, "account-inventory-readonly-query-data-plane-probe.sh"))
+	for _, required := range []string{
+		`temporary_root="${TMPDIR:-/tmp}"`,
+		`temporary_root="${temporary_root%/}"`,
+		`mktemp "${temporary_root}/readonly-query-data-plane.XXXXXX"`,
+	} {
+		if !strings.Contains(probe, required) {
+			t.Errorf("readonly query data-plane probe lacks temporary-root contract %q", required)
+		}
+	}
 	if strings.Contains(harness, `"net/http/httptest"`) {
 		t.Fatal("readonly query recovery substitutes httptest for the official data plane")
 	}

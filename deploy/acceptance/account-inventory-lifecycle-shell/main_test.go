@@ -224,3 +224,35 @@ func TestLifecycleScriptsClearAllProxySpellingsAndPassSyntax(t *testing.T) {
 		}
 	}
 }
+
+func TestLifecycleSnapshotAndPollTemporaryDirectoriesFollowTMPDIR(t *testing.T) {
+	root := acceptanceRoot(t)
+	for _, name := range []string{
+		"account-inventory-lifecycle-run.sh",
+		"account-inventory-lifecycle-postgres.sh",
+		"account-inventory-lifecycle-rollback.sh",
+		"account-inventory-snapshot-postgres.sh",
+		"account-inventory-snapshot-container.sh",
+		"account-inventory-snapshot-real-node.sh",
+		"account-inventory-poll-container.sh",
+	} {
+		encoded, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		contents := string(encoded)
+		for _, required := range []string{
+			`temporary_root="${TMPDIR:-/tmp}"`,
+			`temporary_root="${temporary_root%/}"`,
+			`mktemp -d "$temporary_root/relay-control-`,
+			`"$temporary_root"/relay-control-`,
+		} {
+			if !strings.Contains(contents, required) {
+				t.Errorf("%s lacks temporary-root contract %q", name, required)
+			}
+		}
+		if strings.Contains(contents, "/tmp/relay-") || strings.Contains(contents, "/private/tmp/relay-") {
+			t.Errorf("%s hard-codes a host relay temporary path", name)
+		}
+	}
+}

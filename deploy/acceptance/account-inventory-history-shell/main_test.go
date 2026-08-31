@@ -107,6 +107,13 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-rollback.sh",
 		"account-inventory-history-safety-run.sh",
 	}
+	temporaryPrefixes := map[string]string{
+		"account-inventory-history-run.sh":        "relay-control-history-run.",
+		"account-inventory-history-postgres.sh":   "relay-control-history-postgres.",
+		"account-inventory-history-process.sh":    "relay-control-history-process.",
+		"account-inventory-history-rollback.sh":   "relay-control-history-rollback.",
+		"account-inventory-history-safety-run.sh": "relay-control-history-safety.",
+	}
 	for _, name := range scripts {
 		path := filepath.Join(acceptanceRoot(t), name)
 		contents := readAcceptanceFile(t, name)
@@ -118,6 +125,22 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		for _, forbidden := range []string{"set -x", "printenv", "export -p", "eval ", "docker logs", "git checkout", "git worktree"} {
 			if strings.Contains(contents, forbidden) {
 				t.Errorf("%s contains forbidden %q", name, forbidden)
+			}
+		}
+		prefix := temporaryPrefixes[name]
+		for _, required := range []string{
+			`temporary_root="${TMPDIR:-/tmp}"`,
+			`temporary_root="${temporary_root%/}"`,
+			`mktemp -d "$temporary_root/` + prefix,
+			`"$temporary_root"/` + prefix,
+		} {
+			if !strings.Contains(contents, required) {
+				t.Errorf("%s lacks temporary-root contract %q", name, required)
+			}
+		}
+		for _, forbidden := range []string{"/tmp/relay-", "/private/tmp/relay-"} {
+			if strings.Contains(contents, forbidden) {
+				t.Errorf("%s hard-codes host temporary path %q", name, forbidden)
 			}
 		}
 		if output, err := exec.Command("bash", "-n", path).CombinedOutput(); err != nil {
@@ -148,8 +171,6 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 
 	postgres := readAcceptanceFile(t, scripts[1])
 	for _, required := range []string{
-		"mktemp -d /tmp/relay-control-history-postgres.",
-		"/private/tmp/relay-control-history-postgres.",
 		"docker compose --project-name", "down --volumes --remove-orphans",
 		"docker ps --all", "docker volume ls", "docker network ls",
 		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose \"$direction\"",
@@ -219,6 +240,7 @@ func assertHistoryRollbackContract(t *testing.T) {
 		`"$management_key" "$fake_token" "$session_value" "$csrf_value"`, `"$runtime_directory"/*.log`,
 		"account_inventory_history_fake_node=stopped total=1 health=0 inventory=1 unauthorized=0 rejected=0",
 		"lock_acquired=false", `[ "$lock_acquired" = true ]`,
+		`lock_directory="$temporary_root/relay-control-history-rollback-${control_port}.lock"`,
 		"snapshot_cleanup=controlled", "poll_cleanup=controlled", "current_fk_null=covered",
 		"old_control_poll_promotion=covered", "old_control_http_current_query=covered",
 		"history_and_history_audit_unchanged=covered", "production_down=not_used",
@@ -269,7 +291,6 @@ func assertHistorySafetyContract(t *testing.T) {
 	t.Helper()
 	safety := readAcceptanceFile(t, "account-inventory-history-safety-run.sh")
 	for _, required := range []string{
-		"mktemp -d /tmp/relay-control-history-safety.",
 		"CONTROL_HISTORY_CANARY_SCAN_DIR", "CONTROL_HISTORY_CANARY_ENDPOINT",
 		"CONTROL_HISTORY_CANARY_SECRET_REFERENCE", "CONTROL_HISTORY_CANARY_SECRET_VALUE",
 		"CONTROL_HISTORY_CANARY_EMAIL", "CONTROL_HISTORY_CANARY_ACCOUNT_KEY",
@@ -301,7 +322,7 @@ func assertHistoryProcessContract(t *testing.T) {
 	t.Helper()
 	process := readAcceptanceFile(t, "account-inventory-history-process.sh")
 	for _, required := range []string{
-		"mktemp -d /tmp/relay-control-history-process.",
+		`lock_directory="$temporary_root/relay-control-history-process-18084-55439.lock"`,
 		`project_name="relay-control-history-process-${suffix}"`,
 		"account-inventory-history-process.compose.yaml",
 		"docker compose --project-name", "down --volumes --remove-orphans",

@@ -17,6 +17,8 @@ phase0_image='relay-station/cliproxyapi:7.2.141-phase0'
 expected_result='account_inventory_snapshot_real_node=success node_count=2 request_count=2 request_wait_seconds=10 runtime_mode_count=2 disk_fallback_mode_count=0 snapshot_items=6 provider_results=2 promotion_applied=2 promotion_skipped=0 management_writes=0 probe_requests=0 gateway_requests=0'
 lock_directory="${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}"
 runtime_directory=''
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 database_network=''
 postgres_name=''
 postgres_volume=''
@@ -87,7 +89,7 @@ cleanup_resources() {
     fi
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-snapshot-real-node.*|/private/tmp/relay-control-snapshot-real-node.*)
+    "$temporary_root"/relay-control-snapshot-real-node.*)
       if rm -rf -- "$runtime_directory"; then
         runtime_directory=''
       else
@@ -195,7 +197,7 @@ main() {
 
   module_cache="$(go env GOMODCACHE)"
   [ -d "$module_cache" ] || fixed_failure 'module_cache_unavailable'
-  runtime_directory="$(mktemp -d /tmp/relay-control-snapshot-real-node.XXXXXXXXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-snapshot-real-node.XXXXXXXXXXXX")"
   suffix="${runtime_directory##*.}"
   resource_owner="$suffix"
   database_network="relay-control-snapshot-real-db-${suffix}"

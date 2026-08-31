@@ -6,13 +6,14 @@ set -euo pipefail
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
 export NO_PROXY='*' no_proxy='*'
 export GOPROXY="${CONTROL_LIFECYCLE_ACCEPTANCE_GOPROXY:-https://goproxy.cn,direct}"
-export GOCACHE="${CONTROL_LIFECYCLE_ACCEPTANCE_GOCACHE:-${TMPDIR:-/tmp}/relay-control-lifecycle-acceptance-go-build}"
 export npm_config_registry='https://registry.npmmirror.com'
 
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-snapshot-postgres.compose.yaml"
-runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-rollback.XXXXXXXXXXXX)"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
+runtime_directory="$(mktemp -d "$temporary_root/relay-control-lifecycle-rollback.XXXXXXXXXXXX")"
 project_name="relay-control-lifecycle-rollback-pg-$$"
 old_revision='e482d8eb19896a60b73a4144ee155d1f66a2b1d7'
 minimum_forward_schema=7
@@ -48,7 +49,7 @@ cleanup() {
   stop_control
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   case "$runtime_directory" in
-    /tmp/relay-control-lifecycle-rollback.*|/private/tmp/relay-control-lifecycle-rollback.*)
+    "$temporary_root"/relay-control-lifecycle-rollback.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac

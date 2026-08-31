@@ -20,6 +20,8 @@ fi
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-readonly-query-postgres.compose.yaml"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 runtime_directory=''
 project_name=''
 harness=''
@@ -33,7 +35,7 @@ bootstrap_file=''
 data_plane_key_file=''
 session_file=''
 control_port='18082'
-lock_directory='/tmp/relay-control-readonly-query-control-18082.lock'
+lock_directory="${temporary_root}/relay-control-readonly-query-control-18082.lock"
 lock_acquired=false
 control_pid=''
 outage_pid=''
@@ -67,7 +69,7 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-readonly-query-recovery.*|/private/tmp/relay-control-readonly-query-recovery.*)
+    "${temporary_root}"/relay-control-readonly-query-recovery.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -110,7 +112,7 @@ strict_cleanup() {
     fixed_failure 'cleanup_network_residual'
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-readonly-query-recovery.*|/private/tmp/relay-control-readonly-query-recovery.*)
+    "${temporary_root}"/relay-control-readonly-query-recovery.*)
       rm -rf -- "$runtime_directory"
       ;;
     *) fixed_failure 'cleanup_runtime_path_invalid' ;;
@@ -385,7 +387,7 @@ main() {
     fixed_failure 'control_port_concurrent_or_stale_lock'
   fi
   lock_acquired=true
-  runtime_directory="$(mktemp -d /tmp/relay-control-readonly-query-recovery.XXXXXX)"
+  runtime_directory="$(mktemp -d "${temporary_root}/relay-control-readonly-query-recovery.XXXXXX")"
   project_name="relay-control-readonly-query-recovery-$(printf '%s' "${runtime_directory##*.}" | tr '[:upper:]' '[:lower:]')"
   harness="$runtime_directory/readonly-query-recovery"
   control_binary="$runtime_directory/control"

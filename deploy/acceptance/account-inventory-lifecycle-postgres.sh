@@ -4,13 +4,14 @@ set -euo pipefail
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
 export NO_PROXY='*' no_proxy='*'
 export GOPROXY="${CONTROL_LIFECYCLE_ACCEPTANCE_GOPROXY:-https://goproxy.cn,direct}"
-export GOCACHE="${CONTROL_LIFECYCLE_ACCEPTANCE_GOCACHE:-${TMPDIR:-/tmp}/relay-control-lifecycle-acceptance-go-build}"
 export npm_config_registry='https://registry.npmmirror.com'
 
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-snapshot-postgres.compose.yaml"
-runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-postgres.XXXXXXXXXXXX)"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
+runtime_directory="$(mktemp -d "$temporary_root/relay-control-lifecycle-postgres.XXXXXXXXXXXX")"
 project_name="relay-control-lifecycle-pg-$$"
 export CONTROL_SNAPSHOT_POSTGRES_PROJECT="$project_name"
 
@@ -28,7 +29,7 @@ cleanup() {
   trap - EXIT HUP INT TERM
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   case "$runtime_directory" in
-    /tmp/relay-control-lifecycle-postgres.*|/private/tmp/relay-control-lifecycle-postgres.*)
+    "$temporary_root"/relay-control-lifecycle-postgres.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac

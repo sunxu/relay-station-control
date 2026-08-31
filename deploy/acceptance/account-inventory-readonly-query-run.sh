@@ -15,6 +15,8 @@ fi
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 mode="${1:-static}"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 runtime_directory=''
 
 fixed_failure() {
@@ -26,7 +28,7 @@ cleanup() {
   local exit_code=$?
   trap - EXIT HUP INT TERM
   case "$runtime_directory" in
-    /tmp/relay-control-readonly-query-run.*|/private/tmp/relay-control-readonly-query-run.*)
+    "${temporary_root}"/relay-control-readonly-query-run.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -35,7 +37,7 @@ cleanup() {
 
 strict_cleanup() {
   case "$runtime_directory" in
-    /tmp/relay-control-readonly-query-run.*|/private/tmp/relay-control-readonly-query-run.*)
+    "${temporary_root}"/relay-control-readonly-query-run.*)
       rm -rf -- "$runtime_directory"
       ;;
     *) fixed_failure 'cleanup_runtime_path_invalid' ;;
@@ -143,7 +145,7 @@ case "$mode" in
     exit 1
     ;;
 esac
-runtime_directory="$(mktemp -d /tmp/relay-control-readonly-query-run.XXXXXX)"
+runtime_directory="$(mktemp -d "${temporary_root}/relay-control-readonly-query-run.XXXXXX")"
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 

@@ -7,13 +7,14 @@ set -euo pipefail
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
 export NO_PROXY='*' no_proxy='*'
 export GOPROXY="${CONTROL_LIFECYCLE_ACCEPTANCE_GOPROXY:-https://goproxy.cn,direct}"
-export GOCACHE="${CONTROL_LIFECYCLE_ACCEPTANCE_GOCACHE:-${TMPDIR:-/tmp}/relay-control-lifecycle-acceptance-go-build}"
 export npm_config_registry='https://registry.npmmirror.com'
 
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 mode="${1:-static}"
 runtime_directory=''
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 
 fixed_failure() {
   echo "account_inventory_lifecycle_acceptance=failed reason=$1" >&2
@@ -24,8 +25,8 @@ cleanup() {
   local exit_code=$?
   trap - EXIT HUP INT TERM
   case "$runtime_directory" in
-    /tmp/relay-control-lifecycle-static.*|/private/tmp/relay-control-lifecycle-static.*|\
-    /tmp/relay-control-lifecycle-scan.*|/private/tmp/relay-control-lifecycle-scan.*)
+    "$temporary_root"/relay-control-lifecycle-static.*|\
+    "$temporary_root"/relay-control-lifecycle-scan.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -45,7 +46,7 @@ require_lifecycle_test() {
 
 run_static() {
   command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
-  runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-static.XXXXXXXXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-lifecycle-static.XXXXXXXXXXXX")"
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
 
@@ -93,7 +94,7 @@ run_scan() {
 
 run_scan_smoke() {
   local index=0 variable_name artifact
-  runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-scan.XXXXXXXXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-lifecycle-scan.XXXXXXXXXXXX")"
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
   umask 077
@@ -127,7 +128,7 @@ run_scan_smoke() {
 
 run_scan_matrix() {
   local suffix
-  runtime_directory="$(mktemp -d /tmp/relay-control-lifecycle-scan.XXXXXXXXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-lifecycle-scan.XXXXXXXXXXXX")"
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
   umask 077

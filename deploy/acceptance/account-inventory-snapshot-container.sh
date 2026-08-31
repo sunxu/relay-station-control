@@ -16,6 +16,8 @@ golang_image='golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698
 expected_result='account_inventory_snapshot_official_runtime=success image_version=v7.2.141 mode=runtime request_count=1 request_wait_seconds=10 snapshot_items=1 provider_states=1 promotion_applied=1 management_writes=0 probe_requests=0 gateway_requests=0'
 lock_directory="${CONTROL_DRIVER_SMOKE_LOCK_DIR:-${TMPDIR:-/tmp}/relay-control-cliproxyapi-smoke.lock}"
 runtime_directory=''
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 network_name=''
 node_name=''
 postgres_name=''
@@ -52,7 +54,7 @@ cleanup() {
     docker volume rm "$postgres_volume" >/dev/null 2>&1 || true
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-snapshot-container.*|/private/tmp/relay-control-snapshot-container.*)
+    "$temporary_root"/relay-control-snapshot-container.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -122,7 +124,7 @@ main() {
     fixed_failure 'module_cache_unavailable'
   fi
 
-  runtime_directory="$(mktemp -d /tmp/relay-control-snapshot-container.XXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-snapshot-container.XXXXXX")"
   suffix="$$"
   network_name="relay-control-snapshot-${suffix}"
   node_name="relay-control-snapshot-node-${suffix}"

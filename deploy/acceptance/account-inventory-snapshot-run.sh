@@ -8,7 +8,6 @@ set -euo pipefail
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
 export NO_PROXY='*' no_proxy='*'
 export GOPROXY="${CONTROL_SNAPSHOT_ACCEPTANCE_GOPROXY:-https://goproxy.cn,direct}"
-export GOCACHE="${CONTROL_SNAPSHOT_ACCEPTANCE_GOCACHE:-${TMPDIR:-/tmp}/relay-control-snapshot-acceptance-go-build}"
 export npm_config_registry='https://registry.npmmirror.com'
 
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"

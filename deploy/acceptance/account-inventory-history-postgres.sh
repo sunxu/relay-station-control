@@ -14,6 +14,8 @@ fi
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-history-postgres.compose.yaml"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 runtime_directory=''
 project_name=''
 
@@ -34,7 +36,7 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-history-postgres.*|/private/tmp/relay-control-history-postgres.*)
+    "$temporary_root"/relay-control-history-postgres.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -61,7 +63,7 @@ strict_cleanup() {
     || fixed_failure 'cleanup_network_inspection_failed'
   [ -z "$residual" ] || fixed_failure 'cleanup_network_residual'
   case "$runtime_directory" in
-    /tmp/relay-control-history-postgres.*|/private/tmp/relay-control-history-postgres.*)
+    "$temporary_root"/relay-control-history-postgres.*)
       rm -rf -- "$runtime_directory"
       ;;
     *) fixed_failure 'cleanup_runtime_path_invalid' ;;
@@ -138,7 +140,7 @@ main() {
   command -v docker >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
   command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
 
-  runtime_directory="$(mktemp -d /tmp/relay-control-history-postgres.XXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-history-postgres.XXXXXX")"
   project_name="relay-control-history-postgres-$(printf '%s' "${runtime_directory##*.}" | tr '[:upper:]' '[:lower:]')"
   export CONTROL_HISTORY_POSTGRES_PROJECT="$project_name"
 

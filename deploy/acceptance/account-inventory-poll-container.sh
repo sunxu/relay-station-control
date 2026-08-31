@@ -13,6 +13,8 @@ repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 official_image='eceasy/cli-proxy-api:v7.2.141'
 official_digest='eceasy/cli-proxy-api@sha256:7f598ce64478a8a5f90ed76875e0e9b0e7d77b80e17184b13df18c3d5bdb3def'
 runtime_directory=''
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 suffix="$$"
 network_name="relay-control-poll-${suffix}"
 node_name="relay-control-poll-node-${suffix}"
@@ -31,7 +33,7 @@ cleanup() {
   docker rm -f "$node_name" >/dev/null 2>&1 || true
   docker network rm "$network_name" >/dev/null 2>&1 || true
   case "$runtime_directory" in
-    /tmp/relay-control-poll-container.*|/private/tmp/relay-control-poll-container.*)
+    "$temporary_root"/relay-control-poll-container.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -43,7 +45,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 
-runtime_directory="$(mktemp -d /tmp/relay-control-poll-container.XXXXXX)"
+runtime_directory="$(mktemp -d "$temporary_root/relay-control-poll-container.XXXXXX")"
 
 case "$(docker image inspect "$official_image" --format '{{json .RepoDigests}}')" in
   *"$official_digest"*) ;;

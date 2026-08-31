@@ -833,15 +833,12 @@ func proxyFreeEnvironment() []string {
 		"http_proxy": true, "https_proxy": true, "all_proxy": true,
 		"GOOSE_DRIVER": true, "GOOSE_DBSTRING": true, "GOOSE_MIGRATION_DIR": true,
 	}
-	environment := make([]string, 0, len(os.Environ())+2)
+	environment := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if !blocked[name] {
 			environment = append(environment, entry)
 		}
-	}
-	if os.Getenv("GOCACHE") == "" {
-		environment = append(environment, "GOCACHE="+filepath.Join(os.TempDir(), "relay-control-asset-migration-go-build"))
 	}
 	return environment
 }

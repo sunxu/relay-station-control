@@ -14,7 +14,9 @@ case "$count" in
 esac
 
 key_file='/run/acceptance/data-plane-key'
-response_file="$(mktemp /tmp/readonly-query-data-plane.XXXXXX)"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
+response_file="$(mktemp "${temporary_root}/readonly-query-data-plane.XXXXXX")"
 cleanup() {
   rm -f -- "$response_file"
 }

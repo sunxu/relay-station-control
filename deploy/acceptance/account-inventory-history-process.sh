@@ -14,6 +14,8 @@ fi
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-history-process.compose.yaml"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 runtime_directory=''
 project_name=''
 control_binary=''
@@ -25,7 +27,7 @@ keyring_value=''
 control_pid=''
 control_port='18084'
 database_host_port='55439'
-lock_directory='/tmp/relay-control-history-process-18084-55439.lock'
+lock_directory="$temporary_root/relay-control-history-process-18084-55439.lock"
 lock_acquired=false
 fixture_instance_id='00000000-0000-4000-8000-000000000909'
 fixture_summary_date=''
@@ -66,7 +68,7 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-history-process.*|/private/tmp/relay-control-history-process.*)
+    "$temporary_root"/relay-control-history-process.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -98,7 +100,7 @@ strict_cleanup() {
     || fixed_failure 'cleanup_network_inspection_failed'
   [ -z "$residual" ] || fixed_failure 'cleanup_network_residual'
   case "$runtime_directory" in
-    /tmp/relay-control-history-process.*|/private/tmp/relay-control-history-process.*)
+    "$temporary_root"/relay-control-history-process.*)
       rm -rf -- "$runtime_directory"
       ;;
     *) fixed_failure 'cleanup_runtime_path_invalid' ;;
@@ -522,7 +524,7 @@ main() {
   require_command openssl
   require_command curl
 
-  runtime_directory="$(mktemp -d /tmp/relay-control-history-process.XXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-history-process.XXXXXX")"
   suffix="$(printf '%s' "${runtime_directory##*.}" | tr '[:upper:]' '[:lower:]')"
   project_name="relay-control-history-process-${suffix}"
   export CONTROL_HISTORY_PROCESS_PROJECT="$project_name"

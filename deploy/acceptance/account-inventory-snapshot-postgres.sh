@@ -9,7 +9,9 @@ export npm_config_registry='https://registry.npmmirror.com'
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-snapshot-postgres.compose.yaml"
-runtime_directory="$(mktemp -d /tmp/relay-control-snapshot-postgres.XXXXXX)"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
+runtime_directory="$(mktemp -d "$temporary_root/relay-control-snapshot-postgres.XXXXXX")"
 project_name="relay-control-snapshot-pg-$$"
 harness="$runtime_directory/snapshot-postgres-recovery"
 ready_file="$runtime_directory/interrupted-finalize.ready"
@@ -38,7 +40,7 @@ cleanup() {
   fi
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   case "$runtime_directory" in
-    /tmp/relay-control-snapshot-postgres.*|/private/tmp/relay-control-snapshot-postgres.*)
+    "$temporary_root"/relay-control-snapshot-postgres.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac

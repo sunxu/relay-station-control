@@ -14,6 +14,8 @@ fi
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
 compose_file="$script_directory/account-inventory-history-postgres.compose.yaml"
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
 runtime_directory=''
 project_name=''
 network_name=''
@@ -61,7 +63,7 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   case "$runtime_directory" in
-    /tmp/relay-control-history-rollback.*|/private/tmp/relay-control-history-rollback.*)
+    "$temporary_root"/relay-control-history-rollback.*)
       rm -rf -- "$runtime_directory"
       ;;
   esac
@@ -103,7 +105,7 @@ strict_cleanup() {
     || fixed_failure 'cleanup_network_inspection_failed'
   [ -z "$residual" ] || fixed_failure 'cleanup_network_residual'
   case "$runtime_directory" in
-    /tmp/relay-control-history-rollback.*|/private/tmp/relay-control-history-rollback.*)
+    "$temporary_root"/relay-control-history-rollback.*)
       rm -rf -- "$runtime_directory"
       ;;
     *) fixed_failure 'cleanup_runtime_path_invalid' ;;
@@ -296,7 +298,7 @@ main() {
   for command_name in curl date docker git go make openssl sed tar tr; do
     command -v "$command_name" >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
   done
-  runtime_directory="$(mktemp -d /tmp/relay-control-history-rollback.XXXXXX)"
+  runtime_directory="$(mktemp -d "$temporary_root/relay-control-history-rollback.XXXXXX")"
   suffix="$(printf '%s' "${runtime_directory##*.}" | tr '[:upper:]' '[:lower:]')"
   project_name="relay-control-history-rollback-${suffix}"
   network_name="${project_name}_isolated"
@@ -305,7 +307,7 @@ main() {
   old_control_name="${project_name}-old-control"
   export CONTROL_HISTORY_POSTGRES_PROJECT="$project_name"
   control_port=$((24000 + ($$ % 10000)))
-  lock_directory="/tmp/relay-control-history-rollback-${control_port}.lock"
+  lock_directory="$temporary_root/relay-control-history-rollback-${control_port}.lock"
   mkdir "$lock_directory" >/dev/null 2>&1 || fixed_failure 'control_port_lock_unavailable'
   lock_acquired=true
 
