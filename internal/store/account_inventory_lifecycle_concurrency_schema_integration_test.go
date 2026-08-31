@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 type preparedLifecyclePoll struct {
@@ -299,6 +301,369 @@ func TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition(t *testin
 				}
 			} else if !promotionApplied || skipReason != nil || providerPointer != poll.pollID {
 				t.Fatal("finalize-first race did not publish before the atomic scope transition")
+			}
+		})
+	}
+}
+
+func TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope(t *testing.T) {
+	type retentionResult struct {
+		processed int
+		deleted   int
+		err       error
+	}
+	type scopeResult struct {
+		activationID uuid.UUID
+		err          error
+	}
+	for _, scopeFirst := range []bool{false, true} {
+		name := "retention_first"
+		if scopeFirst {
+			name = "scope_first"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			fixture := newReadonlyQueryFixture(t, ctx, nil)
+			database, lifecycle := fixture.database, fixture.lifecycle
+			if err := database.owner.QueryRow(ctx, `SELECT
+				(((clock_timestamp() AT TIME ZONE 'UTC')::date-34)::timestamp
+				 AT TIME ZONE 'UTC')+interval '12 hours'`).Scan(&lifecycle.baseSlot); err != nil {
+				t.Fatal(err)
+			}
+			zPoll := lifecycle.finalize(t, ctx, database, []lifecycleAccount{{
+				email: "four-way-z@example.invalid", successCount: 1,
+			}})
+			aPoll := lifecycle.finalize(t, ctx, database, []lifecycleAccount{{
+				email: "four-way-a@example.invalid", successCount: 1,
+			}})
+			if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+				DISABLE TRIGGER account_inventory_snapshot_items_immutable`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.owner.Exec(ctx, `DELETE FROM account_inventory_snapshot_items
+				WHERE poll_run_id=ANY($1::uuid[])`, []uuid.UUID{zPoll, aPoll}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+				ENABLE TRIGGER account_inventory_snapshot_items_immutable`); err != nil {
+				t.Fatal(err)
+			}
+			summaryDate := lifecycle.baseSlot.UTC().Truncate(24 * time.Hour)
+			var compactionID uuid.UUID
+			if err := database.owner.QueryRow(ctx, `INSERT INTO account_inventory_compaction_runs(
+				summary_date,instance_id,provider_policy_version,status,checksum_version,
+				source_snapshot_count,source_poll_count,source_provider_result_count,
+				source_duplicate_count,source_checksum,deleted_snapshot_count,created_at,
+				summarized_at,deleting_at,completed_at,updated_at
+			) VALUES($1,$2,$3,'completed',1,2,2,2,0,decode(repeat('81',32),'hex'),2,
+				$1::date+interval '1 day',$1::date+interval '1 day 1 hour',
+				$1::date+interval '1 day 2 hours',$1::date+interval '1 day 3 hours',
+				$1::date+interval '1 day 3 hours') RETURNING compaction_run_id`, summaryDate,
+				lifecycle.instanceID, lifecycle.policyID).Scan(&compactionID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+				summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
+				completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
+			) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat('82',32),'hex'),
+				$1::date+interval '1 hour',$1::date+interval '2 hours',$1::date+interval '2 hours')`,
+				summaryDate, lifecycle.instanceID, uuid.New()); err != nil {
+				t.Fatal(err)
+			}
+
+			var currentSlot time.Time
+			if err := database.owner.QueryRow(ctx, `SELECT date_bin(
+				interval '5 minutes',clock_timestamp(),timestamptz '1970-01-01')`).Scan(&currentSlot); err != nil {
+				t.Fatal(err)
+			}
+			newPoll := prepareLifecyclePoll(t, ctx, database, lifecycle, currentSlot)
+			payload, err := makeLifecycleFinalizePayload([]lifecycleAccount{
+				{email: "four-way-a@example.invalid", successCount: 2},
+				{email: "four-way-z@example.invalid", successCount: 2},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var definition string
+			if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef(
+				'public.control_delete_account_inventory_poll_retention_v1(integer)'::regprocedure)`).
+				Scan(&definition); err != nil {
+				t.Fatal(err)
+			}
+			normalized := strings.Join(strings.Fields(definition), " ")
+			fragments := []string{
+				"INTO target_poll_ids FROM (",
+				"FROM public.account_inventory_provider_states AS state WHERE state.current_poll_run_id=ANY(target_poll_ids) ORDER BY state.instance_id,state.provider FOR UPDATE;",
+				"FROM public.account_inventory AS account WHERE account.current_poll_run_id=ANY(target_poll_ids) ORDER BY account.instance_id,account.provider,account.account_key FOR UPDATE;",
+				"FOR target_poll IN SELECT poll.poll_run_id",
+				"DELETE FROM public.account_inventory_poll_runs",
+			}
+			last := -1
+			for _, fragment := range fragments {
+				index := strings.Index(normalized, fragment)
+				if index <= last {
+					t.Fatalf("poll retention current lock order drift: %q", fragment)
+				}
+				last = index
+			}
+
+			var providerPointer, aPointer, zPointer string
+			var aLifecycle, zLifecycle string
+			if err := database.owner.QueryRow(ctx, `SELECT
+				state.current_poll_run_id::text,
+				(SELECT current_poll_run_id::text FROM account_inventory
+				 WHERE instance_id=$1 AND normalized_email='four-way-a@example.invalid'),
+				(SELECT lifecycle FROM account_inventory
+				 WHERE instance_id=$1 AND normalized_email='four-way-a@example.invalid'),
+				(SELECT current_poll_run_id::text FROM account_inventory
+				 WHERE instance_id=$1 AND normalized_email='four-way-z@example.invalid'),
+				(SELECT lifecycle FROM account_inventory
+				 WHERE instance_id=$1 AND normalized_email='four-way-z@example.invalid')
+			FROM account_inventory_provider_states AS state
+			WHERE state.instance_id=$1 AND state.provider='openai'`, lifecycle.instanceID).Scan(
+				&providerPointer, &aPointer, &aLifecycle, &zPointer, &zLifecycle,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if providerPointer != aPoll.String() || aPointer != aPoll.String() ||
+				aLifecycle != "present" || zPointer != zPoll.String() || zLifecycle != "suspected_missing" {
+				t.Fatal("four-way fixture did not create the intended inverse current-pointer order")
+			}
+
+			retentionConnection, err := database.runtime.Acquire(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer retentionConnection.Release()
+			finalizeConnection, err := database.runtime.Acquire(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer finalizeConnection.Release()
+			scopeConnection, err := database.owner.Acquire(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer scopeConnection.Release()
+			retentionName := "history_four_way_retention_" + name
+			finalizeName := "history_four_way_finalize_" + name
+			scopeName := "history_four_way_scope_" + name
+			for connection, applicationName := range map[*pgxpool.Conn]string{
+				retentionConnection: retentionName,
+				finalizeConnection:  finalizeName,
+				scopeConnection:     scopeName,
+			} {
+				if err := setLifecycleApplicationName(ctx, connection, applicationName); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := connection.Exec(ctx, `SET statement_timeout='10s'`); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			retentionDone := make(chan retentionResult, 1)
+			finalizeDone := make(chan lifecycleFinalizeResult, 1)
+			scopeDone := make(chan scopeResult, 1)
+			startRetention := func() {
+				go func() {
+					var result retentionResult
+					result.err = retentionConnection.QueryRow(ctx, `WITH retained AS (
+						SELECT public.control_delete_account_inventory_poll_retention_v1(2) AS value
+					) SELECT (value->>'processed_count')::integer,
+						(value->>'deleted_row_count')::integer FROM retained`).Scan(
+						&result.processed, &result.deleted)
+					retentionDone <- result
+				}()
+			}
+			startFinalize := func() {
+				go func() {
+					finalized, finalizeErr := finalizeLifecyclePoll(ctx, finalizeConnection, newPoll, payload)
+					finalizeDone <- lifecycleFinalizeResult{finalized: finalized, err: finalizeErr}
+				}()
+			}
+			startScope := func() {
+				go func() {
+					var result scopeResult
+					result.err = scopeConnection.QueryRow(ctx, `SELECT
+						public.control_activate_provider_policy_with_lifecycle(
+							$1,$2,ARRAY['legacy'],ARRAY['openai'],
+							'four-way-test','four-way scope transition',NULL
+						)`, lifecycle.nodeType, lifecycle.contract).Scan(&result.activationID)
+					scopeDone <- result
+				}()
+			}
+
+			var lead pgx.Tx
+			var retained retentionResult
+			var scoped scopeResult
+			if scopeFirst {
+				lead, err = scopeConnection.Begin(ctx)
+				if err == nil {
+					err = lead.QueryRow(ctx, `SELECT
+						public.control_activate_provider_policy_with_lifecycle(
+							$1,$2,ARRAY['legacy'],ARRAY['openai'],
+							'four-way-test','four-way scope transition',NULL
+						)`, lifecycle.nodeType, lifecycle.contract).Scan(&scoped.activationID)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				startRetention()
+				if err := waitForLifecycleLock(ctx, database, retentionName); err != nil {
+					_ = lead.Rollback(ctx)
+					t.Fatal(err)
+				}
+				startFinalize()
+				if err := waitForLifecycleLock(ctx, database, finalizeName); err != nil {
+					_ = lead.Rollback(ctx)
+					t.Fatal(err)
+				}
+			} else {
+				lead, err = retentionConnection.Begin(ctx)
+				if err == nil {
+					err = lead.QueryRow(ctx, `WITH retained AS (
+						SELECT public.control_delete_account_inventory_poll_retention_v1(2) AS value
+					) SELECT (value->>'processed_count')::integer,
+						(value->>'deleted_row_count')::integer FROM retained`).Scan(
+						&retained.processed, &retained.deleted)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				startFinalize()
+				if err := waitForLifecycleLock(ctx, database, finalizeName); err != nil {
+					_ = lead.Rollback(ctx)
+					t.Fatal(err)
+				}
+				startScope()
+				if err := waitForLifecycleLock(ctx, database, scopeName); err != nil {
+					_ = lead.Rollback(ctx)
+					t.Fatal(err)
+				}
+			}
+			queryCtx, queryCancel := context.WithTimeout(ctx, 2*time.Second)
+			page, queryErr := fixture.repository.QueryPageAndAudit(queryCtx,
+				productstore.AccountInventoryQuery{InstanceID: lifecycle.instanceID, Limit: 10}, fixture.audit)
+			queryCancel()
+			if queryErr != nil {
+				_ = lead.Rollback(ctx)
+				t.Fatalf("current query blocked behind uncommitted four-way writes: %v", queryErr)
+			}
+			baseline := map[string]productstore.AccountInventoryLifecycle{
+				"four-way-a@example.invalid": productstore.AccountInventoryPresent,
+				"four-way-z@example.invalid": productstore.AccountInventorySuspectedMissing,
+			}
+			if len(page.Items) != len(baseline) {
+				_ = lead.Rollback(ctx)
+				t.Fatalf("uncommitted current query rows=%d", len(page.Items))
+			}
+			for _, item := range page.Items {
+				if baseline[item.Email] != item.Lifecycle {
+					_ = lead.Rollback(ctx)
+					t.Fatalf("uncommitted current query exposed %s/%s", item.Email, item.Lifecycle)
+				}
+			}
+			if err := lead.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			if scopeFirst {
+				select {
+				case retained = <-retentionDone:
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+			} else {
+				select {
+				case scoped = <-scopeDone:
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+			}
+			var finalized lifecycleFinalizeResult
+			select {
+			case finalized = <-finalizeDone:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			if retained.err != nil || retained.processed != 2 || retained.deleted != 4 ||
+				scoped.err != nil || scoped.activationID == uuid.Nil ||
+				finalized.err != nil || finalized.finalized != 1 {
+				t.Fatalf("four-way operations retention=%d/%d/%v scope=%s/%v finalize=%d/%v",
+					retained.processed, retained.deleted, retained.err, scoped.activationID,
+					scoped.err, finalized.finalized, finalized.err)
+			}
+
+			page, err = fixture.repository.QueryPageAndAudit(ctx,
+				productstore.AccountInventoryQuery{InstanceID: lifecycle.instanceID, Limit: 10}, fixture.audit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Items) != 2 {
+				t.Fatalf("final current query rows=%d", len(page.Items))
+			}
+			for _, item := range page.Items {
+				if item.Lifecycle != productstore.AccountInventoryOutOfScope || item.OutOfScopeSince == nil {
+					t.Fatalf("final current query exposed partial item: %+v", item)
+				}
+			}
+
+			var status, providerCurrent, accountCurrents, failureReason string
+			var healthSlot time.Time
+			var promotionApplied bool
+			var oldPolls, newPollRows, newResultRows, deletedPolls, deletedProviders int
+			var scopeAudits, accountRows, validOutOfScope int
+			if err := database.owner.QueryRow(ctx, `SELECT
+				state.monitoring_status,coalesce(state.current_poll_run_id::text,''),
+				state.health_scheduled_at,
+				coalesce(string_agg(coalesce(account.current_poll_run_id::text,''),','
+				 ORDER BY account.account_key),''),
+				result.promotion_applied,coalesce(result.promotion_skipped_reason,''),
+				(SELECT count(*) FROM account_inventory_poll_runs
+				 WHERE poll_run_id=ANY($3::uuid[])),
+				(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$4),
+				(SELECT count(*) FROM account_inventory_poll_provider_results WHERE poll_run_id=$4),
+				compaction.deleted_poll_count,compaction.deleted_provider_result_count,
+				(SELECT count(*) FROM account_inventory_scope_transition_audits
+				 WHERE activation_id=$5),count(account.*),
+				count(account.*) FILTER (WHERE account.lifecycle='out_of_scope'
+				 AND account.out_of_scope_since IS NOT NULL
+				 AND account.consecutive_missing_count=0)
+			FROM account_inventory_provider_states AS state
+			JOIN account_inventory AS account USING(instance_id,provider)
+			JOIN account_inventory_poll_provider_results AS result
+			  ON result.poll_run_id=$4 AND result.provider=state.provider
+			JOIN account_inventory_compaction_runs AS compaction
+			  ON compaction.compaction_run_id=$2
+			WHERE state.instance_id=$1 AND state.provider='openai'
+			GROUP BY state.monitoring_status,state.current_poll_run_id,state.health_scheduled_at,
+				result.promotion_applied,result.promotion_skipped_reason,
+				compaction.deleted_poll_count,compaction.deleted_provider_result_count`,
+				lifecycle.instanceID, compactionID, []uuid.UUID{zPoll, aPoll}, newPoll.pollID,
+				scoped.activationID).Scan(&status, &providerCurrent, &healthSlot, &accountCurrents,
+				&promotionApplied, &failureReason, &oldPolls, &newPollRows, &newResultRows,
+				&deletedPolls, &deletedProviders, &scopeAudits, &accountRows, &validOutOfScope); err != nil {
+				t.Fatal(err)
+			}
+			expectedPointer, expectedAccounts, expectedApplied, expectedReason :=
+				newPoll.pollID.String(), newPoll.pollID.String()+","+newPoll.pollID.String(), true, ""
+			expectedHealth := currentSlot
+			if scopeFirst {
+				expectedPointer, expectedAccounts, expectedApplied, expectedReason = "", ",", false, "policy_changed"
+				expectedHealth = lifecycle.baseSlot.Add(5 * time.Minute)
+			}
+			if status != "out_of_scope" || providerCurrent != expectedPointer ||
+				accountCurrents != expectedAccounts || !healthSlot.Equal(expectedHealth) ||
+				promotionApplied != expectedApplied || failureReason != expectedReason ||
+				oldPolls != 0 || newPollRows != 1 || newResultRows != 1 ||
+				deletedPolls != 2 || deletedProviders != 2 || scopeAudits != 1 ||
+				accountRows != 2 || validOutOfScope != 2 {
+				t.Fatalf("four-way final state=%s pointers=%q/%q health=%s promotion=%t/%q old/new/result=%d/%d/%d deleted=%d/%d audits=%d accounts=%d/%d",
+					status, providerCurrent, accountCurrents, healthSlot, promotionApplied,
+					failureReason, oldPolls, newPollRows, newResultRows, deletedPolls,
+					deletedProviders, scopeAudits, accountRows, validOutOfScope)
 			}
 		})
 	}

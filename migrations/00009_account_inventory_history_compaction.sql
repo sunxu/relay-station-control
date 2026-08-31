@@ -3383,6 +3383,7 @@ DECLARE
     retention_cutoff timestamptz;
     target_run public.account_inventory_compaction_runs%ROWTYPE;
     target_poll record;
+    target_poll_ids uuid[];
     remaining_poll_count bigint;
     remaining_provider_count bigint;
     remaining_duplicate_count bigint;
@@ -3457,12 +3458,10 @@ BEGIN
         RETURN jsonb_build_object('processed_count',0,'deleted_row_count',0);
     END IF;
 
-    FOR target_poll IN
-        SELECT poll.poll_run_id,
-               (SELECT count(*) FROM public.account_inventory_poll_provider_results AS result
-                WHERE result.poll_run_id=poll.poll_run_id) AS provider_count,
-               (SELECT count(*) FROM public.account_inventory_poll_duplicates AS duplicate_row
-                WHERE duplicate_row.poll_run_id=poll.poll_run_id) AS duplicate_count
+    SELECT array_agg(locked.poll_run_id ORDER BY locked.scheduled_at,locked.poll_run_id)
+    INTO target_poll_ids
+    FROM (
+        SELECT poll.poll_run_id,poll.scheduled_at
         FROM public.account_inventory_poll_runs AS poll
         WHERE poll.instance_id=target_run.instance_id
           AND poll.provider_policy_version=target_run.provider_policy_version
@@ -3472,6 +3471,31 @@ BEGIN
           AND poll.status IN ('finalized','abandoned')
         ORDER BY poll.scheduled_at,poll.poll_run_id
         FOR UPDATE OF poll SKIP LOCKED LIMIT delete_limit
+    ) AS locked;
+    IF coalesce(cardinality(target_poll_ids),0)=0 THEN
+        RETURN jsonb_build_object('processed_count',0,'deleted_row_count',0);
+    END IF;
+
+    PERFORM 1
+    FROM public.account_inventory_provider_states AS state
+    WHERE state.current_poll_run_id=ANY(target_poll_ids)
+    ORDER BY state.instance_id,state.provider
+    FOR UPDATE;
+    PERFORM 1
+    FROM public.account_inventory AS account
+    WHERE account.current_poll_run_id=ANY(target_poll_ids)
+    ORDER BY account.instance_id,account.provider,account.account_key
+    FOR UPDATE;
+
+    FOR target_poll IN
+        SELECT poll.poll_run_id,
+               (SELECT count(*) FROM public.account_inventory_poll_provider_results AS result
+                WHERE result.poll_run_id=poll.poll_run_id) AS provider_count,
+               (SELECT count(*) FROM public.account_inventory_poll_duplicates AS duplicate_row
+                WHERE duplicate_row.poll_run_id=poll.poll_run_id) AS duplicate_count
+        FROM public.account_inventory_poll_runs AS poll
+        WHERE poll.poll_run_id=ANY(target_poll_ids)
+        ORDER BY poll.scheduled_at,poll.poll_run_id
     LOOP
         PERFORM set_config('relay_control.history_poll_retention_delete',
                            target_poll.poll_run_id::text,true);
