@@ -1042,6 +1042,27 @@ func TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic(t *testing.T) {
 		Scan(&originalRun); err != nil {
 		t.Fatal(err)
 	}
+	assertSummarizeRollback := func(phase string) {
+		t.Helper()
+		var persistedRun string
+		var accountSegments, providerSegments, audits int
+		if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text,
+			(SELECT count(*) FROM account_inventory_daily_summaries WHERE compaction_run_id=$1),
+			(SELECT count(*) FROM account_inventory_daily_provider_summaries WHERE compaction_run_id=$1),
+			(SELECT count(*) FROM audit_logs
+			 WHERE action='account_inventory_history.summarized'
+			   AND details->>'instance'=$2::uuid::text
+			   AND details->>'summary_date'=$3::date::text)
+		FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`,
+			runID, fixture.instanceID, targetDate).Scan(
+			&persistedRun, &accountSegments, &providerSegments, &audits); err != nil {
+			t.Fatal(err)
+		}
+		if persistedRun != originalRun || accountSegments != 0 || providerSegments != 0 || audits != 0 {
+			t.Fatalf("%s left partial summarize state: run_changed=%t account=%d provider=%d audits=%d",
+				phase, persistedRun != originalRun, accountSegments, providerSegments, audits)
+		}
+	}
 	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_reject_history_summarize_write()
 		RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 		BEGIN
@@ -1080,40 +1101,120 @@ func TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic(t *testing.T) {
 			} else {
 				requireHistorySQLState(t, err, "P0001")
 			}
-			var persistedRun string
-			var accountSegments, providerSegments, audits int
-			if err := database.owner.QueryRow(ctx, `SELECT to_jsonb(run)::text,
-				(SELECT count(*) FROM account_inventory_daily_summaries WHERE compaction_run_id=$1),
-				(SELECT count(*) FROM account_inventory_daily_provider_summaries WHERE compaction_run_id=$1),
-				(SELECT count(*) FROM audit_logs
-				 WHERE action='account_inventory_history.summarized'
-				   AND details->>'instance'=$2::uuid::text
-				   AND details->>'summary_date'=$3::date::text)
-			FROM account_inventory_compaction_runs AS run WHERE compaction_run_id=$1`,
-				runID, fixture.instanceID, targetDate).Scan(
-				&persistedRun, &accountSegments, &providerSegments, &audits); err != nil {
-				t.Fatal(err)
-			}
-			if persistedRun != originalRun || accountSegments != 0 || providerSegments != 0 || audits != 0 {
-				t.Fatalf("partial summarize state: run_changed=%t account=%d provider=%d audits=%d",
-					persistedRun != originalRun, accountSegments, providerSegments, audits)
-			}
+			assertSummarizeRollback(test.name)
 		})
 	}
 	if _, err := database.owner.Exec(ctx,
 		`DROP FUNCTION public.test_reject_history_summarize_write()`); err != nil {
 		t.Fatal(err)
 	}
+
+	if _, err := database.owner.Exec(ctx, `CREATE FUNCTION public.test_delay_history_summarize()
+		RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+		BEGIN
+			PERFORM pg_sleep(0.2);
+			RETURN NULL;
+		END;
+		$$`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `CREATE TRIGGER zz_test_delay_history_summarize
+		BEFORE INSERT ON account_inventory_daily_summaries FOR EACH STATEMENT
+		EXECUTE FUNCTION public.test_delay_history_summarize()`); err != nil {
+		t.Fatal(err)
+	}
+	timeoutTransaction, err := database.runtime.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := timeoutTransaction.Exec(ctx, `SET LOCAL statement_timeout='50ms'`); err != nil {
+		_ = timeoutTransaction.Rollback(ctx)
+		t.Fatal(err)
+	}
+	_, timeoutErr := timeoutTransaction.Exec(ctx, `SELECT
+		public.control_summarize_account_inventory_compaction_v1($1,$2)`, runID, fence)
+	_ = timeoutTransaction.Rollback(ctx)
+	if timeoutErr == nil {
+		t.Fatal("summarize ignored statement timeout")
+	}
+	requireHistorySQLState(t, timeoutErr, "57014")
+	if _, err := database.owner.Exec(ctx, `DROP TRIGGER zz_test_delay_history_summarize
+		ON account_inventory_daily_summaries`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx,
+		`DROP FUNCTION public.test_delay_history_summarize()`); err != nil {
+		t.Fatal(err)
+	}
+	assertSummarizeRollback("statement_timeout")
+
+	preCommitConnection, err := database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var preCommitPID int32
+	if err := preCommitConnection.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&preCommitPID); err != nil {
+		preCommitConnection.Release()
+		t.Fatal(err)
+	}
+	preCommit, err := preCommitConnection.Begin(ctx)
+	if err != nil {
+		preCommitConnection.Release()
+		t.Fatal(err)
+	}
+	var stagedStatus string
+	if err := preCommit.QueryRow(ctx, `SELECT
+		public.control_summarize_account_inventory_compaction_v1($1,$2)->>'status'`,
+		runID, fence).Scan(&stagedStatus); err != nil || stagedStatus != "summarized" {
+		_ = preCommit.Rollback(ctx)
+		preCommitConnection.Release()
+		t.Fatalf("pre-commit summarize status=%s err=%v", stagedStatus, err)
+	}
+	var terminated bool
+	if err := database.owner.QueryRow(ctx, `SELECT pg_terminate_backend($1,5000)`, preCommitPID).
+		Scan(&terminated); err != nil || !terminated {
+		_ = preCommit.Rollback(ctx)
+		preCommitConnection.Release()
+		t.Fatalf("terminate pre-commit summarize backend: terminated=%t err=%v", terminated, err)
+	}
+	if err := preCommit.Rollback(ctx); err == nil {
+		preCommitConnection.Release()
+		t.Fatal("terminated pre-commit summarize transaction remained usable")
+	}
+	preCommitConnection.Release()
+	assertSummarizeRollback("pre_commit_disconnect")
+
 	var status, checksumHex string
 	var accountSegments, providerSegments int
-	if err := database.runtime.QueryRow(ctx, `WITH summarized AS (
+	postCommitConnection, err := database.runtime.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postCommit, err := postCommitConnection.Begin(ctx)
+	if err != nil {
+		postCommitConnection.Release()
+		t.Fatal(err)
+	}
+	if err := postCommit.QueryRow(ctx, `WITH summarized AS (
 		SELECT public.control_summarize_account_inventory_compaction_v1($1,$2) AS value
 	) SELECT value->>'status',(value->>'account_segment_count')::integer,
 		(value->>'provider_segment_count')::integer,value->>'source_checksum_hex'
 		FROM summarized`, runID, fence).
 		Scan(&status, &accountSegments, &providerSegments, &checksumHex); err != nil {
+		_ = postCommit.Rollback(ctx)
+		postCommitConnection.Release()
 		t.Fatal(err)
 	}
+	if err := postCommit.Commit(ctx); err != nil {
+		postCommitConnection.Release()
+		t.Fatal(err)
+	}
+	if _, err := postCommitConnection.Exec(ctx,
+		`SELECT pg_terminate_backend(pg_backend_pid())`); err == nil {
+		postCommitConnection.Release()
+		t.Fatal("terminated post-commit summarize connection remained usable")
+	}
+	postCommitConnection.Release()
 	if status != "summarized" || accountSegments != 1 || providerSegments != 1 || len(checksumHex) != 64 {
 		t.Fatalf("retry status=%s account=%d provider=%d checksum=%q",
 			status, accountSegments, providerSegments, checksumHex)

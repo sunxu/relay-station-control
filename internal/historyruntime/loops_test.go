@@ -216,6 +216,11 @@ func TestRepositoryLoopsResumePhaseMatrix(t *testing.T) {
 			wantEvents: []string{"renew", "summarize", "renew", "delete", "renew", "complete"},
 		},
 		{
+			name:       "failed pending summarizes",
+			claim:      validRuntimeCompactionClaim(CompactionFailed, FailedFromPending),
+			wantEvents: []string{"renew", "summarize", "renew", "delete", "renew", "complete"},
+		},
+		{
 			name:       "summarized resumes delete",
 			claim:      validRuntimeCompactionClaim(CompactionSummarized, ""),
 			wantEvents: []string{"renew", "delete", "renew", "complete"},
@@ -270,6 +275,49 @@ func TestRepositoryLoopsUnknownSummarizeCommitResumesWithoutReaggregation(t *tes
 	}
 	if summarizeCalls != 1 {
 		t.Fatalf("summarize calls=%d", summarizeCalls)
+	}
+}
+
+func TestRepositoryLoopsSummarizeFixedFailuresDoNotLeakOrAdvance(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		operation  error
+		want       error
+		wantEvents []string
+	}{
+		{
+			name: "statement timeout", operation: ErrHistoryStatementTimeout,
+			want:       ErrHistoryStatementTimeout,
+			wantEvents: []string{"renew", "summarize", "fail:statement_timeout"},
+		},
+		{
+			name: "database unavailable", operation: ErrHistoryDatabaseUnavailable,
+			want:       ErrHistoryDatabaseUnavailable,
+			wantEvents: []string{"renew", "summarize", "fail:database_unavailable"},
+		},
+		{
+			name: "commit unknown", operation: ErrHistoryCommitUnknown,
+			want:       ErrHistoryCommitUnknown,
+			wantEvents: []string{"renew", "summarize"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeHistoryRepository{
+				summarize: func(context.Context, FencedRequest) (SummarizeResult, error) {
+					return SummarizeResult{}, fmt.Errorf("protected-summarize-marker: %w", test.operation)
+				},
+			}
+			loops := newTestRepositoryLoops(t, repository)
+			err := loops.processCompaction(
+				context.Background(), context.Background(), validRuntimeCompactionClaim(CompactionPending, ""),
+			)
+			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "marker") {
+				t.Fatalf("error=%v want=%v", err, test.want)
+			}
+			if got := repository.recorded(); fmt.Sprint(got) != fmt.Sprint(test.wantEvents) {
+				t.Fatalf("events=%v want=%v", got, test.wantEvents)
+			}
+		})
 	}
 }
 

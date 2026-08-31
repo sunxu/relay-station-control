@@ -40,7 +40,7 @@
 ## 4. Compaction Scheduler、Worker 与断点续删
 
 - [x] 4.1 实现compaction claim/renew/reclaim，使用数据库时间、`FOR UPDATE SKIP LOCKED`、有界lease和随机fencing，以双Worker及旧token影响零行测试验证
-- [ ] 4.2 实现`pending|failed_from=pending` summarize执行与固定错误映射，以statement timeout、连接断开、commit结果未知和重启测试验证安全重做/识别已提交
+- [x] 4.2 实现`pending|failed_from=pending` summarize执行与固定错误映射，以statement timeout、连接断开、commit结果未知和重启测试验证安全重做/识别已提交
 - [x] 4.3 实现summarized到deleting转换和稳定主键有界snapshot选择，以batch 1/边界上限/空批次/并发插入不可发生测试验证
 - [x] 4.4 实现单批`DELETE ... RETURNING`与actual deleted count同事务累计，以删除失败、计数更新失败、提交前/后崩溃测试验证守恒
 - [x] 4.5 实现从summarized/deleting及对应failed_from只续删、不重聚合，以部分删除后篡改残余fixture仍不能缩小summary测试验证
@@ -53,6 +53,7 @@
 > 第十三批以真实PostgreSQL18恢复链证明summarized和deleting失败均从持久阶段续删并更换fence；首批删除后即使测试夹具篡改残余snapshot，固化summary、source checksum和summarized audit仍不变，完成4.5。
 > 第十四批以真实PostgreSQL18完成门禁分别隔离remaining非零与source/deleted计数不守恒，均固定进入`failed_from=deleting`且不可重新claim；即使snapshot已空，失败run仍阻止到期poll清理，结合既有checksum mismatch与成功完成证据完成4.6。
 > 第十五批收窄claim使过期active lease只能先由Reconciler固定为`failed/lease_expired`，真实PostgreSQL18三阶段矩阵证明reconcile前Worker不能绕过、`failed_from`精确、旧fence零影响且新fence从原阶段续做后每个run/segment/audit仅一份；真实Control进程把pending/summarized/deleting三个20秒claim组合经过一次Control重启和PostgreSQL停启，在lease过期后全部以attempt 2收敛为单份completed compaction/final rollup。既有runtime测试证明停止新claim后仅排空当前有界事务且不启动下一删除批；持锁事务SIGTERM drain/timeout和真实pool exhaustion仍属于7.4，不据此提前勾选。
+> 第十六批在真实PostgreSQL18 summarize写入链注入数据库statement timeout、提交前backend断连和提交后连接断开，分别证明全量回滚后安全重做、已提交摘要保持唯一且同fence重读不重算；runtime矩阵锁定`pending|failed_from=pending`均执行summarize、timeout/database unavailable固定失败原因，以及commit unknown不误写失败。结合第十五批真实Control/PostgreSQL重启从pending或summarized持久阶段恢复，完成4.2。
 
 ## 5. 最终日级 Rollup 与 Coverage 发布边界
 
