@@ -74,7 +74,7 @@ PostgreSQL 18集成测试已覆盖compaction claim/renew、summary/source proof/
 
 生产函数catalog与固定30天边界矩阵共同锁定四阶段inclusive资格；同一主链证明依赖存在时后续阶段拒绝、最后retained completed Provider rollup删除后coverage从一条省略为零、rollup run与retired cutoff原子提交，并由legacy `limit=1`两批compaction删除证明中间及最终均零复活。
 
-异常保留矩阵进一步证明pending/summarized/deleting/failed及`source_day_mismatch`/`source_checksum_mismatch`过期后仍不被poll cleaner选中，并复用既有`source_count_mismatch`完成门禁与保留poll证据。四个cleaner执行前后current account/lifecycle指纹不变，预置的管理员authorization与scope-transition audit主键仍各自存在、未被删除。四函数catalog的直接`DELETE`目标只允许poll、四类segment/final rows和两类completed run，不使用动态SQL；本change也不引入alert schema/route，因此未来alert的保留是cleaner所有权和产品零变更边界，不是伪造alert表的行为测试。生产链写入的retired cutoff拒绝owner `UPDATE`/`DELETE`/`TRUNCATE`（SQLSTATE `42501`），四个cleaner空扫后仍唯一存在；已有retention/poll双顺序锁竞态与晚到同日poll `23514`拒绝证据继续作为最后门禁。这完成OpenSpec 6.8；它与下述6.9四路并发证据相互独立，也不代表8.3的audit 180天边界与全量错误/details allowlist已完成。
+异常保留矩阵进一步证明pending/summarized/deleting/failed及`source_day_mismatch`/`source_checksum_mismatch`过期后仍不被poll cleaner选中，并复用既有`source_count_mismatch`完成门禁与保留poll证据。四个cleaner执行前后current account/lifecycle指纹不变，预置的管理员authorization与scope-transition audit主键仍各自存在、未被删除。四函数catalog的直接`DELETE`目标只允许poll、四类segment/final rows和两类completed run，不使用动态SQL；本change也不引入alert schema/route，因此未来alert的保留是cleaner所有权和产品零变更边界，不是伪造alert表的行为测试。生产链写入的retired cutoff拒绝owner `UPDATE`/`DELETE`/`TRUNCATE`（SQLSTATE `42501`），四个cleaner空扫后仍唯一存在；已有retention/poll双顺序锁竞态与晚到同日poll `23514`拒绝证据继续作为最后门禁。这完成OpenSpec 6.8；它与下述6.9四路并发及第10节的8.3审计门禁证据相互独立。
 
 Poll retention兼容fixture还在删除前后对Provider/account current整行移除唯一允许变化的`current_poll_run_id`后做JSON等价，并独立确认两个FK为NULL；这锁定来源时间/版本/提交、基础状态、lifecycle/missing、Provider health和query freshness均不被历史清理改写。
 
@@ -182,7 +182,13 @@ Final rollup只读取不可变completed segments。账号final逐项求和，边
 
 目标指标仅包含：history enabled固定原因、compaction/rollup固定state/result、oldest eligible unfinished、failure by `failed_from`、delete backlog/rows/duration，以及最近 retained completed final Provider coverage。允许标签只有受控 instance/provider和固定reason/state/phase/result；日期、policy/poll/run/fencing、checksum、email/account key、endpoint、Secret和raw error都禁止作为标签或普通输出。
 
-已实现的compaction、daily-rollup与retention history事件使用actor-null固定system category/action/result，与 summarized、每个snapshot/retention delete batch、compaction completed/failed及rollup completed/failed状态在各自事务写入不可变审计。独立exact gate拒绝普通runtime、migration owner或伪造transaction-local值直接插入，Details只允许instance、summary date、固定phase和实际summary/delete/final行数。Retention会在compaction run上持久累计实际删除的poll、Provider result和duplicate计数；history审计初始保留180天且不由本 cleaner删除。
+已实现的compaction、daily-rollup与retention history事件使用actor-null固定system category/action/result，与 summarized、每个snapshot/retention delete batch、compaction completed/failed及rollup completed/failed状态在各自事务写入不可变审计。独立exact gate拒绝普通runtime、migration owner或伪造transaction-local值直接插入；Details精确只有`instance/summary_date/phase/row_count`四键。固定phase共12个：`summarize`、`snapshot_delete`、`complete`、`fail_pending`、`fail_summarized`、`fail_deleting`、`rollup_complete`、`rollup_fail_pending`、`retention_poll`、`retention_rollup_rows`、`retention_rollup_run`、`retention_compaction_run`。未知键、identity/checksum、非NULL actor/target/fingerprint/reason、action/result/phase/row-count错配均失败关闭；catalog逐phase锁定状态mutation、精确gate与audit INSERT处于同一函数/事务，既有summarize、rollup finalize、poll retention和rollup-run retention的audit失败注入代表性证明整体回滚。
+
+History audit的180天是最低不可变保留边界，不是本change的自动删除期。PostgreSQL矩阵在数据库时钟180天前、恰好等于和之后各写一条合法事件，运行四个history cleaner后仍精确保留三条；owner `UPDATE/DELETE/TRUNCATE`均拒绝`42501`。本change没有audit cleaner，所以不得推断第181天会自动删除。
+
+错误字典按状态机分开：compaction只允许`source_day_mismatch/source_count_mismatch/source_checksum_mismatch/activation_inconsistent`及`statement_timeout/lease_expired/database_unavailable/internal`；rollup只允许`segment_incomplete/segment_count_mismatch/segment_checksum_mismatch/activation_inconsistent`及同四项运行时原因。跨字典值在Store边界拒绝。Control顶层history结构化失败日志的reason精确只有`service_stopped/runtime_stopped/shutdown_timed_out`，固定component/message之外不附加`error`或raw error。
+
+以上关闭2.11和8.3，但不关闭1.5/8.4：成功、零数据、partial、权限、超时、重启和清理失败的数据库非身份列、日志、指标、错误与artifact仍需完整唯一canary扫描。
 
 验收 artifact只保留候选commit、UTC窗口、退出码、固定分类、聚合计数/时延、PostgreSQL major/Migration、请求计数和清理计数。任何canary命中只输出固定失败类，不输出值、文件名或上下文。
 
@@ -192,7 +198,7 @@ Final rollup只读取不可变completed segments。账号final逐项求和，边
 
 - `cmd/control/main.go`已无条件加载history配置、构造同一Store repository、注册metrics collector并纳入Control shutdown WaitGroup；disabled仍执行只读compatibility probe但不构造mutation loops，enabled且兼容时才启动planner/compaction-worker/rollup-worker/reconciler/retention；history不兼容或fatal只停止history；
 - Migration 9已创建六张aggregate/run表和一张durable retired-day cutoff表、Provider health/current-query兼容、严格catalog/ACL/audit gate、normal horizon加source/既有lineage bootstrap的eligible key与daily-rollup planner、compaction claim/renew/reconcile/summarize/bounded-delete/complete/fail、daily-rollup claim/renew/reconcile/finalize/fail，以及poll/rollup-row/rollup-run/compaction-run四个retention函数；
-- 纯 compaction模型与循环覆盖 `pending → summarized → deleting → completed`、Reconciler独占过期active lease、`failed_from`恢复、stale fencing零影响、unknown-commit持久状态决策和删除守恒；daily-rollup模型与循环覆盖可恢复失败allowlist、renew/reclaim、completed不可变、unknown-finalize有界重放和固定错误分类；
+- 纯 compaction模型与循环覆盖 `pending → summarized → deleting → completed`、Reconciler独占过期active lease、`failed_from`恢复、stale fencing零影响、unknown-commit持久状态决策和删除守恒；daily-rollup模型与循环覆盖可恢复失败allowlist、renew/reclaim、completed不可变、unknown-finalize有界重放和固定错误分类；Store分别锁定compaction/rollup各8项错误字典，Control仅记录三种固定顶层停止reason；
 - Final account/Provider聚合、9500 basis-point边界和全字段version-1 segment checksum已有golden；PostgreSQL主路径验证final rows、segment count/checksum、rollup completed和audit原子发布、同fence幂等重放、audit失败整体回滚，以及无Provider/0 expected时原子空发布并省略coverage；
 - Compaction、rollup与retention共享一个总并发上限；全局fatal会停止两类新claim和新的retention事务并排空当前有界事务；
 - Retention已有固定30天资格、互异gate/函数、持久删除计数、`limit=1`多批、current FK置空/query等价、unknown-commit持久扫描、legacy source bootstrap与retired-day不复活证据；

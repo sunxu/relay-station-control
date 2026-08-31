@@ -456,7 +456,7 @@ func (repository *AccountInventoryHistoryRepository) FailCompaction(
 	ctx context.Context, request historyruntime.FailRequest,
 ) error {
 	if repository == nil || repository.queries == nil || !validHistoryFence(request.RunID, request.FencingToken) ||
-		!request.Reason.Valid() {
+		!validHistoryCompactionFailureReason(request.Reason) {
 		return ErrInvalidAccountInventoryHistoryInput
 	}
 	encoded, err := repository.queries.FailAccountInventoryHistoryCompaction(ctx,
@@ -1004,6 +1004,22 @@ func validHistoryLease(lease time.Duration) bool {
 
 func validHistoryFence(runID, fencingToken uuid.UUID) bool {
 	return runID != uuid.Nil && fencingToken != uuid.Nil
+}
+
+func validHistoryCompactionFailureReason(reason historyruntime.FailureReason) bool {
+	switch reason {
+	case historyruntime.FailureSourceDayMismatch,
+		historyruntime.FailureSourceCountMismatch,
+		historyruntime.FailureSourceChecksumMismatch,
+		historyruntime.FailureActivationInconsistent,
+		historyruntime.FailureStatementTimeout,
+		historyruntime.FailureLeaseExpired,
+		historyruntime.FailureDatabaseUnavailable,
+		historyruntime.FailureInternal:
+		return true
+	default:
+		return false
+	}
 }
 
 func validHistoryRollupFailureReason(reason historyruntime.FailureReason) bool {

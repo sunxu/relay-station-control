@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -379,17 +380,35 @@ func TestAccountInventoryHistoryRuntimeFatalStopsOnlyHistoryAndLogsFixedReason(t
 	}
 }
 
-func TestAccountInventoryHistoryRuntimeShutdownTimeoutLogIsFixed(t *testing.T) {
-	runtime := accountInventoryHistoryRuntime{enabled: true, service: fakeAccountInventoryHistoryService{
-		run: func(context.Context) error { return controlhistory.ErrShutdownTimedOut },
-	}}
-	var output bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&output, nil))
-	if err := runAccountInventoryHistoryRuntime(context.Background(), runtime, logger); !errors.Is(err, controlhistory.ErrShutdownTimedOut) {
-		t.Fatalf("shutdown result = %v", err)
-	}
-	logged := output.String()
-	if !strings.Contains(logged, `"reason":"shutdown_timed_out"`) || strings.Contains(logged, "error") {
-		t.Fatalf("shutdown timeout log was not fixed: %s", logged)
+func TestAccountInventoryHistoryRuntimeFailureLogsUseFixedReasons(t *testing.T) {
+	marker := errors.New("raw-history-error-marker")
+	for _, test := range []struct {
+		name   string
+		err    error
+		reason string
+	}{
+		{name: "service stopped", err: marker, reason: "service_stopped"},
+		{name: "runtime stopped", err: errors.Join(controlhistory.ErrRuntimeStopped, marker), reason: "runtime_stopped"},
+		{name: "shutdown timed out", err: errors.Join(controlhistory.ErrShutdownTimedOut, marker), reason: "shutdown_timed_out"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runtime := accountInventoryHistoryRuntime{enabled: true, service: fakeAccountInventoryHistoryService{
+				run: func(context.Context) error { return test.err },
+			}}
+			var output bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&output, nil))
+			if err := runAccountInventoryHistoryRuntime(context.Background(), runtime, logger); err != test.err {
+				t.Fatalf("result = %v", err)
+			}
+			var logged map[string]any
+			if json.Unmarshal(output.Bytes(), &logged) != nil || len(logged) != 5 ||
+				logged["level"] != "ERROR" || logged["msg"] != "account inventory history stopped" ||
+				logged["component"] != "account_inventory_history" || logged["reason"] != test.reason {
+				t.Fatalf("unexpected structured log: %s", output.String())
+			}
+			if _, exists := logged["error"]; exists || strings.Contains(output.String(), marker.Error()) {
+				t.Fatalf("raw error leaked: %s", output.String())
+			}
+		})
 	}
 }

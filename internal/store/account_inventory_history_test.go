@@ -650,6 +650,40 @@ func TestAccountInventoryHistoryCompactionTransactionsFailClosed(t *testing.T) {
 	}
 }
 
+func TestAccountInventoryHistoryFailureReasonDictionariesAreExact(t *testing.T) {
+	repository := &AccountInventoryHistoryRepository{queries: &fakeAccountInventoryHistoryQueries{}}
+	runID, fence := uuid.New(), uuid.New()
+	for reason, want := range map[historyruntime.FailureReason][2]bool{
+		historyruntime.FailureSourceDayMismatch:       {true, false},
+		historyruntime.FailureSourceCountMismatch:     {true, false},
+		historyruntime.FailureSourceChecksumMismatch:  {true, false},
+		historyruntime.FailureSegmentIncomplete:       {false, true},
+		historyruntime.FailureSegmentCountMismatch:    {false, true},
+		historyruntime.FailureSegmentChecksumMismatch: {false, true},
+		historyruntime.FailureActivationInconsistent:  {true, true},
+		historyruntime.FailureStatementTimeout:        {true, true},
+		historyruntime.FailureLeaseExpired:            {true, true},
+		historyruntime.FailureDatabaseUnavailable:     {true, true},
+		historyruntime.FailureInternal:                {true, true},
+		"unknown":                                     {false, false},
+	} {
+		if got := validHistoryCompactionFailureReason(reason); got != want[0] {
+			t.Errorf("compaction reason %q valid=%t want=%t", reason, got, want[0])
+		}
+		if got := validHistoryRollupFailureReason(reason); got != want[1] {
+			t.Errorf("rollup reason %q valid=%t want=%t", reason, got, want[1])
+		}
+		if !want[0] {
+			err := repository.FailCompaction(context.Background(), historyruntime.FailRequest{
+				RunID: runID, FencingToken: fence, Reason: reason,
+			})
+			if !errors.Is(err, ErrInvalidAccountInventoryHistoryInput) {
+				t.Errorf("compaction adapter accepted reason %q: %v", reason, err)
+			}
+		}
+	}
+}
+
 func TestAccountInventoryHistoryRollupClaimMappingAndStrictShapes(t *testing.T) {
 	worker := uuid.New()
 	row := validAccountInventoryHistoryRollupClaimRow(worker)

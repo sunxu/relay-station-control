@@ -75,7 +75,7 @@ strict_cleanup() {
 require_test() {
   local exact_name="$1" listing="$runtime_directory/postgres.tests"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-postgres \
+    go test ./deploy/acceptance/account-inventory-history-postgres \
       -list "^${exact_name}$" >"$listing" 2>&1; then
     fixed_failure 'test_discovery_failed'
   fi
@@ -87,7 +87,7 @@ migrate() {
   if ! (
     cd "$repository_root/tools"
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOCACHE="$runtime_directory/go-build" GOOSE_DRIVER=postgres \
+      GOOSE_DRIVER=postgres \
       GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
       go tool goose "$direction"
   ) >"$runtime_directory/$log_name" 2>&1; then
@@ -108,7 +108,7 @@ assert_version() {
 run_probe() {
   local log_name="$1"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-postgres \
+    go test ./deploy/acceptance/account-inventory-history-postgres \
       -run '^TestAccountInventoryHistoryPostgresSchemaSmoke$' -count=1 >"$runtime_directory/$log_name" 2>&1; then
     fixed_failure 'postgres_schema_smoke_failed'
   fi
@@ -116,7 +116,7 @@ run_probe() {
 
 run_planner_catalog_gate() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-postgres \
+    go test ./deploy/acceptance/account-inventory-history-postgres \
       -run '^TestAccountInventoryHistoryPostgresPlannerCatalogGate$' -count=1 \
       >"$runtime_directory/planner-catalog-gate.log" 2>&1; then
     fixed_failure 'postgres_planner_catalog_gate_failed'
@@ -125,7 +125,7 @@ run_planner_catalog_gate() {
 
 run_rollup_matrix() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./deploy/acceptance/account-inventory-history-postgres \
+    go test ./deploy/acceptance/account-inventory-history-postgres \
       -run '^TestAccountInventoryHistoryPostgresRollupPublicationMatrix$' -count=1 \
       >"$runtime_directory/rollup-publication-matrix.log" 2>&1; then
     fixed_failure 'postgres_rollup_publication_matrix_failed'
@@ -135,7 +135,7 @@ run_rollup_matrix() {
 require_store_test() {
   local exact_name="$1" listing="$runtime_directory/store.tests"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./internal/store \
+    go test ./internal/store \
       -list "^${exact_name}$" >"$listing" 2>&1; then
     fixed_failure 'store_test_discovery_failed'
   fi
@@ -145,7 +145,7 @@ require_store_test() {
 require_api_test() {
   local exact_name="$1" listing="$runtime_directory/api.tests"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./internal/api \
+    go test ./internal/api \
       -list "^${exact_name}$" >"$listing" 2>&1; then
     fixed_failure 'api_test_discovery_failed'
   fi
@@ -154,8 +154,8 @@ require_api_test() {
 
 run_store_probe() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./internal/store \
-      -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert|TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource|TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls|TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing|TestAccountInventoryHistoryExpiredLeaseRequiresReconcileAcrossCompactionPhases|TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope|TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume|TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates|TestAccountInventoryHistoryRetentionEligibilityBoundaries|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection|TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy|TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition|TestInventorySnapshotContractFailureFinalizesWithoutPromotion|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryCapacityOneTenFifty|TestAccountInventoryRowsFailClosed)$' \
+    go test ./internal/store \
+      -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert|TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource|TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls|TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing|TestAccountInventoryHistoryExpiredLeaseRequiresReconcileAcrossCompactionPhases|TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope|TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume|TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates|TestAccountInventoryHistoryRetentionEligibilityBoundaries|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection|TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy|TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition|TestInventorySnapshotContractFailureFinalizesWithoutPromotion|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary|TestAccountInventoryHistoryCapacityOneTenFifty|TestAccountInventoryRowsFailClosed)$' \
       -count=1 >"$runtime_directory/store-main-path.log" 2>&1; then
     fixed_failure 'postgres_compaction_main_path_failed'
   fi
@@ -163,7 +163,7 @@ run_store_probe() {
 
 run_api_probe() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go test ./internal/api \
+    go test ./internal/api \
       -run '^TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState$' \
       -count=1 >"$runtime_directory/current-http-query.log" 2>&1; then
     fixed_failure 'postgres_current_http_query_failed'
@@ -239,6 +239,7 @@ main() {
   require_store_test TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff
   require_store_test TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock
   require_store_test TestAccountInventoryHistoryFailedShapesAndProviderDayBound
+  require_store_test TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary
   require_store_test TestAccountInventoryHistoryCapacityOneTenFifty
   require_store_test TestAccountInventoryRowsFailClosed
   require_api_test TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState
@@ -261,7 +262,7 @@ main() {
   run_probe schema-second-up.log
 
   strict_cleanup
-  echo 'account_inventory_history_postgres=success server_major=18 migration=9 up_down_up=covered core_sha256=covered canonical_golden=covered compaction_main_path=covered compaction_claim_fencing=covered compaction_reconcile_phases=covered summarize_atomicity=covered summarize_timeout_disconnect_recovery=covered summarize_immutability=covered snapshot_delete_atomicity=covered snapshot_delete_selection=covered snapshot_delete_resume=covered compaction_complete_count_gate=covered final_rollup=covered finalize_atomicity=covered final_immutability=covered metrics_completed_only=covered zero_provider=covered planner_catalog_utc_inclusive_72h=covered planner_eligibility_matrix=covered finalize_catalog_9500=covered utc_dst_72h_expression=covered slot_provider_matrix=covered incomplete_segment_gates=covered coverage_expression_9499_finalize_9474_9500_10000=covered last_segment_concurrency=covered policy_boundary=covered metrics_backlog_drain=covered retention_batches=covered retention_child_atomicity=covered poll_candidate_rejections=covered retention_eligibility_boundaries=covered retention_ordered_chain_coverage_omission=covered retention_query_promotion_scope_concurrency=covered retention_planner_lock=covered planner_limit_progress=covered retired_day_poll_lock=covered legacy_retention_bootstrap=covered zero_poll_lineage_bootstrap=covered retired_day_no_resurrection=covered current_fields_after_retention=covered current_query_after_retention=covered current_health_query_matrix=covered current_http_null_source=covered provider_health_finalize_matrix=covered lease_expiry=covered capacity_1_10_50_total_accounts=1000 audit_gate=covered runtime_table_dml=denied runtime_functions=allowlisted cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
+  echo 'account_inventory_history_postgres=success server_major=18 migration=9 up_down_up=covered core_sha256=covered canonical_golden=covered compaction_main_path=covered compaction_claim_fencing=covered compaction_reconcile_phases=covered summarize_atomicity=covered summarize_timeout_disconnect_recovery=covered summarize_immutability=covered snapshot_delete_atomicity=covered snapshot_delete_selection=covered snapshot_delete_resume=covered compaction_complete_count_gate=covered final_rollup=covered finalize_atomicity=covered final_immutability=covered metrics_completed_only=covered zero_provider=covered planner_catalog_utc_inclusive_72h=covered planner_eligibility_matrix=covered finalize_catalog_9500=covered utc_dst_72h_expression=covered slot_provider_matrix=covered incomplete_segment_gates=covered coverage_expression_9499_finalize_9474_9500_10000=covered last_segment_concurrency=covered policy_boundary=covered metrics_backlog_drain=covered retention_batches=covered retention_child_atomicity=covered poll_candidate_rejections=covered retention_eligibility_boundaries=covered retention_ordered_chain_coverage_omission=covered retention_query_promotion_scope_concurrency=covered retention_planner_lock=covered planner_limit_progress=covered retired_day_poll_lock=covered legacy_retention_bootstrap=covered zero_poll_lineage_bootstrap=covered retired_day_no_resurrection=covered current_fields_after_retention=covered current_query_after_retention=covered current_health_query_matrix=covered current_http_null_source=covered provider_health_finalize_matrix=covered lease_expiry=covered history_audit_allowlist_retention_atomicity=covered capacity_1_10_50_total_accounts=1000 audit_gate=covered runtime_table_dml=denied runtime_functions=allowlisted cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
 }
 
 cd "$repository_root"

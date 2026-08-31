@@ -4442,6 +4442,223 @@ func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
 	}
 }
 
+func TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	instanceID := uuid.New()
+	var databaseNow time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&databaseNow); err != nil {
+		t.Fatal(err)
+	}
+
+	type auditShape struct {
+		action, result, phase, function, mutation, gate string
+	}
+	shapes := []auditShape{
+		{"account_inventory_history.summarized", "success", "summarize",
+			"public.control_summarize_account_inventory_compaction_v1(uuid,uuid)",
+			"UPDATE public.account_inventory_compaction_runs", "account_inventory_history.summarized:summarize"},
+		{"account_inventory_history.snapshot_delete_batch", "success", "snapshot_delete",
+			"public.control_delete_account_inventory_snapshot_batch_v1(uuid,uuid,integer)",
+			"UPDATE public.account_inventory_compaction_runs", "account_inventory_history.snapshot_delete_batch:snapshot_delete"},
+		{"account_inventory_history.completed", "success", "complete",
+			"public.control_complete_account_inventory_compaction_v1(uuid,uuid,bytea)",
+			"UPDATE public.account_inventory_compaction_runs", "account_inventory_history.completed:complete"},
+		{"account_inventory_history.failed", "failure", "fail_pending",
+			"public.control_reconcile_account_inventory_compactions_v1(integer)",
+			"UPDATE public.account_inventory_compaction_runs", "account_inventory_history.failed:fail_"},
+		{"account_inventory_history.failed", "failure", "fail_summarized",
+			"public.control_reconcile_account_inventory_compactions_v1(integer)",
+			"UPDATE public.account_inventory_compaction_runs", "account_inventory_history.failed:fail_"},
+		{"account_inventory_history.failed", "failure", "fail_deleting",
+			"public.control_reconcile_account_inventory_compactions_v1(integer)",
+			"UPDATE public.account_inventory_compaction_runs", "account_inventory_history.failed:fail_"},
+		{"account_inventory_history.completed", "success", "rollup_complete",
+			"public.control_finalize_account_inventory_daily_rollup_v1(uuid,uuid)",
+			"UPDATE public.account_inventory_daily_rollup_runs", "account_inventory_history.completed:rollup_complete"},
+		{"account_inventory_history.failed", "failure", "rollup_fail_pending",
+			"public.control_fail_account_inventory_daily_rollup_v1(uuid,uuid,text)",
+			"UPDATE public.account_inventory_daily_rollup_runs", "account_inventory_history.failed:rollup_fail_pending"},
+		{"account_inventory_history.retention_delete_batch", "success", "retention_poll",
+			"public.control_delete_account_inventory_poll_retention_v1(integer)",
+			"DELETE FROM public.account_inventory_poll_runs", "account_inventory_history.retention_delete_batch:retention_poll"},
+		{"account_inventory_history.retention_delete_batch", "success", "retention_rollup_rows",
+			"public.control_delete_account_inventory_rollup_row_retention_v1(integer)",
+			"DELETE FROM public.account_inventory_daily_", "account_inventory_history.retention_delete_batch:retention_rollup_rows"},
+		{"account_inventory_history.retention_delete_batch", "success", "retention_rollup_run",
+			"public.control_delete_account_inventory_rollup_run_retention_v1(integer)",
+			"DELETE FROM public.account_inventory_daily_rollup_runs", "account_inventory_history.retention_delete_batch:retention_rollup_run"},
+		{"account_inventory_history.retention_delete_batch", "success", "retention_compaction_run",
+			"public.control_delete_account_inventory_compaction_run_retention_v1(integer)",
+			"DELETE FROM public.account_inventory_compaction_runs", "account_inventory_history.retention_delete_batch:retention_compaction_run"},
+	}
+
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE audit_logs
+		DISABLE TRIGGER audit_logs_account_inventory_history_guard`); err != nil {
+		t.Fatal(err)
+	}
+	gateDisabled := true
+	defer func() {
+		if gateDisabled {
+			_, _ = database.owner.Exec(ctx, `ALTER TABLE audit_logs
+				ENABLE TRIGGER audit_logs_account_inventory_history_guard`)
+		}
+	}()
+
+	boundaryIDs := make([]uuid.UUID, 3)
+	cutoff := databaseNow.Add(-180 * 24 * time.Hour)
+	for index, shape := range shapes {
+		auditID := uuid.New()
+		occurredAt := databaseNow
+		if index < len(boundaryIDs) {
+			boundaryIDs[index] = auditID
+			occurredAt = cutoff.Add(time.Duration(index-1) * time.Second)
+		}
+		rowCount := 1
+		if shape.result == "failure" {
+			rowCount = 0
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO audit_logs(
+			audit_id,occurred_at,category,action,result,request_id,details
+		) VALUES($1,$2,'account_inventory_history',$3,$4,'history-compaction-system',
+			jsonb_build_object('instance',$5::uuid::text,'summary_date','2026-01-02',
+				'phase',$6::text,'row_count',$7::integer))`, auditID, occurredAt,
+			shape.action, shape.result, instanceID, shape.phase, rowCount); err != nil {
+			t.Fatalf("valid history audit shape %s: %v", shape.phase, err)
+		}
+	}
+
+	baseDetails := fmt.Sprintf(`{"instance":%q,"summary_date":"2026-01-02","phase":"summarize","row_count":1}`,
+		instanceID.String())
+	type rejectedAudit struct {
+		name, action, result, details string
+		actor, target                 *uuid.UUID
+		actorFingerprint              []byte
+		sourceFingerprint             []byte
+		reason, requestID             *string
+	}
+	nonNullID := uuid.New()
+	reason := "synthetic rejected history reason"
+	wrongRequest := "forged-history-request"
+	rejected := []rejectedAudit{
+		{name: "unknown_detail", action: shapes[0].action, result: "success",
+			details: strings.TrimSuffix(baseDetails, "}") + `,"unexpected":"value"}`},
+		{name: "identity_email", action: shapes[0].action, result: "success",
+			details: strings.TrimSuffix(baseDetails, "}") + `,"email":"canary@example.invalid"}`},
+		{name: "identity_account_key", action: shapes[0].action, result: "success",
+			details: strings.TrimSuffix(baseDetails, "}") + `,"account_key":"openai:canary"}`},
+		{name: "checksum", action: shapes[0].action, result: "success",
+			details: strings.TrimSuffix(baseDetails, "}") + `,"source_checksum":"canary"}`},
+		{name: "sql_parameter", action: shapes[0].action, result: "success",
+			details: strings.TrimSuffix(baseDetails, "}") + `,"sql_parameter":"canary"}`},
+		{name: "raw_error", action: shapes[0].action, result: "success",
+			details: strings.TrimSuffix(baseDetails, "}") + `,"raw_error":"canary"}`},
+		{name: "actor", action: shapes[0].action, result: "success", details: baseDetails, actor: &nonNullID},
+		{name: "target", action: shapes[0].action, result: "success", details: baseDetails, target: &nonNullID},
+		{name: "actor_fingerprint", action: shapes[0].action, result: "success", details: baseDetails,
+			actorFingerprint: make([]byte, sha256.Size)},
+		{name: "source_fingerprint", action: shapes[0].action, result: "success", details: baseDetails,
+			sourceFingerprint: make([]byte, sha256.Size)},
+		{name: "reason", action: shapes[0].action, result: "success", details: baseDetails, reason: &reason},
+		{name: "request_id", action: shapes[0].action, result: "success", details: baseDetails, requestID: &wrongRequest},
+		{name: "wrong_action", action: "account_inventory_history.failed", result: "success", details: baseDetails},
+		{name: "wrong_result", action: shapes[0].action, result: "failure", details: baseDetails},
+		{name: "wrong_phase", action: shapes[0].action, result: "success",
+			details: strings.Replace(baseDetails, `"summarize"`, `"complete"`, 1)},
+		{name: "unknown_phase", action: shapes[0].action, result: "success",
+			details: strings.Replace(baseDetails, `"summarize"`, `"unknown"`, 1)},
+		{name: "negative_row_count", action: shapes[0].action, result: "success",
+			details: strings.Replace(baseDetails, `"row_count":1`, `"row_count":-1`, 1)},
+		{name: "fractional_row_count", action: shapes[0].action, result: "success",
+			details: strings.Replace(baseDetails, `"row_count":1`, `"row_count":1.5`, 1)},
+		{name: "string_row_count", action: shapes[0].action, result: "success",
+			details: strings.Replace(baseDetails, `"row_count":1`, `"row_count":"1"`, 1)},
+		{name: "oversized_row_count", action: shapes[0].action, result: "success",
+			details: strings.Replace(baseDetails, `"row_count":1`, `"row_count":10000000000000000000`, 1)},
+	}
+	for _, test := range rejected {
+		t.Run(test.name, func(t *testing.T) {
+			requestID := "history-compaction-system"
+			if test.requestID != nil {
+				requestID = *test.requestID
+			}
+			_, err := database.owner.Exec(ctx, `INSERT INTO audit_logs(
+				category,action,result,actor_admin_id,target_admin_id,actor_fingerprint,
+				source_fingerprint,reason,request_id,details
+			) VALUES('account_inventory_history',$1,$2,$3::uuid,$4::uuid,$5::bytea,
+				$6::bytea,$7::text,$8,$9::jsonb)`, test.action, test.result,
+				test.actor, test.target, test.actorFingerprint, test.sourceFingerprint,
+				test.reason, requestID, test.details)
+			if err == nil {
+				t.Fatal("invalid history audit shape was accepted")
+			}
+			requireHistorySQLState(t, err, "23514")
+		})
+	}
+
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE audit_logs
+		ENABLE TRIGGER audit_logs_account_inventory_history_guard`); err != nil {
+		t.Fatal(err)
+	}
+	gateDisabled = false
+
+	for _, shape := range shapes {
+		var definition string
+		if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef($1::regprocedure)`,
+			shape.function).Scan(&definition); err != nil {
+			t.Fatal(err)
+		}
+		definition = strings.Join(strings.Fields(definition), " ")
+		mutationAt := strings.Index(definition, shape.mutation)
+		gateAt := strings.Index(definition, shape.gate)
+		if mutationAt < 0 || gateAt < 0 || mutationAt >= gateAt {
+			t.Fatalf("history audit transaction catalog drift for phase %s", shape.phase)
+		}
+		if !strings.Contains(definition[gateAt+len(shape.gate):], "INSERT INTO public.audit_logs") {
+			t.Fatalf("history audit transaction catalog drift for phase %s", shape.phase)
+		}
+	}
+
+	for _, function := range []string{
+		"control_delete_account_inventory_poll_retention_v1",
+		"control_delete_account_inventory_rollup_row_retention_v1",
+		"control_delete_account_inventory_rollup_run_retention_v1",
+		"control_delete_account_inventory_compaction_run_retention_v1",
+	} {
+		var processed int
+		if err := database.runtime.QueryRow(ctx, `SELECT (public.`+function+`(100)
+			->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 0 {
+			t.Fatalf("history audit retention boundary cleaner %s processed=%d err=%v",
+				function, processed, err)
+		}
+	}
+	var boundaryCount, totalCount int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE audit_id=ANY($1::uuid[])),count(*)
+		FROM audit_logs WHERE category='account_inventory_history'`, boundaryIDs).
+		Scan(&boundaryCount, &totalCount); err != nil {
+		t.Fatal(err)
+	}
+	if boundaryCount != 3 || totalCount != len(shapes) {
+		t.Fatalf("history audits after cleaners boundary=%d total=%d", boundaryCount, totalCount)
+	}
+	for operation, statement := range map[string]string{
+		"update":   `UPDATE audit_logs SET occurred_at=occurred_at WHERE audit_id=$1`,
+		"delete":   `DELETE FROM audit_logs WHERE audit_id=$1`,
+		"truncate": `TRUNCATE audit_logs`,
+	} {
+		arguments := []any{boundaryIDs[1]}
+		if operation == "truncate" {
+			arguments = nil
+		}
+		if _, err := database.owner.Exec(ctx, statement, arguments...); err == nil {
+			t.Fatalf("migration owner %s history audit", operation)
+		} else {
+			requireHistorySQLState(t, err, "42501")
+		}
+	}
+}
+
 func TestAccountInventoryHistoryPlannerSerializesRetentionBoundary(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)

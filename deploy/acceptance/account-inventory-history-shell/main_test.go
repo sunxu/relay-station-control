@@ -60,11 +60,12 @@ var requiredHistoryRaceTests = []struct {
 	{"./internal/store", "TestAccountInventoryHistoryRetentionMetricsAreRaceSafe"},
 	{"./internal/store", "TestAccountInventoryHistoryMetricsSnapshotRejectsUnsafeJSON"},
 	{"./internal/store", "TestAccountInventoryHistoryMetricsSnapshotErrorsAreRedacted"},
+	{"./internal/store", "TestAccountInventoryHistoryFailureReasonDictionariesAreExact"},
 	{"./cmd/control", "TestAccountInventoryHistoryRuntimeDisabledStillChecksCompatibilityWithoutLoops"},
 	{"./cmd/control", "TestAccountInventoryHistoryRuntimeEnabledStartsAllLoopsAndShutsDown"},
 	{"./cmd/control", "TestAccountInventoryHistoryRuntimeIncompatibleDisablesOnlyHistory"},
 	{"./cmd/control", "TestAccountInventoryHistoryRuntimeFatalStopsOnlyHistoryAndLogsFixedReason"},
-	{"./cmd/control", "TestAccountInventoryHistoryRuntimeShutdownTimeoutLogIsFixed"},
+	{"./cmd/control", "TestAccountInventoryHistoryRuntimeFailureLogsUseFixedReasons"},
 }
 
 var requiredHistoryProcessTests = []string{
@@ -234,6 +235,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition",
 		"TestInventorySnapshotContractFailureFinalizesWithoutPromotion",
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
+		"TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary",
+		"history_audit_allowlist_retention_atomicity=covered",
 		"TestAccountInventoryHistoryCapacityOneTenFifty",
 		"TestAccountInventoryRowsFailClosed",
 		"TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState",
