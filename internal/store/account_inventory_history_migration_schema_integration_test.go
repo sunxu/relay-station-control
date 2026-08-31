@@ -3613,6 +3613,210 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	}
 }
 
+func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	var databaseNow time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&databaseNow); err != nil {
+		t.Fatal(err)
+	}
+
+	newPollInstance, rowInstance := uuid.New(), uuid.New()
+	for index, instanceID := range []uuid.UUID{newPollInstance, rowInstance} {
+		if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_assets(
+			instance_id,display_name,node_type,driver_contract_version,
+			management_endpoint,reader_secret_ref,created_at,updated_at
+		) VALUES($1,$2,$3,$4,$5,$6,$7,$7)`, instanceID,
+			fmt.Sprintf("Retention Boundary Node %d", index+1), fixture.nodeType, fixture.contract,
+			fmt.Sprintf("http://retention-boundary-%d.invalid", index+1),
+			fmt.Sprintf("docker-secret://synthetic/retention-boundary-%d", index+1),
+			databaseNow.Add(-31*24*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type pollBoundary struct {
+		instanceID uuid.UUID
+		scheduled  time.Time
+		pollID     uuid.UUID
+	}
+	pollCutoff := databaseNow.Add(-30 * 24 * time.Hour)
+	oldScheduled := time.Unix(pollCutoff.Unix()/300*300, 0).UTC()
+	pollBoundaries := []pollBoundary{
+		{instanceID: fixture.instanceID, scheduled: oldScheduled, pollID: uuid.New()},
+		{instanceID: newPollInstance, scheduled: oldScheduled.Add(10 * time.Minute), pollID: uuid.New()},
+	}
+	for index, boundary := range pollBoundaries {
+		summaryDate := boundary.scheduled.UTC().Truncate(24 * time.Hour)
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+			poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+			provider_policy_version,status,created_at,abandoned_at,execution_reason
+		) VALUES($1,$2,$3,$4,$5,$6,'abandoned',$5,$5,'poll_start_grace_expired')`,
+			boundary.pollID, boundary.instanceID, fixture.nodeType, fixture.contract,
+			boundary.scheduled, fixture.policyID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+			summary_date,instance_id,provider_policy_version,status,checksum_version,
+			source_snapshot_count,source_poll_count,source_provider_result_count,
+			source_duplicate_count,source_checksum,deleted_snapshot_count,created_at,
+			summarized_at,deleting_at,completed_at,updated_at
+		) VALUES($1,$2,$3,'completed',1,0,1,0,0,decode(repeat($4,32),'hex'),0,
+			$5,$5,$5,$5,$5)`, summaryDate, boundary.instanceID, fixture.policyID,
+			fmt.Sprintf("%02x", index+1), boundary.scheduled); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+			summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
+			completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
+		) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat($4,32),'hex'),$5,$5,$5)`,
+			summaryDate, boundary.instanceID, uuid.New(), fmt.Sprintf("%02x", index+11),
+			boundary.scheduled); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var processed int
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_delete_account_inventory_poll_retention_v1(10)
+		 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 1 {
+		t.Fatalf("poll retention boundary processed=%d err=%v", processed, err)
+	}
+	var oldPolls, newPolls int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$1),
+		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$2)`,
+		pollBoundaries[0].pollID, pollBoundaries[1].pollID).Scan(&oldPolls, &newPolls); err != nil {
+		t.Fatal(err)
+	}
+	if oldPolls != 0 || newPolls != 1 {
+		t.Fatalf("poll cutoff old=%d new=%d", oldPolls, newPolls)
+	}
+
+	type rowBoundary struct {
+		name        string
+		summaryDate time.Time
+		completedAt time.Time
+		eligible    bool
+		compaction  uuid.UUID
+		rollup      uuid.UUID
+	}
+	dayStart := databaseNow.UTC().Truncate(24 * time.Hour)
+	cutoff := databaseNow.Add(-30 * 24 * time.Hour)
+	boundaries := []rowBoundary{
+		{name: "inclusive_completed", summaryDate: dayStart.AddDate(0, 0, -35), completedAt: cutoff, eligible: true},
+		{name: "completed_too_new", summaryDate: dayStart.AddDate(0, 0, -34), completedAt: cutoff.Add(10 * time.Minute)},
+		{name: "inclusive_day_end", summaryDate: dayStart.AddDate(0, 0, -31), completedAt: cutoff.Add(-24 * time.Hour), eligible: true},
+		{name: "day_end_too_new", summaryDate: dayStart.AddDate(0, 0, -30), completedAt: cutoff.Add(-24 * time.Hour)},
+	}
+	for index := range boundaries {
+		boundary := &boundaries[index]
+		boundary.compaction, boundary.rollup = uuid.New(), uuid.New()
+		createdAt := boundary.completedAt.Add(-3 * time.Second)
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+			compaction_run_id,summary_date,instance_id,provider_policy_version,status,
+			checksum_version,source_snapshot_count,source_poll_count,
+			source_provider_result_count,source_duplicate_count,source_checksum,
+			deleted_snapshot_count,created_at,summarized_at,deleting_at,completed_at,updated_at
+		) VALUES($1,$2,$3,$4,'completed',1,0,0,0,0,decode(repeat($5,32),'hex'),0,
+			$6::timestamptz,$6::timestamptz+interval '1 second',
+			$6::timestamptz+interval '2 seconds',$7::timestamptz,$7::timestamptz)`,
+			boundary.compaction, boundary.summaryDate, rowInstance, fixture.policyID,
+			fmt.Sprintf("%02x", index+21), createdAt, boundary.completedAt); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+			rollup_run_id,summary_date,instance_id,status,completed_fencing_token,
+			expected_segment_count,completed_segment_count,checksum_version,
+			segment_checksum,created_at,completed_at,updated_at
+		) VALUES($1,$2,$3,'completed',$4,1,1,1,decode(repeat($5,32),'hex'),
+			$6::timestamptz,$7::timestamptz,$7::timestamptz)`,
+			boundary.rollup, boundary.summaryDate, rowInstance, uuid.New(),
+			fmt.Sprintf("%02x", index+31), createdAt, boundary.completedAt); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_provider_summaries(
+			compaction_run_id,summary_date,instance_id,provider,provider_policy_version,
+			expected_poll_count,transport_success_count,contract_valid_count,
+			snapshot_complete_count,promotion_applied_count,promotion_skipped_count,
+			policy_changed_count,abandoned_count,degraded_count,coverage_numerator,
+			coverage_denominator,coverage_ratio,coverage_threshold_basis_points,
+			coverage_status,created_at
+		) VALUES($1,$2,$3,'openai',$4,1,0,0,0,0,0,0,0,0,0,1,0,9500,'partial',$5)`,
+			boundary.compaction, boundary.summaryDate, rowInstance, fixture.policyID,
+			boundary.completedAt); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_provider_rollups(
+			rollup_run_id,summary_date,instance_id,provider,expected_poll_count,
+			transport_success_count,contract_valid_count,snapshot_complete_count,
+			promotion_applied_count,promotion_skipped_count,policy_changed_count,
+			abandoned_count,degraded_count,coverage_numerator,coverage_denominator,
+			coverage_ratio,coverage_threshold_basis_points,coverage_status,created_at
+		) VALUES($1,$2,$3,'openai',1,0,0,0,0,0,0,0,0,0,1,0,9500,'partial',$4)`,
+			boundary.rollup, boundary.summaryDate, rowInstance, boundary.completedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for batch := 0; batch < 4; batch++ {
+		if err := database.runtime.QueryRow(ctx, `SELECT
+			(public.control_delete_account_inventory_rollup_row_retention_v1(1)
+			 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 1 {
+			t.Fatalf("rollup row boundary batch=%d processed=%d err=%v", batch+1, processed, err)
+		}
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_delete_account_inventory_rollup_row_retention_v1(1)
+		 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 0 {
+		t.Fatalf("rollup row negative boundaries processed=%d err=%v", processed, err)
+	}
+	for _, boundary := range boundaries {
+		var rows int
+		if err := database.owner.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM account_inventory_daily_provider_summaries
+			 WHERE compaction_run_id=$1)
+			+(SELECT count(*) FROM account_inventory_daily_provider_rollups
+			  WHERE rollup_run_id=$2)`, boundary.compaction, boundary.rollup).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		want := 2
+		if boundary.eligible {
+			want = 0
+		}
+		if rows != want {
+			t.Fatalf("%s retained rows=%d want=%d", boundary.name, rows, want)
+		}
+	}
+
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_delete_account_inventory_rollup_run_retention_v1(10)
+		 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 2 {
+		t.Fatalf("rollup run retention boundaries processed=%d err=%v", processed, err)
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_delete_account_inventory_compaction_run_retention_v1(10)
+		 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 2 {
+		t.Fatalf("compaction run retention boundaries processed=%d err=%v", processed, err)
+	}
+	for _, boundary := range boundaries {
+		var runs int
+		if err := database.owner.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM account_inventory_compaction_runs WHERE compaction_run_id=$1)
+			+(SELECT count(*) FROM account_inventory_daily_rollup_runs WHERE rollup_run_id=$2)`,
+			boundary.compaction, boundary.rollup).Scan(&runs); err != nil {
+			t.Fatal(err)
+		}
+		want := 2
+		if boundary.eligible {
+			want = 0
+		}
+		if runs != want {
+			t.Fatalf("%s retained runs=%d want=%d", boundary.name, runs, want)
+		}
+	}
+}
+
 func TestAccountInventoryHistoryPlannerSerializesRetentionBoundary(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
