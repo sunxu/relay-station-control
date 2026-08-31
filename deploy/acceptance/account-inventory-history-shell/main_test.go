@@ -166,6 +166,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"go test -race ./internal/history ./internal/historyruntime ./internal/store ./cmd/control",
 		"exact_discovery=covered race=covered million_rows=covered", "process=covered",
 		"sensitive_canary=covered", "sensitive_canary_database_sinks=covered",
+		"fake_network_counter=covered", "external_requests=partial_process_paths",
 	} {
 		if !strings.Contains(runner, required) {
 			t.Errorf("history runner lacks %q", required)
@@ -392,12 +393,16 @@ func assertHistoryProcessContract(t *testing.T) {
 	t.Helper()
 	process := readAcceptanceFile(t, "account-inventory-history-process.sh")
 	for _, required := range []string{
-		`lock_directory="$temporary_root/relay-control-history-process-18084-55439.lock"`,
+		`lock_directory="$temporary_root/relay-control-history-process-18084-18085-55439.lock"`,
 		`project_name="relay-control-history-process-${suffix}"`,
 		"account-inventory-history-process.compose.yaml",
 		"docker compose --project-name", "down --volumes --remove-orphans",
 		"docker ps --all", "docker volume ls", "docker network ls",
 		"label=com.docker.compose.project=", "./cmd/control",
+		"./deploy/acceptance/account-inventory-history-fake-node",
+		`network_counter_endpoint='http://127.0.0.1:18085'`,
+		`http_proxy="$network_counter_endpoint" https_proxy="$network_counter_endpoint"`,
+		"account_inventory_history_fake_node=stopped total=0 health=0 inventory=0 unauthorized=0 rejected=0",
 		`-list "^${exact_name}$"`, `grep -Fxq "$exact_name"`,
 		`CONTROL_HTTP_ADDR="127.0.0.1:${control_port}"`,
 		`kill -TERM "$control_pid"`, `wait "$control_pid"`,
@@ -421,6 +426,7 @@ func assertHistoryProcessContract(t *testing.T) {
 		"max_conns_1_pool_wait=covered", "unexpired_lease=preserved",
 		"reconciler_restart_takeover=covered",
 		"sigterm_exit=bounded", "log_redaction=covered",
+		"fake_network_counter=covered", "external_requests=partial_process_paths",
 		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
 		"cleanup_temp=0", "cleanup_lock=0",
 	} {
@@ -440,6 +446,9 @@ func assertHistoryProcessContract(t *testing.T) {
 	}
 	if strings.Count(process, "label=com.docker.compose.project=") < 3 {
 		t.Fatal("history process runner does not verify container, volume, and network cleanup")
+	}
+	if strings.Count(process, `http_proxy="$network_counter_endpoint"`) != 2 {
+		t.Fatal("history process network counter is not scoped to both Control launch paths")
 	}
 
 	compose := readAcceptanceFile(t, "account-inventory-history-process.compose.yaml")

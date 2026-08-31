@@ -114,6 +114,8 @@
 > 同批将错误投影锁为两套各8项字典：compaction只接受source day/count/checksum、activation及`statement_timeout/lease_expired/database_unavailable/internal`；rollup只接受segment incomplete/count/checksum、activation及同四项运行时原因，跨字典原因在Store边界失败关闭。Control结构化顶层日志仅允许`service_stopped`、`runtime_stopped`、`shutdown_timed_out`三种reason，并精确省略raw error和`error`字段。由此完成2.11和8.3；数据库非身份列、日志、指标、错误与artifact的全路径唯一canary扫描仍属于1.5/8.4，不能据此提前关闭。
 >
 > 第二十八批把endpoint/IP、Secret引用/值、email、account key、response body/header、run/fence/checksum、raw error、SQL参数及poll/policy ID分别作为唯一canary。真实PostgreSQL18矩阵覆盖partial主链到rollup/retention，以及zero、permission、statement-timeout和backend reconnect；逐值只允许account key出现在受保护account segment/final identity、policy/run/fence/checksum出现在既有受保护identity/proof列，七张history表的其余非身份列、history audit details及Repository安全返回均零命中。独立local-sink gate对`success/zero_data/partial/permission/timeout/restart/cleanup_failure`七条路径各生成只含固定scenario/result的artifact，回读后扫描日志、指标、错误和最终artifact；aggregate `all`只有在local marker和database marker都成功后才输出`sensitive_canary=covered`。这完成1.5/8.4；源码direct-network-import为零和本次canary零泄漏均不等价于真实fake network counters，8.6仍保持开放。
+>
+> 第二十九批复用既有`account-inventory-history-fake-node`原子HTTP计数器，在宿主loopback为真实Control process矩阵提供同一个reachable Node endpoint与HTTP/HTTPS catch-all proxy。代理仅注入被测Control二进制；Go/Docker/make和验收probe继续清除六类proxy。默认disabled、zero-source planner→summary/delete→rollup、metrics provider权限失败、retention空扫、statement timeout、单连接pool exhaustion、Control/PostgreSQL restart、lease reconcile与shutdown完成后，计数器固定为`total/health/inventory/unauthorized/rejected=0`。该证据只标记`external_requests=partial_process_paths`：retention尚非source-backed删除，permission/cleanup及其余错误分支也未全部在同一counter下执行；待9.4 source-backed fault matrix扩展后再关闭8.6。
 
 ## 9. PostgreSQL 18 恢复、并发与容量验收
 

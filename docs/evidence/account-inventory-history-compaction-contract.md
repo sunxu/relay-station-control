@@ -186,7 +186,7 @@ The independent local branch covers exactly `success`, `zero_data`, `partial`, `
 
 History reads only already committed Control PostgreSQL data. Its expected external request count is always Node `0`, Gateway `0`, Prometheus `0`, internet `0`, and model data plane `0`. Metrics are exposed to Prometheus pull; the history calculation itself does not call Prometheus.
 
-The canary evidence closes 1.5 and 8.4, not 8.6. Static absence of direct network imports and zero sensitive-value hits do not measure actual requests; fake network counters remain the required independent proof.
+The canary evidence closes 1.5 and 8.4, not 8.6. The real-process matrix now adds an independent loopback fake Node/catch-all proxy whose atomic total, health, inventory, unauthorized, and rejected counters remain zero across default-disabled, zero-source convergence, metrics permission failure, held-statement timeout/pool exhaustion, restart/reconcile, and shutdown. This remains `external_requests=partial_process_paths`: retention is only an empty scan and permission, cleanup, plus the remaining error branches are not all exercised beneath the same counter. Task 8.6 stays open until the source-backed 9.4 fault matrix extends this proof.
 
 ## Explicit non-goals and zero-change checks
 

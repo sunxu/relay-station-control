@@ -35,6 +35,7 @@ const (
 	restartDateEnvironment     = "CONTROL_HISTORY_PROCESS_RESTART_SUMMARY_DATE"
 	restartProviderEnvironment = "CONTROL_HISTORY_PROCESS_RESTART_PROVIDER"
 	restartMatrixEnvironment   = "CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX"
+	networkCounterEnvironment  = "CONTROL_HISTORY_PROCESS_NETWORK_COUNTER_ENDPOINT"
 	forbiddenMarkerEnvironment = "CONTROL_HISTORY_PROCESS_FORBIDDEN_MARKER"
 	expectedPhaseEnvironment   = "CONTROL_HISTORY_PROCESS_EXPECT_PHASE"
 
@@ -520,6 +521,7 @@ func seedZeroPollActivationFixture(
 	compactInstanceID := strings.ReplaceAll(fixture.instanceID.String(), "-", "")
 	nodeType := "history-process-" + compactInstanceID[len(compactInstanceID)-12:]
 	const contract = "v1"
+	networkCounter := requireNetworkCounterEndpoint(t)
 
 	var dayStart time.Time
 	var eligible, retained bool
@@ -553,9 +555,9 @@ func seedZeroPollActivationFixture(
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.relay_node_assets(
 		instance_id,display_name,node_type,driver_contract_version,
 		management_endpoint,reader_secret_ref,created_at,updated_at
-	) VALUES($1,'History Process Node',$2,$3,'http://history-process.invalid',
-		'docker-secret://synthetic/history-process-reader',$4,$4)`,
-		fixture.instanceID, nodeType, contract, dayStart); err != nil {
+	) VALUES($1,'History Process Node',$2,$3,$4,
+		'docker-secret://synthetic/history-process-reader',$5,$5)`,
+		fixture.instanceID, nodeType, contract, networkCounter, dayStart); err != nil {
 		t.Fatal("history process seed asset write failed")
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.provider_inventory_policy_versions(
@@ -588,6 +590,18 @@ func seedZeroPollActivationFixture(
 		t.Fatal("history process seed transaction commit failed")
 	}
 	return seededZeroPollFixture{processFixture: fixture, policyID: policyID, dayStart: dayStart}
+}
+
+func requireNetworkCounterEndpoint(t *testing.T) string {
+	t.Helper()
+	raw := os.Getenv(networkCounterEnvironment)
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" ||
+		parsed.Fragment != "" || parsed.Path != "" || parsed.Port() == "" ||
+		parsed.Hostname() != "127.0.0.1" {
+		t.Fatal("history process network counter endpoint invalid")
+	}
+	return raw
 }
 
 func processSeedConfigured() bool {

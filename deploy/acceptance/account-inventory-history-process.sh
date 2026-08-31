@@ -20,6 +20,11 @@ runtime_directory=''
 project_name=''
 control_binary=''
 control_log=''
+network_counter_binary=''
+network_counter_config=''
+network_counter_log=''
+network_counter_pid=''
+network_counter_endpoint='http://127.0.0.1:18085'
 summary_lock_pid=''
 bootstrap_file=''
 keyring_file=''
@@ -28,7 +33,7 @@ keyring_value=''
 control_pid=''
 control_port='18084'
 database_host_port='55439'
-lock_directory="$temporary_root/relay-control-history-process-18084-55439.lock"
+lock_directory="$temporary_root/relay-control-history-process-18084-18085-55439.lock"
 lock_acquired=false
 fixture_instance_id='00000000-0000-4000-8000-000000000909'
 fixture_summary_date=''
@@ -70,6 +75,10 @@ cleanup() {
       kill -KILL "$control_pid" >/dev/null 2>&1 || true
     fi
     wait "$control_pid" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$network_counter_pid" ]; then
+    kill -TERM "$network_counter_pid" >/dev/null 2>&1 || true
+    wait "$network_counter_pid" >/dev/null 2>&1 || true
   fi
   if [ -n "$project_name" ]; then
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -152,7 +161,9 @@ write_secrets() {
   printf '%s\n' "$bootstrap_value" >"$bootstrap_file"
   printf '{"format_version":1,"environment":"dev","current":1,"keys":[{"version":1,"key":"%s"}]}\n' \
     "$keyring_value" >"$keyring_file"
-  chmod 400 "$bootstrap_file" "$keyring_file"
+  printf '{"listen":"127.0.0.1:18085","management_key":"%s","email":"history-network-counter@example.invalid","token":"history-network-counter-token"}\n' \
+    "$bootstrap_value" >"$network_counter_config"
+  chmod 400 "$bootstrap_file" "$keyring_file" "$network_counter_config"
 }
 
 migrate_up() {
@@ -184,6 +195,44 @@ build_control() {
     >"$runtime_directory/control-build.log" 2>&1; then
     fixed_failure 'control_build_failed'
   fi
+  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    go build -trimpath -o "$network_counter_binary" \
+      ./deploy/acceptance/account-inventory-history-fake-node \
+      >"$runtime_directory/network-counter-build.log" 2>&1; then
+    fixed_failure 'network_counter_build_failed'
+  fi
+  chmod 0555 "$network_counter_binary"
+}
+
+start_network_counter() {
+  local attempts=100
+  "$network_counter_binary" -config "$network_counter_config" >"$network_counter_log" 2>&1 &
+  network_counter_pid=$!
+  until grep -Fqx 'account_inventory_history_fake_node=ready' "$network_counter_log"; do
+    if ! kill -0 "$network_counter_pid" >/dev/null 2>&1; then
+      wait "$network_counter_pid" >/dev/null 2>&1 || true
+      network_counter_pid=''
+      fixed_failure 'network_counter_exited'
+    fi
+    attempts=$((attempts - 1))
+    [ "$attempts" -gt 0 ] || fixed_failure 'network_counter_start_timeout'
+    sleep 0.1
+  done
+}
+
+stop_network_counter() {
+  local attempts=100 exit_code=0
+  kill -TERM "$network_counter_pid" >/dev/null 2>&1 || fixed_failure 'network_counter_sigterm_failed'
+  while kill -0 "$network_counter_pid" >/dev/null 2>&1; do
+    attempts=$((attempts - 1))
+    [ "$attempts" -gt 0 ] || fixed_failure 'network_counter_stop_timeout'
+    sleep 0.1
+  done
+  wait "$network_counter_pid" >/dev/null 2>&1 || exit_code=$?
+  network_counter_pid=''
+  [ "$exit_code" -eq 0 ] || fixed_failure 'network_counter_exit_failed'
+  [ "$(grep -Fxc 'account_inventory_history_fake_node=stopped total=0 health=0 inventory=0 unauthorized=0 rejected=0' "$network_counter_log")" -eq 1 ] \
+    || fixed_failure 'network_counter_nonzero'
 }
 
 require_process_test() {
@@ -247,7 +296,8 @@ start_default_disabled_control() {
       -u CONTROL_ACCOUNT_INVENTORY_HISTORY_DATABASE_BACKOFF_INITIAL \
       -u CONTROL_ACCOUNT_INVENTORY_HISTORY_DATABASE_BACKOFF_MAXIMUM \
       -u CONTROL_ACCOUNT_INVENTORY_HISTORY_SHUTDOWN_GRACE \
-      -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
+      http_proxy="$network_counter_endpoint" https_proxy="$network_counter_endpoint" \
       "$control_binary" >>"$control_log" 2>&1 &
   control_pid=$!
   wait_for_control
@@ -329,6 +379,7 @@ seed_eligible_source() {
     CONTROL_HISTORY_PROCESS_INSTANCE_ID="$fixture_instance_id" \
     CONTROL_HISTORY_PROCESS_SUMMARY_DATE="$fixture_summary_date" \
     CONTROL_HISTORY_PROCESS_PROVIDER="$fixture_provider" \
+    CONTROL_HISTORY_PROCESS_NETWORK_COUNTER_ENDPOINT="$network_counter_endpoint" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessSeedEligibleSource$' -count=1 \
@@ -363,6 +414,7 @@ seed_claimed_for_restart() {
     CONTROL_HISTORY_PROCESS_RESTART_INSTANCE_ID="$restart_fixture_instance_id" \
     CONTROL_HISTORY_PROCESS_RESTART_SUMMARY_DATE="$restart_fixture_summary_date" \
     CONTROL_HISTORY_PROCESS_RESTART_PROVIDER="$restart_fixture_provider" \
+    CONTROL_HISTORY_PROCESS_NETWORK_COUNTER_ENDPOINT="$network_counter_endpoint" \
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessSeedClaimedForRestart$' -count=1 \
@@ -440,7 +492,8 @@ start_enabled_control() {
   CONTROL_ACCOUNT_INVENTORY_HISTORY_DATABASE_BACKOFF_MAXIMUM='1s' \
   CONTROL_ACCOUNT_INVENTORY_HISTORY_SHUTDOWN_GRACE="$shutdown_grace" \
   DATABASE_URL="${CONTROL_HISTORY_PROCESS_RUNTIME_URL}&application_name=history_process_control" \
-    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
+      http_proxy="$network_counter_endpoint" https_proxy="$network_counter_endpoint" \
       "$control_binary" >>"$control_log" 2>&1 &
   control_pid=$!
   wait_for_control
@@ -745,6 +798,9 @@ main() {
   export CONTROL_HISTORY_PROCESS_DB_PORT="$database_host_port"
   control_binary="$runtime_directory/control"
   control_log="$runtime_directory/control.log"
+  network_counter_binary="$runtime_directory/history-network-counter"
+  network_counter_config="$runtime_directory/network-counter.json"
+  network_counter_log="$runtime_directory/network-counter.log"
   bootstrap_file="$runtime_directory/bootstrap-secret"
   keyring_file="$runtime_directory/auth-keyring.json"
 
@@ -762,6 +818,7 @@ main() {
   migrate_up
   assert_migration_and_seed_environment
   build_control
+  start_network_counter
   require_process_test TestAccountInventoryHistoryProcessDisabledCompatibleMetrics
   require_process_test TestAccountInventoryHistoryProcessMetricsFailureIsolation
   require_process_test TestAccountInventoryHistoryProcessSeedEligibleSource
@@ -798,8 +855,9 @@ main() {
   run_held_transaction_shutdown_case drain "$shutdown_drain_instance_id" 8 summarized true
   run_held_transaction_shutdown_case timeout "$shutdown_timeout_instance_id" 9 pending false
   verify_redacted_log
+  stop_network_counter
   strict_cleanup
-  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered held_sql_sigterm_drain=covered held_sql_statement_timeout_atomicity=covered max_conns_1_pool_wait=covered unexpired_lease=preserved reconciler_restart_takeover=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered sigterm_exit=bounded log_redaction=covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
+  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered held_sql_sigterm_drain=covered held_sql_statement_timeout_atomicity=covered max_conns_1_pool_wait=covered unexpired_lease=preserved reconciler_restart_takeover=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered sigterm_exit=bounded log_redaction=covered fake_network_counter=covered external_requests=partial_process_paths cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"
