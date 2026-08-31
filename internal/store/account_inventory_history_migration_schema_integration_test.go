@@ -3613,6 +3613,188 @@ func TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery(t *t
 	}
 }
 
+func TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	var databaseNow time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&databaseNow); err != nil {
+		t.Fatal(err)
+	}
+
+	type candidate struct {
+		name             string
+		summaryDate      time.Time
+		scheduledAt      time.Time
+		compactionStatus string
+		failureReason    string
+		extraPending     bool
+		snapshotPresent  bool
+		eligible         bool
+		pollID           uuid.UUID
+	}
+	oldDay := databaseNow.UTC().Truncate(24*time.Hour).AddDate(0, 0, -50)
+	candidates := []candidate{
+		{name: "eligible", summaryDate: oldDay, compactionStatus: "completed", eligible: true},
+		{name: "unfinished", summaryDate: oldDay.AddDate(0, 0, 1), compactionStatus: "summarized"},
+		{name: "failed", summaryDate: oldDay.AddDate(0, 0, 2), compactionStatus: "failed", failureReason: "internal"},
+		{name: "cross_day_failed", summaryDate: oldDay.AddDate(0, 0, 3), compactionStatus: "failed", failureReason: "source_day_mismatch"},
+		{name: "non_terminal", summaryDate: oldDay.AddDate(0, 0, 4), compactionStatus: "completed", extraPending: true},
+		{name: "snapshot_present", summaryDate: oldDay.AddDate(0, 0, 5), compactionStatus: "completed", snapshotPresent: true},
+		{name: "not_expired", compactionStatus: "completed"},
+	}
+	var extraPendingPoll uuid.UUID
+	for index := range candidates {
+		item := &candidates[index]
+		if item.name == "not_expired" {
+			item.scheduledAt = time.Unix(databaseNow.Unix()/300*300, 0).UTC()
+			item.summaryDate = item.scheduledAt.Truncate(24 * time.Hour)
+		} else {
+			item.scheduledAt = item.summaryDate.Add(12 * time.Hour)
+		}
+		item.pollID = uuid.New()
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+			poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+			provider_policy_version,status,created_at,abandoned_at,execution_reason
+		) VALUES($1,$2,$3,$4,$5,$6,'abandoned',$5,$5,'poll_start_grace_expired')`,
+			item.pollID, fixture.instanceID, fixture.nodeType, fixture.contract,
+			item.scheduledAt, fixture.policyID); err != nil {
+			t.Fatalf("%s poll: %v", item.name, err)
+		}
+		sourcePolls := 1
+		if item.extraPending {
+			extraPendingPoll = uuid.New()
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
+				poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+				provider_policy_version,status,created_at
+			) VALUES($1,$2,$3,$4,$5,$6,'pending',$5)`, extraPendingPoll,
+				fixture.instanceID, fixture.nodeType, fixture.contract,
+				item.scheduledAt.Add(5*time.Minute), fixture.policyID); err != nil {
+				t.Fatal(err)
+			}
+			sourcePolls++
+		}
+
+		switch item.compactionStatus {
+		case "summarized":
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+				summary_date,instance_id,provider_policy_version,status,checksum_version,
+				source_snapshot_count,source_poll_count,source_provider_result_count,
+				source_duplicate_count,source_checksum,created_at,summarized_at,updated_at
+			) VALUES($1,$2,$3,'summarized',1,0,1,0,0,decode(repeat($4,32),'hex'),
+				$5,$5,$5)`, item.summaryDate, fixture.instanceID, fixture.policyID,
+				fmt.Sprintf("%02x", index+41), item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
+		case "failed":
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+				summary_date,instance_id,provider_policy_version,status,failed_from,
+				failure_reason,created_at,failed_at,updated_at
+			) VALUES($1,$2,$3,'failed','pending',$4,$5,$5,$5)`, item.summaryDate,
+				fixture.instanceID, fixture.policyID, item.failureReason, item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			sourceSnapshots := 0
+			sourceProviderResults := 0
+			if item.snapshotPresent {
+				sourceSnapshots = 1
+				sourceProviderResults = 1
+			}
+			if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_compaction_runs(
+				summary_date,instance_id,provider_policy_version,status,checksum_version,
+				source_snapshot_count,source_poll_count,source_provider_result_count,
+				source_duplicate_count,source_checksum,deleted_snapshot_count,created_at,
+				summarized_at,deleting_at,completed_at,updated_at
+			) VALUES($1,$2,$3,'completed',1,$4,$5,$6,0,decode(repeat($7,32),'hex'),$4,
+				$8,$8,$8,$8,$8)`, item.summaryDate, fixture.instanceID, fixture.policyID,
+				sourceSnapshots, sourcePolls, sourceProviderResults, fmt.Sprintf("%02x", index+41),
+				item.scheduledAt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_daily_rollup_runs(
+			summary_date,instance_id,status,completed_fencing_token,expected_segment_count,
+			completed_segment_count,checksum_version,segment_checksum,created_at,completed_at,updated_at
+		) VALUES($1,$2,'completed',$3,1,1,1,decode(repeat($4,32),'hex'),$5,$5,$5)`,
+			item.summaryDate, fixture.instanceID, uuid.New(), fmt.Sprintf("%02x", index+61),
+			item.scheduledAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	snapshotPoll := candidates[5]
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,
+		duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason,
+		promotion_applied,promotion_skipped_reason
+	) VALUES($1,'openai',1,0,0,true,true,false,'complete',true,NULL)`,
+		snapshotPoll.pollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
+		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES($1,$2,'openai','openai:retention-candidate@example.invalid',
+		'retention-candidate@example.invalid','active',1,0,0,$3)`, snapshotPoll.pollID,
+		fixture.instanceID, snapshotPoll.scheduledAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+
+	var processed, deleted int
+	if err := database.runtime.QueryRow(ctx, `WITH result AS (
+		SELECT public.control_delete_account_inventory_poll_retention_v1(10) AS value
+	) SELECT (value->>'processed_count')::integer,
+		(value->>'deleted_row_count')::integer FROM result`).Scan(&processed, &deleted); err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || deleted != 1 {
+		t.Fatalf("eligible candidate processed=%d deleted=%d", processed, deleted)
+	}
+	if err := database.runtime.QueryRow(ctx, `SELECT
+		(public.control_delete_account_inventory_poll_retention_v1(10)
+		 ->>'processed_count')::integer`).Scan(&processed); err != nil || processed != 0 {
+		t.Fatalf("ineligible candidates processed=%d err=%v", processed, err)
+	}
+	for _, item := range candidates {
+		var remaining int
+		if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory_poll_runs
+			WHERE poll_run_id=$1`, item.pollID).Scan(&remaining); err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if item.eligible {
+			want = 0
+		}
+		if remaining != want {
+			t.Fatalf("%s remaining=%d want=%d", item.name, remaining, want)
+		}
+	}
+	var protectedRows int
+	if err := database.owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM account_inventory_poll_runs WHERE poll_run_id=$1)
+		+(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$2)`,
+		extraPendingPoll, snapshotPoll.pollID).Scan(&protectedRows); err != nil || protectedRows != 2 {
+		t.Fatalf("protected candidate rows=%d err=%v", protectedRows, err)
+	}
+}
+
 func TestAccountInventoryHistoryRetentionEligibilityBoundaries(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)

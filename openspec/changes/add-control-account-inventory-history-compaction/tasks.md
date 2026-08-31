@@ -69,7 +69,7 @@
 ## 6. Retention、级联清理与 Current Query 兼容
 
 - [x] 6.1 固化snapshot day_end 72小时、poll scheduled_at 30天、summary/rollup day_end且completed_at均30天、completed run自身completed_at 30天资格，验证`<=`边界前后且运行配置无法缩短
-- [ ] 6.2 实现到期terminal poll候选扫描，要求所属compaction completed且snapshot为空，以未完成/failed/非终态/未到期/跨日错误key全部拒绝测试验证
+- [x] 6.2 实现到期terminal poll候选扫描，要求所属compaction completed且snapshot为空，以未完成/failed/非终态/未到期/跨日错误key全部拒绝测试验证
 - [ ] 6.3 实现有界poll删除及Provider result/duplicate级联，验证删除顺序、实际行数、batch重启和任一子trigger失败整体回滚
 - [ ] 6.4 验证poll删除使Provider/account current FK `SET NULL`但来源时间/版本/提交、基础状态、lifecycle、missing计数和freshness逐字段保持
 - [ ] 6.5 升级`control_query_current_account_inventory_v1`从Provider current health读取degraded并接受合法空source FK，以清理前后HTTP/Store响应等价、current source早于最近health、旧result不覆盖health和非法缺字段503测试验证
@@ -78,8 +78,9 @@
 - [ ] 6.8 验证pending/summarized/deleting/failed、count/checksum异常及current lifecycle/audit/未来alerts无论年龄均不被本cleaner删除，并验证retired cutoff不可变、不会被cleaner删除且拒绝晚到同日poll
 - [ ] 6.9 并发运行retention、current query、promotion和Provider scope切换，验证稳定锁顺序、无死锁、query只见已提交current truth且promotion不被历史倒退
 
-> 第四批已有部分证据：四个互异retention gate/受控函数、持久poll/Provider-result/duplicate删除计数、`limit=1`多批、audit失败原子回滚、current FK `SET NULL`与清理前后current-query JSON等价、segment/final→rollup run+retired cutoff→compaction run顺序、固定30天纯模型边界及retention runtime unknown-commit持久重扫均已验证。精确Migration8→9 fixture还验证source-backed超过30天旧poll可首次收敛、Migration本身不造run/marker、rollup删除原子写marker、compaction `limit=1`删除窗口与最终删除后均不复活、晚到poll/marker伪造/down拒绝；独立fixture验证zero-poll既有completed lineage跨过正常horizon后仍完成rollup。6.2仍缺cross-day等完整候选拒绝矩阵；6.3仍缺每一种子trigger故障；6.4/6.5仍缺所列current字段和旧health覆盖全矩阵；6.7仍缺同一30天数据库等号与coverage省略组合；6.8/6.9仍缺未来alerts及并发promotion/scope矩阵，因此不提前勾选复合项。
+> 第四批已有部分证据：四个互异retention gate/受控函数、持久poll/Provider-result/duplicate删除计数、`limit=1`多批、audit失败原子回滚、current FK `SET NULL`与清理前后current-query JSON等价、segment/final→rollup run+retired cutoff→compaction run顺序、固定30天纯模型边界及retention runtime unknown-commit持久重扫均已验证。精确Migration8→9 fixture还验证source-backed超过30天旧poll可首次收敛、Migration本身不造run/marker、rollup删除原子写marker、compaction `limit=1`删除窗口与最终删除后均不复活、晚到poll/marker伪造/down拒绝；独立fixture验证zero-poll既有completed lineage跨过正常horizon后仍完成rollup。6.3仍缺每一种子trigger故障；6.4/6.5仍缺所列current字段和旧health覆盖全矩阵；6.7仍缺同一30天数据库等号与coverage省略组合；6.8/6.9仍缺未来alerts及并发promotion/scope矩阵，因此不提前勾选复合项。
 > 第十七批以生产PostgreSQL18受控函数逐项验证poll `scheduled_at`、segment/final的UTC `day_end`与rollup `completed_at`双门禁，以及completed rollup/compaction run自身`completed_at`在固定30天边界两侧的删除与保留；结合既有生产planner catalog和UTC/DST行为矩阵对snapshot `day_end <= database_now-72h`的证明、纯模型精确等号边界，以及配置测试确认72小时/30天均无运行时缩短入口，完成6.1。
+> 第十八批在同一真实PostgreSQL18候选扫描中设置唯一合法completed/无snapshot/到期terminal正例，并逐项构造summarized未完成run、generic failed run、`source_day_mismatch` failed key、同key非终态poll、仍有snapshot和未到30天poll；生产retention函数只删除正例，第二次扫描处理零项，所有负例poll及受保护snapshot保持，完成6.2。
 
 ## 7. Runtime 配置、生命周期与兼容门禁
 
