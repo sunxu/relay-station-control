@@ -401,7 +401,7 @@ CREATE TABLE account_inventory_daily_summaries (
     ),
     CONSTRAINT account_inventory_daily_summary_key_valid CHECK (
         octet_length(account_key) BETWEEN 3 AND 385
-        AND account_key LIKE provider || ':%'
+        AND left(account_key, char_length(provider) + 1) = provider || ':'
         AND substring(account_key FROM octet_length(provider) + 2)
             = lower(btrim(substring(account_key FROM octet_length(provider) + 2)))
         AND substring(account_key FROM octet_length(provider) + 2) !~ '[[:cntrl:]]'
@@ -511,10 +511,6 @@ CREATE TABLE account_inventory_daily_provider_summaries (
     UNIQUE (summary_date, instance_id, provider, provider_policy_version)
 );
 
-CREATE INDEX account_inventory_daily_provider_summaries_rollup_idx
-    ON account_inventory_daily_provider_summaries
-        (summary_date, instance_id, provider, provider_policy_version);
-
 CREATE TABLE account_inventory_daily_account_rollups (
     account_rollup_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     rollup_run_id uuid NOT NULL,
@@ -546,7 +542,7 @@ CREATE TABLE account_inventory_daily_account_rollups (
     ),
     CONSTRAINT account_inventory_account_rollup_key_valid CHECK (
         octet_length(account_key) BETWEEN 3 AND 385
-        AND account_key LIKE provider || ':%'
+        AND left(account_key, char_length(provider) + 1) = provider || ':'
         AND substring(account_key FROM octet_length(provider) + 2)
             = lower(btrim(substring(account_key FROM octet_length(provider) + 2)))
         AND substring(account_key FROM octet_length(provider) + 2) !~ '[[:cntrl:]]'
@@ -581,9 +577,6 @@ CREATE TABLE account_inventory_daily_account_rollups (
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     UNIQUE (summary_date, instance_id, account_key)
 );
-
-CREATE INDEX account_inventory_daily_account_rollups_read_idx
-    ON account_inventory_daily_account_rollups (summary_date, instance_id, account_key);
 
 CREATE TABLE account_inventory_daily_provider_rollups (
     provider_rollup_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -863,6 +856,9 @@ $$;
 CREATE TRIGGER account_inventory_poll_runs_retired_day_guard
 BEFORE INSERT ON account_inventory_poll_runs
 FOR EACH ROW EXECUTE FUNCTION public.control_reject_account_inventory_retired_day_poll();
+CREATE TRIGGER account_inventory_poll_runs_truncate_guard
+BEFORE TRUNCATE ON account_inventory_poll_runs
+FOR EACH STATEMENT EXECUTE FUNCTION public.control_protect_account_inventory_poll_run();
 
 -- Current product health must survive legal deletion of the historical poll
 -- pointer.  Migration only copies the non-identity health projection from the
@@ -1428,6 +1424,10 @@ DECLARE
     retention_gate text := coalesce(
         current_setting('relay_control.history_poll_retention_delete', true), '');
 BEGIN
+    IF TG_OP = 'TRUNCATE' THEN
+        RAISE EXCEPTION 'terminal account inventory poll evidence is immutable'
+            USING ERRCODE = '23514';
+    END IF;
     IF TG_OP = 'DELETE' THEN
         IF current_user = 'relay_control_migrator'
            AND session_user <> current_user
@@ -1502,6 +1502,10 @@ DECLARE
     retention_gate text := coalesce(
         current_setting('relay_control.history_poll_retention_delete', true), '');
 BEGIN
+    IF TG_OP = 'TRUNCATE' THEN
+        RAISE EXCEPTION 'account inventory provider evidence is immutable'
+            USING ERRCODE = '23514';
+    END IF;
     IF TG_OP = 'DELETE' THEN
         IF current_user = 'relay_control_migrator'
            AND session_user <> current_user
@@ -1541,6 +1545,10 @@ BEGIN
 END;
 $$;
 -- +goose StatementEnd
+
+CREATE TRIGGER account_inventory_poll_provider_results_truncate_guard
+BEFORE TRUNCATE ON account_inventory_poll_provider_results
+FOR EACH STATEMENT EXECUTE FUNCTION public.control_protect_account_inventory_provider_result();
 
 -- +goose StatementBegin
 CREATE FUNCTION public.control_plan_account_inventory_history_v1(schedule_limit integer)
@@ -4304,6 +4312,10 @@ BEGIN
                 'account_inventory_history_retired_days','control_protect_account_inventory_history_retired_day'),
                ('account_inventory_poll_runs_retired_day_guard',
                 'account_inventory_poll_runs','control_reject_account_inventory_retired_day_poll'),
+               ('account_inventory_poll_runs_truncate_guard',
+                'account_inventory_poll_runs','control_protect_account_inventory_poll_run'),
+               ('account_inventory_poll_provider_results_truncate_guard',
+                'account_inventory_poll_provider_results','control_protect_account_inventory_provider_result'),
                ('account_inventory_daily_summaries_immutable',
                 'account_inventory_daily_summaries','control_reject_account_inventory_history_row_mutation'),
                ('account_inventory_daily_summaries_truncate_immutable',
@@ -4727,6 +4739,11 @@ ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_category_valid CHECK (
     category IN ('bootstrap', 'administrator', 'password', 'mfa', 'session',
                  'reauthentication', 'authorization', 'rate_limit', 'account_inventory')
 );
+
+DROP TRIGGER account_inventory_poll_runs_truncate_guard
+    ON account_inventory_poll_runs;
+DROP TRIGGER account_inventory_poll_provider_results_truncate_guard
+    ON account_inventory_poll_provider_results;
 
 -- Restore Migration 5's unconditional terminal poll/provider immutability.
 -- +goose StatementBegin

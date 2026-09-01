@@ -10,18 +10,20 @@
 ## 2. Additive Migration 9、Schema 与最小权限
 
 - [x] 2.1 新增下一号forward Goose Migration并验证既有PostgreSQL core `sha256(bytea)`能力，以PostgreSQL18空库up/down/up和function compatibility测试通过且不引入extension
-- [ ] 2.2 创建账号/Provider策略分段summary表及唯一键、字段allowlist、UTC/coverage/check约束、索引和immutable triggers，以非法组合/重复键/UPDATE/TRUNCATE/普通DELETE拒绝及合法retention DELETE测试验证
-- [ ] 2.3 创建账号/Provider最终daily rollup表及唯一键、固化阈值、completed-only读取索引和immutable triggers，以partial/complete/重复Provider/非法覆盖、普通DELETE拒绝及合法retention DELETE测试验证
-- [ ] 2.4 创建compaction/rollup run表及status、failed_from、lease/fencing、attempt、source/deleted count、checksum、阶段时间约束，并创建不可变的day-level retired cutoff表，以状态组合、过期lease、marker伪造/晚到poll拒绝测试验证
+- [x] 2.2 创建账号/Provider策略分段summary表及唯一键、字段allowlist、UTC/coverage/check约束、索引和immutable triggers，以非法组合/重复键/UPDATE/TRUNCATE/普通DELETE拒绝及合法retention DELETE测试验证
+- [x] 2.3 创建账号/Provider最终daily rollup表及唯一键、固化阈值、completed-only读取索引和immutable triggers，以partial/complete/重复Provider/非法覆盖、普通DELETE拒绝及合法retention DELETE测试验证
+- [x] 2.4 创建compaction/rollup run表及status、failed_from、lease/fencing、attempt、source/deleted count、checksum、阶段时间约束，并创建不可变的day-level retired cutoff表，以状态组合、过期lease、marker伪造/晚到poll拒绝测试验证
 - [x] 2.5 为Provider current state增加最近finalized health时间、degraded和固定原因字段，并从仍存在的current Provider result安全回填，以Migration前后current产品字段逐项一致测试验证
-- [ ] 2.6 调整snapshot/provider-result/duplicate/terminal-poll及history summary/rollup/run保护trigger与外键，为snapshot batch、poll cascade、history row和run retention设置互异精确transaction-local gate，以普通DML拒绝和各合法路径矩阵验证
-- [ ] 2.7 创建固定签名、schema-qualified、固定search_path/UTC的planner/claim/summarize/delete/rollup/retention/metrics `SECURITY DEFINER`函数，撤销PUBLIC并仅授runtime EXECUTE，以ACL catalog和绕过测试验证
-- [ ] 2.8 验证Migration不生成summary/run/retired marker、不删除或改写poll/snapshot/promotion/lifecycle/audit、不复制身份，只新增并回填允许的Provider健康字段；以Migration8旧列值/行数fingerprint保持和新增列来源等价测试通过
+- [x] 2.6 调整snapshot/provider-result/duplicate/terminal-poll及history summary/rollup/run保护trigger与外键，为snapshot batch、poll cascade、history row和run retention设置互异精确transaction-local gate，以普通DML拒绝和各合法路径矩阵验证
+- [x] 2.7 创建固定签名、schema-qualified、固定search_path/UTC的planner/claim/summarize/delete/rollup/retention/metrics `SECURITY DEFINER`函数，撤销PUBLIC并仅授runtime EXECUTE，以ACL catalog和绕过测试验证
+- [x] 2.8 验证Migration不生成summary/run/retired marker、不删除或改写poll/snapshot/promotion/lifecycle/audit、不复制身份，只新增并回填允许的Provider健康字段；以Migration8旧列值/行数fingerprint保持和新增列来源等价测试通过
 - [x] 2.9 实现受保护down，仅允许无history row、无删除计数和无后续依赖的隔离新环境；以空环境成功、已有summary/run/delete进度环境拒绝且数据保持测试验证
 - [x] 2.10 在至少完成一次snapshot/poll清理且current FK已NULL、history summary/run已存在的Migration9 schema运行固定旧二进制，验证启动、poll/promotion/current query和停止正常、不修改history表且不要求generic job kind
 - [x] 2.11 扩展audit category/action/details allowlist，允许actor-null history summarized/completed/failed与retention事件并保持180天不可变边界，以未知detail/identity/checksum拒绝和事务原子性测试验证
 
-> 第三十六批扩展既有Migration8→9 health fixture：poll run、snapshot item、Provider result（含promotion）、current account/lifecycle、scope audit和audit log均以稳定主键排序后锁定旧列行数与SHA-256 digest；Provider state投影只排除M9新增的三个health列。Migration后要求全部count/digest精确不变，七类投影均含真实sentinel行；新health时间、degraded与reason则必须精确等于current poll及对应Provider result。runner仅在该exact test通过后输出`account_inventory_history_migration8_fingerprint=success old_columns=count_digest_covered provider_health=current_poll_result`；本轮只完成编译/静态契约，2.8保持开放直到容量运行结束后真实PostgreSQL18 exact test通过。
+> 第三十六批扩展既有Migration8→9 health fixture：poll run、snapshot item、Provider result（含promotion）、current account/lifecycle、scope audit和audit log均以稳定主键排序后锁定旧列行数与SHA-256 digest；Provider state投影只排除M9新增的三个health列。Migration后要求全部count/digest精确不变，七类投影均含真实sentinel行；新health时间、degraded与reason则必须精确等于current poll及对应Provider result。runner仅在该exact test通过后输出`account_inventory_history_migration8_fingerprint=success old_columns=count_digest_covered provider_health=current_poll_result`。
+>
+> 第四十批新增`TestAccountInventoryHistoryAggregateSchemaConstraintAndProtectionGateMatrix`并纳入exact discovery：对四张summary/rollup表逐一验证重复业务键23505、非法字段组合CHECK拒绝、UPDATE/TRUNCATE/普通DELETE被immutable gate拒绝而合法retention路径通过；compaction/rollup run状态机与lease/fencing、retired cutoff不可变和晚到同日poll拒绝复用既有矩阵；函数/trigger catalog与ACL固定。Migration9同时为poll run和Provider result补齐TRUNCATE guard，并把account key前缀校验从LIKE改为定长`left(...)=provider||':'`避免通配符语义。真实PostgreSQL18 runner输出`aggregate_schema_constraints_protection_gates=covered`及`account_inventory_history_migration8_fingerprint=success old_columns=count_digest_covered provider_health=current_poll_result`，据此完成2.2/2.3/2.4/2.6/2.7/2.8。
 
 ## 3. sqlc、Planner 与策略分段摘要
 

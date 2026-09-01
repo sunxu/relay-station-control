@@ -176,36 +176,95 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 	pollID := fixture.finalize(t, ctx, database, []lifecycleAccount{{
 		email: accountEmail, successCount: 17,
 	}})
-
-	var beforeState string
-	if err := database.owner.QueryRow(ctx, `SELECT (to_jsonb(state.*)-ARRAY[
-		'health_scheduled_at','health_degraded','health_reason'
-	])::text FROM account_inventory_provider_states AS state
-	WHERE instance_id=$1 AND provider='openai'`, fixture.instanceID).Scan(&beforeState); err != nil {
+	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_scope_transition_audits(
+		audit_id,activation_id,node_type,driver_contract_version,actor,reason,
+		moved_out_providers,reactivated_providers,transitioned_at
+	) SELECT gen_random_uuid(),activation_id,node_type,driver_contract_version,
+		'history-migration','Migration 8 fingerprint sentinel',ARRAY['legacy'],
+		ARRAY[]::text[],clock_timestamp()
+	FROM provider_inventory_policy_activations WHERE policy_version_id=$1`, fixture.policyID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO audit_logs(
+		category,action,result,request_id,details
+	) VALUES('authorization','authorization.check','success',
+		'history-migration8-fingerprint','{}'::jsonb)`); err != nil {
+		t.Fatal(err)
+	}
+
+	type fingerprint struct {
+		count  int64
+		digest string
+	}
+	projections := []struct {
+		name  string
+		query string
+	}{
+		{"poll_runs", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value) ORDER BY poll_run_id),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM account_inventory_poll_runs AS row_value`},
+		{"snapshot_items", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value) ORDER BY poll_run_id,instance_id,account_key),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM account_inventory_snapshot_items AS row_value`},
+		{"provider_results", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value) ORDER BY poll_run_id,provider),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM account_inventory_poll_provider_results AS row_value`},
+		{"current_accounts", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value) ORDER BY instance_id,account_key),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM account_inventory AS row_value`},
+		{"scope_audits", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value) ORDER BY audit_id),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM account_inventory_scope_transition_audits AS row_value`},
+		{"audit_logs", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value) ORDER BY audit_id),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM audit_logs AS row_value`},
+		{"provider_states", `SELECT count(*)::bigint,encode(sha256(convert_to(coalesce(
+			jsonb_agg(to_jsonb(row_value)-ARRAY['health_scheduled_at','health_degraded','health_reason']
+				ORDER BY instance_id,provider),'[]'::jsonb)::text,'UTF8')),'hex')
+			FROM account_inventory_provider_states AS row_value`},
+	}
+	readFingerprints := func() map[string]fingerprint {
+		t.Helper()
+		result := make(map[string]fingerprint, len(projections))
+		for _, projection := range projections {
+			var value fingerprint
+			if err := database.owner.QueryRow(ctx, projection.query).Scan(&value.count, &value.digest); err != nil {
+				t.Fatalf("read migration %s fingerprint: %v", projection.name, err)
+			}
+			if value.count == 0 || len(value.digest) != sha256.Size*2 {
+				t.Fatalf("Migration 8 %s fingerprint is not populated", projection.name)
+			}
+			result[projection.name] = value
+		}
+		return result
+	}
+	beforeFingerprints := readFingerprints()
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
 		t.Fatalf("apply Migration 9 over current state: %v", err)
 	}
 	requireHistoryMigrationVersion(t, ctx, database, 9)
 
-	var afterState string
+	afterFingerprints := readFingerprints()
+	for name, before := range beforeFingerprints {
+		if after := afterFingerprints[name]; after != before {
+			t.Fatalf("Migration 9 changed %s old-column count or digest", name)
+		}
+	}
 	var healthMatches bool
 	if err := database.owner.QueryRow(ctx, `SELECT
-		(to_jsonb(state.*)-ARRAY['health_scheduled_at','health_degraded','health_reason'])::text,
 		state.health_scheduled_at=run.scheduled_at
 		AND state.health_degraded=result.degraded
-		AND state.health_reason='none'
+		AND state.health_reason=CASE WHEN result.degraded THEN result.reason ELSE 'none' END
 	FROM account_inventory_provider_states AS state
 	JOIN account_inventory_poll_runs AS run ON run.poll_run_id=state.current_poll_run_id
 	JOIN account_inventory_poll_provider_results AS result
 	  ON result.poll_run_id=run.poll_run_id AND result.provider=state.provider
 	WHERE state.instance_id=$1 AND state.provider='openai'`, fixture.instanceID).
-		Scan(&afterState, &healthMatches); err != nil {
+		Scan(&healthMatches); err != nil {
 		t.Fatal(err)
 	}
-	if afterState != beforeState || !healthMatches {
-		t.Fatal("Migration 9 changed current state beyond the exact health backfill")
+	if !healthMatches {
+		t.Fatal("Migration 9 Provider health does not match its current poll result")
 	}
 
 	var historyRows, copiedEmailColumns int
