@@ -282,7 +282,7 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	sourceSnapshots := requireSourceSnapshots(t)
 	seeded := seedZeroPollActivationFixture(t, ctx, ownerPool, fixture, sourceSnapshots)
 
-	var policyActivations, monitoringActivations, pollRows, snapshotRows, existingRuns int
+	var policyActivations, monitoringActivations, pollRows, snapshotRows, existingRuns, currentRows int
 	if err := ownerPool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM public.provider_inventory_policy_activations AS activation
 		 WHERE activation.policy_version_id=$1 AND activation.effective_from=$3),
@@ -297,9 +297,11 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 		 WHERE poll.instance_id=$2),
 		(SELECT count(*) FROM public.account_inventory_compaction_runs AS run
 		 WHERE run.summary_date=$3::date AND run.instance_id=$2
-		   AND run.provider_policy_version=$1)`, seeded.policyID, fixture.instanceID,
+		   AND run.provider_policy_version=$1),
+		(SELECT count(*) FROM public.control_query_current_account_inventory_v1(
+			$2,'','','','','',10))`, seeded.policyID, fixture.instanceID,
 		seeded.dayStart).Scan(
-		&policyActivations, &monitoringActivations, &pollRows, &snapshotRows, &existingRuns,
+		&policyActivations, &monitoringActivations, &pollRows, &snapshotRows, &existingRuns, &currentRows,
 	); err != nil {
 		t.Fatal("history process seed verification failed")
 	}
@@ -308,7 +310,7 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 		expectedPollRows = 1
 	}
 	if policyActivations != 1 || monitoringActivations != 1 || pollRows != expectedPollRows ||
-		snapshotRows != sourceSnapshots || existingRuns != 0 {
+		snapshotRows != sourceSnapshots || existingRuns != 0 || currentRows != 0 {
 		t.Fatal("history process seed evidence invalid")
 	}
 }
@@ -809,6 +811,17 @@ func seedZeroPollActivationFixture(
 		fixture.instanceID, nodeType, contract, networkCounter, dayStart); err != nil {
 		t.Fatal("history process seed asset write failed")
 	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO public.driver_capabilities(
+		node_type,driver_contract_version,capability
+	) VALUES($1,$2,'management_account_inventory_read')`, nodeType, contract); err != nil {
+		t.Fatal("history process seed driver capability write failed")
+	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO public.node_capabilities(
+		instance_id,node_type,driver_contract_version,capability,created_at
+	) VALUES($1,$2,$3,'management_account_inventory_read',$4)`,
+		fixture.instanceID, nodeType, contract, dayStart); err != nil {
+		t.Fatal("history process seed node capability write failed")
+	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.provider_inventory_policy_versions(
 		policy_version_id,node_type,driver_contract_version,active_providers,
 		out_of_scope_providers,created_by,created_at
@@ -1142,8 +1155,8 @@ func historyFixtureConverged(
 	expectedSourceSnapshots int,
 ) (bool, int64) {
 	t.Helper()
-	var completedCompactions, completedRollups, remainingSnapshots int64
-	var sourcePolls, sourceSnapshots int64
+	var completedCompactions, completedRollups, remainingSnapshots, currentRows int64
+	var sourcePolls, sourceSnapshots, deletedSnapshots int64
 	err := pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM public.account_inventory_compaction_runs
 		 WHERE summary_date=$1::date AND instance_id=$2 AND status='completed'),
@@ -1151,15 +1164,20 @@ func historyFixtureConverged(
 		 WHERE summary_date=$1::date AND instance_id=$2 AND status='completed'),
 		(SELECT coalesce(sum(source_poll_count),0) FROM public.account_inventory_compaction_runs
 		 WHERE summary_date=$1::date AND instance_id=$2 AND status='completed'),
+		(SELECT coalesce(sum(deleted_snapshot_count),0) FROM public.account_inventory_compaction_runs
+		 WHERE summary_date=$1::date AND instance_id=$2 AND status='completed'),
 		(SELECT count(*) FROM public.account_inventory_daily_rollup_runs
 		 WHERE summary_date=$1::date AND instance_id=$2 AND status='completed'),
 		(SELECT count(*) FROM public.account_inventory_snapshot_items AS item
 		 JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
 		 WHERE poll.instance_id=$2
 		   AND poll.scheduled_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
-		   AND poll.scheduled_at < (($1::date+1)::timestamp AT TIME ZONE 'UTC'))`,
+		   AND poll.scheduled_at < (($1::date+1)::timestamp AT TIME ZONE 'UTC')),
+		(SELECT count(*) FROM public.control_query_current_account_inventory_v1(
+			$2,'','','','','',10))`,
 		fixture.summaryDate, fixture.instanceID).Scan(
-		&completedCompactions, &sourceSnapshots, &sourcePolls, &completedRollups, &remainingSnapshots,
+		&completedCompactions, &sourceSnapshots, &sourcePolls, &deletedSnapshots,
+		&completedRollups, &remainingSnapshots, &currentRows,
 	)
 	if err != nil {
 		t.Fatalf("history process convergence database read failed class=%s", processDatabaseErrorClass(err))
@@ -1169,7 +1187,8 @@ func historyFixtureConverged(
 		expectedSourcePolls = 1
 	}
 	return completedCompactions == 1 && completedRollups == 1 && remainingSnapshots == 0 &&
-			sourcePolls == expectedSourcePolls && sourceSnapshots == int64(expectedSourceSnapshots),
+			sourcePolls == expectedSourcePolls && sourceSnapshots == int64(expectedSourceSnapshots) &&
+			deletedSnapshots == sourceSnapshots && currentRows == 0,
 		sourceSnapshots
 }
 

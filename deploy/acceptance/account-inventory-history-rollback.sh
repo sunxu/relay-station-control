@@ -24,6 +24,7 @@ fake_node_name=''
 old_control_name=''
 fake_node_active=false
 old_control_active=false
+current_control_pid=''
 lock_directory=''
 lock_acquired=false
 bootstrap_value=''
@@ -53,6 +54,10 @@ docker_no_proxy() {
 cleanup() {
   local exit_code=$?
   trap - EXIT HUP INT TERM
+  if [ -n "$current_control_pid" ]; then
+    kill -TERM "$current_control_pid" >/dev/null 2>&1 || true
+    wait "$current_control_pid" >/dev/null 2>&1 || true
+  fi
   if [ -n "$old_control_name" ]; then
     docker_no_proxy rm --force "$old_control_name" >/dev/null 2>&1 || true
   fi
@@ -139,6 +144,11 @@ build_binaries() {
       >"$runtime_directory/current-harness-build.log" 2>&1; then
     fixed_failure 'current_harness_build_failed'
   fi
+  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    go build -trimpath -o "$runtime_directory/control-current" ./cmd/control \
+      >"$runtime_directory/current-control-build.log" 2>&1; then
+    fixed_failure 'current_control_build_failed'
+  fi
   if ! (
     cd "$old_source"
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
@@ -153,7 +163,8 @@ build_binaries() {
       >"$runtime_directory/fake-node-build.log" 2>&1; then
     fixed_failure 'fake_node_build_failed'
   fi
-  chmod 0555 "$runtime_directory/history-harness" "$runtime_directory/control-old" \
+  chmod 0555 "$runtime_directory/history-harness" "$runtime_directory/control-current" \
+    "$runtime_directory/control-old" \
     "$runtime_directory/history-fake-node"
 }
 
@@ -291,6 +302,52 @@ stop_fake_node() {
     || fixed_failure 'fake_node_request_count_invalid'
 }
 
+start_current_disabled_control() {
+  local attempts=100 metrics="$runtime_directory/control-current-disabled.prom"
+  CONTROL_HTTP_ADDR="127.0.0.1:${control_port}" \
+  CONTROL_ENVIRONMENT_ID='history-forward' \
+  CONTROL_ENVIRONMENT='dev' \
+  CONTROL_COOKIE_SECURE='true' \
+  CONTROL_MFA_REQUIRED='false' \
+  CONTROL_BOOTSTRAP_SECRET_FILE="$runtime_directory/control/bootstrap-secret" \
+  CONTROL_AUTH_KEYRING_FILE="$runtime_directory/control/auth-keyring.json" \
+  DATABASE_URL="$CONTROL_HISTORY_ROLLBACK_RUNTIME_URL" \
+    env -u CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED \
+      -u CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED \
+      -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      "$runtime_directory/control-current" >>"$runtime_directory/control-current.log" 2>&1 &
+  current_control_pid=$!
+  until curl --noproxy '*' --silent --show-error --fail \
+    "http://127.0.0.1:${control_port}/metrics" >"$metrics" 2>/dev/null &&
+    grep -Fqx 'relay_control_account_inventory_history_enabled{reason="disabled"} 0' "$metrics"
+  do
+    if ! kill -0 "$current_control_pid" >/dev/null 2>&1; then
+      fixed_failure 'current_control_exited'
+    fi
+    attempts=$((attempts - 1))
+    [ "$attempts" -gt 0 ] || fixed_failure 'current_control_compatibility_timeout'
+    sleep 0.1
+  done
+}
+
+stop_current_disabled_control() {
+  local attempts=100 exit_code=0
+  kill -TERM "$current_control_pid" >/dev/null 2>&1 \
+    || fixed_failure 'current_control_sigterm_failed'
+  while kill -0 "$current_control_pid" >/dev/null 2>&1; do
+    attempts=$((attempts - 1))
+    [ "$attempts" -gt 0 ] || fixed_failure 'current_control_stop_timeout'
+    sleep 0.1
+  done
+  wait "$current_control_pid" >/dev/null 2>&1 || exit_code=$?
+  current_control_pid=''
+  [ "$exit_code" -eq 0 ] || fixed_failure 'current_control_exit_failed'
+  if curl --noproxy '*' --silent --show-error --fail \
+    "http://127.0.0.1:${control_port}/api/healthz" >/dev/null 2>&1; then
+    fixed_failure 'current_control_still_available'
+  fi
+}
+
 main() {
   local suffix port published control_port node_ip
   trap cleanup EXIT
@@ -351,6 +408,11 @@ main() {
       "$runtime_directory/prepare.log" >&2 || true
     fixed_failure 'forward_state_prepare_failed'
   fi
+  start_current_disabled_control
+  stop_current_disabled_control
+  "$runtime_directory/history-harness" verify-baseline \
+    >"$runtime_directory/current-disabled-verify.log" 2>&1 \
+    || fixed_failure 'current_disabled_history_changed'
   session_value="$(sed -n 's/^.*"session":"\([^"]*\)".*$/\1/p' "$CONTROL_HISTORY_ROLLBACK_SESSION_FILE")"
   csrf_value="$(sed -n 's/^.*"csrf":"\([^"]*\)".*$/\1/p' "$CONTROL_HISTORY_ROLLBACK_SESSION_FILE")"
   [ -n "$session_value" ] && [ -n "$csrf_value" ] || fixed_failure 'http_session_file_invalid'
@@ -370,7 +432,7 @@ main() {
     fi
   done
   strict_cleanup
-  echo 'account_inventory_history_rollback=success migration=9 pinned_old_revision=covered snapshot_cleanup=controlled poll_cleanup=controlled current_fk_null=covered old_control_poll_promotion=covered old_control_http_current_query=covered history_and_history_audit_unchanged=covered fake_node_inventory_requests=1 production_down=not_used cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
+  echo 'account_inventory_history_rollback=success migration=9 current_candidate_disabled=covered compatibility_gate=covered runner_stopped_before_old_binary=covered pinned_old_revision=covered snapshot_cleanup=controlled poll_cleanup=controlled current_fk_null=covered old_control_poll_promotion=covered old_control_http_current_query=covered history_and_history_audit_unchanged=covered fake_node_inventory_requests=1 production_down=not_used cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"

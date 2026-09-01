@@ -88,6 +88,8 @@ func main() {
 		err = h.waitForProcessPoll(ctx)
 	case "http-query":
 		err = h.httpQuery(ctx)
+	case "verify-baseline":
+		err = h.verifyBaseline(ctx)
 	case "verify":
 		err = h.verifyAfterStop(ctx)
 	default:
@@ -469,6 +471,14 @@ func (h *harness) httpQuery(ctx context.Context) error {
 }
 
 func (h *harness) verifyAfterStop(ctx context.Context) error {
+	if err := h.verifyBaseline(ctx); err != nil {
+		return err
+	}
+	_, err := h.owner.Exec(ctx, `DROP TABLE history_rollback_acceptance_baseline`)
+	return err
+}
+
+func (h *harness) verifyBaseline(ctx context.Context) error {
 	current, err := h.historyFingerprint(ctx)
 	if err != nil {
 		return err
@@ -491,8 +501,7 @@ func (h *harness) verifyAfterStop(ctx context.Context) error {
 	if genericJobs != 0 {
 		return gateError{reason: "generic_jobs_created"}
 	}
-	_, err = h.owner.Exec(ctx, `DROP TABLE history_rollback_acceptance_baseline`)
-	return err
+	return nil
 }
 
 func (h *harness) seedHTTPSession(ctx context.Context) error {

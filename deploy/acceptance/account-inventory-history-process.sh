@@ -52,6 +52,7 @@ dual_fixture_two_instance_id='00000000-0000-4000-8000-000000000917'
 planner_fault_instance_id='00000000-0000-4000-8000-000000000918'
 rollup_fault_instance_id='00000000-0000-4000-8000-000000000919'
 retention_fault_instance_id='00000000-0000-4000-8000-000000000920'
+staging_fixture_instance_id='00000000-0000-4000-8000-000000000921'
 
 fixed_failure() {
   echo "account_inventory_history_process=failed reason=$1" >&2
@@ -969,6 +970,13 @@ main() {
   start_enabled_control '' 1s 2s 5s 1 zero_source
   verify_enabled_convergence
   stop_control
+  fixture_instance_id="$staging_fixture_instance_id"
+  seed_eligible_source 4 2
+  start_enabled_control '' 1s 2s 5s 1 staging_single_worker
+  verify_enabled_convergence "$fixture_instance_id" "$fixture_summary_date" \
+    "$fixture_provider" "$runtime_directory/staging-single-worker-convergence.log" \
+    'staging_single_worker_convergence' 'false' 2
+  stop_control
   fixture_instance_id="$dual_fixture_one_instance_id"
   seed_eligible_source 12 2
   dual_date_one="$fixture_summary_date"
@@ -1061,7 +1069,7 @@ main() {
   verify_redacted_log
   stop_network_counter
   strict_cleanup
-  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered source_backed_snapshots=2 history_concurrency=2 dual_workers_observed=2 stale_fence_zero_impact=covered source_backed_retention=covered source_backed_postgres_restart=covered source_backed_max_conns_1=covered source_backed_statement_timeout_recovery=covered held_sql_sigterm_drain=covered held_sql_statement_timeout_atomicity=covered max_conns_1_pool_wait=covered unexpired_lease=preserved reconciler_restart_takeover=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered permission_terminal_internal=covered trigger_terminal_internal=covered planner_runtime_stopped=covered rollup_runtime_stopped=covered retention_runtime_stopped=covered terminal_source_preserved=covered sigterm_exit=bounded log_redaction=covered fake_network_counter=covered external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
+  echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered staging_concurrency_1=covered staging_delete_batch_1=covered staging_source_snapshots=2 staging_current_query_equivalent=covered source_backed_snapshots=2 history_concurrency=2 dual_workers_observed=2 stale_fence_zero_impact=covered source_backed_retention=covered source_backed_postgres_restart=covered source_backed_max_conns_1=covered source_backed_statement_timeout_recovery=covered held_sql_sigterm_drain=covered held_sql_statement_timeout_atomicity=covered max_conns_1_pool_wait=covered unexpired_lease=preserved reconciler_restart_takeover=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered permission_terminal_internal=covered trigger_terminal_internal=covered planner_runtime_stopped=covered rollup_runtime_stopped=covered retention_runtime_stopped=covered terminal_source_preserved=covered sigterm_exit=bounded log_redaction=covered fake_network_counter=covered external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"

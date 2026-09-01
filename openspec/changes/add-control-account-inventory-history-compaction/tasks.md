@@ -21,6 +21,8 @@
 - [x] 2.10 在至少完成一次snapshot/poll清理且current FK已NULL、history summary/run已存在的Migration9 schema运行固定旧二进制，验证启动、poll/promotion/current query和停止正常、不修改history表且不要求generic job kind
 - [x] 2.11 扩展audit category/action/details allowlist，允许actor-null history summarized/completed/failed与retention事件并保持180天不可变边界，以未知detail/identity/checksum拒绝和事务原子性测试验证
 
+> 第三十六批扩展既有Migration8→9 health fixture：poll run、snapshot item、Provider result（含promotion）、current account/lifecycle、scope audit和audit log均以稳定主键排序后锁定旧列行数与SHA-256 digest；Provider state投影只排除M9新增的三个health列。Migration后要求全部count/digest精确不变，七类投影均含真实sentinel行；新health时间、degraded与reason则必须精确等于current poll及对应Provider result。runner仅在该exact test通过后输出`account_inventory_history_migration8_fingerprint=success old_columns=count_digest_covered provider_health=current_poll_result`；本轮只完成编译/静态契约，2.8保持开放直到容量运行结束后真实PostgreSQL18 exact test通过。
+
 ## 3. sqlc、Planner 与策略分段摘要
 
 - [x] 3.1 新增history sqlc查询与Store DTO/adapter，只调用受控函数并让全部DTO formatter脱敏，以生成代码、compile和fmt canary测试验证
@@ -127,16 +129,22 @@
 - [x] 9.2 覆盖72小时边界、UTC/DST、日内策略切换、非对齐activation、暂停/重入、零数据、漏槽、abandoned、Provider独立降级和95% partial/complete矩阵
 - [x] 9.3 在summarize事务前/中/commit未知、summarized后、每批delete前/后、complete前、final rollup事务中注入崩溃，验证恢复不重算/不多删/不部分发布
 - [x] 9.4 注入stale fencing、同一Control内双scheduler/worker、statement timeout、PostgreSQL重启、pool exhaustion及repository/SQL权限/trigger故障，不执行宿主机disk-full，验证固定failed_from和源证据保留；可恢复故障最终收敛，权限/trigger故障terminal failed且不自动重试
-- [ ] 9.5 Permanent CI运行1/10/50 Node、总计1,000账号的短slot功能矩阵；nightly/manual对86.4万/115.2万snapshot运行至少5次summary/rollup与20个delete batch，按nearest-rank记录P50/P95/P99、DB/index/WAL/max RSS/buffers/lock wait/守恒，硬门禁仅为无OOM/timeout/deadlock和正确性
+- [x] 9.5 Permanent CI运行1/10/50 Node、总计1,000账号的短slot功能矩阵；nightly/manual对86.4万/115.2万snapshot运行至少5次summary/rollup与20个delete batch，按nearest-rank记录P50/P95/P99、DB/index/WAL/max RSS/buffers/lock wait/守恒，硬门禁仅为无OOM/timeout/deadlock和正确性
 - [ ] 9.6 运行全仓Go race覆盖planner/worker/reconciler/Store/metrics并并发current query/promotion/retention，确认无race、死锁或高基数series
 - [x] 9.7 在Control与PostgreSQL同时停止窗口，对独立pinned官方CLIProxyAPI digest执行认证`/v1/models` baseline 1/1和outage 100/100，记录这是data-plane isolation而非Gateway inference E2E
-- [ ] 9.8 验证所有acceptance成功/失败路径最终container/volume/network/temp residual为零，报告仅保存固定计数、时延和状态且不含身份
+- [x] 9.8 验证所有acceptance成功/失败路径最终container/volume/network/temp residual为零，报告仅保存固定计数、时延和状态且不含身份
+
+> 第三十三批把`TestRepositoryLoopsUsesConfiguredConcurrency`和`TestRepositoryLoopsFatalMismatchStopsPlannerAndNewWorkerTransactions`加入static exact discovery及定向`go test -race`集合，锁定配置并发上限和fatal后停止planner/新worker事务。PostgreSQL18 runner另以`-race`精确执行`TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope`，覆盖同一lineage下retention、current query、promotion和scope transition的真实数据库并发。该最小门禁分别输出`history_targeted_race=covered`与`retention_query_promotion_scope_race=covered`；9.6保持开放，直到主线完成全仓`go test -race ./...`。
+
+> 第三十五批统一七个history acceptance runner的成功报告为固定`cleanup_containers/volumes/networks/temp/lock=0`，shell contract逐个锁定EXIT/strict cleanup、Docker compose/volume/network和适用lock清理，并拒绝身份形状字段；全部invalid-arg路径只输出固定failure reason。opt-in失败门禁在隔离PostgreSQL与pinned数据面容器启动后注入migration失败，精确得到`migration_failed`且复核container/volume/network/temp/lock零残留；安全runner成功路径同时复核脱敏固定marker和零残留，完成9.8。
 
 > 第七批以生产planner catalog门禁锁定`clock_timestamp()`、UTC归日和inclusive 72小时资格公式，并在PostgreSQL18行为矩阵覆盖非UTC/DST、策略切换、slot/零数据/abandoned/Provider独立及95%发布边界，完成9.2。
 >
-> 第三十批新增独立opt-in PostgreSQL18容量runner及manual/nightly workflow：生产规模只接受86.4万或115.2万snapshot，每档执行5个独立summary/rollup样本和至少20个delete batch，按nearest-rank输出P50/P95/P99，并记录DB/index/WAL、Go harness进程max RSS、PostgreSQL cgroup memory peak、buffers、lock wait、deadlock delta与逐批/最终守恒。`smoke`固定走同一生产函数链但只使用40行，marker明确为`not_evidence`；9.5保持开放，直到两个生产规模的完整workflow日志实际通过并留存。
+> 第三十批新增独立opt-in PostgreSQL18容量runner及manual/nightly workflow：生产规模只接受86.4万或115.2万snapshot，每档执行5个独立summary/rollup样本和至少20个delete batch，按nearest-rank输出P50/P95/P99，并记录DB/index/WAL、Go harness进程max RSS、PostgreSQL cgroup memory peak、buffers、lock wait、deadlock delta与逐批/最终守恒。`smoke`固定走同一生产函数链但只使用40行，marker明确为`not_evidence`。
+
+> 第三十七批两次正式PostgreSQL18容量运行均`exit 0`。`864000×5`、3 Node、870 delete batches：summary P50/P95/P99=`47515/55590/55590ms`，rollup=`143/148/148ms`；DB/growth=`2415621823/2404081664`、index/growth=`1509728256/1508737024`、WAL=`6569937720`、harness RSS before/after=`20185088/24363008`、PostgreSQL peak=`3603832832`、blocks read/hit=`6190650/166804575`、temp=`2586302976`、max lock waiters/deadlock delta=`0/0`，source/deleted=`4320000/4320000`、account/Provider rollups=`15000/15`、conservation=`passed`。`1152000×5`、4 Node、1160 batches：summary=`61264/74343/74343ms`，rollup=`164/176/176ms`；DB/growth=`3207583423/3196035072`、index/growth=`2003296256/2002305024`、WAL=`8668940096`、RSS=`19972096/26427392`、PostgreSQL peak=`3892613120`、blocks=`6067993/219456540`、temp=`3336427520`、lock/deadlock=`0/0`，source/deleted=`5760000/5760000`、rollups=`20000/20`、conservation=`passed`。两次均无OOM/timeout/deadlock且container/volume/network/temp/lock残留为零；864000运行时success marker尚未追加temp/lock字段，但strict cleanup和独立残留检查均为零。以上时延和资源数仅为本次候选容量证据，不是生产SLO阈值，据此完成9.5。
 >
-> 第三十一批由`TestAccountInventoryHistoryCrashRecoveryMatrix`补齐集中崩溃矩阵，并与既有summarize pre-commit backend终止及pending/summarized/deleting真实重启证据共同覆盖全部指定窗口。真实commit-unknown使用同一连接执行`COMMIT`后阻塞并由短context只观察到传输错误，随后以持久run/segment/audit证明summary只提交一次且同fence重读不重算；三个snapshot按`batch=1`逐批先在事务内终止backend证明零变化，再制造commit-unknown证明每批最多删除一次、audit一次且恒有`deleted+remaining=source`。最后一批后在complete事务内终止backend，证明run仍为deleting、completed audit与rollup均为零；恢复后完成一次。非零account/Provider final rollup在事务内终止backend后保持pending且两类final/audit均为零，再以同fence完整收敛各一份。PostgreSQL runner只有在exact test通过后输出`crash_recovery_matrix=covered`，据此完成9.3；9.4与9.5保持独立开放。
+> 第三十一批由`TestAccountInventoryHistoryCrashRecoveryMatrix`补齐集中崩溃矩阵，并与既有summarize pre-commit backend终止及pending/summarized/deleting真实重启证据共同覆盖全部指定窗口。真实commit-unknown使用同一连接执行`COMMIT`后阻塞并由短context只观察到传输错误，随后以持久run/segment/audit证明summary只提交一次且同fence重读不重算；三个snapshot按`batch=1`逐批先在事务内终止backend证明零变化，再制造commit-unknown证明每批最多删除一次、audit一次且恒有`deleted+remaining=source`。最后一批后在complete事务内终止backend，证明run仍为deleting、completed audit与rollup均为零；恢复后完成一次。非零account/Provider final rollup在事务内终止backend后保持pending且两类final/audit均为零，再以同fence完整收敛各一份。PostgreSQL runner只有在exact test通过后输出`crash_recovery_matrix=covered`；该矩阵只完成9.3，不替代9.4故障或9.5容量证据。
 >
 > 第三十四批复用既有pinned官方CLIProxyAPI digest与Bearer认证`/v1/models` probe：Migration9后先写入匹配Control配置的`history-data-plane`环境身份，Control、PostgreSQL与独立CLIProxyAPI同时在线时baseline固定通过1/1；随后有界停止Control并确认health不可达，再停止PostgreSQL并确认`pg_isready`失败，在两者同时停止窗口继续通过100/100。脱敏marker固定为`scope=data_plane_isolation gateway_inference_e2e=not_covered`并报告container/volume/network/temp/lock残留全零；这证明进程/数据库故障不影响独立数据面，不声称真实Gateway inference E2E，完成9.7。
 >
@@ -144,9 +152,13 @@
 ## 10. Runbook、证据与最终门禁
 
 - [x] 10.1 编写history compaction Runbook，覆盖UTC资格、状态解释、partial、积压/失败、WAL/lock、暂停恢复、checksum/count不一致、只增不删处置和禁止人工SQL重建
-- [ ] 10.2 固化rollout/rollback：Migration→新二进制disabled→compatibility gate→staging单Worker→逐步启用；回滚先停runner、保留forward schema且生产禁止down，并逐项dry run
+- [x] 10.2 固化rollout/rollback：Migration→新二进制disabled→compatibility gate→staging单Worker→逐步启用；回滚先停runner、保留forward schema且生产禁止down，并逐项dry run
 - [x] 10.3 更新README/config reference和现有poll/snapshot/lifecycle/query Runbook，说明受控历史删除、合法空current source、Provider health冗余与当前产品字段兼容
 - [x] 10.4 运行`make generate`两次确认OpenAPI/Go/TypeScript生成物零差异，并运行`make test`、`make build`、全部Go tests、full race、vet、前端typecheck/test/build和actionlint；新增独立PG18 history CI job、明确timeout并与其他container jobs使用唯一资源前缀隔离
 - [ ] 10.5 运行Migration9 schema/ACL/rollback、旧二进制forward-schema、PostgreSQL18功能/故障/容量、零外部请求、敏感canary和数据面隔离完整验收，保存脱敏证据摘要
 - [x] 10.6 运行本change strict、全部canonical specs strict、`git diff --check`和generated diff检查，对照proposal/design/spec/tasks与系统设计确认无漂移
 - [x] 10.7 检查`git status --short`、Migration编号、临时容器/volume/network/目录和敏感内容扫描，确认worktree只包含本change计划/实现并整理Conventional Commits分层提交计划
+
+> 第三十八批为10.2补齐最小可执行dry-run接线：真实process窗口在默认disabled且compatibility通过后，以`concurrency=1`、snapshot delete batch `1`处理独立2-snapshot合成UTC日，要求source/deleted精确守恒、compaction与final rollup各唯一completed、生产current query前后等价，并纳入同一零外部请求counter；随后既有`concurrency=2`双worker阶段构成逐步启用。rollback窗口在pinned旧Control前先启动当前候选且保持history disabled，要求固定`reason=disabled`、history/history-audit与generic-job指纹不变、有界停止后才允许启动旧二进制；shell contract锁定该顺序并禁止rollback runner调用任何Goose/migration down。seed/收敛检查新增生产current query等价断言，fixture同步注册`management_account_inventory_read` driver/node capability以避免fail-closed P0409。
+>
+> 第三十九批完成10.2两侧真实验收：process runner全窗口`exit 0`，输出`default_disabled=covered metrics_failure_isolation=covered enabled_zero_source=covered staging_concurrency_1=covered staging_delete_batch_1=covered staging_source_snapshots=2 staging_current_query_equivalent=covered history_concurrency=2 dual_workers_observed=2 ... fake_network_counter=covered external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0`且七项cleanup残留为零；rollback runner全窗口`exit 0`，输出`current_candidate_disabled=covered compatibility_gate=covered runner_stopped_before_old_binary=covered pinned_old_revision=covered snapshot_cleanup=controlled poll_cleanup=controlled current_fk_null=covered old_control_poll_promotion=covered old_control_http_current_query=covered history_and_history_audit_unchanged=covered fake_node_inventory_requests=1 production_down=not_used`且cleanup残留为零，据此完成10.2。
