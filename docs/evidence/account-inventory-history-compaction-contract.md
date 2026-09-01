@@ -232,3 +232,11 @@ The minimal 10.2 dry-run wiring adds one non-empty staging step to the existing 
 ## Review completion rule
 
 This crosswalk supports completion of 1.1, 1.5, 1.6, 2.11, 8.3, 8.4, 8.5, 8.6, 9.3, 9.4, 9.5, 9.7, and 9.8 only with their cited executed gates. It does not complete 9.6 or any unrelated schema/ACL, UI/OpenAPI, or release task without separately executed evidence.
+
+## Final acceptance evidence (10.5)
+
+The complete `deploy/acceptance/account-inventory-history-run.sh all` executed on the final candidate against isolated PostgreSQL 18 and exited `0`:
+
+`account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered history_targeted_race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered fake_network_counter=covered external_requests=0 data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
+
+The run covered the Migration 9 schema/ACL/up-down-up matrix, the exact Migration8→9 fingerprint, all PostgreSQL 18 functional/fault/capacity matrices, the zero-external-request process windows, the pinned old-binary forward-schema rollback, and the independent data-plane outage window; every stage reported zero container, volume, network, temporary-directory, and lock residual. This completes 10.5; the change remains production-disabled until deployment approvals beyond this repository.
