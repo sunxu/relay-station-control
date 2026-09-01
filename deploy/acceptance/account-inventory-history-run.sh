@@ -180,10 +180,32 @@ case "$mode" in
     ;;
   all)
     run_static
-    "$script_directory/account-inventory-history-postgres.sh"
-    "$script_directory/account-inventory-history-process.sh"
-    "$script_directory/account-inventory-history-rollback.sh"
-    "$script_directory/account-inventory-history-data-plane.sh"
+    stage_pids=()
+    stage_logs=(postgres process rollback data-plane)
+    "$script_directory/account-inventory-history-postgres.sh" \
+      >"$runtime_directory/postgres.log" 2>&1 &
+    stage_pids+=($!)
+    "$script_directory/account-inventory-history-process.sh" \
+      >"$runtime_directory/process.log" 2>&1 &
+    stage_pids+=($!)
+    "$script_directory/account-inventory-history-rollback.sh" \
+      >"$runtime_directory/rollback.log" 2>&1 &
+    stage_pids+=($!)
+    "$script_directory/account-inventory-history-data-plane.sh" \
+      >"$runtime_directory/data-plane.log" 2>&1 &
+    stage_pids+=($!)
+    trap 'kill "${stage_pids[@]}" >/dev/null 2>&1 || true; exit 130' HUP INT TERM
+    failed=false
+    for pid in "${stage_pids[@]}"; do
+      wait "$pid" || failed=true
+    done
+    for log in "${stage_logs[@]}"; do
+      grep -E '^account_inventory_history_.*(=success|=failed reason=)' \
+        "$runtime_directory/$log.log" || true
+    done
+    if [ "$failed" = true ]; then
+      fixed_failure 'parallel_stage_failed'
+    fi
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered history_targeted_race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered fake_network_counter=covered external_requests=0 data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
