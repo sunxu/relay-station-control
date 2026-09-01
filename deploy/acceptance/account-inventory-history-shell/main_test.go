@@ -305,7 +305,7 @@ func assertHistoryRollbackContract(t *testing.T) {
 	for _, required := range []string{
 		"d4310023b3128199e485670d4bde84da7607412f",
 		"git archive --format=tar", `-o "$runtime_directory/control-old" ./cmd/control`,
-		`CGO_ENABLED=0 GOOS=linux GOCACHE="$runtime_directory/go-build" go build -trimpath \
+		`CGO_ENABLED=0 GOOS=linux go build -trimpath \
       -o "$runtime_directory/history-fake-node" ./deploy/acceptance/account-inventory-history-fake-node`,
 		"CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED=true",
 		"CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED=true", "CONTROL_CLIPROXYAPI_DRIVER_ENABLED=true",

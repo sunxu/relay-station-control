@@ -134,7 +134,7 @@ build_binaries() {
   tar -xf "$runtime_directory/old-source.tar" -C "$old_source" \
     || fixed_failure 'old_revision_export_failed'
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" go build -trimpath \
+    go build -trimpath \
       -o "$runtime_directory/history-harness" ./deploy/acceptance/account-inventory-history-rollback \
       >"$runtime_directory/current-harness-build.log" 2>&1; then
     fixed_failure 'current_harness_build_failed'
@@ -142,13 +142,13 @@ build_binaries() {
   if ! (
     cd "$old_source"
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      CGO_ENABLED=0 GOOS=linux GOCACHE="$runtime_directory/go-build" go build -trimpath \
+      CGO_ENABLED=0 GOOS=linux go build -trimpath \
         -o "$runtime_directory/control-old" ./cmd/control
   ) >"$runtime_directory/old-control-build.log" 2>&1; then
     fixed_failure 'old_control_build_failed'
   fi
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    CGO_ENABLED=0 GOOS=linux GOCACHE="$runtime_directory/go-build" go build -trimpath \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath \
       -o "$runtime_directory/history-fake-node" ./deploy/acceptance/account-inventory-history-fake-node \
       >"$runtime_directory/fake-node-build.log" 2>&1; then
     fixed_failure 'fake_node_build_failed'
@@ -326,7 +326,7 @@ main() {
   export CONTROL_HISTORY_ROLLBACK_OWNER_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${port}/relay_station_control?sslmode=disable"
   export CONTROL_HISTORY_ROLLBACK_RUNTIME_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${port}/relay_station_control?sslmode=disable"
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    GOCACHE="$runtime_directory/go-build" DATABASE_URL="$CONTROL_HISTORY_ROLLBACK_OWNER_URL" \
+    DATABASE_URL="$CONTROL_HISTORY_ROLLBACK_OWNER_URL" \
       make --silent migrate-up >"$runtime_directory/migration.log" 2>&1; then
     fixed_failure 'migration_failed'
   fi
