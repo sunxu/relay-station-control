@@ -22,6 +22,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	store "github.com/sunxu/relay-station-control/internal/store"
 )
 
 const (
@@ -203,6 +204,10 @@ func TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource(t *testing
 			families, _ := readProcessMetrics(t, ctx, processURL)
 			if enabled, exists := metricValue(families,
 				"relay_control_account_inventory_history_enabled", map[string]string{"reason": "ready"}); exists && enabled == 1 && enabledFixtureMetricsVisible(families, fixture, sourceSnapshots) {
+				if restartMatrix != "true" && sourceSnapshots > 0 {
+					runtimePool := requireProcessPool(t, runtimeDatabaseEnvironment)
+					verifyCurrentInventoryProductionDTO(t, ctx, runtimePool, fixture)
+				}
 				return
 			}
 		}
@@ -326,6 +331,10 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 		snapshotRows != sourceSnapshots || existingRuns != 0 || currentRows != expectedCurrentRows ||
 		!currentEquivalent {
 		t.Fatal("history process seed evidence invalid")
+	}
+	if sourceSnapshots > 0 {
+		runtimePool := requireProcessPool(t, runtimeDatabaseEnvironment)
+		verifyCurrentInventoryProductionDTO(t, ctx, runtimePool, fixture)
 	}
 }
 
@@ -1248,6 +1257,12 @@ type currentInventoryRow struct {
 	basicStatus             string
 	lifecycle               string
 	consecutiveMissingCount int32
+	firstSeenAt             time.Time
+	lastSeenAt              time.Time
+	missingSince            *time.Time
+	outOfScopeSince         *time.Time
+	lastRefreshAt           *time.Time
+	nextRetryAt             *time.Time
 	sourceUpdatedAt         time.Time
 	providerLastCompleteAt  time.Time
 	providerDegraded        bool
@@ -1262,10 +1277,23 @@ func (row currentInventoryRow) equivalent(expected currentInventoryRow) bool {
 		row.basicStatus == expected.basicStatus &&
 		row.lifecycle == expected.lifecycle &&
 		row.consecutiveMissingCount == expected.consecutiveMissingCount &&
+		row.firstSeenAt.Equal(expected.firstSeenAt) &&
+		row.lastSeenAt.Equal(expected.lastSeenAt) &&
+		equalTimePointer(row.missingSince, expected.missingSince) &&
+		equalTimePointer(row.outOfScopeSince, expected.outOfScopeSince) &&
+		equalTimePointer(row.lastRefreshAt, expected.lastRefreshAt) &&
+		equalTimePointer(row.nextRetryAt, expected.nextRetryAt) &&
 		row.sourceUpdatedAt.Equal(expected.sourceUpdatedAt) &&
 		row.providerLastCompleteAt.Equal(expected.providerLastCompleteAt) &&
 		row.providerDegraded == expected.providerDegraded &&
 		row.snapshotFreshness == expected.snapshotFreshness
+}
+
+func equalTimePointer(observed, expected *time.Time) bool {
+	if observed == nil || expected == nil {
+		return observed == nil && expected == nil
+	}
+	return observed.Equal(*expected)
 }
 
 func expectedCurrentInventoryRow(fixture processFixture, dayStart time.Time) currentInventoryRow {
@@ -1278,6 +1306,12 @@ func expectedCurrentInventoryRow(fixture processFixture, dayStart time.Time) cur
 		basicStatus:             "reported_active",
 		lifecycle:               "present",
 		consecutiveMissingCount: 0,
+		firstSeenAt:             sourceAt,
+		lastSeenAt:              sourceAt,
+		missingSince:            nil,
+		outOfScopeSince:         nil,
+		lastRefreshAt:           &sourceAt,
+		nextRetryAt:             nil,
 		sourceUpdatedAt:         sourceAt,
 		providerLastCompleteAt:  sourceAt,
 		providerDegraded:        false,
@@ -1290,8 +1324,9 @@ func requireCurrentInventoryRows(
 ) []currentInventoryRow {
 	t.Helper()
 	rows, err := pool.Query(ctx, `SELECT instance_id,provider,account_key,normalized_email,
-		basic_status,lifecycle,consecutive_missing_count,source_updated_at,
-		provider_last_complete_at,provider_degraded,snapshot_freshness
+		basic_status,lifecycle,consecutive_missing_count,first_seen_at,last_seen_at,
+		missing_since,out_of_scope_since,last_refresh_at,next_retry_at,
+		source_updated_at,provider_last_complete_at,provider_degraded,snapshot_freshness
 		FROM public.control_query_current_account_inventory_v1($1,'','','','','',101)`, instanceID)
 	if err != nil {
 		t.Fatalf("history process current inventory read failed class=%s", processDatabaseErrorClass(err))
@@ -1302,8 +1337,9 @@ func requireCurrentInventoryRows(
 		var row currentInventoryRow
 		if err := rows.Scan(&row.instanceID, &row.provider, &row.accountKey, &row.normalizedEmail,
 			&row.basicStatus, &row.lifecycle, &row.consecutiveMissingCount,
-			&row.sourceUpdatedAt, &row.providerLastCompleteAt, &row.providerDegraded,
-			&row.snapshotFreshness); err != nil {
+			&row.firstSeenAt, &row.lastSeenAt, &row.missingSince, &row.outOfScopeSince,
+			&row.lastRefreshAt, &row.nextRetryAt, &row.sourceUpdatedAt,
+			&row.providerLastCompleteAt, &row.providerDegraded, &row.snapshotFreshness); err != nil {
 			t.Fatalf("history process current inventory scan failed class=%s", processDatabaseErrorClass(err))
 		}
 		observed = append(observed, row)
@@ -1312,6 +1348,61 @@ func requireCurrentInventoryRows(
 		t.Fatalf("history process current inventory iteration failed class=%s", processDatabaseErrorClass(err))
 	}
 	return observed
+}
+
+// verifyCurrentInventoryProductionDTO reads the same current-query result
+// through the production AccountInventoryRepository, exercising the real
+// sqlc JSON encode, strict decode, validation, and DTO projection path once
+// per fixture. The repository inserts a product view-audit row per call, so
+// this runs once per window instead of inside the convergence poll.
+func verifyCurrentInventoryProductionDTO(
+	t *testing.T, ctx context.Context, runtimePool *pgxpool.Pool, fixture processFixture,
+) {
+	t.Helper()
+	repository, err := store.NewAccountInventoryRepository(runtimePool)
+	if err != nil {
+		t.Fatalf("history process current repository construct failed class=%s", processDatabaseErrorClass(err))
+	}
+	if err := repository.CheckCompatibility(ctx); err != nil {
+		t.Fatalf("history process current repository incompatible class=%s", processDatabaseErrorClass(err))
+	}
+	page, err := repository.QueryPageAndAudit(ctx, store.AccountInventoryQuery{
+		InstanceID: fixture.instanceID,
+		Limit:      100,
+	}, store.AccountInventoryViewAudit{
+		ActorAdminID:      fixture.instanceID,
+		SourceFingerprint: make([]byte, 32),
+		RequestID:         "history-process-current-equivalence",
+	})
+	if err != nil {
+		t.Fatalf("history process current repository query failed class=%s", processDatabaseErrorClass(err))
+	}
+	dayStart, err := time.Parse("2006-01-02", fixture.summaryDate)
+	if err != nil {
+		t.Fatalf("history process summary date invalid class=%s", processDatabaseErrorClass(err))
+	}
+	sourceAt := dayStart.Add(12*time.Hour + 3*time.Second)
+	if len(page.Items) != 1 {
+		t.Fatalf("history process current repository row count = %d", len(page.Items))
+	}
+	item := page.Items[0]
+	if item.Provider != fixture.provider ||
+		item.Email != "history-process-0@example.invalid" ||
+		item.BasicStatus != "reported_active" ||
+		item.Lifecycle != "present" ||
+		item.ConsecutiveMissingCount != 0 ||
+		!item.FirstSeenAt.Equal(sourceAt) ||
+		!item.LastSeenAt.Equal(sourceAt) ||
+		item.MissingSince != nil ||
+		item.OutOfScopeSince != nil ||
+		item.LastRefreshAt == nil || !item.LastRefreshAt.Equal(sourceAt) ||
+		item.NextRetryAt != nil ||
+		item.SourceUpdatedAt == nil || !item.SourceUpdatedAt.Equal(sourceAt) ||
+		!item.ProviderLastCompleteAt.Equal(sourceAt) ||
+		item.ProviderDegraded ||
+		item.SnapshotFreshness != "stale" {
+		t.Fatal("history process current repository DTO invalid")
+	}
 }
 
 func historyRestartPhaseMatrixConverged(
