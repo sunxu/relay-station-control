@@ -35,6 +35,8 @@ var requiredHistoryRaceTests = []struct {
 	{"./internal/historyruntime", "TestRepositoryLoopsFinalizesRollupWithBoundedUnknownCommitReplay"},
 	{"./internal/historyruntime", "TestRepositoryLoopsRollupShutdownDrainsCurrentFinalizeOnly"},
 	{"./internal/historyruntime", "TestRepositoryLoopsShareConcurrencyAcrossCompactionAndRollup"},
+	{"./internal/historyruntime", "TestRepositoryLoopsUsesConfiguredConcurrency"},
+	{"./internal/historyruntime", "TestRepositoryLoopsFatalMismatchStopsPlannerAndNewWorkerTransactions"},
 	{"./internal/historyruntime", "TestRepositoryLoopsShutdownStopsClaimsButFinishesShortOperation"},
 	{"./internal/historyruntime", "TestRepositoryLoopsShutdownBetweenDeleteBatchesStartsNoNewTransaction"},
 	{"./internal/historyruntime", "TestRepositoryLoopsRetentionRoundUsesDependencyOrderAndBoundedTransactions"},
@@ -171,7 +173,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"baseline_models=1/1", "outage_models=100/100", "gateway_inference_e2e=not_covered",
 		"account-inventory-history-safety-run.sh", "sensitive_canary=partial_local_sinks", "external_requests=not_covered",
 		"go test -race ./internal/history ./internal/historyruntime ./internal/store ./cmd/control",
-		"exact_discovery=covered race=covered million_rows=covered", "process=covered",
+		"history_targeted_race=covered",
+		"exact_discovery=covered race=covered", "million_rows=covered", "process=covered",
 		"sensitive_canary=covered", "sensitive_canary_database_sinks=covered",
 		"fake_network_counter=covered", "external_requests=0",
 	} {
@@ -231,6 +234,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun",
 		"TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery",
 		"TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope",
+		"go test -race ./internal/store",
+		"retention_query_promotion_scope_race=covered",
 		"TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume",
 		"retention_child_atomicity=covered",
 		"TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates",
@@ -244,6 +249,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion",
 		"TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection",
 		"TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy",
+		"account_inventory_history_migration8_fingerprint=success",
+		"old_columns=count_digest_covered", "provider_health=current_poll_result",
 		"TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition",
 		"TestInventorySnapshotContractFailureFinalizesWithoutPromotion",
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
@@ -255,6 +262,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"crash_recovery_matrix=covered",
 		"TestAccountInventoryHistorySecurityBoundaryMatrix",
 		"security_boundary_matrix=covered",
+		"TestAccountInventoryHistoryAggregateSchemaConstraintAndProtectionGateMatrix",
+		"aggregate_schema_constraints_protection_gates=covered",
 		"TestAccountInventoryHistoryCapacityOneTenFifty",
 		"TestAccountInventoryRowsFailClosed",
 		"TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState",
@@ -315,18 +324,22 @@ func assertHistoryRollbackContract(t *testing.T) {
 	for _, required := range []string{
 		"d4310023b3128199e485670d4bde84da7607412f",
 		"git archive --format=tar", `-o "$runtime_directory/control-old" ./cmd/control`,
+		`-o "$runtime_directory/control-current" ./cmd/control`,
 		`CGO_ENABLED=0 GOOS=linux go build -trimpath \
       -o "$runtime_directory/history-fake-node" ./deploy/acceptance/account-inventory-history-fake-node`,
 		"CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED=true",
 		"CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED=true", "CONTROL_CLIPROXYAPI_DRIVER_ENABLED=true",
 		"CONTROL_COOKIE_SECURE=true",
-		`history-harness" wait`, `history-harness" http-query`, `history-harness" verify`,
+		`history-harness" verify-baseline`, `history-harness" wait`,
+		`history-harness" http-query`, `history-harness" verify`,
 		`session_value="$(sed -n`, `csrf_value="$(sed -n`,
 		`"$management_key" "$fake_token" "$session_value" "$csrf_value"`, `"$runtime_directory"/*.log`,
 		"account_inventory_history_fake_node=stopped total=1 health=0 inventory=1 unauthorized=0 rejected=0",
 		"lock_acquired=false", `[ "$lock_acquired" = true ]`,
 		`lock_directory="$temporary_root/relay-control-history-rollback-${control_port}.lock"`,
 		"snapshot_cleanup=controlled", "poll_cleanup=controlled", "current_fk_null=covered",
+		"current_candidate_disabled=covered", "compatibility_gate=covered",
+		"runner_stopped_before_old_binary=covered",
 		"old_control_poll_promotion=covered", "old_control_http_current_query=covered",
 		"history_and_history_audit_unchanged=covered", "production_down=not_used",
 		`if [ -n "$old_control_name" ]`, `if [ -n "$fake_node_name" ]`,
@@ -341,7 +354,7 @@ func assertHistoryRollbackContract(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
-		`case "wait":`, `case "http-query":`, `case "verify":`,
+		`case "verify-baseline":`, `case "wait":`, `case "http-query":`, `case "verify":`,
 		`controlauth.SessionCookieName`, `request.Header.Set("X-CSRF-Token", session.CSRF)`,
 		"promotion_applied", "current_poll_run_id=$2",
 		"category='account_inventory' AND action='account_inventory.view' AND result='success'",
@@ -369,6 +382,16 @@ func assertHistoryRollbackContract(t *testing.T) {
 	if strings.Contains(rollback, "git checkout") || strings.Contains(rollback, "git worktree") ||
 		strings.Count(rollback, "label=com.docker.compose.project=") < 3 {
 		t.Fatal("history rollback export or cleanup contract is invalid")
+	}
+	candidateStart := strings.LastIndex(rollback, "\n  start_current_disabled_control\n")
+	candidateStop := strings.LastIndex(rollback, "\n  stop_current_disabled_control\n")
+	baselineCheck := strings.LastIndex(rollback, `history-harness" verify-baseline`)
+	oldStart := strings.LastIndex(rollback, "\n  start_old_control ")
+	if candidateStart < 0 || candidateStop <= candidateStart || baselineCheck <= candidateStop || oldStart <= baselineCheck {
+		t.Fatal("history rollback candidate-to-old handoff order is invalid")
+	}
+	if regexp.MustCompile(`(?m)^[^#\n]*(?:goose[^\n]*[[:space:]'\"]down(?:[[:space:]'\"]|$)|migrate[[:space:]'\"]+down(?:[[:space:]'\"]|$)|migrate-down|migration-down)`).MatchString(rollback) {
+		t.Fatal("history rollback runner must not invoke migration down")
 	}
 }
 
@@ -432,6 +455,8 @@ func assertHistoryProcessContract(t *testing.T) {
 		"account_inventory_history_process=success",
 		"default_disabled=covered", "metrics_http=covered",
 		"metrics_failure_isolation=covered", "enabled_zero_source=covered",
+		"staging_concurrency_1=covered", "staging_delete_batch_1=covered",
+		"staging_source_snapshots=2", "staging_current_query_equivalent=covered",
 		"wait_for_history_ready", "assert_restart_claim_active",
 		"postgres_restart_recovery=covered",
 		"CONTROL_HISTORY_PROCESS_RESTART_PHASE_MATRIX", "restart_phase_matrix",
@@ -637,4 +662,261 @@ func TestHistoryAcceptanceHasNoDataPlaneOrExternalProbePath(t *testing.T) {
 		!strings.Contains(compose, "internal: true") {
 		t.Fatal("history PostgreSQL acceptance is not isolated to one internal PostgreSQL service")
 	}
+}
+
+func TestHistoryAcceptanceCleanupAndReportContract(t *testing.T) {
+	cleanupKeys := "cleanup_containers cleanup_volumes cleanup_networks cleanup_temp cleanup_lock"
+	scripts := []struct {
+		name       string
+		prefix     string
+		markerKeys string
+		usesDocker bool
+		usesLock   bool
+	}{
+		{
+			"account-inventory-history-run.sh", "account_inventory_history_acceptance",
+			"account_inventory_history_acceptance mode exact_discovery race history_targeted_race million_rows sensitive_canary external_requests fake_network_counter data_plane_isolation baseline_models outage_models gateway_inference_e2e process rollback_gate local_sink_canary sensitive_canary_database_sinks " + cleanupKeys,
+			false, false,
+		},
+		{
+			"account-inventory-history-postgres.sh", "account_inventory_history_postgres",
+			"account_inventory_history_postgres server_major migration up_down_up core_sha256 canonical_golden compaction_main_path crash_recovery_matrix security_boundary_matrix aggregate_schema_constraints_protection_gates compaction_claim_fencing compaction_reconcile_phases summarize_atomicity summarize_timeout_disconnect_recovery summarize_immutability snapshot_delete_atomicity snapshot_delete_selection snapshot_delete_resume compaction_complete_count_gate final_rollup finalize_atomicity final_immutability metrics_completed_only zero_provider planner_catalog_utc_inclusive_72h planner_eligibility_matrix finalize_catalog_9500 utc_dst_72h_expression slot_provider_matrix incomplete_segment_gates coverage_expression_9499_finalize_9474_9500_10000 last_segment_concurrency policy_boundary metrics_backlog_drain retention_batches retention_child_atomicity poll_candidate_rejections retention_eligibility_boundaries retention_ordered_chain_coverage_omission retention_query_promotion_scope_concurrency retention_query_promotion_scope_race retention_planner_lock planner_limit_progress retired_day_poll_lock legacy_retention_bootstrap zero_poll_lineage_bootstrap retired_day_no_resurrection current_fields_after_retention current_query_after_retention current_health_query_matrix current_http_null_source provider_health_finalize_matrix lease_expiry history_audit_allowlist_retention_atomicity sensitive_canary_database_sinks capacity_1_10_50_total_accounts audit_gate runtime_table_dml runtime_functions " + cleanupKeys,
+			true, false,
+		},
+		{
+			"account-inventory-history-process.sh", "account_inventory_history_process",
+			"account_inventory_history_process migration default_disabled metrics_http metrics_failure_isolation enabled_zero_source staging_concurrency_1 staging_delete_batch_1 staging_source_snapshots staging_current_query_equivalent source_backed_snapshots history_concurrency dual_workers_observed stale_fence_zero_impact source_backed_retention source_backed_postgres_restart source_backed_max_conns_1 source_backed_statement_timeout_recovery held_sql_sigterm_drain held_sql_statement_timeout_atomicity max_conns_1_pool_wait unexpired_lease reconciler_restart_takeover postgres_restart_recovery control_postgres_restart_phase_matrix permission_terminal_internal trigger_terminal_internal planner_runtime_stopped rollup_runtime_stopped retention_runtime_stopped terminal_source_preserved sigterm_exit log_redaction fake_network_counter external_requests node gateway prometheus internet model " + cleanupKeys,
+			true, true,
+		},
+		{
+			"account-inventory-history-rollback.sh", "account_inventory_history_rollback",
+			"account_inventory_history_rollback migration current_candidate_disabled compatibility_gate runner_stopped_before_old_binary pinned_old_revision snapshot_cleanup poll_cleanup current_fk_null old_control_poll_promotion old_control_http_current_query history_and_history_audit_unchanged fake_node_inventory_requests production_down " + cleanupKeys,
+			true, true,
+		},
+		{
+			"account-inventory-history-safety-run.sh", "account_inventory_history_safety",
+			"account_inventory_history_safety local_sink_canary scenarios direct_network_client_imports sensitive_canary_complete external_requests process_fake_endpoint_counter database_non_identity_sink " + cleanupKeys,
+			false, false,
+		},
+		{
+			"account-inventory-history-data-plane.sh", "account_inventory_history_data_plane",
+			"account_inventory_history_data_plane official_image baseline_models control_stopped postgres_stopped outage_models scope gateway_inference_e2e " + cleanupKeys,
+			true, true,
+		},
+		{
+			"account-inventory-history-capacity.sh", "account_inventory_history_capacity",
+			"account_inventory_history_capacity scale evidence " + cleanupKeys,
+			true, false,
+		},
+	}
+	cleanupFields := "cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0"
+	for _, script := range scripts {
+		contents := readAcceptanceFile(t, script.name)
+		for _, required := range []string{
+			"cleanup() {", "strict_cleanup() {", "trap cleanup EXIT",
+			`rm -rf -- "$runtime_directory"`, `[ ! -e "$runtime_directory" ]`,
+			`echo "` + script.prefix + `=failed reason=$1" >&2`,
+		} {
+			if !strings.Contains(contents, required) {
+				t.Errorf("%s lacks cleanup contract %q", script.name, required)
+			}
+		}
+		if script.usesDocker {
+			for _, required := range []string{"down --volumes --remove-orphans", "docker volume ls", "docker network ls"} {
+				if !strings.Contains(contents, required) {
+					t.Errorf("%s lacks Docker cleanup contract %q", script.name, required)
+				}
+			}
+		}
+		if script.usesLock && !strings.Contains(contents, `rmdir "$lock_directory"`) {
+			t.Errorf("%s lacks lock cleanup contract", script.name)
+		}
+		successLines := 0
+		for _, line := range strings.Split(contents, "\n") {
+			if !strings.Contains(line, script.prefix+"=success") {
+				continue
+			}
+			successLines++
+			if !strings.Contains(line, cleanupFields) {
+				t.Errorf("%s success report lacks fixed zero-residual fields", script.name)
+			}
+			if err := validateHistoryMarkerKeys(line, script.prefix, script.markerKeys); err != nil {
+				t.Errorf("%s success report: %v", script.name, err)
+			}
+		}
+		if successLines == 0 {
+			t.Errorf("%s lacks a fixed success report", script.name)
+		}
+	}
+
+	capacitySource, err := os.ReadFile(filepath.Join(repositoryRoot(t), "internal", "store", "account_inventory_history_capacity_acceptance_integration_test.go"))
+	if err != nil {
+		t.Fatal("history capacity evidence source unavailable")
+	}
+	capacityEvidenceKeys := "history_capacity_evidence scale nodes snapshots_per_sample samples delete_batches summary_p50_ms summary_p95_ms summary_p99_ms rollup_p50_ms rollup_p95_ms rollup_p99_ms database_bytes database_growth_bytes index_bytes index_growth_bytes wal_bytes harness_max_rss_before_bytes harness_max_rss_after_bytes blocks_read blocks_hit temp_bytes max_lock_waiters deadlock_delta source_rows deleted_rows account_rollup_rows provider_rollup_rows conservation"
+	evidenceLines := 0
+	for _, line := range strings.Split(string(capacitySource), "\n") {
+		if !strings.Contains(line, "history_capacity_evidence=") {
+			continue
+		}
+		evidenceLines++
+		if err := validateHistoryMarkerKeys(line, "history_capacity_evidence", capacityEvidenceKeys); err != nil {
+			t.Fatalf("history capacity evidence: %v", err)
+		}
+	}
+	if evidenceLines != 1 {
+		t.Fatalf("history capacity evidence marker count=%d want=1", evidenceLines)
+	}
+
+	postgresSource := readAcceptanceFile(t, "account-inventory-history-postgres.sh")
+	for _, line := range strings.Split(postgresSource, "\n") {
+		if strings.Contains(line, "account_inventory_history_migration8_fingerprint=success") {
+			if err := validateHistoryMarkerKeys(line, "account_inventory_history_migration8_fingerprint", "account_inventory_history_migration8_fingerprint old_columns provider_health"); err != nil {
+				t.Fatalf("history migration fingerprint report: %v", err)
+			}
+		}
+	}
+	capacityRunner := readAcceptanceFile(t, "account-inventory-history-capacity.sh")
+	for _, line := range strings.Split(capacityRunner, "\n") {
+		if strings.Contains(line, "history_capacity_postgres_peak_bytes=") {
+			if err := validateHistoryMarkerKeys(line, "history_capacity_postgres_peak_bytes", "history_capacity_postgres_peak_bytes"); err != nil {
+				t.Fatalf("history capacity PostgreSQL peak report: %v", err)
+			}
+		}
+	}
+}
+
+func TestHistoryAcceptanceMarkerAllowlistRejectsIdentityFields(t *testing.T) {
+	line := "account_inventory_history_capacity=success scale=smoke evidence=not_evidence cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0"
+	allowed := "account_inventory_history_capacity scale evidence cleanup_containers cleanup_volumes cleanup_networks cleanup_temp cleanup_lock"
+	for _, key := range []string{"instance_id", "fencing_token", "checksum", "endpoint", "raw_error", "api_key"} {
+		t.Run(key, func(t *testing.T) {
+			if err := validateHistoryMarkerKeys(line+" "+key+"=canary", "account_inventory_history_capacity", allowed); err == nil {
+				t.Fatalf("marker allowlist accepted %s", key)
+			}
+		})
+	}
+}
+
+func validateHistoryMarkerKeys(line, prefix, allowedKeys string) error {
+	start := strings.Index(line, prefix+"=")
+	if start < 0 {
+		return fmt.Errorf("marker %q is missing", prefix)
+	}
+	allowed := make(map[string]struct{}, len(strings.Fields(allowedKeys)))
+	for _, key := range strings.Fields(allowedKeys) {
+		allowed[key] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(allowed))
+	for _, field := range strings.Fields(line[start:]) {
+		field = strings.Trim(field, "'\",;()")
+		key, _, ok := strings.Cut(field, "=")
+		if !ok {
+			return fmt.Errorf("malformed marker field %q", field)
+		}
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("unknown marker key %q", key)
+		}
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("duplicate marker key %q", key)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func TestHistoryAcceptanceAllInvalidArgumentsAreFixedAndRedacted(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		arguments []string
+		expected  string
+	}{
+		{"account-inventory-history-run.sh", []string{"invalid", "extra"}, "account_inventory_history_acceptance=failed reason=invalid_arguments"},
+		{"account-inventory-history-postgres.sh", []string{"unexpected"}, "account_inventory_history_postgres=failed reason=invalid_arguments"},
+		{"account-inventory-history-process.sh", []string{"unexpected"}, "account_inventory_history_process=failed reason=invalid_arguments"},
+		{"account-inventory-history-rollback.sh", []string{"unexpected"}, "account_inventory_history_rollback=failed reason=invalid_arguments"},
+		{"account-inventory-history-safety-run.sh", []string{"unexpected"}, "account_inventory_history_safety=failed reason=invalid_arguments"},
+		{"account-inventory-history-data-plane.sh", []string{"unexpected"}, "account_inventory_history_data_plane=failed reason=invalid_arguments"},
+		{"account-inventory-history-capacity.sh", []string{"unknown"}, "account_inventory_history_capacity=failed reason=invalid_scale"},
+		{"account-inventory-history-capacity.sh", []string{"smoke", "unexpected"}, "account_inventory_history_capacity=failed reason=invalid_arguments"},
+	} {
+		assertFixedScriptFailure(t, testCase.name, testCase.arguments, testCase.expected)
+	}
+}
+
+func TestHistoryAcceptancePostStartupFailureCleansResources(t *testing.T) {
+	if os.Getenv("CONTROL_HISTORY_FAILURE_CLEANUP_ACCEPTANCE") != "1" {
+		t.Skip("set CONTROL_HISTORY_FAILURE_CLEANUP_ACCEPTANCE=1 for the Docker failure-cleanup gate")
+	}
+	assertNoHistoryDataPlaneDockerResiduals(t)
+	temporaryRoot := strings.TrimSuffix(os.TempDir(), string(os.PathSeparator))
+	fakeBin := filepath.Join(t.TempDir(), "bin")
+	if err := os.Mkdir(fakeBin, 0o700); err != nil {
+		t.Fatal("fake command directory unavailable")
+	}
+	if err := os.WriteFile(filepath.Join(fakeBin, "go"), []byte("#!/bin/sh\nexit 97\n"), 0o700); err != nil {
+		t.Fatal("fake go command unavailable")
+	}
+
+	environment := historyEnvironmentWithoutProxy()
+	filtered := environment[:0]
+	for _, value := range environment {
+		if !strings.HasPrefix(value, "PATH=") {
+			filtered = append(filtered, value)
+		}
+	}
+	environment = append(filtered,
+		"PATH="+fakeBin+":"+os.Getenv("PATH"),
+	)
+	command := exec.Command("bash", filepath.Join(acceptanceRoot(t), "account-inventory-history-data-plane.sh"))
+	command.Env = environment
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatal("history data-plane runner unexpectedly survived injected migration failure")
+	}
+	if got, want := strings.TrimSpace(string(output)), "account_inventory_history_data_plane=failed reason=migration_failed"; got != want {
+		t.Fatalf("history post-start failure output=%q want=%q", got, want)
+	}
+	for _, pattern := range []string{
+		filepath.Join(temporaryRoot, "relay-control-history-data-plane.*"),
+		filepath.Join(temporaryRoot, "relay-control-history-data-plane-*.lock"),
+	} {
+		matches, globErr := filepath.Glob(pattern)
+		if globErr != nil || len(matches) != 0 {
+			t.Fatalf("history post-start failure left local residuals for %s", filepath.Base(pattern))
+		}
+	}
+	assertNoHistoryDataPlaneDockerResiduals(t)
+}
+
+func assertNoHistoryDataPlaneDockerResiduals(t *testing.T) {
+	t.Helper()
+	for _, arguments := range [][]string{
+		{"ps", "--all", "--quiet", "--filter", "name=relay-control-history-data-plane-"},
+		{"volume", "ls", "--quiet", "--filter", "name=relay-control-history-data-plane-"},
+		{"network", "ls", "--quiet", "--filter", "name=relay-control-history-data-plane-"},
+	} {
+		command := exec.Command("docker", arguments...)
+		command.Env = historyEnvironmentWithoutProxy()
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("history Docker cleanup inspection failed for %s", arguments[0])
+		}
+		if strings.TrimSpace(string(output)) != "" {
+			t.Fatalf("history Docker cleanup left %s residuals", arguments[0])
+		}
+	}
+}
+
+func historyEnvironmentWithoutProxy() []string {
+	environment := make([]string, 0, len(os.Environ()))
+	for _, value := range os.Environ() {
+		name := strings.SplitN(value, "=", 2)[0]
+		switch name {
+		case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy":
+			continue
+		}
+		environment = append(environment, value)
+	}
+	return environment
 }

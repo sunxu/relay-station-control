@@ -112,7 +112,7 @@ main() {
   fi
 
   strict_cleanup
-  echo 'account_inventory_history_safety=success local_sink_canary=covered scenarios=7 direct_network_client_imports=0 sensitive_canary_complete=not_covered external_requests=not_covered process_fake_endpoint_counter=not_covered database_non_identity_sink=not_covered cleanup_temp=0'
+  echo 'account_inventory_history_safety=success local_sink_canary=covered scenarios=7 direct_network_client_imports=0 sensitive_canary_complete=not_covered external_requests=not_covered process_fake_endpoint_counter=not_covered database_non_identity_sink=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"

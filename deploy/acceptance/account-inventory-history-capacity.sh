@@ -120,9 +120,9 @@ main() {
   echo "history_capacity_postgres_peak_bytes=$postgres_peak_bytes"
   strict_cleanup
   if [ "$scale" = smoke ]; then
-    echo 'account_inventory_history_capacity=success scale=smoke evidence=not_evidence cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
+    echo 'account_inventory_history_capacity=success scale=smoke evidence=not_evidence cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
   else
-    echo "account_inventory_history_capacity=success scale=$scale evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0"
+    echo "account_inventory_history_capacity=success scale=$scale evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0"
   fi
 }
 
