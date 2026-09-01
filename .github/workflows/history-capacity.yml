@@ -1,0 +1,68 @@
+name: History capacity
+
+on:
+  schedule:
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: Snapshot rows per sample; smoke is not capacity evidence
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - "864000"
+          - "1152000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: history-capacity-${{ github.event_name }}-${{ inputs.scale || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        scale:
+          - "864000"
+          - "1152000"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Run PostgreSQL 18 history capacity
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-history-capacity.sh '${{ matrix.scale }}'
+
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Run PostgreSQL 18 history capacity
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-history-capacity.sh '${{ inputs.scale }}'

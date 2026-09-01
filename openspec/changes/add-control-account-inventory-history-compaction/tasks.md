@@ -132,6 +132,8 @@
 
 > 第七批以生产planner catalog门禁锁定`clock_timestamp()`、UTC归日和inclusive 72小时资格公式，并在PostgreSQL18行为矩阵覆盖非UTC/DST、策略切换、slot/零数据/abandoned/Provider独立及95%发布边界，完成9.2。
 >
+> 第三十批新增独立opt-in PostgreSQL18容量runner及manual/nightly workflow：生产规模只接受86.4万或115.2万snapshot，每档执行5个独立summary/rollup样本和至少20个delete batch，按nearest-rank输出P50/P95/P99，并记录DB/index/WAL、Go harness进程max RSS、PostgreSQL cgroup memory peak、buffers、lock wait、deadlock delta与逐批/最终守恒。`smoke`固定走同一生产函数链但只使用40行，marker明确为`not_evidence`；9.5保持开放，直到两个生产规模的完整workflow日志实际通过并留存。
+>
 > 第三十一批由`TestAccountInventoryHistoryCrashRecoveryMatrix`补齐集中崩溃矩阵，并与既有summarize pre-commit backend终止及pending/summarized/deleting真实重启证据共同覆盖全部指定窗口。真实commit-unknown使用同一连接执行`COMMIT`后阻塞并由短context只观察到传输错误，随后以持久run/segment/audit证明summary只提交一次且同fence重读不重算；三个snapshot按`batch=1`逐批先在事务内终止backend证明零变化，再制造commit-unknown证明每批最多删除一次、audit一次且恒有`deleted+remaining=source`。最后一批后在complete事务内终止backend，证明run仍为deleting、completed audit与rollup均为零；恢复后完成一次。非零account/Provider final rollup在事务内终止backend后保持pending且两类final/audit均为零，再以同fence完整收敛各一份。PostgreSQL runner只有在exact test通过后输出`crash_recovery_matrix=covered`，据此完成9.3；9.4与9.5保持独立开放。
 
 ## 10. Runbook、证据与最终门禁
