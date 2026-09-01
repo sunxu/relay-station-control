@@ -111,12 +111,16 @@ run_static() {
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessDisabledCompatibleMetrics
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessMetricsFailureIsolation
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessSeedEligibleSource
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessStaleFenceHasZeroImpact
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessSourceBackedRetentionCompleted
+  require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessTerminalInternalPreservesSource
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessSeedClaimedForRestart
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessReconcilerRecoveredClaim
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic
+  require_test ./deploy/acceptance/account-inventory-history-data-plane TestAccountInventoryHistoryDataPlaneContract
   require_test ./deploy/acceptance/account-inventory-history-shell TestHistoryAcceptanceBundleContract
 
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
@@ -134,7 +138,7 @@ run_static() {
 }
 
 case "$mode" in
-  static|postgres|process|rollback|all) ;;
+  static|postgres|process|rollback|data-plane|all) ;;
   *)
     echo 'account_inventory_history_acceptance=failed reason=invalid_mode' >&2
     exit 1
@@ -160,19 +164,25 @@ case "$mode" in
   process)
     "$script_directory/account-inventory-history-process.sh"
     strict_cleanup
-    echo 'account_inventory_history_acceptance=success mode=process fake_network_counter=covered external_requests=partial_process_paths'
+    echo 'account_inventory_history_acceptance=success mode=process fake_network_counter=covered external_requests=0'
     ;;
   rollback)
     "$script_directory/account-inventory-history-rollback.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=rollback'
     ;;
+  data-plane)
+    "$script_directory/account-inventory-history-data-plane.sh"
+    strict_cleanup
+    echo 'account_inventory_history_acceptance=success mode=data-plane data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered'
+    ;;
   all)
     run_static
     "$script_directory/account-inventory-history-postgres.sh"
     "$script_directory/account-inventory-history-process.sh"
     "$script_directory/account-inventory-history-rollback.sh"
+    "$script_directory/account-inventory-history-data-plane.sh"
     strict_cleanup
-    echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered fake_network_counter=covered external_requests=partial_process_paths'
+    echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered fake_network_counter=covered external_requests=0 data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered'
     ;;
 esac

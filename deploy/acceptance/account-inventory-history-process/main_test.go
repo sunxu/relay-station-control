@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,8 @@ const (
 	networkCounterEnvironment  = "CONTROL_HISTORY_PROCESS_NETWORK_COUNTER_ENDPOINT"
 	forbiddenMarkerEnvironment = "CONTROL_HISTORY_PROCESS_FORBIDDEN_MARKER"
 	expectedPhaseEnvironment   = "CONTROL_HISTORY_PROCESS_EXPECT_PHASE"
+	sourceSnapshotsEnvironment = "CONTROL_HISTORY_PROCESS_SOURCE_SNAPSHOTS"
+	faultStageEnvironment      = "CONTROL_HISTORY_PROCESS_FAULT_STAGE"
 
 	processProbeTimeout = 35 * time.Second
 	httpRequestTimeout  = 3 * time.Second
@@ -192,7 +195,9 @@ func TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource(t *testing
 		if restartMatrix == "true" {
 			converged = historyRestartPhaseMatrixConverged(t, ctx, ownerPool, fixture)
 		} else {
-			converged, sourceSnapshots = historyFixtureConverged(t, ctx, ownerPool, fixture)
+			converged, sourceSnapshots = historyFixtureConverged(
+				t, ctx, ownerPool, fixture, requireSourceSnapshots(t),
+			)
 		}
 		if converged {
 			families, _ := readProcessMetrics(t, ctx, processURL)
@@ -274,7 +279,8 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
 	defer cancel()
 
-	seeded := seedZeroPollActivationFixture(t, ctx, ownerPool, fixture)
+	sourceSnapshots := requireSourceSnapshots(t)
+	seeded := seedZeroPollActivationFixture(t, ctx, ownerPool, fixture, sourceSnapshots)
 
 	var policyActivations, monitoringActivations, pollRows, snapshotRows, existingRuns int
 	if err := ownerPool.QueryRow(ctx, `SELECT
@@ -297,9 +303,88 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	); err != nil {
 		t.Fatal("history process seed verification failed")
 	}
-	if policyActivations != 1 || monitoringActivations != 1 || pollRows != 0 ||
-		snapshotRows != 0 || existingRuns != 0 {
+	expectedPollRows := 0
+	if sourceSnapshots > 0 {
+		expectedPollRows = 1
+	}
+	if policyActivations != 1 || monitoringActivations != 1 || pollRows != expectedPollRows ||
+		snapshotRows != sourceSnapshots || existingRuns != 0 {
 		t.Fatal("history process seed evidence invalid")
+	}
+}
+
+func TestAccountInventoryHistoryProcessStaleFenceHasZeroImpact(t *testing.T) {
+	if !processSeedConfigured() {
+		t.Skip("history process stale fence acceptance is not enabled")
+	}
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	runtimePool := requireProcessPool(t, runtimeDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+
+	var planned int
+	if err := runtimePool.QueryRow(ctx, `SELECT
+		(public.control_plan_account_inventory_history_v1(1)
+		 ->>'compaction_runs_created')::integer`).Scan(&planned); err != nil || planned != 1 {
+		t.Fatal("history process stale fence planner failed")
+	}
+	worker := uuid.New()
+	var runID, oldFence uuid.UUID
+	if err := runtimePool.QueryRow(ctx, `SELECT compaction_run_id,fencing_token
+		FROM public.control_claim_account_inventory_compaction_v1($1,5)`, worker).
+		Scan(&runID, &oldFence); err != nil {
+		t.Fatal("history process stale fence old claim failed")
+	}
+	timer := time.NewTimer(5100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		t.Fatal("history process stale fence lease wait timed out")
+	case <-timer.C:
+	}
+	var reconciled int
+	if err := runtimePool.QueryRow(ctx, `SELECT
+		(public.control_reconcile_account_inventory_compactions_v1(1)
+		 ->>'failed_count')::integer`).Scan(&reconciled); err != nil || reconciled != 1 {
+		t.Fatal("history process stale fence reconcile failed")
+	}
+	var claimedRunID, newFence uuid.UUID
+	if err := runtimePool.QueryRow(ctx, `SELECT compaction_run_id,fencing_token
+		FROM public.control_claim_account_inventory_compaction_v1($1,5)`, uuid.New()).
+		Scan(&claimedRunID, &newFence); err != nil || claimedRunID != runID || newFence == oldFence {
+		t.Fatal("history process stale fence new claim failed")
+	}
+	var before, after string
+	if err := ownerPool.QueryRow(ctx, `SELECT to_jsonb(run)::text
+		FROM public.account_inventory_compaction_runs AS run
+		WHERE compaction_run_id=$1`, runID).Scan(&before); err != nil {
+		t.Fatal("history process stale fence fingerprint read failed")
+	}
+	_, err := runtimePool.Exec(ctx, `SELECT
+		public.control_summarize_account_inventory_compaction_v1($1,$2)`, runID, oldFence)
+	var databaseError *pgconn.PgError
+	if !errors.As(err, &databaseError) || databaseError.Code != "P0002" {
+		t.Fatal("history process stale fence was not rejected")
+	}
+	var valid bool
+	if err := ownerPool.QueryRow(ctx, `SELECT to_jsonb(run)::text,
+		run.status='pending' AND run.attempt_count=2 AND run.fencing_token=$2
+		AND run.instance_id=$3 AND run.summary_date=$4::date
+		AND (SELECT count(*)=2 FROM public.account_inventory_snapshot_items AS item
+			JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
+			WHERE poll.instance_id=run.instance_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_provider_summaries
+			WHERE compaction_run_id=run.compaction_run_id)
+		AND (SELECT count(*)=0 FROM public.account_inventory_daily_summaries
+			WHERE compaction_run_id=run.compaction_run_id)
+		FROM public.account_inventory_compaction_runs AS run
+		WHERE compaction_run_id=$1`, runID, newFence, fixture.instanceID, fixture.summaryDate).
+		Scan(&after, &valid); err != nil {
+		t.Fatal("history process stale fence verification failed")
+	}
+	if !valid || before != after {
+		t.Fatal("history process stale fence changed source or run state")
 	}
 }
 
@@ -316,7 +401,7 @@ func TestAccountInventoryHistoryProcessSeedClaimedForRestart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
 	defer cancel()
 
-	seeded := seedZeroPollActivationFixture(t, ctx, ownerPool, fixture)
+	seeded := seedZeroPollActivationFixture(t, ctx, ownerPool, fixture, 0)
 	var planned int
 	if err := runtimePool.QueryRow(ctx, `SELECT
 		(public.control_plan_account_inventory_history_v1(1000)
@@ -471,8 +556,9 @@ func TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic(t *testing
 	fixture := requireProcessFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
 	defer cancel()
+	expectedSourceSnapshots := requireSourceSnapshots(t)
 
-	var runValid, historyEmpty, auditValid bool
+	var runValid, historyEmpty, auditValid, sourcePreserved bool
 	if err := ownerPool.QueryRow(ctx, `WITH target AS (
 		SELECT * FROM public.account_inventory_compaction_runs
 		WHERE summary_date=$1::date AND instance_id=$2
@@ -497,8 +583,12 @@ func TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic(t *testing
 			WHERE category='account_inventory_history'
 			  AND action IN ('account_inventory_history.summarized','account_inventory_history.completed')
 			  AND details->>'instance'=$2::uuid::text
-			  AND details->>'summary_date'=$1::date::text)`, fixture.summaryDate, fixture.instanceID).Scan(
-		&runValid, &historyEmpty, &auditValid,
+			  AND details->>'summary_date'=$1::date::text),
+		(SELECT count(*)=$3 FROM public.account_inventory_snapshot_items AS item
+			JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
+			WHERE poll.instance_id=$2)`, fixture.summaryDate, fixture.instanceID,
+		expectedSourceSnapshots).Scan(
+		&runValid, &historyEmpty, &auditValid, &sourcePreserved,
 	); err != nil {
 		t.Fatal("history process held transaction timeout verification failed")
 	}
@@ -511,10 +601,169 @@ func TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic(t *testing
 	if !auditValid {
 		t.Fatal("history process held transaction timeout audit invalid")
 	}
+	if !sourcePreserved {
+		t.Fatal("history process held transaction timeout changed source")
+	}
+}
+
+func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testing.T) {
+	if !processSeedConfigured() || os.Getenv(processURLEnvironment) == "" {
+		t.Skip("history process terminal internal acceptance is not enabled")
+	}
+	processURL := requireProcessURL(t)
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	faultStage := os.Getenv(faultStageEnvironment)
+	if faultStage == "" {
+		faultStage = "compaction"
+	}
+	if faultStage != "compaction" && faultStage != "planner" &&
+		faultStage != "rollup" && faultStage != "retention" {
+		t.Fatal("history process fault stage invalid")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var valid bool
+		var err error
+		switch faultStage {
+		case "compaction":
+			err = ownerPool.QueryRow(ctx, `WITH target AS (
+			SELECT * FROM public.account_inventory_compaction_runs
+			WHERE summary_date=$1::date AND instance_id=$2
+		) SELECT
+			(SELECT count(*)=1 AND bool_and(status='failed' AND failed_from='pending'
+				AND failure_reason='internal' AND attempt_count=1
+				AND claim_owner IS NULL AND fencing_token IS NULL AND lease_expires_at IS NULL
+				AND source_checksum IS NULL AND source_snapshot_count IS NULL) FROM target)
+			AND (SELECT count(*)=2 FROM public.account_inventory_snapshot_items AS item
+				JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
+				WHERE poll.instance_id=$2)
+			AND (SELECT count(*)=0 FROM public.account_inventory_daily_provider_summaries AS summary
+				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+			AND (SELECT count(*)=0 FROM public.account_inventory_daily_summaries AS summary
+				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+			AND (SELECT count(*)=0 FROM public.account_inventory_daily_rollup_runs
+				WHERE summary_date=$1::date AND instance_id=$2)
+			AND (SELECT count(*)=1 FROM public.audit_logs
+				WHERE category='account_inventory_history'
+				  AND action='account_inventory_history.failed'
+				  AND details->>'instance'=$2::uuid::text
+				  AND details->>'summary_date'=$1::date::text
+				  AND details->>'phase'='fail_pending')`, fixture.summaryDate, fixture.instanceID).
+				Scan(&valid)
+		case "planner", "retention":
+			err = ownerPool.QueryRow(ctx, `SELECT
+			(SELECT count(*)=2 FROM public.account_inventory_snapshot_items AS item
+				JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
+				WHERE poll.instance_id=$2)
+			AND (SELECT count(*)=0 FROM public.account_inventory_compaction_runs
+				WHERE summary_date=$1::date AND instance_id=$2 AND status='completed')
+			AND (SELECT count(*)=0 FROM public.account_inventory_daily_rollup_runs
+				WHERE summary_date=$1::date AND instance_id=$2 AND status='completed')
+			AND (SELECT count(*)=0 FROM public.audit_logs
+				WHERE category='account_inventory_history'
+				  AND action IN ('account_inventory_history.failed',
+					'account_inventory_history.summarized','account_inventory_history.completed')
+				  AND details->>'instance'=$2::uuid::text
+				  AND details->>'summary_date'=$1::date::text)`,
+				fixture.summaryDate, fixture.instanceID).Scan(&valid)
+		case "rollup":
+			err = ownerPool.QueryRow(ctx, `WITH target AS (
+			SELECT * FROM public.account_inventory_compaction_runs
+			WHERE summary_date=$1::date AND instance_id=$2
+		) SELECT
+			(SELECT count(*)=1 AND bool_and(status='completed' AND source_snapshot_count=2
+				AND deleted_snapshot_count=2 AND octet_length(source_checksum)=32) FROM target)
+			AND (SELECT count(*)=0 FROM public.account_inventory_snapshot_items AS item
+				JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
+				WHERE poll.instance_id=$2)
+			AND (SELECT count(*)=1 FROM public.account_inventory_daily_provider_summaries AS summary
+				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+			AND (SELECT count(*)=2 FROM public.account_inventory_daily_summaries AS summary
+				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+			AND (SELECT count(*)=1 AND bool_and(status='pending'
+				AND failure_reason IS NULL AND claim_owner IS NOT NULL
+				AND fencing_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+				FROM public.account_inventory_daily_rollup_runs
+				WHERE summary_date=$1::date AND instance_id=$2)
+			AND (SELECT count(*)=0 FROM public.audit_logs
+				WHERE category='account_inventory_history'
+				  AND action='account_inventory_history.failed'
+				  AND details->>'instance'=$2::uuid::text
+				  AND details->>'summary_date'=$1::date::text
+				  AND details->>'phase'='rollup_fail_pending')`,
+				fixture.summaryDate, fixture.instanceID).Scan(&valid)
+		}
+		if err == nil && valid {
+			families, _ := readProcessMetrics(t, ctx, processURL)
+			if stopped, exists := metricValue(families,
+				"relay_control_account_inventory_history_enabled",
+				map[string]string{"reason": "runtime_stopped"}); exists && stopped == 0 {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("history process terminal internal source preservation timed out")
+		case <-ticker.C:
+		}
+	}
+}
+
+func TestAccountInventoryHistoryProcessSourceBackedRetentionCompleted(t *testing.T) {
+	if !processSeedConfigured() {
+		t.Skip("history process source-backed retention acceptance is not enabled")
+	}
+	ownerPool := requireProcessPool(t, ownerDatabaseEnvironment)
+	fixture := requireProcessFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	defer cancel()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var valid bool
+		err := ownerPool.QueryRow(ctx, `WITH target AS (
+			SELECT * FROM public.account_inventory_compaction_runs
+			WHERE summary_date=$1::date AND instance_id=$2
+		) SELECT
+			(SELECT count(*)=1 AND bool_and(status='completed'
+				AND attempt_count>=2 AND source_poll_count=1 AND source_snapshot_count=2
+				AND deleted_snapshot_count=2 AND octet_length(source_checksum)=32
+				AND claim_owner IS NULL AND fencing_token IS NULL AND lease_expires_at IS NULL)
+				FROM target)
+			AND (SELECT count(*)=1 FROM public.account_inventory_daily_provider_summaries AS summary
+				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+			AND (SELECT count(*)=2 FROM public.account_inventory_daily_summaries AS summary
+				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
+			AND (SELECT count(*)=1 FROM public.account_inventory_daily_rollup_runs
+				WHERE summary_date=$1::date AND instance_id=$2 AND status='completed')
+			AND (SELECT count(*)=0 FROM public.account_inventory_poll_runs
+				WHERE instance_id=$2 AND scheduled_at >= $1::date
+				  AND scheduled_at < $1::date+1)
+			AND (SELECT count(*)=1 FROM public.audit_logs
+				WHERE category='account_inventory_history'
+				  AND action='account_inventory_history.completed'
+				  AND details->>'phase'='complete' AND details->>'instance'=$2::uuid::text
+				  AND details->>'summary_date'=$1::date::text)`, fixture.summaryDate, fixture.instanceID).
+			Scan(&valid)
+		if err == nil && valid {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("history process source-backed retention did not complete exactly once")
+		case <-ticker.C:
+		}
+	}
 }
 
 func seedZeroPollActivationFixture(
 	t *testing.T, ctx context.Context, ownerPool *pgxpool.Pool, fixture processFixture,
+	sourceSnapshots int,
 ) seededZeroPollFixture {
 	t.Helper()
 	policyID := uuid.New()
@@ -535,7 +784,7 @@ func seedZeroPollActivationFixture(
 	); err != nil {
 		t.Fatal("history process seed date calculation failed")
 	}
-	if !eligible || !retained {
+	if !eligible || !retained && sourceSnapshots == 0 {
 		t.Fatal("history process seed date is outside the eligible retained window")
 	}
 
@@ -573,18 +822,76 @@ func seedZeroPollActivationFixture(
 		nodeType, contract, policyID, dayStart); err != nil {
 		t.Fatal("history process seed policy binding write failed")
 	}
+	effectiveTo := any(nil)
+	if sourceSnapshots > 0 {
+		effectiveTo = dayStart.AddDate(0, 0, 1)
+	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.provider_inventory_policy_activations(
 		node_type,driver_contract_version,policy_version_id,effective_from,
-		activated_by,created_at
-	) VALUES($1,$2,$3,$4,'history-process-seed',$4)`,
-		nodeType, contract, policyID, dayStart); err != nil {
+		effective_to,activated_by,created_at
+	) VALUES($1,$2,$3,$4,$5::timestamptz,'history-process-seed',$4)`,
+		nodeType, contract, policyID, dayStart, effectiveTo); err != nil {
 		t.Fatal("history process seed policy activation write failed")
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.relay_node_inventory_monitoring_activations(
-		instance_id,effective_from,reason,actor,created_at
-	) VALUES($1,$2,'reconciliation','history-process-seed',$2)`,
-		fixture.instanceID, dayStart); err != nil {
+		instance_id,effective_from,effective_to,reason,actor,end_reason,end_actor,
+		end_recorded_at,created_at
+	) VALUES($1,$2,$3::timestamptz,'reconciliation','history-process-seed',
+		CASE WHEN $3::timestamptz IS NULL THEN NULL ELSE 'reconciliation' END,
+		CASE WHEN $3::timestamptz IS NULL THEN NULL ELSE 'history-process-seed' END,
+		$3,$2)`, fixture.instanceID, dayStart, effectiveTo); err != nil {
 		t.Fatal("history process seed monitoring activation write failed")
+	}
+	if sourceSnapshots > 0 {
+		pollID := uuid.New()
+		slot := dayStart.Add(12 * time.Hour)
+		if _, err := transaction.Exec(ctx, `ALTER TABLE public.account_inventory_poll_provider_results
+			DISABLE TRIGGER account_inventory_poll_provider_results_guard;
+			ALTER TABLE public.account_inventory_snapshot_items
+			DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+			t.Fatalf("history process source guard disable failed class=%s", processDatabaseErrorClass(err))
+		}
+		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory_poll_runs(
+			poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+			provider_policy_version,status,attempt_count,max_attempts,poll_start_grace_seconds,
+			created_at,first_started_at,last_started_at,finalized_at,observed_at,
+			transport_success,response_shape_valid,contract_valid,inventory_mode,
+			node_identity_complete,snapshot_complete,degraded,result,reason,
+			source_record_count,identifiable_record_count,unidentified_record_count,
+			unsupported_provider_count,out_of_scope_provider_count,node_version,node_commit
+		) VALUES($1,$2,$3,$4,$5::timestamptz,$6,'finalized',1,2,299,
+			$5::timestamptz+interval '1 second',$5::timestamptz+interval '2 seconds',
+			$5::timestamptz+interval '2 seconds',$5::timestamptz+interval '4 seconds',
+			$5::timestamptz+interval '3 seconds',true,true,true,'runtime',
+			true,true,false,'success','none',$7,$7,0,0,0,'unknown','unknown')`,
+			pollID, fixture.instanceID, nodeType, contract, slot, policyID, sourceSnapshots); err != nil {
+			t.Fatalf("history process source poll write failed class=%s", processDatabaseErrorClass(err))
+		}
+		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory_poll_provider_results(
+			poll_run_id,provider,identifiable_count,missing_identity_count,
+			duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason,
+			promotion_applied,promotion_skipped_reason
+		) VALUES($1,$2,$3,0,0,true,true,false,'complete',true,NULL)`,
+			pollID, fixture.provider, sourceSnapshots); err != nil {
+			t.Fatalf("history process source provider result write failed class=%s", processDatabaseErrorClass(err))
+		}
+		for index := range sourceSnapshots {
+			account := "history-process-" + strconv.Itoa(index) + "@example.invalid"
+			if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory_snapshot_items(
+				poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+				success_count,failed_count,recent_request_count,observed_at
+			) VALUES($1,$2,$3,$3::text||':'||$4::text,$4,'active',$5,0,0,
+				$6::timestamptz+interval '3 seconds')`,
+				pollID, fixture.instanceID, fixture.provider, account, index+1, slot); err != nil {
+				t.Fatalf("history process source snapshot write failed class=%s", processDatabaseErrorClass(err))
+			}
+		}
+		if _, err := transaction.Exec(ctx, `ALTER TABLE public.account_inventory_poll_provider_results
+			ENABLE TRIGGER account_inventory_poll_provider_results_guard;
+			ALTER TABLE public.account_inventory_snapshot_items
+			ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+			t.Fatalf("history process source guard enable failed class=%s", processDatabaseErrorClass(err))
+		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		t.Fatal("history process seed transaction commit failed")
@@ -609,6 +916,19 @@ func processSeedConfigured() bool {
 		os.Getenv(instanceIDEnvironment) != "" &&
 		os.Getenv(summaryDateEnvironment) != "" &&
 		os.Getenv(providerEnvironment) != ""
+}
+
+func requireSourceSnapshots(t *testing.T) int {
+	t.Helper()
+	raw := os.Getenv(sourceSnapshotsEnvironment)
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value != 0 && value != 2 {
+		t.Fatal("history process source snapshot configuration invalid")
+	}
+	return value
 }
 
 func processRestartSeedConfigured() bool {
@@ -819,6 +1139,7 @@ func decodeStrictJSON(encoded []byte, target any) error {
 
 func historyFixtureConverged(
 	t *testing.T, ctx context.Context, pool *pgxpool.Pool, fixture processFixture,
+	expectedSourceSnapshots int,
 ) (bool, int64) {
 	t.Helper()
 	var completedCompactions, completedRollups, remainingSnapshots int64
@@ -843,8 +1164,12 @@ func historyFixtureConverged(
 	if err != nil {
 		t.Fatalf("history process convergence database read failed class=%s", processDatabaseErrorClass(err))
 	}
-	return completedCompactions > 0 && completedRollups > 0 && remainingSnapshots == 0 &&
-			sourcePolls == 0 && sourceSnapshots == 0,
+	expectedSourcePolls := int64(0)
+	if expectedSourceSnapshots > 0 {
+		expectedSourcePolls = 1
+	}
+	return completedCompactions == 1 && completedRollups == 1 && remainingSnapshots == 0 &&
+			sourcePolls == expectedSourcePolls && sourceSnapshots == int64(expectedSourceSnapshots),
 		sourceSnapshots
 }
 

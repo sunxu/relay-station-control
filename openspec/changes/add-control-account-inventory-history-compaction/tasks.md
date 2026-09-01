@@ -107,7 +107,7 @@
 - [x] 8.3 定义固定错误分类、结构化日志与actor-null history audit allowlist，验证每个summary/rollup/delete状态与审计同事务、180天边界且checksum/identity/SQL参数/raw error不进入日志或audit details
 - [x] 8.4 向email/account key、poll/policy/run/fencing/checksum、endpoint、Secret和raw error注入唯一canary，扫描成功、零数据、partial、权限、超时、重启和清理失败的最终数据库非身份列/日志/指标/错误/artifact
 - [x] 8.5 用runtime/migrator/未授权角色覆盖SET LOCAL伪造gate、savepoint rollback、函数异常、连接池复用、owner直接DML、嵌套函数/search_path、超大batch、未来日期和旧fencing，验证gate不泄漏且只有合法受控函数可产生预期变化
-- [ ] 8.6 使用fake network counters证明planner、summary、rollup、metrics、retention和全部错误路径对Node/Gateway/Prometheus/互联网/模型数据面请求均为零
+- [x] 8.6 使用fake network counters证明planner、summary、rollup、metrics、retention和全部错误路径对Node/Gateway/Prometheus/互联网/模型数据面请求均为零
 
 > 第二十七批锁定history audit的12个固定phase：`summarize`、`snapshot_delete`、`complete`、`fail_pending`、`fail_summarized`、`fail_deleting`、`rollup_complete`、`rollup_fail_pending`及四个`retention_*`；每条只允许actor-null system事件和`instance/summary_date/phase/row_count`四个details键，action/result/phase/row-count错配、未知键、身份/checksum、非NULL actor/target/fingerprint/reason均被拒绝。生产函数catalog逐phase证明状态mutation、精确audit gate和audit INSERT位于同一函数/事务；既有summarize、rollup finalize、poll retention及rollup-run retention的audit失败注入代表性证明mutation整体回滚。位于数据库时钟180天前、等于及之后的三条合法history audit经过本change四个cleaner后全部保留，且owner `UPDATE/DELETE/TRUNCATE`仍固定拒绝`42501`。这只证明至少180天不可变保留和本change没有audit cleaner，不声称第181天自动删除。
 >
@@ -119,15 +119,17 @@
 >
 > 第三十批由`TestAccountInventoryHistorySecurityBoundaryMatrix`在隔离PostgreSQL18锁定安全边界：migrator伪造transaction-local gate及savepoint回滚、未授权asset registrar、运行时连接池复用、嵌套函数与`pg_temp` search path、超大planner/reconcile/delete batch、未来日期及compaction/rollup旧fencing均不能越权或泄漏gate，最终数据库指纹精确不变。migrator对run表的`INSERT`仅代表受信任forward migration/隔离fixture建模能力，不是生产运行时写路径；即使owner持有表所有权，直接`UPDATE/DELETE/TRUNCATE`仍固定拒绝`42501`，应用变化只能经允许的受控函数产生。PostgreSQL runner只有在该exact test通过后输出`security_boundary_matrix=covered`，据此完成8.5，不提前关闭8.6。
 
+> 第三十二批把同一fake Node/catch-all原子计数器延伸到source-backed 9.4矩阵：每个fixture写入2条真实snapshot；两个eligible instance在同一Control、`CONCURRENCY=2`下由`pg_stat_activity`精确观察到2条生产summarize同时锁等待，释放后各一份compaction/rollup完成。生产保持单planner以避免重复调度，scheduler竞争由既有并发planner数据库幂等测试证明。旧fence在新fence/attempt下固定`P0002`且run/source/segment指纹不变；另一个超过30天fixture跨`MAX_CONNS=1` pool exhaustion与PostgreSQL stop/start后完成并由真实retention删除source poll。真实source statement timeout先原子固定`failed_from=pending/statement_timeout`且2条source保留，再由允许的retry claim完成；summarize `EXECUTE`撤销和`23514` statement trigger均在Control ready后触发固定`failed_from=pending/internal`、`runtime_stopped`和source保留，不声称自动恢复。planner、rollup finalize和poll retention的独立`EXECUTE`撤销均固定停止runtime；planner/retention保留原source与零history failure/success audit，rollup保留completed compaction proof/segments及原pending owner/fence/lease且零rollup-failure audit，不伪造数据库terminal fail。完整runner通过后counter固定`total/health/inventory/unauthorized/rejected=0`并输出`external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0`，据此完成8.6。
+
 ## 9. PostgreSQL 18 恢复、并发与容量验收
 
 - [x] 9.1 新增change-specific PostgreSQL18 acceptance runner，要求exact test discovery、固定安全failure mapping、禁止go/raw PostgreSQL日志直出、受保护mktemp与EXIT trap、唯一资源前缀、固定镜像digest/受限角色、清六类代理并严格清理container/volume/network/temp
 - [x] 9.2 覆盖72小时边界、UTC/DST、日内策略切换、非对齐activation、暂停/重入、零数据、漏槽、abandoned、Provider独立降级和95% partial/complete矩阵
 - [x] 9.3 在summarize事务前/中/commit未知、summarized后、每批delete前/后、complete前、final rollup事务中注入崩溃，验证恢复不重算/不多删/不部分发布
-- [ ] 9.4 注入stale fencing、同一Control内双scheduler/worker、statement timeout、PostgreSQL重启、pool exhaustion及repository/SQL权限/trigger故障，不执行宿主机disk-full，验证固定failed_from、源证据保留和最终收敛
+- [x] 9.4 注入stale fencing、同一Control内双scheduler/worker、statement timeout、PostgreSQL重启、pool exhaustion及repository/SQL权限/trigger故障，不执行宿主机disk-full，验证固定failed_from和源证据保留；可恢复故障最终收敛，权限/trigger故障terminal failed且不自动重试
 - [ ] 9.5 Permanent CI运行1/10/50 Node、总计1,000账号的短slot功能矩阵；nightly/manual对86.4万/115.2万snapshot运行至少5次summary/rollup与20个delete batch，按nearest-rank记录P50/P95/P99、DB/index/WAL/max RSS/buffers/lock wait/守恒，硬门禁仅为无OOM/timeout/deadlock和正确性
 - [ ] 9.6 运行全仓Go race覆盖planner/worker/reconciler/Store/metrics并并发current query/promotion/retention，确认无race、死锁或高基数series
-- [ ] 9.7 在Control与PostgreSQL同时停止窗口，对独立pinned官方CLIProxyAPI digest执行认证`/v1/models` baseline 1/1和outage 100/100，记录这是data-plane isolation而非Gateway inference E2E
+- [x] 9.7 在Control与PostgreSQL同时停止窗口，对独立pinned官方CLIProxyAPI digest执行认证`/v1/models` baseline 1/1和outage 100/100，记录这是data-plane isolation而非Gateway inference E2E
 - [ ] 9.8 验证所有acceptance成功/失败路径最终container/volume/network/temp residual为零，报告仅保存固定计数、时延和状态且不含身份
 
 > 第七批以生产planner catalog门禁锁定`clock_timestamp()`、UTC归日和inclusive 72小时资格公式，并在PostgreSQL18行为矩阵覆盖非UTC/DST、策略切换、slot/零数据/abandoned/Provider独立及95%发布边界，完成9.2。
@@ -135,6 +137,9 @@
 > 第三十批新增独立opt-in PostgreSQL18容量runner及manual/nightly workflow：生产规模只接受86.4万或115.2万snapshot，每档执行5个独立summary/rollup样本和至少20个delete batch，按nearest-rank输出P50/P95/P99，并记录DB/index/WAL、Go harness进程max RSS、PostgreSQL cgroup memory peak、buffers、lock wait、deadlock delta与逐批/最终守恒。`smoke`固定走同一生产函数链但只使用40行，marker明确为`not_evidence`；9.5保持开放，直到两个生产规模的完整workflow日志实际通过并留存。
 >
 > 第三十一批由`TestAccountInventoryHistoryCrashRecoveryMatrix`补齐集中崩溃矩阵，并与既有summarize pre-commit backend终止及pending/summarized/deleting真实重启证据共同覆盖全部指定窗口。真实commit-unknown使用同一连接执行`COMMIT`后阻塞并由短context只观察到传输错误，随后以持久run/segment/audit证明summary只提交一次且同fence重读不重算；三个snapshot按`batch=1`逐批先在事务内终止backend证明零变化，再制造commit-unknown证明每批最多删除一次、audit一次且恒有`deleted+remaining=source`。最后一批后在complete事务内终止backend，证明run仍为deleting、completed audit与rollup均为零；恢复后完成一次。非零account/Provider final rollup在事务内终止backend后保持pending且两类final/audit均为零，再以同fence完整收敛各一份。PostgreSQL runner只有在exact test通过后输出`crash_recovery_matrix=covered`，据此完成9.3；9.4与9.5保持独立开放。
+>
+> 第三十四批复用既有pinned官方CLIProxyAPI digest与Bearer认证`/v1/models` probe：Migration9后先写入匹配Control配置的`history-data-plane`环境身份，Control、PostgreSQL与独立CLIProxyAPI同时在线时baseline固定通过1/1；随后有界停止Control并确认health不可达，再停止PostgreSQL并确认`pg_isready`失败，在两者同时停止窗口继续通过100/100。脱敏marker固定为`scope=data_plane_isolation gateway_inference_e2e=not_covered`并报告container/volume/network/temp/lock残留全零；这证明进程/数据库故障不影响独立数据面，不声称真实Gateway inference E2E，完成9.7。
+>
 
 ## 10. Runbook、证据与最终门禁
 

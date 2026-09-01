@@ -72,6 +72,9 @@ var requiredHistoryProcessTests = []string{
 	"TestAccountInventoryHistoryProcessDisabledCompatibleMetrics",
 	"TestAccountInventoryHistoryProcessMetricsFailureIsolation",
 	"TestAccountInventoryHistoryProcessSeedEligibleSource",
+	"TestAccountInventoryHistoryProcessStaleFenceHasZeroImpact",
+	"TestAccountInventoryHistoryProcessSourceBackedRetentionCompleted",
+	"TestAccountInventoryHistoryProcessTerminalInternalPreservesSource",
 	"TestAccountInventoryHistoryProcessEnabledConvergesEligibleSource",
 	"TestAccountInventoryHistoryProcessSeedClaimedForRestart",
 	"TestAccountInventoryHistoryProcessHeldTransactionPoolExhaustion",
@@ -114,6 +117,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-postgres.sh",
 		"account-inventory-history-process.sh",
 		"account-inventory-history-rollback.sh",
+		"account-inventory-history-data-plane.sh",
 		"account-inventory-history-safety-run.sh",
 	}
 	temporaryPrefixes := map[string]string{
@@ -121,6 +125,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-postgres.sh":   "relay-control-history-postgres.",
 		"account-inventory-history-process.sh":    "relay-control-history-process.",
 		"account-inventory-history-rollback.sh":   "relay-control-history-rollback.",
+		"account-inventory-history-data-plane.sh": "relay-control-history-data-plane.",
 		"account-inventory-history-safety-run.sh": "relay-control-history-safety.",
 	}
 	for _, name := range scripts {
@@ -159,14 +164,16 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 
 	runner := readAcceptanceFile(t, scripts[0])
 	for _, required := range []string{
-		`mode="${1:-static}"`, "static)", "postgres)", "process)", "rollback)", "all)",
+		`mode="${1:-static}"`, "static)", "postgres)", "process)", "rollback)", "data-plane)", "all)",
 		"account-inventory-history-postgres.sh", "account-inventory-history-process.sh", "-list \"^${exact_name}$\"",
 		"account-inventory-history-rollback.sh", "rollback_gate=covered",
+		"account-inventory-history-data-plane.sh", "data_plane_isolation=covered",
+		"baseline_models=1/1", "outage_models=100/100", "gateway_inference_e2e=not_covered",
 		"account-inventory-history-safety-run.sh", "sensitive_canary=partial_local_sinks", "external_requests=not_covered",
 		"go test -race ./internal/history ./internal/historyruntime ./internal/store ./cmd/control",
 		"exact_discovery=covered race=covered million_rows=covered", "process=covered",
 		"sensitive_canary=covered", "sensitive_canary_database_sinks=covered",
-		"fake_network_counter=covered", "external_requests=partial_process_paths",
+		"fake_network_counter=covered", "external_requests=0",
 	} {
 		if !strings.Contains(runner, required) {
 			t.Errorf("history runner lacks %q", required)
@@ -178,6 +185,9 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		if strings.Count(runner, discovery) != 1 {
 			t.Errorf("history runner exact process discovery count for %s = %d", testName, strings.Count(runner, discovery))
 		}
+	}
+	if discovery := "require_test ./deploy/acceptance/account-inventory-history-data-plane TestAccountInventoryHistoryDataPlaneContract"; strings.Count(runner, discovery) != 1 {
+		t.Fatal("history runner exact data-plane contract discovery is invalid")
 	}
 
 	postgres := readAcceptanceFile(t, scripts[1])
@@ -429,8 +439,17 @@ func assertHistoryProcessContract(t *testing.T) {
 		"held_sql_sigterm_drain=covered", "held_sql_statement_timeout_atomicity=covered",
 		"max_conns_1_pool_wait=covered", "unexpired_lease=preserved",
 		"reconciler_restart_takeover=covered",
+		"source_backed_snapshots=2", "history_concurrency=2", "dual_workers_observed=2",
+		"stale_fence_zero_impact=covered", "source_backed_retention=covered",
+		"source_backed_postgres_restart=covered", "source_backed_max_conns_1=covered",
+		"source_backed_statement_timeout_recovery=covered",
+		"permission_terminal_internal=covered", "trigger_terminal_internal=covered",
+		"planner_runtime_stopped=covered", "rollup_runtime_stopped=covered",
+		"retention_runtime_stopped=covered",
+		"terminal_source_preserved=covered",
 		"sigterm_exit=bounded", "log_redaction=covered",
-		"fake_network_counter=covered", "external_requests=partial_process_paths",
+		"fake_network_counter=covered", "external_requests=0", "node=0", "gateway=0",
+		"prometheus=0", "internet=0", "model=0",
 		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
 		"cleanup_temp=0", "cleanup_lock=0",
 	} {
@@ -591,7 +610,8 @@ func TestHistoryAcceptanceHasNoDataPlaneOrExternalProbePath(t *testing.T) {
 		withoutToolProxy := strings.ReplaceAll(contents, "https://goproxy.cn,direct", "")
 		for _, forbidden := range []string{
 			"curl ", "wget ", "nc ", "ssh ", "scp ", "http://", "https://",
-			"/v1/models", "CLIPROXY", "GATEWAY", "PROMETHEUS", "management endpoint",
+			"/v1/models", "/v1/chat/completions", "CLIPROXY", "GATEWAY_URL", "PROMETHEUS",
+			"gateway_inference_e2e=covered", "gateway_inference_e2e=true", "management endpoint",
 		} {
 			if strings.Contains(strings.ToUpper(withoutToolProxy), strings.ToUpper(forbidden)) {
 				t.Errorf("%s contains an external/data-plane probe path %q", name, forbidden)
@@ -608,6 +628,9 @@ func TestHistoryAcceptanceHasNoDataPlaneOrExternalProbePath(t *testing.T) {
 	}
 	if strings.Contains(runner, "./internal/drivers") || strings.Contains(runner, "./internal/inventorypoll") {
 		t.Fatal("static history runner reaches data-plane collection packages")
+	}
+	if !strings.Contains(runner, "gateway_inference_e2e=not_covered") {
+		t.Fatal("history runner does not preserve the bounded non-Gateway claim")
 	}
 	compose := readAcceptanceFile(t, "account-inventory-history-postgres.compose.yaml")
 	if strings.Count(compose, "services:") != 1 || strings.Count(compose, "  postgres:") != 1 ||
