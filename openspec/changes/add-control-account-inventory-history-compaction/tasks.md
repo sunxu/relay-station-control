@@ -132,11 +132,13 @@
 - [x] 9.3 在summarize事务前/中/commit未知、summarized后、每批delete前/后、complete前、final rollup事务中注入崩溃，验证恢复不重算/不多删/不部分发布
 - [x] 9.4 注入stale fencing、同一Control内双scheduler/worker、statement timeout、PostgreSQL重启、pool exhaustion及repository/SQL权限/trigger故障，不执行宿主机disk-full，验证固定failed_from和源证据保留；可恢复故障最终收敛，权限/trigger故障terminal failed且不自动重试
 - [x] 9.5 Permanent CI运行1/10/50 Node、总计1,000账号的短slot功能矩阵；nightly/manual对86.4万/115.2万snapshot运行至少5次summary/rollup与20个delete batch，按nearest-rank记录P50/P95/P99、DB/index/WAL/max RSS/buffers/lock wait/守恒，硬门禁仅为无OOM/timeout/deadlock和正确性
-- [ ] 9.6 运行全仓Go race覆盖planner/worker/reconciler/Store/metrics并并发current query/promotion/retention，确认无race、死锁或高基数series
+- [x] 9.6 运行全仓Go race覆盖planner/worker/reconciler/Store/metrics并并发current query/promotion/retention，确认无race、死锁或高基数series
 - [x] 9.7 在Control与PostgreSQL同时停止窗口，对独立pinned官方CLIProxyAPI digest执行认证`/v1/models` baseline 1/1和outage 100/100，记录这是data-plane isolation而非Gateway inference E2E
 - [x] 9.8 验证所有acceptance成功/失败路径最终container/volume/network/temp residual为零，报告仅保存固定计数、时延和状态且不含身份
 
 > 第三十三批把`TestRepositoryLoopsUsesConfiguredConcurrency`和`TestRepositoryLoopsFatalMismatchStopsPlannerAndNewWorkerTransactions`加入static exact discovery及定向`go test -race`集合，锁定配置并发上限和fatal后停止planner/新worker事务。PostgreSQL18 runner另以`-race`精确执行`TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope`，覆盖同一lineage下retention、current query、promotion和scope transition的真实数据库并发。该最小门禁分别输出`history_targeted_race=covered`与`retention_query_promotion_scope_race=covered`；9.6保持开放，直到主线完成全仓`go test -race ./...`。
+
+> 第四十一批执行主线全仓`go test -race ./... -count=1`：全部包通过，无race、死锁或高基数series（metrics低基数标签allowlist由既有collector与retention metrics测试在race下覆盖），结合第三十三批定向门禁完成9.6。
 
 > 第三十五批统一七个history acceptance runner的成功报告为固定`cleanup_containers/volumes/networks/temp/lock=0`，shell contract逐个锁定EXIT/strict cleanup、Docker compose/volume/network和适用lock清理，并拒绝身份形状字段；全部invalid-arg路径只输出固定failure reason。opt-in失败门禁在隔离PostgreSQL与pinned数据面容器启动后注入migration失败，精确得到`migration_failed`且复核container/volume/network/temp/lock零残留；安全runner成功路径同时复核脱敏固定marker和零残留，完成9.8。
 
@@ -164,3 +166,5 @@
 > 第三十八批为10.2补齐最小可执行dry-run接线：真实process窗口在默认disabled且compatibility通过后，以`concurrency=1`、snapshot delete batch `1`处理独立2-snapshot合成UTC日，要求source/deleted精确守恒、compaction与final rollup各唯一completed、生产current query前后等价，并纳入同一零外部请求counter；随后既有`concurrency=2`双worker阶段构成逐步启用。rollback窗口在pinned旧Control前先启动当前候选且保持history disabled，要求固定`reason=disabled`、history/history-audit与generic-job指纹不变、有界停止后才允许启动旧二进制；shell contract锁定该顺序并禁止rollback runner调用任何Goose/migration down。seed/收敛检查新增生产current query等价断言，fixture同步注册`management_account_inventory_read` driver/node capability以避免fail-closed P0409。
 >
 > 第三十九批完成10.2两侧真实验收：process runner全窗口`exit 0`，输出`default_disabled=covered metrics_failure_isolation=covered enabled_zero_source=covered staging_concurrency_1=covered staging_delete_batch_1=covered staging_source_snapshots=2 staging_current_query_equivalent=covered history_concurrency=2 dual_workers_observed=2 ... fake_network_counter=covered external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0`且七项cleanup残留为零；rollback runner全窗口`exit 0`，输出`current_candidate_disabled=covered compatibility_gate=covered runner_stopped_before_old_binary=covered pinned_old_revision=covered snapshot_cleanup=controlled poll_cleanup=controlled current_fk_null=covered old_control_poll_promotion=covered old_control_http_current_query=covered history_and_history_audit_unchanged=covered fake_node_inventory_requests=1 production_down=not_used`且cleanup残留为零，据此完成10.2。
+
+> 第四十一批执行发布静态门禁与全仓race：连续两次`make generate`后工作树仅剩本change tasks.md改动（OpenAPI/Go/TypeScript生成物零差异）；`make test`全部通过（tools、全部Go包、前端13文件54测试、`tsc -b` typecheck）；`make build`（前端vite生产构建+`go build ./cmd/control`）与`go vet ./...`通过；actionlint v1.7.12对全部workflows零告警；主线全仓`go test -race ./... -count=1`全部包通过且无race/死锁/高基数series。ci.yml的独立`postgres_history` job以`timeout-minutes: 60`运行`account-inventory-history-run.sh all`，各history runner使用唯一项目名/锁目录与固定端口与其他container jobs隔离，nightly/manual容量workflow固定360分钟timeout与`fail-fast: false`，据此完成9.6与10.4。
