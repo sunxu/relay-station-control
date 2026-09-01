@@ -269,7 +269,10 @@ func historyFixtureStateClass(pool *pgxpool.Pool, fixture processFixture) string
 // backdated poll cannot be made valid without a test clock. Seed only a real
 // historical policy/monitoring intersection: the production planner must
 // create its zero-poll segment and final rollup without disabling immutable
-// evidence triggers or inventing historical observations.
+// evidence triggers or inventing historical observations. Source-backed
+// fixtures also promote one real current account through the controlled write
+// path so the staging current-query equivalence gate compares a non-empty row
+// fingerprint before and after history cleanup instead of empty-to-empty.
 func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	if !processSeedConfigured() {
 		t.Skip("history process seed acceptance is not enabled")
@@ -309,8 +312,19 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	if sourceSnapshots > 0 {
 		expectedPollRows = 1
 	}
+	expectedCurrentRows := 0
+	if sourceSnapshots > 0 {
+		expectedCurrentRows = 1
+	}
+	observedCurrent := requireCurrentInventoryRows(t, ctx, ownerPool, fixture.instanceID)
+	currentEquivalent := len(observedCurrent) == expectedCurrentRows
+	if sourceSnapshots > 0 {
+		currentEquivalent = len(observedCurrent) == 1 &&
+			observedCurrent[0].equivalent(expectedCurrentInventoryRow(fixture, seeded.dayStart))
+	}
 	if policyActivations != 1 || monitoringActivations != 1 || pollRows != expectedPollRows ||
-		snapshotRows != sourceSnapshots || existingRuns != 0 || currentRows != 0 {
+		snapshotRows != sourceSnapshots || existingRuns != 0 || currentRows != expectedCurrentRows ||
+		!currentEquivalent {
 		t.Fatal("history process seed evidence invalid")
 	}
 }
@@ -905,6 +919,32 @@ func seedZeroPollActivationFixture(
 			ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
 			t.Fatalf("history process source guard enable failed class=%s", processDatabaseErrorClass(err))
 		}
+		if _, err := transaction.Exec(ctx,
+			`SELECT set_config('relay_control.lifecycle_write','finalize',true)`); err != nil {
+			t.Fatalf("history process lifecycle gate set failed class=%s", processDatabaseErrorClass(err))
+		}
+		promotedAccount := "history-process-0@example.invalid"
+		sourceAt := slot.Add(3 * time.Second)
+		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory_provider_states(
+			instance_id,provider,current_poll_run_id,current_scheduled_at,last_complete_at,
+			source_observed_at,source_node_version,source_node_commit,updated_at
+		) VALUES($1,$2,$3,$5,$4,$4,'unknown','unknown',$4)`,
+			fixture.instanceID, fixture.provider, pollID, sourceAt, slot); err != nil {
+			t.Fatalf("history process promoted provider state write failed class=%s detail=%v",
+				processDatabaseErrorClass(err), err)
+		}
+		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory(
+			instance_id,provider,account_key,normalized_email,basic_status,
+			success_count,failed_count,recent_request_count,last_refresh_at,next_retry_at,
+			source_updated_at,lifecycle,consecutive_missing_count,missing_since,out_of_scope_since,
+			first_seen_at,last_seen_at,current_poll_run_id,current_scheduled_at,
+			source_observed_at,source_node_version,source_node_commit,updated_at
+		) VALUES($1,$2,$2::text||':'||$3,$3,'active',1,0,0,$5,NULL,$5,'present',0,NULL,NULL,
+			$5,$5,$4,$6,$5,'unknown','unknown',$5)`,
+			fixture.instanceID, fixture.provider, promotedAccount, pollID, sourceAt, slot); err != nil {
+			t.Fatalf("history process promoted current account write failed class=%s detail=%v",
+				processDatabaseErrorClass(err), err)
+		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		t.Fatal("history process seed transaction commit failed")
@@ -1155,7 +1195,7 @@ func historyFixtureConverged(
 	expectedSourceSnapshots int,
 ) (bool, int64) {
 	t.Helper()
-	var completedCompactions, completedRollups, remainingSnapshots, currentRows int64
+	var completedCompactions, completedRollups, remainingSnapshots int64
 	var sourcePolls, sourceSnapshots, deletedSnapshots int64
 	err := pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM public.account_inventory_compaction_runs
@@ -1172,12 +1212,10 @@ func historyFixtureConverged(
 		 JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
 		 WHERE poll.instance_id=$2
 		   AND poll.scheduled_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
-		   AND poll.scheduled_at < (($1::date+1)::timestamp AT TIME ZONE 'UTC')),
-		(SELECT count(*) FROM public.control_query_current_account_inventory_v1(
-			$2,'','','','','',10))`,
+		   AND poll.scheduled_at < (($1::date+1)::timestamp AT TIME ZONE 'UTC'))`,
 		fixture.summaryDate, fixture.instanceID).Scan(
 		&completedCompactions, &sourceSnapshots, &sourcePolls, &deletedSnapshots,
-		&completedRollups, &remainingSnapshots, &currentRows,
+		&completedRollups, &remainingSnapshots,
 	)
 	if err != nil {
 		t.Fatalf("history process convergence database read failed class=%s", processDatabaseErrorClass(err))
@@ -1186,10 +1224,94 @@ func historyFixtureConverged(
 	if expectedSourceSnapshots > 0 {
 		expectedSourcePolls = 1
 	}
+	observedCurrent := requireCurrentInventoryRows(t, ctx, pool, fixture.instanceID)
+	currentEquivalent := len(observedCurrent) == 0
+	if expectedSourceSnapshots > 0 {
+		dayStart, err := time.Parse("2006-01-02", fixture.summaryDate)
+		if err != nil {
+			t.Fatalf("history process summary date invalid class=%s", processDatabaseErrorClass(err))
+		}
+		expected := expectedCurrentInventoryRow(fixture, dayStart)
+		currentEquivalent = len(observedCurrent) == 1 && observedCurrent[0].equivalent(expected)
+	}
 	return completedCompactions == 1 && completedRollups == 1 && remainingSnapshots == 0 &&
 			sourcePolls == expectedSourcePolls && sourceSnapshots == int64(expectedSourceSnapshots) &&
-			deletedSnapshots == sourceSnapshots && currentRows == 0,
+			deletedSnapshots == sourceSnapshots && currentEquivalent,
 		sourceSnapshots
+}
+
+type currentInventoryRow struct {
+	instanceID              uuid.UUID
+	provider                string
+	accountKey              string
+	normalizedEmail         string
+	basicStatus             string
+	lifecycle               string
+	consecutiveMissingCount int32
+	sourceUpdatedAt         time.Time
+	providerLastCompleteAt  time.Time
+	providerDegraded        bool
+	snapshotFreshness       string
+}
+
+func (row currentInventoryRow) equivalent(expected currentInventoryRow) bool {
+	return row.instanceID == expected.instanceID &&
+		row.provider == expected.provider &&
+		row.accountKey == expected.accountKey &&
+		row.normalizedEmail == expected.normalizedEmail &&
+		row.basicStatus == expected.basicStatus &&
+		row.lifecycle == expected.lifecycle &&
+		row.consecutiveMissingCount == expected.consecutiveMissingCount &&
+		row.sourceUpdatedAt.Equal(expected.sourceUpdatedAt) &&
+		row.providerLastCompleteAt.Equal(expected.providerLastCompleteAt) &&
+		row.providerDegraded == expected.providerDegraded &&
+		row.snapshotFreshness == expected.snapshotFreshness
+}
+
+func expectedCurrentInventoryRow(fixture processFixture, dayStart time.Time) currentInventoryRow {
+	slot := dayStart.Add(12 * time.Hour)
+	sourceAt := slot.Add(3 * time.Second)
+	return currentInventoryRow{
+		instanceID: fixture.instanceID, provider: fixture.provider,
+		accountKey:              fixture.provider + ":history-process-0@example.invalid",
+		normalizedEmail:         "history-process-0@example.invalid",
+		basicStatus:             "reported_active",
+		lifecycle:               "present",
+		consecutiveMissingCount: 0,
+		sourceUpdatedAt:         sourceAt,
+		providerLastCompleteAt:  sourceAt,
+		providerDegraded:        false,
+		snapshotFreshness:       "stale",
+	}
+}
+
+func requireCurrentInventoryRows(
+	t *testing.T, ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID,
+) []currentInventoryRow {
+	t.Helper()
+	rows, err := pool.Query(ctx, `SELECT instance_id,provider,account_key,normalized_email,
+		basic_status,lifecycle,consecutive_missing_count,source_updated_at,
+		provider_last_complete_at,provider_degraded,snapshot_freshness
+		FROM public.control_query_current_account_inventory_v1($1,'','','','','',101)`, instanceID)
+	if err != nil {
+		t.Fatalf("history process current inventory read failed class=%s", processDatabaseErrorClass(err))
+	}
+	defer rows.Close()
+	var observed []currentInventoryRow
+	for rows.Next() {
+		var row currentInventoryRow
+		if err := rows.Scan(&row.instanceID, &row.provider, &row.accountKey, &row.normalizedEmail,
+			&row.basicStatus, &row.lifecycle, &row.consecutiveMissingCount,
+			&row.sourceUpdatedAt, &row.providerLastCompleteAt, &row.providerDegraded,
+			&row.snapshotFreshness); err != nil {
+			t.Fatalf("history process current inventory scan failed class=%s", processDatabaseErrorClass(err))
+		}
+		observed = append(observed, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("history process current inventory iteration failed class=%s", processDatabaseErrorClass(err))
+	}
+	return observed
 }
 
 func historyRestartPhaseMatrixConverged(
