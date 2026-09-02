@@ -14,7 +14,7 @@ esac
 
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
-compose_file="$script_directory/account-inventory-history-postgres.compose.yaml"
+compose_file="$script_directory/account-inventory-history-capacity.compose.yaml"
 runtime_directory=''
 project_name=''
 
