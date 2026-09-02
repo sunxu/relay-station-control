@@ -503,7 +503,8 @@ func assertHistoryProcessContract(t *testing.T) {
 		`network_counter_endpoint='http://127.0.0.1:18085'`,
 		`http_proxy="$network_counter_endpoint" https_proxy="$network_counter_endpoint"`,
 		"account_inventory_history_fake_node=stopped total=0 health=0 inventory=0 unauthorized=0 rejected=0",
-		`-list "^${exact_name}$"`, `grep -Fxq "$exact_name"`,
+		`go test ./deploy/acceptance/account-inventory-history-process \
+      -list .`, `if [ ! -f "$listing" ]`, `grep -Fxq "$exact_name"`,
 		`CONTROL_HTTP_ADDR="127.0.0.1:${control_port}"`,
 		`kill -TERM "$control_pid"`, `wait "$control_pid"`,
 		"control_stop_timeout", "control_exit_failed", "control_still_available",
@@ -542,9 +543,13 @@ func assertHistoryProcessContract(t *testing.T) {
 		"cleanup_temp=0", "cleanup_lock=0",
 		"process_phase_timing phase=%s duration_ms=%s",
 		"start_process_phase", "finish_process_phase",
+		"planner_fault 5s", "rollup_fault 5s", "retention_fault 5s",
 	} {
 		if !strings.Contains(process, required) {
 			t.Errorf("history process runner lacks %q", required)
+		}
+		if strings.Contains(process, `-list "^${exact_name}$"`) {
+			t.Fatal("history process runner still starts one test-listing process per required test")
 		}
 	}
 	for _, phase := range []string{

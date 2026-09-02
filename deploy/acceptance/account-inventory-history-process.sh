@@ -247,11 +247,13 @@ stop_network_counter() {
 
 require_process_test() {
   local exact_name="$1" listing
-  listing="$runtime_directory/$(printf '%s' "$exact_name" | tr -c '[:alnum:]' '_').tests"
-  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    go test ./deploy/acceptance/account-inventory-history-process \
-    -list "^${exact_name}$" >"$listing" 2>&1; then
-    fixed_failure 'process_test_discovery_failed'
+  listing="$runtime_directory/process-package.tests"
+  if [ ! -f "$listing" ]; then
+    if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      go test ./deploy/acceptance/account-inventory-history-process \
+      -list . >"$listing" 2>&1; then
+      fixed_failure 'process_test_discovery_failed'
+    fi
   fi
   grep -Fxq "$exact_name" "$listing" || fixed_failure 'required_process_test_unavailable'
 }
