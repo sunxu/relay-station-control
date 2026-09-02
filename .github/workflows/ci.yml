@@ -145,7 +145,6 @@ jobs:
 
   history_postgres:
     name: PostgreSQL 18 history schema and store acceptance
-    needs: history_static
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -169,7 +168,6 @@ jobs:
 
   history_process:
     name: PostgreSQL 18 history runtime process acceptance
-    needs: history_static
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -193,7 +191,6 @@ jobs:
 
   history_rollback:
     name: PostgreSQL 18 history forward-schema rollback acceptance
-    needs: history_static
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -222,7 +219,6 @@ jobs:
 
   history_data_plane:
     name: PostgreSQL 18 history data-plane isolation acceptance
-    needs: history_static
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 

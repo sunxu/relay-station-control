@@ -345,10 +345,13 @@ func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
 		"history_rollback":   "rollback",
 		"history_data_plane": "data-plane",
 	} {
-		pattern := regexp.MustCompile(`(?ms)^  ` + stage + `:\n.*?^    needs: history_static\n.*?account-inventory-history-run\.sh ` + mode + `$`)
+		pattern := regexp.MustCompile(`(?ms)^  ` + stage + `:\n.*?account-inventory-history-run\.sh ` + mode + `$`)
 		if !pattern.MatchString(workflow) {
-			t.Errorf("%s is not an independent history stage after history_static", stage)
+			t.Errorf("%s is not an independent history stage", stage)
 		}
+	}
+	if strings.Contains(workflow, "    needs: history_static") {
+		t.Fatal("Docker-heavy history jobs still wait for the static gate")
 	}
 	for _, required := range []string{
 		"  history_static:",

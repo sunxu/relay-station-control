@@ -248,14 +248,15 @@ Final fixed marker:
 
 `account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered history_targeted_race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered fake_network_counter=covered external_requests=0 data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
 
-For subsequent CI runs, `history_static` completes first and the PostgreSQL,
-process, rollback, and data-plane modes run on four independent GitHub hosted
-runners. The final `postgres_history` job depends on all five successful jobs
+For subsequent CI runs, `history_static` and the PostgreSQL, process, rollback,
+and data-plane modes run concurrently on five independent GitHub hosted
+runners. Static produces no artifact or state consumed by the isolated heavy
+stages. The final `postgres_history` job depends on all five successful jobs
 and emits the same fixed `mode=all` marker without exchanging or parsing raw
 artifacts. This job-dependency aggregation is equivalent to the local `all`
 mode's successful wait over every stage; local `all` remains available for
-single-host qualification. Each mode also emits only
-`history_stage_timing stage=<fixed-stage> duration_ms=<integer>`.
+single-host qualification. Each mode also emits only fixed phase/stage names
+and integer durations.
 
 The run covered the Migration 9 schema/ACL/up-down-up matrix, the exact Migration8→9 fingerprint, all PostgreSQL 18 functional/fault matrices including the 1/10/50-Node 1,000-account capacity gate, the zero-external-request process windows with full current-query equivalence, the pinned old-binary forward-schema rollback, and the independent data-plane outage window; every stage reported zero container, volume, network, temporary-directory, and lock residual. This completes 10.5 on this candidate; the change remains production-disabled until deployment approvals beyond this repository.
 
