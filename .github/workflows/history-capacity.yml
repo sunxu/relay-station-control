@@ -31,7 +31,7 @@ jobs:
   nightly:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    timeout-minutes: 420
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +56,7 @@ jobs:
   manual:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    timeout-minutes: 420
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

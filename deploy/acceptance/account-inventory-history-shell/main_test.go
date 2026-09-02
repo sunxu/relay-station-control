@@ -167,7 +167,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	runner := readAcceptanceFile(t, scripts[0])
 	for _, required := range []string{
 		`mode="${1:-static}"`, "static)", "postgres)", "process)", "rollback)", "data-plane)", "all)",
-		"account-inventory-history-postgres.sh", "account-inventory-history-process.sh", "-list \"^${exact_name}$\"",
+		"account-inventory-history-postgres.sh", "account-inventory-history-process.sh",
 		"account-inventory-history-rollback.sh", "rollback_gate=covered",
 		"account-inventory-history-data-plane.sh", "data_plane_isolation=covered",
 		"baseline_models=1/1", "outage_models=100/100", "gateway_inference_e2e=not_covered",
@@ -181,6 +181,19 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		if !strings.Contains(runner, required) {
 			t.Errorf("history runner lacks %q", required)
 		}
+	}
+	for _, required := range []string{
+		`go test "$package" -list .`,
+		`grep -Fxq "$exact_name" "$listing"`,
+		`if [ ! -f "$listing" ]`,
+		"history_stage_timing stage=%s duration_ms=%s",
+	} {
+		if strings.Count(runner, required) != 1 {
+			t.Errorf("history runner package-listing contract count for %q = %d", required, strings.Count(runner, required))
+		}
+	}
+	if strings.Contains(runner, `-list "^${exact_name}$"`) {
+		t.Fatal("history runner still starts one test-listing process per required test")
 	}
 	assertExactHistoryDiscoveryAndRace(t, runner)
 	for _, testName := range requiredHistoryProcessTests {
@@ -314,6 +327,49 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	assertHistoryProcessContract(t)
 	assertHistoryRollbackContract(t)
 	assertHistorySafetyContract(t)
+}
+
+func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
+	contents, err := os.ReadFile(filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal("history workflow unavailable")
+	}
+	workflow := string(contents)
+	for stage, mode := range map[string]string{
+		"history_postgres":   "postgres",
+		"history_process":    "process",
+		"history_rollback":   "rollback",
+		"history_data_plane": "data-plane",
+	} {
+		pattern := regexp.MustCompile(`(?ms)^  ` + stage + `:\n.*?^    needs: history_static\n.*?account-inventory-history-run\.sh ` + mode + `$`)
+		if !pattern.MatchString(workflow) {
+			t.Errorf("%s is not an independent history stage after history_static", stage)
+		}
+	}
+	for _, required := range []string{
+		"  history_static:",
+		"  postgres_history:",
+		"    if: ${{ always() }}",
+		"      - history_static",
+		"      - history_postgres",
+		"      - history_process",
+		"      - history_rollback",
+		"      - history_data_plane",
+		"${{ needs.history_static.result }}",
+		"${{ needs.history_postgres.result }}",
+		"${{ needs.history_process.result }}",
+		"${{ needs.history_rollback.result }}",
+		"${{ needs.history_data_plane.result }}",
+		"account_inventory_history_acceptance=failed reason=stage_dependency_failed",
+		"account_inventory_history_acceptance=success mode=all",
+	} {
+		if !strings.Contains(workflow, required) {
+			t.Errorf("history workflow lacks %q", required)
+		}
+	}
+	if strings.Contains(workflow, "account-inventory-history-run.sh all") {
+		t.Fatal("history workflow still runs Docker-heavy stages on one runner")
+	}
 }
 
 func assertHistoryRollbackContract(t *testing.T) {

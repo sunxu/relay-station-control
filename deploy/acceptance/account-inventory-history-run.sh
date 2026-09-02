@@ -47,12 +47,27 @@ strict_cleanup() {
 
 require_test() {
   local package="$1" exact_name="$2" listing
-  listing="$runtime_directory/$(printf '%s' "$exact_name" | tr -c '[:alnum:]' '_').tests"
-  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    go test "$package" -list "^${exact_name}$" >"$listing" 2>&1; then
-    fixed_failure 'test_discovery_failed'
+  listing="$runtime_directory/$(printf '%s' "$package" | tr -c '[:alnum:]' '_').tests"
+  if [ ! -f "$listing" ]; then
+    if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      go test "$package" -list . >"$listing" 2>&1; then
+      fixed_failure 'test_discovery_failed'
+    fi
   fi
   grep -Fxq "$exact_name" "$listing" || fixed_failure 'required_test_unavailable'
+}
+
+run_timed_stage() {
+  local stage="$1" started_at="$SECONDS" exit_code
+  shift
+  if "$@"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  printf 'history_stage_timing stage=%s duration_ms=%s\n' \
+    "$stage" "$(((SECONDS - started_at) * 1000))"
+  return "$exit_code"
 }
 
 run_static() {
@@ -154,44 +169,44 @@ trap 'exit 130' HUP INT TERM
 
 case "$mode" in
   static)
-    run_static
+    run_timed_stage static run_static
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=static exact_discovery=covered race=covered history_targeted_race=covered million_rows=covered sensitive_canary=partial_local_sinks external_requests=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   postgres)
-    "$script_directory/account-inventory-history-postgres.sh"
+    run_timed_stage postgres "$script_directory/account-inventory-history-postgres.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=postgres cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   process)
-    "$script_directory/account-inventory-history-process.sh"
+    run_timed_stage process "$script_directory/account-inventory-history-process.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=process fake_network_counter=covered external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   rollback)
-    "$script_directory/account-inventory-history-rollback.sh"
+    run_timed_stage rollback "$script_directory/account-inventory-history-rollback.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=rollback cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   data-plane)
-    "$script_directory/account-inventory-history-data-plane.sh"
+    run_timed_stage data_plane "$script_directory/account-inventory-history-data-plane.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=data-plane data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   all)
-    run_static
+    run_timed_stage static run_static
     stage_pids=()
     stage_logs=(postgres process rollback data-plane)
-    "$script_directory/account-inventory-history-postgres.sh" \
+    run_timed_stage postgres "$script_directory/account-inventory-history-postgres.sh" \
       >"$runtime_directory/postgres.log" 2>&1 &
     stage_pids+=($!)
-    "$script_directory/account-inventory-history-process.sh" \
+    run_timed_stage process "$script_directory/account-inventory-history-process.sh" \
       >"$runtime_directory/process.log" 2>&1 &
     stage_pids+=($!)
-    "$script_directory/account-inventory-history-rollback.sh" \
+    run_timed_stage rollback "$script_directory/account-inventory-history-rollback.sh" \
       >"$runtime_directory/rollback.log" 2>&1 &
     stage_pids+=($!)
-    "$script_directory/account-inventory-history-data-plane.sh" \
+    run_timed_stage data_plane "$script_directory/account-inventory-history-data-plane.sh" \
       >"$runtime_directory/data-plane.log" 2>&1 &
     stage_pids+=($!)
     trap 'kill "${stage_pids[@]}" >/dev/null 2>&1 || true; exit 130' HUP INT TERM
@@ -200,7 +215,7 @@ case "$mode" in
       wait "$pid" || failed=true
     done
     for log in "${stage_logs[@]}"; do
-      grep -E '^account_inventory_history_.*(=success|=failed reason=)' \
+      grep -E '^(account_inventory_history_.*(=success|=failed reason=)|history_stage_timing stage=)' \
         "$runtime_directory/$log.log" || true
     done
     if [ "$failed" = true ]; then

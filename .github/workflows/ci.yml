@@ -123,10 +123,79 @@ jobs:
       - name: Run isolated PostgreSQL recovery acceptance
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-snapshot-run.sh postgres
 
-  postgres_history:
-    name: PostgreSQL 18 history acceptance
+  history_static:
+    name: PostgreSQL 18 history static gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Run isolated history static gate
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy timeout --signal=TERM --kill-after=2m 10m deploy/acceptance/account-inventory-history-run.sh static
+
+  history_postgres:
+    name: PostgreSQL 18 history schema and store acceptance
+    needs: history_static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Pull pinned PostgreSQL acceptance image
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+
+      - name: Run isolated history PostgreSQL acceptance
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy timeout --signal=TERM --kill-after=2m 35m deploy/acceptance/account-inventory-history-run.sh postgres
+
+  history_process:
+    name: PostgreSQL 18 history runtime process acceptance
+    needs: history_static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Pull pinned PostgreSQL acceptance image
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+
+      - name: Run isolated history process acceptance
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy timeout --signal=TERM --kill-after=2m 35m deploy/acceptance/account-inventory-history-run.sh process
+
+  history_rollback:
+    name: PostgreSQL 18 history forward-schema rollback acceptance
+    needs: history_static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -143,13 +212,67 @@ jobs:
             go.sum
             tools/go.sum
 
-      - name: Pull pinned history acceptance images
+      - name: Pull pinned rollback acceptance images
         run: |
           env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
           env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
-      - name: Run isolated history acceptance
-        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-history-run.sh all
+      - name: Run isolated history rollback acceptance
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy timeout --signal=TERM --kill-after=2m 35m deploy/acceptance/account-inventory-history-run.sh rollback
+
+  history_data_plane:
+    name: PostgreSQL 18 history data-plane isolation acceptance
+    needs: history_static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Pull pinned data-plane acceptance images
+        run: |
+          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull eceasy/cli-proxy-api@sha256:7f598ce64478a8a5f90ed76875e0e9b0e7d77b80e17184b13df18c3d5bdb3def
+          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy docker pull alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+
+      - name: Run isolated history data-plane acceptance
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy timeout --signal=TERM --kill-after=2m 35m deploy/acceptance/account-inventory-history-run.sh data-plane
+
+  postgres_history:
+    name: PostgreSQL 18 history acceptance
+    if: ${{ always() }}
+    needs:
+      - history_static
+      - history_postgres
+      - history_process
+      - history_rollback
+      - history_data_plane
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify all history acceptance stages succeeded
+        run: |
+          if [ '${{ needs.history_static.result }}' != success ] ||
+            [ '${{ needs.history_postgres.result }}' != success ] ||
+            [ '${{ needs.history_process.result }}' != success ] ||
+            [ '${{ needs.history_rollback.result }}' != success ] ||
+            [ '${{ needs.history_data_plane.result }}' != success ]; then
+            echo 'account_inventory_history_acceptance=failed reason=stage_dependency_failed' >&2
+            exit 1
+          fi
+
+      - name: Record history acceptance aggregate marker
+        run: echo 'account_inventory_history_acceptance=success mode=all exact_discovery=covered race=covered history_targeted_race=covered million_rows=covered process=covered rollback_gate=covered sensitive_canary=covered local_sink_canary=covered sensitive_canary_database_sinks=covered fake_network_counter=covered external_requests=0 data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 
   postgres_lifecycle:
     name: PostgreSQL 18 lifecycle acceptance
