@@ -23,6 +23,30 @@ fixed_failure() {
   exit 1
 }
 
+diagnostic_canary_patterns='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|postgres://|relay_control_[a-z_]*_dev_only|[0-9a-f]{40,}'
+
+write_diagnostic_artifact() {
+  local source="$1" target="$2" redacted allowlisted
+  redacted="$(sed -E \
+    -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[REDACTED_EMAIL]/g' \
+    -e 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[REDACTED_UUID]/g' \
+    -e 's#postgres://[^ ]*#[REDACTED_URL]#g' \
+    -e 's/relay_control_[a-z_]*_dev_only/[REDACTED_SECRET]/g' \
+    -e 's/[0-9a-f]{40,}/[REDACTED_HEX]/g' \
+    -e 's/(SQLSTATE|sqlstate|ERROR:|error:)[^\n]*/[REDACTED_ERROR]/g' \
+    "$source" 2>/dev/null || true)"
+  allowlisted="$(printf '%s\n' "$redacted" | grep -E \
+    '^(=== RUN|=== PASS|=== CONT|--- PASS|--- FAIL|PASS|FAIL|ok |panic:|test timed out|history_capacity_|account_inventory_history_capacity|    [A-Za-z0-9_./-]+\.go:[0-9]+:)' || true)"
+  if printf '%s\n' "$allowlisted" | grep -Eq "$diagnostic_canary_patterns"; then
+    printf '%s\n' 'account_inventory_history_capacity_diagnostic=redacted reason=canary_hit' >"$target"
+    return
+  fi
+  {
+    printf '%s\n' 'account_inventory_history_capacity_diagnostic=deidentified allowlist=result_lines canary_scan=covered'
+    printf '%s\n' "$allowlisted"
+  } >"$target"
+}
+
 compose() {
   env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     docker compose --project-name "$project_name" --file "$compose_file" "$@"
@@ -97,7 +121,7 @@ main() {
       docker inspect --format '{{.State.OOMKilled}}' "$container_id" 2>/dev/null || true)"
     [ "$oom" != true ] || fixed_failure 'postgres_oom'
     if [ "${CONTROL_HISTORY_CAPACITY_KEEP_LOGS:-}" = "1" ]; then
-      cp "$runtime_directory/capacity.log" /tmp/history-capacity-failed.log >/dev/null 2>&1 || true
+      write_diagnostic_artifact "$runtime_directory/capacity.log" /tmp/history-capacity-failed.log
     fi
     fixed_failure 'capacity_gate_failed'
   fi

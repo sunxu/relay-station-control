@@ -15,7 +15,7 @@ on:
           - "864000"
           - "1152000"
       keep_logs:
-        description: Upload the failed capacity.log as a diagnostic artifact (raw, not evidence)
+        description: Upload a de-identified capacity diagnostic (allowlist result lines, canary-redacted; the raw log is never uploaded)
         required: false
         default: false
         type: boolean
