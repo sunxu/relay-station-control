@@ -42,12 +42,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /opt/hostedtoolcache /usr/local/lib/android \
-            /usr/local/share/powershell /usr/local/lib/node_modules
-          df -h /
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -66,12 +60,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /opt/hostedtoolcache /usr/local/lib/android \
-            /usr/local/share/powershell /usr/local/lib/node_modules
-          df -h /
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

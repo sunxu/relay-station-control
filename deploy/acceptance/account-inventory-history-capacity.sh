@@ -14,7 +14,7 @@ esac
 
 script_directory="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH='' cd -- "$script_directory/../.." && pwd)"
-compose_file="$script_directory/account-inventory-history-capacity.compose.yaml"
+compose_file="$script_directory/account-inventory-history-postgres.compose.yaml"
 runtime_directory=''
 project_name=''
 
@@ -91,7 +91,7 @@ main() {
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       CONTROL_HISTORY_CAPACITY_SCALE="$scale" \
       go test ./internal/store -run '^TestAccountInventoryHistoryCapacityAcceptance$' \
-        -count=1 -v
+        -count=1 -v -timeout 7h
   ) >"$runtime_directory/capacity.log" 2>&1; then
     oom="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       docker inspect --format '{{.State.OOMKilled}}' "$container_id" 2>/dev/null || true)"
