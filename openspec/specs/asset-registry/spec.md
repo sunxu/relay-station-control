@@ -78,7 +78,8 @@ Control SHALL 保存按环境、Node 类型和 Driver 合约版本确定作用�
 - **THEN** 数据库拒绝操作并保留原内容、哈希和元数据
 
 ### Requirement: Provider 策略绑定和激活历史一致
-Control SHALL 为每个策略作用域保存唯一作用域绑定及半开区间 `[effective_from, effective_to)` 的激活历史。作用域绑定 MUST 指向同一作用域最新登记选择的现有策略版本，并作为并发变更的串行化边界；当前有效策略 MUST 只由数据库 UTC 当前时间命中的激活区间确定。同一作用域的区间 MUST NOT 重叠，生效时间 MUST 使用数据库 UTC 当前时间或未来时间，且不得回填过去时间。
+
+Control SHALL为每个策略作用域保存唯一作用域绑定及半开区间`[effective_from, effective_to)`的激活历史。作用域绑定MUST指向同一作用域最新登记选择的现有策略版本，并作为并发变更的串行化边界；当前有效策略MUST只由数据库UTC当前时间命中的激活区间确定。同一作用域的区间MUST NOT重叠，生效时间MUST使用数据库UTC当前时间或未来时间且不得回填过去时间。已参与或仍可能参与poll、history eligibility、segment、rollup、compaction或保留期证明的策略版本与激活历史MUST NOT被删除或追溯改写；正常关闭当前open interval只可写数据库当前/未来结束时间，且不得改变已经结束UTC日的历史交集。
 
 #### Scenario: 读取当前策略
 - **WHEN** 某作用域存在覆盖数据库当前时间的激活区间
@@ -96,8 +97,13 @@ Control SHALL 为每个策略作用域保存唯一作用域绑定及半开区间
 - **WHEN** 作用域绑定引用不同环境、Node 类型或 Driver 合约版本的策略
 - **THEN** 数据库拒绝该绑定
 
+#### Scenario: history引用期间删除或追溯改写
+- **WHEN** 调用尝试删除仍被poll/summary/rollup/run/retention引用的策略版本或激活行，或改变已结束日的区间边界
+- **THEN** PostgreSQL拒绝操作，既有expected slot、segment checksum和coverage语义保持不变
+
 ### Requirement: Node 账号监控状态源自显式激活区间
-Control SHALL 为每个 Node 保存半开区间 `[effective_from, effective_to)` 的账号清单监控激活历史，并以数据库 UTC 当前时间是否落在区间内计算当前状态。启用记录 MUST 保存固定启用 reason、实名 actor 和数据库创建时间；关闭或预约关闭 MUST 另存固定关闭 reason、实名 actor 和数据库登记时间。同一 Node 的区间 MUST NOT 重叠，新区间不得从过去开始；Gateway 状态、Compose 状态或 Node 可达性 MUST NOT 隐式改变监控状态。
+
+Control SHALL为每个Node保存半开区间`[effective_from, effective_to)`的账号清单监控激活历史，并以数据库UTC当前时间是否落在区间内计算当前状态。启用记录MUST保存固定启用reason、实名actor和数据库创建时间；关闭或预约关闭MUST另存固定关闭reason、实名actor和数据库登记时间。同一Node的区间MUST NOT重叠，新区间不得从过去开始；Gateway状态、Compose状态或Node可达性MUST NOT隐式改变监控状态。仍参与history expected slot、segment、rollup、compaction或保留期证明的激活历史MUST NOT被删除或追溯改写；关闭当前open interval不得改变已经结束UTC日的历史交集。
 
 #### Scenario: 当前处于监控区间
 - **WHEN** 数据库当前时间落在某 Node 的一个监控激活区间内
@@ -118,6 +124,10 @@ Control SHALL 为每个 Node 保存半开区间 `[effective_from, effective_to)`
 #### Scenario: 关闭操作保留实名元数据
 - **WHEN** 受控部署操作立即或预约关闭一个监控区间
 - **THEN** 同一历史行保存关闭 reason、actor 和数据库登记时间，NULL、启停 reason 错配或冲突重放均被拒绝
+
+#### Scenario: coverage保留期内改变监控历史
+- **WHEN** 调用尝试删除或追溯改写仍可能影响expected slot或已固化coverage的Node监控区间
+- **THEN** PostgreSQL拒绝操作，正常未来启停仍通过既有受控路径追加或关闭区间
 
 ### Requirement: 管理员可通过受保护只读 API 查看资产
 Control SHALL 提供 `GET /api/environment`、`GET /api/assets/gateway`、`GET /api/assets/nodes`、`GET /api/assets/nodes/{instance_id}`、`GET /api/assets/drivers` 和 `GET /api/assets/provider-policies/current`。这些接口 MUST 仅允许现有实名且未过期的 `super_admin` 会话，MUST 使用 `Cache-Control: no-store`，且 MUST NOT 提供对应的产品 `POST`、`PUT`、`PATCH` 或 `DELETE` 资产接口。

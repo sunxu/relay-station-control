@@ -2,7 +2,7 @@
 
 ## 1. 当前状态与适用边界
 
-本手册描述阶段 3 `add-control-account-inventory-history-compaction` 的目标运行契约。**当前工作树已具备 Migration 9、确定性核心算法、纯 compaction/daily-rollup/retention 模型、严格 compatibility/Store adapter、受控 compaction summarize/分批snapshot delete/complete/fail、daily-rollup planner/claim/renew/reconcile/finalize/fail、四阶段 retention 与对应audit事务、低基数metrics，以及已接入 `cmd/control/main.go` 的默认关闭运行循环；完整生产验收尚未完成，因此不能在任何环境声称已通过完整功能验收或允许生产启用。** 当前实现是可验证候选，不是已批准部署功能。完成全部 OpenSpec、故障、容量、隐私、旧二进制和发布门禁前，操作动作只有“保持关闭”和“评审实现”。
+本手册描述阶段 3 `add-control-account-inventory-history-compaction` 的运行契约。**最终候选已完成 OpenSpec、故障、容量、隐私、旧二进制、全仓 race 和发布工程门禁，并具备 Migration 9、确定性核心算法、严格 compatibility/Store adapter、受控 compaction/daily-rollup/retention 状态机、低基数 metrics，以及接入 `cmd/control/main.go` 的默认关闭运行循环。** 工程验收完成不等于已获生产启用批准；在运营责任人显式批准并按本手册执行分阶段 rollout 前，必须保持默认关闭，也不得声称已投产。
 
 History 只消费本环境 Control PostgreSQL 已提交的 poll、Provider result、snapshot、activation 和 current state。它不得调用 Node、Gateway、Prometheus、互联网或模型数据面，不依赖 Redis，也不注册普通 durable-job kind。PostgreSQL 的 UTC 时间、专用 run 行、lease/fencing、不可变摘要和实际删除计数是唯一真相源。
 
@@ -121,7 +121,7 @@ Final rollup只读取不可变completed segments。账号final逐项求和，边
 
 ## 6. checksum/count 不一致：只增不删
 
-以下任一情况都进入固定 fail-closed处置：source checksum/count 改变、segment checksum/count 不一致、remaining snapshot 非零但 deleted/source 守恒无法成立、actual deleted 超过 source、completed 依赖缺失或 activation truth 不一致。纯模型、受控PostgreSQL函数和Worker守恒检查已验证正常compaction主路径及若干不一致路径；一旦触发完整性异常，共享fatal状态停止新planner、claim和破坏性事务。尚未执行全部崩溃/容量/并发矩阵，因此不能把一条合成主路径当作所有源数据都可安全删除的生产证据。
+以下任一情况都进入固定 fail-closed处置：source checksum/count 改变、segment checksum/count 不一致、remaining snapshot 非零但 deleted/source 守恒无法成立、actual deleted 超过 source、completed 依赖缺失或 activation truth 不一致。纯模型、受控PostgreSQL函数、Worker守恒检查以及最终候选的崩溃、容量和并发矩阵均已验证相应边界；一旦触发完整性异常，共享fatal状态停止新planner、claim和破坏性事务。测试通过不允许绕过运行时守恒检查或分阶段 rollout。
 
 1. 关闭 history，确认 poll/lifecycle/current query继续运行且不修改历史失败证据。
 2. 保留所有 remaining source、segment/final rows、run、retired-day cutoff、audit 和 forward schema；禁止任何 retention 类函数继续处理相关依赖。
@@ -157,7 +157,7 @@ Final rollup只读取不可变completed segments。账号final逐项求和，边
 2. 生产执行 additive Migration 9，保留受保护down约束。
 3. 部署理解 forward schema 的新二进制，但保持 history disabled。此阶段既有 poll/lifecycle/current query必须继续；durable-job production registry保持不变。
 4. Compatibility gate通过后，先在 staging启用 `concurrency=1` 和批准的小 batch，处理一个已达72小时的合成 UTC 日。
-5. 保留已通过的 PostgreSQL 18 `1/10/50 Node、每档总计1,000账号`短slot功能矩阵、完整敏感canary、旧二进制forward-schema、86.4万/115.2万snapshot容量和独立数据面隔离门禁，并继续完成剩余全仓race与发布门禁。
+5. 保留已通过的 PostgreSQL 18 `1/10/50 Node、每档总计1,000账号`短slot功能矩阵、完整敏感canary、旧二进制forward-schema、86.4万/115.2万snapshot容量、全仓race、发布门禁和独立数据面隔离证据。
 6. 生产从单 Worker逐步启用，观察 unfinished age、failed_from、WAL、locks、batch duration与守恒；异常立即回到 disabled。
 
 应用回滚：
@@ -211,9 +211,9 @@ History audit的180天是最低不可变保留边界，不是本change的自动�
 - `864000` snapshots/sample，3 Node，5 samples，870 delete batches：summary P50/P95/P99=`47515/55590/55590 ms`，rollup P50/P95/P99=`143/148/148 ms`；database bytes/growth=`2415621823/2404081664`，index bytes/growth=`1509728256/1508737024`，WAL=`6569937720`；harness max RSS before/after=`20185088/24363008`，PostgreSQL cgroup peak=`3603832832`；blocks read/hit=`6190650/166804575`，temp bytes=`2586302976`，max lock waiters=`0`，deadlock delta=`0`；source/deleted=`4320000/4320000`，account/Provider rollup rows=`15000/15`，conservation=`passed`。无OOM、timeout或deadlock，container/volume/network/temp/lock残留均为零。该次旧success marker只打印前三类Docker残留；strict cleanup与随后独立检查确认temp/lock同为零。
 - `1152000` snapshots/sample，4 Node，5 samples，1160 delete batches：summary P50/P95/P99=`61264/74343/74343 ms`，rollup P50/P95/P99=`164/176/176 ms`；database bytes/growth=`3207583423/3196035072`，index bytes/growth=`2003296256/2002305024`，WAL=`8668940096`；harness max RSS before/after=`19972096/26427392`，PostgreSQL cgroup peak=`3892613120`；blocks read/hit=`6067993/219456540`，temp bytes=`3336427520`，max lock waiters=`0`，deadlock delta=`0`；source/deleted=`5760000/5760000`，account/Provider rollup rows=`20000/20`，conservation=`passed`。无OOM、timeout或deadlock，success marker确认container/volume/network/temp/lock残留均为零。
 
-## 11. 当前候选限制与完成门禁
+## 11. 最终候选证据与运行边界
 
-截至当前第五批实现：
+截至最终候选：
 
 - `cmd/control/main.go`已无条件加载history配置、构造同一Store repository、注册metrics collector并纳入Control shutdown WaitGroup；disabled仍执行只读compatibility probe但不构造mutation loops，enabled且兼容时才启动planner/compaction-worker/rollup-worker/reconciler/retention；history不兼容或fatal只停止history；
 - Migration 9已创建六张aggregate/run表和一张durable retired-day cutoff表、Provider health/current-query兼容、严格catalog/ACL/audit gate、normal horizon加source/既有lineage bootstrap的eligible key与daily-rollup planner、compaction claim/renew/reconcile/summarize/bounded-delete/complete/fail、daily-rollup claim/renew/reconcile/finalize/fail，以及poll/rollup-row/rollup-run/compaction-run四个retention函数；
@@ -225,14 +225,14 @@ History audit的180天是最低不可变保留边界，不是本change的自动�
 - 真实Control process runner已覆盖Migration9、默认disabled+compatible、metrics函数权限撤销时HTTP 200与其他collector隔离、合法zero-poll日的enabled planner→compaction→rollup、`MAX_CONNS=1`持锁SQL的SIGTERM drain/statement-timeout原子路径，以及pending/summarized/deleting三阶段claim组合跨Control重启、PostgreSQL stop/start和lease过期后的Reconciler独占恢复；实际PID均有界正常退出，动态secret/连接串日志扫描及container/volume/network/temp/lock零残留；
 - change-specific acceptance runner已通过PostgreSQL 18 schema `up/down/up`、core SHA-256、PostgreSQL↔Go checksum golden、ACL/gate、compaction主路径与恢复、retention/current-query主路径、Migration8 legacy poll首次收敛与retired-day cut-off、exact discovery、race、百万行观察和零容器/卷/网络残留；新增的 PostgreSQL 18短slot功能矩阵也已分别通过1/10/50 Node、每档总计1,000账号的compaction/rollup守恒。该矩阵不记录nightly/manual大规模样本的WAL/RSS/buffer/lock分位数，百万行最大RSS也仍只作为观测，不构成容量阈值；
 - 正式容量门禁已分别以86.4万和115.2万snapshot/sample、各5个summary/rollup样本及870/1160个delete batch通过；完整时延、DB/index/WAL、harness RSS、PostgreSQL peak、buffer/temp/lock/deadlock、守恒及零残留值见上节。这些观察值不构成生产SLO阈值；
-- static定向race另锁定`TestRepositoryLoopsUsesConfiguredConcurrency`和`TestRepositoryLoopsFatalMismatchStopsPlannerAndNewWorkerTransactions`；PostgreSQL18 runner以`-race`单独执行retention/current-query/promotion/scope同链并发测试。两项通过只表示`history_targeted_race=covered`和`retention_query_promotion_scope_race=covered`，全仓race完成前9.6保持开放；
+- static定向race另锁定`TestRepositoryLoopsUsesConfiguredConcurrency`和`TestRepositoryLoopsFatalMismatchStopsPlannerAndNewWorkerTransactions`；PostgreSQL18 runner以`-race`单独执行retention/current-query/promotion/scope同链并发测试，最终候选的全仓`go test -race ./... -count=1`进一步关闭9.6；
 - 敏感canary双门禁已覆盖7类本地success/zero/partial/permission/timeout/restart/cleanup-failure sink和真实PostgreSQL18 partial/zero/permission/timeout/reconnect数据库非身份列扫描，aggregate仅在两者成功后声明covered；
 - 真实Control process矩阵复用既有fake Node原子计数器作为seeded Node endpoint及Control-only HTTP/HTTPS catch-all proxy。除了默认disabled、zero-source、metrics权限失败、restart/reconcile和shutdown，它还在同一计数窗口运行2-snapshot source-backed retention、`CONCURRENCY=2`双worker、旧fence、`MAX_CONNS=1`、PostgreSQL stop/start、statement timeout恢复、summarize权限撤销、`23514` trigger及planner/rollup-finalize/poll-retention权限fatal；最终固定得到`total/health/inventory/unauthorized/rejected=0`和`external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0`，完成8.6/9.4；
 - pinned旧代码forward-schema rollback runner已在隔离PostgreSQL 18通过：Migration 9完成受控snapshot/poll清理并使current FK为NULL后，固定`d431002`旧Control在隔离网络自行发起唯一CLIProxyAPI账号清单GET，完成poll/promotion并恢复两个current FK；同一旧进程的认证HTTP current query返回唯一账号并原子写入唯一view audit。运行前后history表和history audit指纹不变，generic job三表保持空，fake Node请求精确为1，且container/volume/network/temp/lock残留均为零。生产未执行down；OpenSpec 2.10/7.5据此通过；
 - 独立data-plane runner复用pinned官方CLIProxyAPI与Bearer认证`/v1/models`：Control/PostgreSQL在线时baseline为`1/1`，两者均已停止且分别确认health/`pg_isready`不可用后仍为`100/100`；脱敏结果固定`scope=data_plane_isolation gateway_inference_e2e=not_covered`且container/volume/network/temp/lock残留全零。这是进程隔离证据，不是Gateway inference E2E；
 - 七个history acceptance runner的成功报告已统一为固定container/volume/network/temp/lock零残留字段；契约逐个拒绝identity形状字段并验证全部invalid-arg固定分类。启动隔离PostgreSQL与pinned数据面后注入migration失败的门禁仅输出`migration_failed`，随后复核五类资源残留均为零；
-- 因此 `CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED=true` 已具有候选执行效果，但在剩余全仓race与发布门禁完成前仍禁止用于生产，也禁止把接线或单次process smoke通过记录为阶段 3完成。
+- 因此 `CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED=true` 已通过工程验收，但默认值继续为`false`；只有运营责任人显式批准并按本手册完成兼容性确认、staging单Worker和逐步扩容后才可在生产启用。
 
-最终候选至少必须执行：两次可复现生成、全部Go/test/race/vet/build、前端typecheck/test/build、OpenSpec strict、Migration 9 PostgreSQL 18 up/down/up与ACL、history状态/故障/容量/retention、旧二进制forward-schema、敏感canary、外部请求零和data-plane isolation。所有Go/npm/Docker/make命令显式清除大小写HTTP/HTTPS/ALL proxy；PostgreSQL使用隔离测试资源且不把连接串、SQL参数或原始日志保留到artifact。
+最终候选已执行：两次可复现生成、全部Go/test/race/vet/build、前端typecheck/test/build、OpenSpec strict、Migration 9 PostgreSQL 18 up/down/up与ACL、history状态/故障/容量/retention、旧二进制forward-schema、敏感canary、外部请求零和data-plane isolation。所有Go/npm/Docker/make命令显式清除大小写HTTP/HTTPS/ALL proxy；PostgreSQL使用隔离测试资源且不把连接串、SQL参数或原始日志保留到artifact。
 
-在所有门禁、最终CI、资源清理和证据review完成前，本手册保持“设计/部分实现”状态，不得改写为已投产运行记录。
+本手册记录的是已完成工程验收的运行契约，不是生产启用或投产记录。生产状态只能由实际 rollout、监控观察和运营批准记录证明。

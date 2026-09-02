@@ -49,7 +49,8 @@ can be tuned with the bounded `CONTROL_JOB_*` variables documented in
 
 ## Account inventory history compaction
 
-Phase 3 history compaction is currently an in-progress, default-disabled capability.
+Phase 3 history compaction is implemented, engineering-validated, and
+default-disabled.
 The current candidate includes the additive Migration 9 schema with six
 aggregate/run tables plus a durable retired-day cutoff table, compatibility,
 eligible-key and final-daily-rollup planning, fenced compaction and rollup
@@ -76,9 +77,11 @@ collector, and starts the dedicated loops only when explicitly enabled. History
 failure is isolated from the existing Control services and graceful shutdown drains
 the bounded runtime. A history-local metrics read failure preserves the independently
 observed enabled/reason signal, omits database-derived history families, and does not
-fail the other process collectors or expose the raw database error. The capability remains default-disabled and must not be treated
-as production-ready until the remaining crash, capacity, privacy-canary, old-binary,
-and rollout gates have passed.
+fail the other process collectors or expose the raw database error. The final
+candidate has passed the documented crash, capacity, privacy-canary, old-binary,
+full-race, and release gates. The capability remains default-disabled: engineering
+acceptance does not authorize production enablement, which still requires an
+explicit operator-approved staged rollout under the runbook.
 
 `CONTROL_DATABASE_MAX_CONNS` is an optional Control PostgreSQL pool-size environment
 override (`1..100`). When absent, existing pgx URL/default behavior is unchanged.
