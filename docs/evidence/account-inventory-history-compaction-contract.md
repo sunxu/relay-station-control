@@ -241,7 +241,7 @@ The complete `deploy/acceptance/account-inventory-history-run.sh all` executed o
 - runner: `deploy/acceptance/account-inventory-history-run.sh all` (local execution; the four Docker stages run in parallel after the static gate)
 - UTC window: `2026-09-01T19:40:48Z` to `2026-09-01T19:44:56Z`
 - exit code: `0`
-- GitHub Actions workflow run ID: none recorded (executed locally; the same runner is exercised by the CI `postgres_history` job on push, and the previous CI history acceptance job passed on the parent `484b68b` candidate)
+- GitHub Actions workflow run: `33552267164` (push of the final candidate `86e369c`), job `100004323471` "PostgreSQL 18 history acceptance", completed `success` in `13m32s`; the same runner executed locally on the identical code tree
 
 Final fixed marker:
 
@@ -249,6 +249,18 @@ Final fixed marker:
 
 The run covered the Migration 9 schema/ACL/up-down-up matrix, the exact Migration8→9 fingerprint, all PostgreSQL 18 functional/fault matrices including the 1/10/50-Node 1,000-account capacity gate, the zero-external-request process windows with full current-query equivalence, the pinned old-binary forward-schema rollback, and the independent data-plane outage window; every stage reported zero container, volume, network, temporary-directory, and lock residual. This completes 10.5 on this candidate; the change remains production-disabled until deployment approvals beyond this repository.
 
-### Capacity provenance limitation (9.5 large scales)
+### Capacity evidence bound to the final candidate (9.5 large scales)
 
-The two formal large-scale capacity runs documented in batch 37 (`864000` and `1152000` snapshots/sample) predate SHA-bound evidence: no candidate commit was recorded for them, and `gh run list --workflow history-capacity.yml` shows no GitHub Actions runs for that workflow, so no workflow run ID can be bound either. The numbers above remain the only record and must not be treated as bound to any specific candidate. If the release policy requires formal capacity evidence to be bound to the final candidate SHA, both scales (`864000` and `1152000`) must be re-executed on the final candidate via `deploy/acceptance/account-inventory-history-capacity.sh`. No SHA or run ID has been fabricated here; the batch-37 evidence is explicitly provenance-limited.
+Both formal large-scale runs were re-executed on the final candidate and exited `0`; each scale produced the de-identified aggregate evidence below with zero container/volume/network/temp/lock residual.
+
+- `864000` snapshots/sample, 3 Nodes, 5 samples, 870 delete batches: summary P50/P95/P99=`46218/55529/55529 ms`, rollup P50/P95/P99=`118/127/127 ms`; database bytes/growth=`2410550975/2399019008`, index bytes/growth=`1504600064/1503625216`, WAL=`6535779440`; harness max RSS before/after=`20086784/25837568`, PostgreSQL cgroup peak=`3253035008`; blocks read/hit=`4785021/167302740`, temp bytes=`2586302976`, max lock waiters=`0`, deadlock delta=`0`; source/deleted=`4320000/4320000`, account/Provider rollup rows=`15000/15`, conservation=`passed`.
+- `1152000` snapshots/sample, 4 Nodes, 5 samples, 1160 delete batches: summary P50/P95/P99=`63607/76473/76473 ms`, rollup P50/P95/P99=`173/179/179 ms`; database bytes/growth=`3211613887/3200081920`, index bytes/growth=`2007293952/2006319104`, WAL=`8831370256`; harness max RSS before/after=`19988480/25673728`, PostgreSQL cgroup peak=`3918565376`; blocks read/hit=`6201116/221208518`, temp bytes=`3336427520`, max lock waiters=`0`, deadlock delta=`0`; source/deleted=`5760000/5760000`, account/Provider rollup rows=`20000/20`, conservation=`passed`.
+
+Provenance (local execution on the final candidate code tree):
+
+- `candidate_sha`: `86e369cb11d3b2268ed9983fff961cc731098389`
+- runner: `deploy/acceptance/account-inventory-history-capacity.sh` (scale `864000` then `1152000`)
+- `864000`: UTC `2026-09-01T20:07:17Z` to `2026-09-01T20:13:00Z`, exit `0`, marker `account_inventory_history_capacity=success scale=864000 evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
+- `1152000`: UTC `2026-09-02T01:13:16Z` to `2026-09-02T01:21:03Z`, exit `0`, marker `account_inventory_history_capacity=success scale=1152000 evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
+
+The batch-37 numbers were provenance-limited (no candidate SHA and no GitHub Actions runs for `history-capacity.yml`); this re-execution supersedes them for the final candidate. These latency and resource observations remain acceptance evidence, not production SLOs.
