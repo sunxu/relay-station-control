@@ -263,4 +263,13 @@ Provenance (local execution on the final candidate code tree):
 - `864000`: UTC `2026-09-01T20:07:17Z` to `2026-09-01T20:13:00Z`, exit `0`, marker `account_inventory_history_capacity=success scale=864000 evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
 - `1152000`: UTC `2026-09-02T01:13:16Z` to `2026-09-02T01:21:03Z`, exit `0`, marker `account_inventory_history_capacity=success scale=1152000 evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
 
+GitHub Actions execution (final candidate CI):
+
+- workflow `History capacity` (manual dispatch), run `33586797984`, job `100112535124`, duration `20m9s`, conclusion `success`
+- candidate: `a94f8b8fbd1b8c5f330965a161af1724b7f5c7a2`
+- marker: `account_inventory_history_capacity=success scale=864000 evidence=full cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0`
+- evidence: summary P50/P95/P99=`157429/161247/161247 ms`, rollup P50/P95/P99=`369/389/389 ms`; database bytes/growth=`2409428671/2397896704`, index bytes/growth=`1503428608/1502453760`, WAL=`6170213688`; harness max RSS=`46534656`, blocks read/hit=`6053776/166583476`, temp bytes=`2452544000`, max lock waiters=`0`, deadlock delta=`0`; source/deleted=`4320000/4320000`, account/Provider rollup rows=`15000/15`, conservation=`passed`
+
+The CI capacity runs were previously failing with `capacity_gate_failed`; the opt-in diagnostic artifact proved the cause was the `go test` default 10-minute timeout (`FAIL ... 600.011s`), not disk space, and the runner now invokes `go test -timeout 7h`. CI is slower than the local host (about 3.4x here), so the larger `1152000` scale is pending the next scheduled nightly run with the same fix.
+
 The batch-37 numbers were provenance-limited (no candidate SHA and no GitHub Actions runs for `history-capacity.yml`); this re-execution supersedes them for the final candidate. These latency and resource observations remain acceptance evidence, not production SLOs.
