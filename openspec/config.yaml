@@ -7,12 +7,26 @@ context: |
   Project: Relay Station Control, a single-environment management and observability service.
   Stack: Go 1.27, React 19, PostgreSQL 18, OpenAPI 3.1, Goose, sqlc, Docker Compose.
   Architecture: modular monolith; Control is never in the request data plane.
-  System boundaries and phase acceptance criteria are defined by ../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md v1.0.
-  Technology decisions are defined by ../ops/docs/adr/0001-control-technology-stack.md.
+  System boundaries and Phase acceptance criteria are defined by ../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md v1.8 / R4.7.
+  Architecture decisions are defined by ../ops/docs/adr/0001-control-technology-stack.md and ../ops/docs/adr/0002-use-sub2api-native-downstream-scheduling.md.
   API source of truth: api/openapi.yaml. Database source of truth: immutable forward Goose migrations.
   Generated Go and TypeScript clients must be refreshed with make generate and must not be hand-edited.
   Control must not persist or expose upstream credentials, Node Management Keys, Gateway admin credentials, or raw response bodies.
   Metrics and alerts must not use raw email labels; account identity metrics use an environment-specific HMAC identifier.
+  Control PostgreSQL is the truth for Control-owned durable state.
+  Control only observes, associates, snapshots, analyzes, alerts, and recommends. It must not enter the request data plane, schedule requests, modify Gateway Account/Group or routing, modify CLIProxyAPI credential state, mirror Gateway runtime scheduler truth, or automatically repair duplicate ownership.
+  Gateway is one Sub2API deployment and Relay Node is one CLIProxyAPI deployment. Sub2API native Account/Group routing and runtime scheduling remain authoritative; CLIProxyAPI retains Provider/Account/credential selection, retry, and cooldown.
+
+  Phase 4 Directory ingestion polls every 180 seconds and becomes stale after 540 seconds based on Control DB last_success_received_at. Every poll records an ingestion result, but only changed normalized content creates a new immutable content snapshot. Current snapshot pointer and last successful observation are separate. Failed ingestion never refreshes freshness; generated_at is only for source-time/replay sanity.
+  Control must strictly validate the whole Directory response. Invalid schema/type/ID/order/required field, duplicate ID, unsafe non-null URL, or hard-limit violation rejects the whole response; Control must not filter, repair, or re-sanitize it.
+  Phase 4 binding is Relay Node 0..1 to Gateway Account 0..1, lives only in Control, and changes only through explicit administrator bind/unbind/atomic rebind. Binding truth is BOUND/UNBOUND; derived resolution is unbound/resolved/unresolved/unknown. Gateway observations never mutate binding and a new accounts.id never inherits an old binding.
+  Cross-node duplicate ownership requires the same normalized account_key on at least two different Relay Nodes using current/fresh/complete/eligible Inventory evidence. It does not depend on Gateway binding/status, Directory freshness, scheduler state, breaker, cooldown, or traffic. First-version severity is Critical. Control only detects, persists evidence, alerts, displays, and audits; it never auto-repairs.
+
+  Phase 4 changes remain independently reviewable:
+  - add-gateway-account-directory-ingestion depends on the approved Gateway Directory contract.
+  - add-relay-node-gateway-account-binding depends on Directory ingestion.
+  - add-cross-node-duplicate-ownership depends on Phase 3 current Inventory truth and may proceed independently of Directory/binding core detection.
+  Phase 4 acceptance requires strict ingestion validation/dedupe/freshness/recovery tests, binding cardinality/lifecycle/audit tests, duplicate ownership aggregation/conservative-resolution/privacy tests, and Phase 0-3 regression. Control or Directory failure must not affect the data plane, and CLIProxyAPI remains unmodified for Relay-specific behavior.
   Use Conventional Commits. Keep changes scoped to one independently reviewable capability.
 
 rules:
@@ -20,7 +34,8 @@ rules:
     - State the phase, user or operator outcome, affected repositories, and explicit non-goals.
     - "Identify affected truth sources: OpenAPI, Migration, sqlc, generated clients, metrics, audit, UI, and Runbook."
     - Call out compatibility, security, migration, rollback, and data-plane isolation impact.
-    - Reference relevant v1.0 design sections instead of copying the complete system design.
+    - Reference relevant System Design v1.8 / R4.7 and ADR sections instead of copying the complete system design.
+    - Do not combine Directory ingestion, binding, and duplicate ownership into one Phase 4 change.
   specs:
     - Express externally observable behavior with SHALL or MUST and testable scenarios.
     - Include negative, authorization, degraded-state, restart, and recovery scenarios when applicable.
@@ -37,7 +52,7 @@ rules:
 operations:
   apply:
     guidance:
-      - Read the relevant v1.0 design and ADR sections before changing code.
+      - Read the relevant System Design v1.8 / R4.7 and ADR-0001/ADR-0002 sections before changing code.
       - Implement only approved tasks; record newly discovered scope as an OpenSpec update.
       - Run make generate and make test, then the change-specific PostgreSQL and container checks.
       - Never commit Secret values, real account data, local runtime data, or unsanitized external responses.

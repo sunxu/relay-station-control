@@ -4,8 +4,9 @@ Relay Station Control 是单环境管理与可观测服务，采用 Go 1.27、Re
 
 ## 真相源
 
-- 系统边界与阶段验收：`../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md`
-- 技术决策：`../ops/docs/adr/0001-control-technology-stack.md`
+- 系统边界与阶段验收：`../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md` v1.8 / R4.7
+- 架构决策：`../ops/docs/adr/0001-control-technology-stack.md`、`../ops/docs/adr/0002-use-sub2api-native-downstream-scheduling.md`
+- 行为与契约变更：当前已批准的 OpenSpec change
 - API：`api/openapi.yaml`
 - 数据库：`migrations/` 中不可变的 forward Goose migrations
 - OpenSpec 规则：`openspec/config.yaml`
@@ -32,6 +33,8 @@ make build
 ## 关键边界
 
 - PostgreSQL 是 Control 持久状态的唯一真相；不得用进程内状态伪装持久成功。
+- Control 只观察、关联、快照、分析、告警和建议；不得进入请求数据面、调度请求、修改 Gateway Account/Group 或路由、修改 CLIProxyAPI 凭证状态、镜像 Gateway runtime scheduler truth 或自动修复重复归属。
+- Gateway 是一个 Sub2API deployment，Relay Node 是一个 CLIProxyAPI deployment；必须保留两者原生 routing/scheduling、Provider/Account selection、retry 和 cooldown 边界。
 - Control 不得持久化或暴露上游凭据、Node Management Key、Gateway 管理凭据或原始响应正文。
 - 指标和日志不得泄露邮箱、账号 key、Secret 或高基数身份字段。
 - 默认关闭的能力必须保持关闭，除非其 Runbook 明确记录了已获批准的启用步骤。
