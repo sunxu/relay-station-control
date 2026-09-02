@@ -14,6 +14,11 @@ on:
           - smoke
           - "864000"
           - "1152000"
+      keep_logs:
+        description: Upload the failed capacity.log as a diagnostic artifact (raw, not evidence)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -65,4 +70,14 @@ jobs:
             tools/go.sum
 
       - name: Run PostgreSQL 18 history capacity
+        env:
+          CONTROL_HISTORY_CAPACITY_KEEP_LOGS: ${{ inputs.keep_logs }}
         run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-history-capacity.sh '${{ inputs.scale }}'
+
+      - name: Upload capacity diagnostic log
+        if: failure() && inputs.keep_logs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: history-capacity-failed-log
+          path: /tmp/history-capacity-failed.log
+          if-no-files-found: error

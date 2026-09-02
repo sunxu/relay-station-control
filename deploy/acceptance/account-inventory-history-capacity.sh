@@ -96,6 +96,9 @@ main() {
     oom="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       docker inspect --format '{{.State.OOMKilled}}' "$container_id" 2>/dev/null || true)"
     [ "$oom" != true ] || fixed_failure 'postgres_oom'
+    if [ "${CONTROL_HISTORY_CAPACITY_KEEP_LOGS:-}" = "1" ]; then
+      cp "$runtime_directory/capacity.log" /tmp/history-capacity-failed.log >/dev/null 2>&1 || true
+    fi
     fixed_failure 'capacity_gate_failed'
   fi
   oom="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
