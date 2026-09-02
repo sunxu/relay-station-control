@@ -186,7 +186,11 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		`go test "$package" -list .`,
 		`grep -Fxq "$exact_name" "$listing"`,
 		`if [ ! -f "$listing" ]`,
-		"history_stage_timing stage=%s duration_ms=%s",
+		"history_%s_timing %s=%s duration_ms=%s",
+		"run_timed static_phase exact_discovery",
+		"run_timed static_phase targeted_race_million_row",
+		"run_timed static_phase shell_contract",
+		"run_timed static_phase safety",
 	} {
 		if strings.Count(runner, required) != 1 {
 			t.Errorf("history runner package-listing contract count for %q = %d", required, strings.Count(runner, required))
@@ -533,9 +537,21 @@ func assertHistoryProcessContract(t *testing.T) {
 		"prometheus=0", "internet=0", "model=0",
 		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
 		"cleanup_temp=0", "cleanup_lock=0",
+		"process_phase_timing phase=%s duration_ms=%s",
+		"start_process_phase", "finish_process_phase",
 	} {
 		if !strings.Contains(process, required) {
 			t.Errorf("history process runner lacks %q", required)
+		}
+	}
+	for _, phase := range []string{
+		"postgres_start", "migration", "build_control", "disabled_compat", "metrics_isolation",
+		"zero_source", "staging_concurrency_1", "dual_worker", "source_backed_restart",
+		"reconciler_recovery", "sigterm_drain", "statement_timeout", "permission_fault",
+		"trigger_fault", "planner_fault", "rollup_fault", "retention_fault", "cleanup",
+	} {
+		if strings.Count(process, "start_process_phase "+phase) != 1 {
+			t.Errorf("history process phase timing count for %s = %d", phase, strings.Count(process, "start_process_phase "+phase))
 		}
 	}
 	for _, testName := range requiredHistoryProcessTests {

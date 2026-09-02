@@ -57,21 +57,31 @@ require_test() {
   grep -Fxq "$exact_name" "$listing" || fixed_failure 'required_test_unavailable'
 }
 
-run_timed_stage() {
-  local stage="$1" started_at="$SECONDS" exit_code
-  shift
+now_millis() {
+  local value
+  value="$(date +%s%3N 2>/dev/null || true)"
+  case "$value" in
+    ''|*[!0-9]*) printf '%s000\n' "$(date +%s)" ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+run_timed() {
+  local kind="$1" name="$2" started_at finished_at exit_code
+  started_at="$(now_millis)"
+  shift 2
   if "$@"; then
     exit_code=0
   else
     exit_code=$?
   fi
-  printf 'history_stage_timing stage=%s duration_ms=%s\n' \
-    "$stage" "$(((SECONDS - started_at) * 1000))"
+  finished_at="$(now_millis)"
+  printf 'history_%s_timing %s=%s duration_ms=%s\n' \
+    "$kind" "$kind" "$name" "$((finished_at - started_at))"
   return "$exit_code"
 }
 
-run_static() {
-  command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
+discover_required_tests() {
   require_test ./internal/history TestUTCDayEligibilityBoundary
   require_test ./internal/history TestPlanExpectedSlotsHalfOpenAndAligned
   require_test ./internal/history TestChainV1GoldenVectors
@@ -139,19 +149,31 @@ run_static() {
   require_test ./deploy/acceptance/account-inventory-history-process TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic
   require_test ./deploy/acceptance/account-inventory-history-data-plane TestAccountInventoryHistoryDataPlaneContract
   require_test ./deploy/acceptance/account-inventory-history-shell TestHistoryAcceptanceBundleContract
+}
 
+run_history_core_gate() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test -race ./internal/history ./internal/historyruntime ./internal/store ./cmd/control \
       -run '^(TestUTCDayEligibilityBoundary|TestPlanExpectedSlotsHalfOpenAndAligned|TestChainV1GoldenVectors|TestChainV1MillionRowsDoesNotRetainRows|TestRollupAccountSegmentsAddsBoundaryResets|TestRollupProviderSegmentsRecalculatesRatio|TestCompactionTransitionMatrix|TestCompactionStaleFenceAndActiveLeaseHaveZeroEffect|TestRollupFencingCompletionFailureAndImmutability|TestFinalRollupSegmentChecksumV1GoldenAndOrderIndependence|TestRetentionStageOrderAtInclusiveBoundaries|TestRetentionPollRequiresCompletedConservedCompaction|TestObserveChecksumV1MillionRowsReportsMaxRSSWithoutThreshold|TestRepositoryLoopsResumePhaseMatrix|TestRepositoryLoopsUnknownSummarizeCommitResumesWithoutReaggregation|TestRepositoryLoopsSummarizeFixedFailuresDoNotLeakOrAdvance|TestRepositoryLoopsUnknownCompleteCommitUsesBoundedIdempotentReadRetry|TestRepositoryLoopsFinalizesRollupWithBoundedUnknownCommitReplay|TestRepositoryLoopsRollupShutdownDrainsCurrentFinalizeOnly|TestRepositoryLoopsShareConcurrencyAcrossCompactionAndRollup|TestRepositoryLoopsUsesConfiguredConcurrency|TestRepositoryLoopsFatalMismatchStopsPlannerAndNewWorkerTransactions|TestRepositoryLoopsShutdownStopsClaimsButFinishesShortOperation|TestRepositoryLoopsShutdownBetweenDeleteBatchesStartsNoNewTransaction|TestRepositoryLoopsRetentionRoundUsesDependencyOrderAndBoundedTransactions|TestRepositoryLoopsRetentionUnknownCommitWaitsForNextScanWithoutReplay|TestRepositoryLoopsRetentionShutdownDrainsCurrentTransactionOnly|TestRepositoryLoopsRetentionShutdownWhileQueuedStartsNoTransaction|TestRepositoryLoopsRetentionSharesTotalConcurrencyLimit|TestFatalIntegritySignalAllowsOnlyOriginatingTerminalFailAndBlocksOtherTransactions|TestRepositoryLoopsRollupFatalStopsCompactionAfterCurrentBatch|TestDisabledServiceChecksCompatibilityWithoutStartingLoops|TestCompatibilityFailureDisablesOnlyHistory|TestCompatibleServiceStopsClaimsBeforeBoundedOperations|TestFatalLoopStopsRuntimeAfterActiveTransactionDrain|TestUnexpectedLoopExitStopsRuntime|TestCollectorExportsOnlyClosedLowCardinalityLabels|TestCollectorSchemaIncompatibleOmitsDatabaseDerivedFamilies|TestCollectorFailsClosedOnUnknownLabelsOrRawProviderError|TestCollectorProviderFailureDoesNotPoisonProcessMetrics|TestCollectorFailsClosedOnNonFiniteMetrics|TestRuntimeStatusStateRejectsInvalidTransitions|TestAccountInventoryHistoryMetricsSnapshotStatusGateAndMapping|TestAccountInventoryHistoryRetentionMetricsObserveAdaptersWithoutGuessingFailedRows|TestAccountInventoryHistoryRetentionMetricsAreRaceSafe|TestAccountInventoryHistoryMetricsSnapshotRejectsUnsafeJSON|TestAccountInventoryHistoryMetricsSnapshotErrorsAreRedacted|TestAccountInventoryHistoryFailureReasonDictionariesAreExact|TestAccountInventoryHistoryRuntimeDisabledStillChecksCompatibilityWithoutLoops|TestAccountInventoryHistoryRuntimeEnabledStartsAllLoopsAndShutsDown|TestAccountInventoryHistoryRuntimeIncompatibleDisablesOnlyHistory|TestAccountInventoryHistoryRuntimeFatalStopsOnlyHistoryAndLogsFixedReason|TestAccountInventoryHistoryRuntimeFailureLogsUseFixedReasons)$' \
       -count=1 >"$runtime_directory/history-core.log" 2>&1; then
     fixed_failure 'history_core_gate_failed'
   fi
+}
+
+run_shell_contract_gate() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test ./deploy/acceptance/account-inventory-history-shell \
       -count=1 >"$runtime_directory/shell-contract.log" 2>&1; then
     fixed_failure 'shell_contract_gate_failed'
   fi
-  "$script_directory/account-inventory-history-safety-run.sh"
+}
+
+run_static() {
+  command -v go >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
+  run_timed static_phase exact_discovery discover_required_tests
+  run_timed static_phase targeted_race_million_row run_history_core_gate
+  run_timed static_phase shell_contract run_shell_contract_gate
+  run_timed static_phase safety "$script_directory/account-inventory-history-safety-run.sh"
 }
 
 case "$mode" in
@@ -169,44 +191,44 @@ trap 'exit 130' HUP INT TERM
 
 case "$mode" in
   static)
-    run_timed_stage static run_static
+    run_timed stage static run_static
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=static exact_discovery=covered race=covered history_targeted_race=covered million_rows=covered sensitive_canary=partial_local_sinks external_requests=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   postgres)
-    run_timed_stage postgres "$script_directory/account-inventory-history-postgres.sh"
+    run_timed stage postgres "$script_directory/account-inventory-history-postgres.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=postgres cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   process)
-    run_timed_stage process "$script_directory/account-inventory-history-process.sh"
+    run_timed stage process "$script_directory/account-inventory-history-process.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=process fake_network_counter=covered external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   rollback)
-    run_timed_stage rollback "$script_directory/account-inventory-history-rollback.sh"
+    run_timed stage rollback "$script_directory/account-inventory-history-rollback.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=rollback cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   data-plane)
-    run_timed_stage data_plane "$script_directory/account-inventory-history-data-plane.sh"
+    run_timed stage data_plane "$script_directory/account-inventory-history-data-plane.sh"
     strict_cleanup
     echo 'account_inventory_history_acceptance=success mode=data-plane data_plane_isolation=covered baseline_models=1/1 outage_models=100/100 gateway_inference_e2e=not_covered cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
     ;;
   all)
-    run_timed_stage static run_static
+    run_timed stage static run_static
     stage_pids=()
     stage_logs=(postgres process rollback data-plane)
-    run_timed_stage postgres "$script_directory/account-inventory-history-postgres.sh" \
+    run_timed stage postgres "$script_directory/account-inventory-history-postgres.sh" \
       >"$runtime_directory/postgres.log" 2>&1 &
     stage_pids+=($!)
-    run_timed_stage process "$script_directory/account-inventory-history-process.sh" \
+    run_timed stage process "$script_directory/account-inventory-history-process.sh" \
       >"$runtime_directory/process.log" 2>&1 &
     stage_pids+=($!)
-    run_timed_stage rollback "$script_directory/account-inventory-history-rollback.sh" \
+    run_timed stage rollback "$script_directory/account-inventory-history-rollback.sh" \
       >"$runtime_directory/rollback.log" 2>&1 &
     stage_pids+=($!)
-    run_timed_stage data_plane "$script_directory/account-inventory-history-data-plane.sh" \
+    run_timed stage data_plane "$script_directory/account-inventory-history-data-plane.sh" \
       >"$runtime_directory/data-plane.log" 2>&1 &
     stage_pids+=($!)
     trap 'kill "${stage_pids[@]}" >/dev/null 2>&1 || true; exit 130' HUP INT TERM
@@ -215,7 +237,7 @@ case "$mode" in
       wait "$pid" || failed=true
     done
     for log in "${stage_logs[@]}"; do
-      grep -E '^(account_inventory_history_.*(=success|=failed reason=)|history_stage_timing stage=)' \
+      grep -E '^(account_inventory_history_.*(=success|=failed reason=)|history_(stage|static_phase)_timing )' \
         "$runtime_directory/$log.log" || true
     done
     if [ "$failed" = true ]; then

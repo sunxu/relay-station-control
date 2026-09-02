@@ -911,8 +911,29 @@ verify_redacted_log() {
   done
 }
 
+now_millis() {
+  local value
+  value="$(date +%s%3N 2>/dev/null || true)"
+  case "$value" in
+    ''|*[!0-9]*) printf '%s000\n' "$(date +%s)" ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+start_process_phase() {
+  process_phase="$1"
+  process_phase_started_at="$(now_millis)"
+}
+
+finish_process_phase() {
+  local finished_at
+  finished_at="$(now_millis)"
+  printf 'process_phase_timing phase=%s duration_ms=%s\n' \
+    "$process_phase" "$((finished_at - process_phase_started_at))"
+}
+
 main() {
-  local suffix dual_date_one dual_date_two
+  local suffix dual_date_one dual_date_two process_phase process_phase_started_at
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
   require_command docker
@@ -940,13 +961,19 @@ main() {
   lock_acquired=true
   write_secrets
 
+  start_process_phase postgres_start
   if ! compose up --detach --wait postgres >"$runtime_directory/compose-up.log" 2>&1; then
     fixed_failure 'postgres_start_failed'
   fi
   set_database_urls
+  finish_process_phase
 
+  start_process_phase migration
   migrate_up
   assert_migration_and_seed_environment
+  finish_process_phase
+
+  start_process_phase build_control
   build_control
   start_network_counter
   require_process_test TestAccountInventoryHistoryProcessDisabledCompatibleMetrics
@@ -961,16 +988,28 @@ main() {
   require_process_test TestAccountInventoryHistoryProcessClaimRetainedUntilLeaseExpiry
   require_process_test TestAccountInventoryHistoryProcessReconcilerRecoveredClaim
   require_process_test TestAccountInventoryHistoryProcessHeldTransactionTimeoutIsAtomic
+  finish_process_phase
+
+  start_process_phase disabled_compat
   start_default_disabled_control
   verify_disabled_metrics
+  finish_process_phase
+
+  start_process_phase metrics_isolation
   set_metrics_snapshot_execute revoke
   verify_disabled_metrics_failure_isolation
   set_metrics_snapshot_execute grant
   stop_control
+  finish_process_phase
+
+  start_process_phase zero_source
   seed_eligible_source
   start_enabled_control '' 1s 2s 5s 1 zero_source
   verify_enabled_convergence
   stop_control
+  finish_process_phase
+
+  start_process_phase staging_concurrency_1
   fixture_instance_id="$staging_fixture_instance_id"
   seed_eligible_source 4 2
   start_enabled_control '' 1s 2s 5s 1 staging_single_worker
@@ -978,6 +1017,9 @@ main() {
     "$fixture_provider" "$runtime_directory/staging-single-worker-convergence.log" \
     'staging_single_worker_convergence' 'false' 2
   stop_control
+  finish_process_phase
+
+  start_process_phase dual_worker
   fixture_instance_id="$dual_fixture_one_instance_id"
   seed_eligible_source 12 2
   dual_date_one="$fixture_summary_date"
@@ -995,6 +1037,9 @@ main() {
     "$fixture_provider" "$runtime_directory/dual-worker-two-convergence.log" \
     'dual_worker_two_convergence' 'false' 2
   stop_control
+  finish_process_phase
+
+  start_process_phase source_backed_restart
   fixture_instance_id="$source_fixture_instance_id"
   seed_eligible_source 31 2
   verify_stale_fence_zero_impact
@@ -1011,6 +1056,9 @@ main() {
     'source_backed_convergence' 'false' 2
   verify_source_backed_retention
   stop_control
+  finish_process_phase
+
+  start_process_phase reconciler_recovery
   seed_claimed_for_restart
   start_enabled_control '' 1s 2s 5s 1 restart_control_one
   wait_for_history_ready
@@ -1025,8 +1073,17 @@ main() {
     "$restart_fixture_provider" "$runtime_directory/restart-convergence-probe.log" \
     'postgres_restart_convergence' 'true'
   stop_control
+  finish_process_phase
+
+  start_process_phase sigterm_drain
   run_held_transaction_shutdown_case drain "$shutdown_drain_instance_id" 8 summarized true
+  finish_process_phase
+
+  start_process_phase statement_timeout
   run_held_transaction_shutdown_case timeout "$shutdown_timeout_instance_id" 9 pending false 2
+  finish_process_phase
+
+  start_process_phase permission_fault
   fixture_instance_id="$permission_fixture_instance_id"
   start_enabled_control '' 10s 11s 20s 2 permission
   wait_for_history_ready
@@ -1035,6 +1092,9 @@ main() {
   verify_terminal_internal_source_preserved permission
   set_history_execute summarize grant
   stop_control
+  finish_process_phase
+
+  start_process_phase trigger_fault
   fixture_instance_id="$trigger_fixture_instance_id"
   start_enabled_control '' 10s 11s 20s 2 trigger
   wait_for_history_ready
@@ -1043,6 +1103,9 @@ main() {
   verify_terminal_internal_source_preserved trigger
   stop_control
   set_summarize_trigger_fault drop
+  finish_process_phase
+
+  start_process_phase planner_fault
   fixture_instance_id="$planner_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 planner_fault 5s
   wait_for_history_ready
@@ -1051,6 +1114,9 @@ main() {
   verify_terminal_internal_source_preserved planner planner
   set_history_execute planner grant
   stop_control
+  finish_process_phase
+
+  start_process_phase rollup_fault
   fixture_instance_id="$rollup_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 rollup_fault 5s
   wait_for_history_ready
@@ -1059,6 +1125,9 @@ main() {
   verify_terminal_internal_source_preserved rollup rollup
   set_history_execute rollup grant
   stop_control
+  finish_process_phase
+
+  start_process_phase retention_fault
   fixture_instance_id="$retention_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 retention_fault 5s
   wait_for_history_ready
@@ -1067,9 +1136,13 @@ main() {
   verify_terminal_internal_source_preserved retention retention
   set_history_execute retention grant
   stop_control
+  finish_process_phase
+
+  start_process_phase cleanup
   verify_redacted_log
   stop_network_counter
   strict_cleanup
+  finish_process_phase
   echo 'account_inventory_history_process=success migration=9 default_disabled=covered metrics_http=covered metrics_failure_isolation=covered enabled_zero_source=covered staging_concurrency_1=covered staging_delete_batch_1=covered staging_source_snapshots=2 staging_current_query_equivalent=covered source_backed_snapshots=2 history_concurrency=2 dual_workers_observed=2 stale_fence_zero_impact=covered source_backed_retention=covered source_backed_postgres_restart=covered source_backed_max_conns_1=covered source_backed_statement_timeout_recovery=covered held_sql_sigterm_drain=covered held_sql_statement_timeout_atomicity=covered max_conns_1_pool_wait=covered unexpired_lease=preserved reconciler_restart_takeover=covered postgres_restart_recovery=covered control_postgres_restart_phase_matrix=covered permission_terminal_internal=covered trigger_terminal_internal=covered planner_runtime_stopped=covered rollup_runtime_stopped=covered retention_runtime_stopped=covered terminal_source_preserved=covered sigterm_exit=bounded log_redaction=covered fake_network_counter=covered external_requests=0 node=0 gateway=0 prometheus=0 internet=0 model=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
