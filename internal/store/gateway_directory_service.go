@@ -29,6 +29,13 @@ type GatewayDirectoryWorkResult struct {
 	FailureClass      string
 }
 
+func validateGatewayDirectoryAttemptResult(result GatewayDirectoryAttemptResult) error {
+	if (result.Success == nil) == (result.Failure == nil) {
+		return ErrGatewayDirectoryIngestionInconsistent
+	}
+	return nil
+}
+
 func NewGatewayDirectoryIngestionService(
 	repository *GatewayDirectoryIngestionRepository,
 	secretResolver drivers.SecretResolver,
@@ -68,8 +75,8 @@ func (service *GatewayDirectoryIngestionService) RunGatewayOnce(
 	if err != nil {
 		return GatewayDirectoryWorkResult{}, err
 	}
-	if (attempt.Success == nil && attempt.Failure == nil) || (attempt.Success != nil && attempt.Failure != nil) {
-		return GatewayDirectoryWorkResult{}, ErrGatewayDirectoryIngestionInconsistent
+	if err := validateGatewayDirectoryAttemptResult(attempt); err != nil {
+		return GatewayDirectoryWorkResult{}, err
 	}
 	if attempt.Failure != nil {
 		return service.handleAttemptFailure(ctx, attempt.Failure)
