@@ -11,6 +11,86 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimGatewayDirectoryIngestionRun = `-- name: ClaimGatewayDirectoryIngestionRun :one
+WITH db_now AS (
+    SELECT clock_timestamp() AS db_now
+), candidate AS (
+    SELECT run.ingestion_run_id
+    FROM gateway_directory_ingestion_runs AS run, db_now
+    WHERE run.gateway_instance_id = $1::uuid
+      AND run.status IN ('pending', 'retry_wait')
+      AND run.attempt_count < 2
+      AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+    ORDER BY run.scheduled_at ASC
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1
+), updated AS (
+    UPDATE gateway_directory_ingestion_runs AS run
+    SET status = 'running',
+        attempt_count = run.attempt_count + 1,
+        first_started_at = COALESCE(run.first_started_at, db_now.db_now),
+        last_started_at = db_now.db_now,
+        lease_expires_at = db_now.db_now + interval '15 seconds',
+        lease_fencing_token = $2::uuid
+    FROM candidate, db_now
+    WHERE run.ingestion_run_id = candidate.ingestion_run_id
+    RETURNING run.ingestion_run_id, run.gateway_instance_id, run.scheduled_at, run.status, run.attempt_count, run.created_at, run.first_started_at, run.last_started_at, run.lease_expires_at, run.lease_fencing_token, run.terminal_at, run.outcome, run.last_failure_class, run.source_generated_at, run.received_at, run.content_fingerprint, run.snapshot_id, run.account_count
+)
+SELECT ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count FROM updated
+`
+
+type ClaimGatewayDirectoryIngestionRunParams struct {
+	GatewayInstanceID pgtype.UUID `json:"gateway_instance_id"`
+	LeaseFencingToken pgtype.UUID `json:"lease_fencing_token"`
+}
+
+type ClaimGatewayDirectoryIngestionRunRow struct {
+	IngestionRunID     pgtype.UUID        `json:"ingestion_run_id"`
+	GatewayInstanceID  pgtype.UUID        `json:"gateway_instance_id"`
+	ScheduledAt        pgtype.Timestamptz `json:"scheduled_at"`
+	Status             string             `json:"status"`
+	AttemptCount       int16              `json:"attempt_count"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	FirstStartedAt     pgtype.Timestamptz `json:"first_started_at"`
+	LastStartedAt      pgtype.Timestamptz `json:"last_started_at"`
+	LeaseExpiresAt     pgtype.Timestamptz `json:"lease_expires_at"`
+	LeaseFencingToken  pgtype.UUID        `json:"lease_fencing_token"`
+	TerminalAt         pgtype.Timestamptz `json:"terminal_at"`
+	Outcome            pgtype.Text        `json:"outcome"`
+	LastFailureClass   pgtype.Text        `json:"last_failure_class"`
+	SourceGeneratedAt  pgtype.Timestamptz `json:"source_generated_at"`
+	ReceivedAt         pgtype.Timestamptz `json:"received_at"`
+	ContentFingerprint []byte             `json:"content_fingerprint"`
+	SnapshotID         pgtype.UUID        `json:"snapshot_id"`
+	AccountCount       pgtype.Int4        `json:"account_count"`
+}
+
+func (q *Queries) ClaimGatewayDirectoryIngestionRun(ctx context.Context, arg ClaimGatewayDirectoryIngestionRunParams) (ClaimGatewayDirectoryIngestionRunRow, error) {
+	row := q.db.QueryRow(ctx, claimGatewayDirectoryIngestionRun, arg.GatewayInstanceID, arg.LeaseFencingToken)
+	var i ClaimGatewayDirectoryIngestionRunRow
+	err := row.Scan(
+		&i.IngestionRunID,
+		&i.GatewayInstanceID,
+		&i.ScheduledAt,
+		&i.Status,
+		&i.AttemptCount,
+		&i.CreatedAt,
+		&i.FirstStartedAt,
+		&i.LastStartedAt,
+		&i.LeaseExpiresAt,
+		&i.LeaseFencingToken,
+		&i.TerminalAt,
+		&i.Outcome,
+		&i.LastFailureClass,
+		&i.SourceGeneratedAt,
+		&i.ReceivedAt,
+		&i.ContentFingerprint,
+		&i.SnapshotID,
+		&i.AccountCount,
+	)
+	return i, err
+}
+
 const createOrGetGatewayDirectoryIngestionRun = `-- name: CreateOrGetGatewayDirectoryIngestionRun :one
 WITH inserted AS (
     INSERT INTO gateway_directory_ingestion_runs (
@@ -86,6 +166,17 @@ func (q *Queries) CreateOrGetGatewayDirectoryIngestionRun(ctx context.Context, a
 	return i, err
 }
 
+const getGatewayDirectoryCurrentScheduledAt = `-- name: GetGatewayDirectoryCurrentScheduledAt :one
+SELECT to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 180) * 180)::timestamptz AS scheduled_at
+`
+
+func (q *Queries) GetGatewayDirectoryCurrentScheduledAt(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryCurrentScheduledAt)
+	var scheduled_at pgtype.Timestamptz
+	err := row.Scan(&scheduled_at)
+	return scheduled_at, err
+}
+
 const getGatewayDirectoryCurrentState = `-- name: GetGatewayDirectoryCurrentState :one
 SELECT gateway_instance_id, current_snapshot_id, current_content_fingerprint, last_success_received_at, last_source_generated_at, last_success_run_id, updated_at
 FROM gateway_directory_current_state
@@ -115,6 +206,48 @@ WHERE ingestion_run_id = $1::uuid
 
 func (q *Queries) GetGatewayDirectoryIngestionRun(ctx context.Context, ingestionRunID pgtype.UUID) (GatewayDirectoryIngestionRun, error) {
 	row := q.db.QueryRow(ctx, getGatewayDirectoryIngestionRun, ingestionRunID)
+	var i GatewayDirectoryIngestionRun
+	err := row.Scan(
+		&i.IngestionRunID,
+		&i.GatewayInstanceID,
+		&i.ScheduledAt,
+		&i.Status,
+		&i.AttemptCount,
+		&i.CreatedAt,
+		&i.FirstStartedAt,
+		&i.LastStartedAt,
+		&i.LeaseExpiresAt,
+		&i.LeaseFencingToken,
+		&i.TerminalAt,
+		&i.Outcome,
+		&i.LastFailureClass,
+		&i.SourceGeneratedAt,
+		&i.ReceivedAt,
+		&i.ContentFingerprint,
+		&i.SnapshotID,
+		&i.AccountCount,
+	)
+	return i, err
+}
+
+const getGatewayDirectoryIngestionRunLease = `-- name: GetGatewayDirectoryIngestionRunLease :one
+SELECT ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count
+FROM gateway_directory_ingestion_runs
+WHERE ingestion_run_id = $1::uuid
+  AND gateway_instance_id = $2::uuid
+  AND status = 'running'
+  AND lease_fencing_token = $3::uuid
+  AND lease_expires_at > clock_timestamp()
+`
+
+type GetGatewayDirectoryIngestionRunLeaseParams struct {
+	IngestionRunID    pgtype.UUID `json:"ingestion_run_id"`
+	GatewayInstanceID pgtype.UUID `json:"gateway_instance_id"`
+	LeaseFencingToken pgtype.UUID `json:"lease_fencing_token"`
+}
+
+func (q *Queries) GetGatewayDirectoryIngestionRunLease(ctx context.Context, arg GetGatewayDirectoryIngestionRunLeaseParams) (GatewayDirectoryIngestionRun, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryIngestionRunLease, arg.IngestionRunID, arg.GatewayInstanceID, arg.LeaseFencingToken)
 	var i GatewayDirectoryIngestionRun
 	err := row.Scan(
 		&i.IngestionRunID,
@@ -183,6 +316,55 @@ func (q *Queries) GetGatewayDirectorySnapshotByFingerprint(ctx context.Context, 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listExpiredGatewayDirectoryIngestionRuns = `-- name: ListExpiredGatewayDirectoryIngestionRuns :many
+SELECT ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count
+FROM gateway_directory_ingestion_runs
+WHERE status = 'running'
+  AND lease_expires_at IS NOT NULL
+  AND lease_expires_at <= clock_timestamp()
+ORDER BY lease_expires_at, scheduled_at, gateway_instance_id
+LIMIT $1::integer
+`
+
+func (q *Queries) ListExpiredGatewayDirectoryIngestionRuns(ctx context.Context, pageLimit int32) ([]GatewayDirectoryIngestionRun, error) {
+	rows, err := q.db.Query(ctx, listExpiredGatewayDirectoryIngestionRuns, pageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GatewayDirectoryIngestionRun{}
+	for rows.Next() {
+		var i GatewayDirectoryIngestionRun
+		if err := rows.Scan(
+			&i.IngestionRunID,
+			&i.GatewayInstanceID,
+			&i.ScheduledAt,
+			&i.Status,
+			&i.AttemptCount,
+			&i.CreatedAt,
+			&i.FirstStartedAt,
+			&i.LastStartedAt,
+			&i.LeaseExpiresAt,
+			&i.LeaseFencingToken,
+			&i.TerminalAt,
+			&i.Outcome,
+			&i.LastFailureClass,
+			&i.SourceGeneratedAt,
+			&i.ReceivedAt,
+			&i.ContentFingerprint,
+			&i.SnapshotID,
+			&i.AccountCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listGatewayDirectorySnapshotItems = `-- name: ListGatewayDirectorySnapshotItems :many
