@@ -485,7 +485,14 @@ func (repository *RelayBindingRepository) Unbind(
 	// 2. Lock Node's current binding; if already unbound, return stable already_unbound
 	existingNodeBinding, err := txQueries.LockCurrentRelayNodeGatewayAccountBindingByNode(ctx, nullableUUID(params.RelayNodeID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return RelayBindingResult{Outcome: RelayBindingOutcomeAlreadyUnbound}, nil
+		dbTime, timeErr := txQueries.GetRelayBindingDBTime(ctx)
+		if timeErr != nil {
+			return RelayBindingResult{}, timeErr
+		}
+		return RelayBindingResult{
+			Outcome:     RelayBindingOutcomeAlreadyUnbound,
+			OperationAt: dbTime.Time.UTC(),
+		}, nil
 	}
 	if err != nil {
 		return RelayBindingResult{}, err
@@ -651,12 +658,12 @@ type NodeCentricBindingView struct {
 }
 
 type GatewayAccountCentricBindingItem struct {
-	GatewayAccountID         int64
-	AccountContext           GatewayAccountContext
-	BoundRelayNodeID         *uuid.UUID
-	CurrentBinding           *RelayNodeGatewayAccountBinding
-	Resolution               RelayBindingResolution
-	ContextSource            AccountContextSource
+	GatewayAccountID int64
+	AccountContext   GatewayAccountContext
+	BoundRelayNodeID *uuid.UUID
+	CurrentBinding   *RelayNodeGatewayAccountBinding
+	Resolution       RelayBindingResolution
+	ContextSource    AccountContextSource
 }
 
 type GatewayAccountCentricBindingView struct {

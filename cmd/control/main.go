@@ -228,6 +228,11 @@ func main() {
 	if err = accountInventoryRepository.CheckCompatibility(context.Background()); err != nil {
 		logger.Warn("account inventory query compatibility check failed", "component", "account_inventory", "reason", "schema_incompatible")
 	}
+	relayBindingRepository, err := assetstore.NewRelayBindingRepository(pool)
+	if err != nil {
+		logger.Error("relay binding repository initialization failed", "component", "relay_binding")
+		os.Exit(1)
+	}
 	jobKinds, err := jobRepository.JobKinds(context.Background())
 	if err != nil {
 		logger.Error("durable job catalog unavailable", "component", "jobs")
@@ -292,6 +297,7 @@ func main() {
 		logger.Error("asset API initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	apiServer.SetRelayBindingRepository(relayBindingRepository)
 	metricsRegistry.MustRegister(apiServer.AccountInventoryMetrics())
 	controlapi.HandlerWithOptions(apiServer, controlapi.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 		apiServer.PrepareGeneratedError(w, r, err)

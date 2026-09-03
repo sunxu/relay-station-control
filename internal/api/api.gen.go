@@ -290,16 +290,23 @@ func (e EnvironmentAssetEnvironmentType) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
+	ErrorCodeAccountConflict                   ErrorCode = "account_conflict"
+	ErrorCodeAccountNotFound                   ErrorCode = "account_not_found"
 	ErrorCodeAdministratorSelfDisableForbidden ErrorCode = "administrator_self_disable_forbidden"
+	ErrorCodeAlreadyUnbound                    ErrorCode = "already_unbound"
 	ErrorCodeAuthenticationFailed              ErrorCode = "authentication_failed"
 	ErrorCodeBootstrapUnavailable              ErrorCode = "bootstrap_unavailable"
 	ErrorCodeChallengeExpired                  ErrorCode = "challenge_expired"
 	ErrorCodeConflict                          ErrorCode = "conflict"
 	ErrorCodeCsrfInvalid                       ErrorCode = "csrf_invalid"
+	ErrorCodeDirectoryStale                    ErrorCode = "directory_stale"
+	ErrorCodeDirectoryUnavailable              ErrorCode = "directory_unavailable"
 	ErrorCodeForbidden                         ErrorCode = "forbidden"
 	ErrorCodeInternalError                     ErrorCode = "internal_error"
 	ErrorCodeLastAdministratorProtected        ErrorCode = "last_administrator_protected"
 	ErrorCodeMfaRequired                       ErrorCode = "mfa_required"
+	ErrorCodeNoCurrentBinding                  ErrorCode = "no_current_binding"
+	ErrorCodeNodeConflict                      ErrorCode = "node_conflict"
 	ErrorCodeNotFound                          ErrorCode = "not_found"
 	ErrorCodeRateLimited                       ErrorCode = "rate_limited"
 	ErrorCodeReauthenticationRequired          ErrorCode = "reauthentication_required"
@@ -311,7 +318,13 @@ const (
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
+	case ErrorCodeAccountConflict:
+		return true
+	case ErrorCodeAccountNotFound:
+		return true
 	case ErrorCodeAdministratorSelfDisableForbidden:
+		return true
+	case ErrorCodeAlreadyUnbound:
 		return true
 	case ErrorCodeAuthenticationFailed:
 		return true
@@ -323,6 +336,10 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeCsrfInvalid:
 		return true
+	case ErrorCodeDirectoryStale:
+		return true
+	case ErrorCodeDirectoryUnavailable:
+		return true
 	case ErrorCodeForbidden:
 		return true
 	case ErrorCodeInternalError:
@@ -330,6 +347,10 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeLastAdministratorProtected:
 		return true
 	case ErrorCodeMfaRequired:
+		return true
+	case ErrorCodeNoCurrentBinding:
+		return true
+	case ErrorCodeNodeConflict:
 		return true
 	case ErrorCodeNotFound:
 		return true
@@ -603,6 +624,126 @@ func (e RecoveryCodesResponseRemaining) Valid() bool {
 	}
 }
 
+// Defines values for RelayBindingContextSource.
+const (
+	Current   RelayBindingContextSource = "current"
+	LastKnown RelayBindingContextSource = "last_known"
+	None      RelayBindingContextSource = "none"
+)
+
+// Valid indicates whether the value is a known member of the RelayBindingContextSource enum.
+func (e RelayBindingContextSource) Valid() bool {
+	switch e {
+	case Current:
+		return true
+	case LastKnown:
+		return true
+	case None:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RelayBindingFreshness.
+const (
+	RelayBindingFreshnessFresh       RelayBindingFreshness = "fresh"
+	RelayBindingFreshnessStale       RelayBindingFreshness = "stale"
+	RelayBindingFreshnessUnavailable RelayBindingFreshness = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RelayBindingFreshness enum.
+func (e RelayBindingFreshness) Valid() bool {
+	switch e {
+	case RelayBindingFreshnessFresh:
+		return true
+	case RelayBindingFreshnessStale:
+		return true
+	case RelayBindingFreshnessUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RelayBindingMutationResponseOutcome.
+const (
+	RelayBindingMutationResponseOutcomeAlreadyUnbound RelayBindingMutationResponseOutcome = "already_unbound"
+	RelayBindingMutationResponseOutcomeSuccess        RelayBindingMutationResponseOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the RelayBindingMutationResponseOutcome enum.
+func (e RelayBindingMutationResponseOutcome) Valid() bool {
+	switch e {
+	case RelayBindingMutationResponseOutcomeAlreadyUnbound:
+		return true
+	case RelayBindingMutationResponseOutcomeSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RelayBindingResolution.
+const (
+	RelayBindingResolutionResolved   RelayBindingResolution = "resolved"
+	RelayBindingResolutionUnbound    RelayBindingResolution = "unbound"
+	RelayBindingResolutionUnknown    RelayBindingResolution = "unknown"
+	RelayBindingResolutionUnresolved RelayBindingResolution = "unresolved"
+)
+
+// Valid indicates whether the value is a known member of the RelayBindingResolution enum.
+func (e RelayBindingResolution) Valid() bool {
+	switch e {
+	case RelayBindingResolutionResolved:
+		return true
+	case RelayBindingResolutionUnbound:
+		return true
+	case RelayBindingResolutionUnknown:
+		return true
+	case RelayBindingResolutionUnresolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RelayNodeGatewayAccountBindingDetailBindReason.
+const (
+	RelayNodeGatewayAccountBindingDetailBindReasonAdministratorBind   RelayNodeGatewayAccountBindingDetailBindReason = "administrator_bind"
+	RelayNodeGatewayAccountBindingDetailBindReasonAdministratorRebind RelayNodeGatewayAccountBindingDetailBindReason = "administrator_rebind"
+)
+
+// Valid indicates whether the value is a known member of the RelayNodeGatewayAccountBindingDetailBindReason enum.
+func (e RelayNodeGatewayAccountBindingDetailBindReason) Valid() bool {
+	switch e {
+	case RelayNodeGatewayAccountBindingDetailBindReasonAdministratorBind:
+		return true
+	case RelayNodeGatewayAccountBindingDetailBindReasonAdministratorRebind:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RelayNodeGatewayAccountBindingDetailEndReason.
+const (
+	RelayNodeGatewayAccountBindingDetailEndReasonAdministratorRebind RelayNodeGatewayAccountBindingDetailEndReason = "administrator_rebind"
+	RelayNodeGatewayAccountBindingDetailEndReasonAdministratorUnbind RelayNodeGatewayAccountBindingDetailEndReason = "administrator_unbind"
+)
+
+// Valid indicates whether the value is a known member of the RelayNodeGatewayAccountBindingDetailEndReason enum.
+func (e RelayNodeGatewayAccountBindingDetailEndReason) Valid() bool {
+	switch e {
+	case RelayNodeGatewayAccountBindingDetailEndReasonAdministratorRebind:
+		return true
+	case RelayNodeGatewayAccountBindingDetailEndReasonAdministratorUnbind:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionResponseState.
 const (
 	Authenticated SessionResponseState = "authenticated"
@@ -806,6 +947,13 @@ type AdministratorListResponse struct {
 // AdministratorStatus defines model for AdministratorStatus.
 type AdministratorStatus string
 
+// BindRelayNodeRequest defines model for BindRelayNodeRequest.
+type BindRelayNodeRequest struct {
+	GatewayAccountId  int64              `json:"gateway_account_id"`
+	GatewayInstanceId openapi_types.UUID `json:"gateway_instance_id"`
+	RelayNodeId       openapi_types.UUID `json:"relay_node_id"`
+}
+
 // BootstrapCompleteResponse defines model for BootstrapCompleteResponse.
 type BootstrapCompleteResponse struct {
 	RecoveryCodes *RecoveryCodes                  `json:"recovery_codes,omitempty"`
@@ -891,6 +1039,36 @@ type ErrorResponse struct {
 	Message           string    `json:"message"`
 	RequestId         string    `json:"request_id"`
 	RetryAfterSeconds *int      `json:"retry_after_seconds,omitempty"`
+}
+
+// GatewayAccountCentricBindingItem defines model for GatewayAccountCentricBindingItem.
+type GatewayAccountCentricBindingItem struct {
+	AccountContext   GatewayAccountContext                 `json:"account_context"`
+	BoundRelayNodeId *openapi_types.UUID                   `json:"bound_relay_node_id,omitempty"`
+	ContextSource    RelayBindingContextSource             `json:"context_source"`
+	CurrentBinding   *RelayNodeGatewayAccountBindingDetail `json:"current_binding,omitempty"`
+	GatewayAccountId int64                                 `json:"gateway_account_id"`
+	Resolution       RelayBindingResolution                `json:"resolution"`
+}
+
+// GatewayAccountContext defines model for GatewayAccountContext.
+type GatewayAccountContext struct {
+	AccountId int64   `json:"account_id"`
+	Name      string  `json:"name"`
+	Platform  string  `json:"platform"`
+	Status    string  `json:"status"`
+	Type      string  `json:"type"`
+	Url       *string `json:"url,omitempty"`
+}
+
+// GatewayAccountRelayBindingsResponse defines model for GatewayAccountRelayBindingsResponse.
+type GatewayAccountRelayBindingsResponse struct {
+	Accounts                 []GatewayAccountCentricBindingItem `json:"accounts"`
+	CurrentSnapshotId        *openapi_types.UUID                `json:"current_snapshot_id,omitempty"`
+	DirectoryFreshness       RelayBindingFreshness              `json:"directory_freshness"`
+	GatewayInstanceId        openapi_types.UUID                 `json:"gateway_instance_id"`
+	LastSuccessObservationAt *time.Time                         `json:"last_success_observation_at,omitempty"`
+	ObservedAt               time.Time                          `json:"observed_at"`
 }
 
 // GatewayAsset defines model for GatewayAsset.
@@ -1085,6 +1263,20 @@ type NodeMonitoringStatus struct {
 	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
 }
 
+// NodeRelayBindingResponse defines model for NodeRelayBindingResponse.
+type NodeRelayBindingResponse struct {
+	AccountContext           *GatewayAccountContext                `json:"account_context,omitempty"`
+	ContextSource            RelayBindingContextSource             `json:"context_source"`
+	CurrentBinding           *RelayNodeGatewayAccountBindingDetail `json:"current_binding,omitempty"`
+	DirectoryFreshness       RelayBindingFreshness                 `json:"directory_freshness"`
+	GatewayAccountId         *int64                                `json:"gateway_account_id,omitempty"`
+	GatewayInstanceId        *openapi_types.UUID                   `json:"gateway_instance_id,omitempty"`
+	LastSuccessObservationAt *time.Time                            `json:"last_success_observation_at,omitempty"`
+	ObservedAt               time.Time                             `json:"observed_at"`
+	RelayNodeId              openapi_types.UUID                    `json:"relay_node_id"`
+	Resolution               RelayBindingResolution                `json:"resolution"`
+}
+
 // NodeType defines model for NodeType.
 type NodeType = string
 
@@ -1119,6 +1311,13 @@ type ReauthenticateRequest struct {
 	Password  *string    `json:"password,omitempty"`
 }
 
+// RebindRelayNodeRequest defines model for RebindRelayNodeRequest.
+type RebindRelayNodeRequest struct {
+	NewGatewayAccountId  int64              `json:"new_gateway_account_id"`
+	NewGatewayInstanceId openapi_types.UUID `json:"new_gateway_instance_id"`
+	RelayNodeId          openapi_types.UUID `json:"relay_node_id"`
+}
+
 // RecoveryCodes defines model for RecoveryCodes.
 type RecoveryCodes = []string
 
@@ -1130,6 +1329,47 @@ type RecoveryCodesResponse struct {
 
 // RecoveryCodesResponseRemaining defines model for RecoveryCodesResponse.Remaining.
 type RecoveryCodesResponseRemaining int
+
+// RelayBindingContextSource defines model for RelayBindingContextSource.
+type RelayBindingContextSource string
+
+// RelayBindingFreshness defines model for RelayBindingFreshness.
+type RelayBindingFreshness string
+
+// RelayBindingMutationResponse defines model for RelayBindingMutationResponse.
+type RelayBindingMutationResponse struct {
+	Binding         *RelayNodeGatewayAccountBindingDetail `json:"binding,omitempty"`
+	OperationAt     time.Time                             `json:"operation_at"`
+	Outcome         RelayBindingMutationResponseOutcome   `json:"outcome"`
+	PreviousBinding *RelayNodeGatewayAccountBindingDetail `json:"previous_binding,omitempty"`
+}
+
+// RelayBindingMutationResponseOutcome defines model for RelayBindingMutationResponse.Outcome.
+type RelayBindingMutationResponseOutcome string
+
+// RelayBindingResolution defines model for RelayBindingResolution.
+type RelayBindingResolution string
+
+// RelayNodeGatewayAccountBindingDetail defines model for RelayNodeGatewayAccountBindingDetail.
+type RelayNodeGatewayAccountBindingDetail struct {
+	BindReason         RelayNodeGatewayAccountBindingDetailBindReason `json:"bind_reason"`
+	BindingId          openapi_types.UUID                             `json:"binding_id"`
+	BoundAt            time.Time                                      `json:"bound_at"`
+	BoundBy            openapi_types.UUID                             `json:"bound_by"`
+	EndReason          *RelayNodeGatewayAccountBindingDetailEndReason `json:"end_reason,omitempty"`
+	EndedAt            *time.Time                                     `json:"ended_at,omitempty"`
+	EndedBy            *openapi_types.UUID                            `json:"ended_by,omitempty"`
+	EvidenceSnapshotId openapi_types.UUID                             `json:"evidence_snapshot_id"`
+	GatewayAccountId   int64                                          `json:"gateway_account_id"`
+	GatewayInstanceId  openapi_types.UUID                             `json:"gateway_instance_id"`
+	RelayNodeId        openapi_types.UUID                             `json:"relay_node_id"`
+}
+
+// RelayNodeGatewayAccountBindingDetailBindReason defines model for RelayNodeGatewayAccountBindingDetail.BindReason.
+type RelayNodeGatewayAccountBindingDetailBindReason string
+
+// RelayNodeGatewayAccountBindingDetailEndReason defines model for RelayNodeGatewayAccountBindingDetail.EndReason.
+type RelayNodeGatewayAccountBindingDetailEndReason string
 
 // SessionMfaAssurance defines model for SessionMfaAssurance.
 type SessionMfaAssurance struct {
@@ -1180,6 +1420,27 @@ type TotpEnrollmentDigits int
 // TotpEnrollmentPeriodSeconds defines model for TotpEnrollment.PeriodSeconds.
 type TotpEnrollmentPeriodSeconds int
 
+// UnbindRelayNodeRequest defines model for UnbindRelayNodeRequest.
+type UnbindRelayNodeRequest struct {
+	RelayNodeId openapi_types.UUID `json:"relay_node_id"`
+}
+
+// UnresolvedRelayBindingItem defines model for UnresolvedRelayBindingItem.
+type UnresolvedRelayBindingItem struct {
+	ContextSource            RelayBindingContextSource            `json:"context_source"`
+	CurrentBinding           RelayNodeGatewayAccountBindingDetail `json:"current_binding"`
+	DirectoryFreshness       RelayBindingFreshness                `json:"directory_freshness"`
+	LastKnownAccountContext  *GatewayAccountContext               `json:"last_known_account_context,omitempty"`
+	LastSuccessObservationAt *time.Time                           `json:"last_success_observation_at,omitempty"`
+	ObservedAt               time.Time                            `json:"observed_at"`
+	Resolution               RelayBindingResolution               `json:"resolution"`
+}
+
+// UnresolvedRelayBindingsResponse defines model for UnresolvedRelayBindingsResponse.
+type UnresolvedRelayBindingsResponse struct {
+	Items []UnresolvedRelayBindingItem `json:"items"`
+}
+
 // AdministratorId defines model for AdministratorId.
 type AdministratorId = openapi_types.UUID
 
@@ -1191,6 +1452,9 @@ type BootstrapSecret = string
 
 // CsrfToken defines model for CsrfToken.
 type CsrfToken = string
+
+// GatewayInstanceId defines model for GatewayInstanceId.
+type GatewayInstanceId = openapi_types.UUID
 
 // NodeInstanceId defines model for NodeInstanceId.
 type NodeInstanceId = openapi_types.UUID
@@ -1311,6 +1575,24 @@ type ListJobsParams struct {
 	Limit       *int       `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// BindRelayNodeParams defines parameters for BindRelayNode.
+type BindRelayNodeParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RebindRelayNodeParams defines parameters for RebindRelayNode.
+type RebindRelayNodeParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// UnbindRelayNodeParams defines parameters for UnbindRelayNode.
+type UnbindRelayNodeParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // QueryAccountInventoryJSONRequestBody defines body for QueryAccountInventory for application/json ContentType.
 type QueryAccountInventoryJSONRequestBody = AccountInventoryQueryRequest
 
@@ -1349,6 +1631,15 @@ type CompleteBootstrapJSONRequestBody = TotpConfirmationRequest
 
 // StartBootstrapJSONRequestBody defines body for StartBootstrap for application/json ContentType.
 type StartBootstrapJSONRequestBody = BootstrapStartRequest
+
+// BindRelayNodeJSONRequestBody defines body for BindRelayNode for application/json ContentType.
+type BindRelayNodeJSONRequestBody = BindRelayNodeRequest
+
+// RebindRelayNodeJSONRequestBody defines body for RebindRelayNode for application/json ContentType.
+type RebindRelayNodeJSONRequestBody = RebindRelayNodeRequest
+
+// UnbindRelayNodeJSONRequestBody defines body for UnbindRelayNode for application/json ContentType.
+type UnbindRelayNodeJSONRequestBody = UnbindRelayNodeRequest
 
 // AsAdministratorActivationStartRequest returns the union data inside the AdministratorActivationRequest as a AdministratorActivationStartRequest
 func (t AdministratorActivationRequest) AsAdministratorActivationStartRequest() (AdministratorActivationStartRequest, error) {
@@ -1736,6 +2027,24 @@ type ServerInterface interface {
 	// GetJob Read one durable Control job
 	// (GET /api/jobs/{job_id})
 	GetJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID)
+	// BindRelayNode Bind an unbound Relay Node to a fresh Gateway Account
+	// (POST /api/relay-bindings/bind)
+	BindRelayNode(w http.ResponseWriter, r *http.Request, params BindRelayNodeParams)
+	// GetGatewayAccountRelayBindings Read Gateway Account-centric binding views for one Gateway Instance
+	// (GET /api/relay-bindings/gateways/{instance_id})
+	GetGatewayAccountRelayBindings(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId)
+	// GetNodeRelayBinding Read current Gateway Account binding and resolution for one Relay Node
+	// (GET /api/relay-bindings/nodes/{instance_id})
+	GetNodeRelayBinding(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId)
+	// RebindRelayNode Atomically rebind a currently bound Relay Node to another fresh Gateway Account
+	// (POST /api/relay-bindings/rebind)
+	RebindRelayNode(w http.ResponseWriter, r *http.Request, params RebindRelayNodeParams)
+	// UnbindRelayNode Unbind a currently bound Relay Node
+	// (POST /api/relay-bindings/unbind)
+	UnbindRelayNode(w http.ResponseWriter, r *http.Request, params UnbindRelayNodeParams)
+	// ListUnresolvedRelayBindings List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
+	// (GET /api/relay-bindings/unresolved)
+	ListUnresolvedRelayBindings(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -1901,6 +2210,42 @@ func (_ Unimplemented) ListJobs(w http.ResponseWriter, r *http.Request, params L
 // GetJob Read one durable Control job
 // (GET /api/jobs/{job_id})
 func (_ Unimplemented) GetJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// BindRelayNode Bind an unbound Relay Node to a fresh Gateway Account
+// (POST /api/relay-bindings/bind)
+func (_ Unimplemented) BindRelayNode(w http.ResponseWriter, r *http.Request, params BindRelayNodeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGatewayAccountRelayBindings Read Gateway Account-centric binding views for one Gateway Instance
+// (GET /api/relay-bindings/gateways/{instance_id})
+func (_ Unimplemented) GetGatewayAccountRelayBindings(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetNodeRelayBinding Read current Gateway Account binding and resolution for one Relay Node
+// (GET /api/relay-bindings/nodes/{instance_id})
+func (_ Unimplemented) GetNodeRelayBinding(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RebindRelayNode Atomically rebind a currently bound Relay Node to another fresh Gateway Account
+// (POST /api/relay-bindings/rebind)
+func (_ Unimplemented) RebindRelayNode(w http.ResponseWriter, r *http.Request, params RebindRelayNodeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UnbindRelayNode Unbind a currently bound Relay Node
+// (POST /api/relay-bindings/unbind)
+func (_ Unimplemented) UnbindRelayNode(w http.ResponseWriter, r *http.Request, params UnbindRelayNodeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListUnresolvedRelayBindings List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
+// (GET /api/relay-bindings/unresolved)
+func (_ Unimplemented) ListUnresolvedRelayBindings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2942,6 +3287,207 @@ func (siw *ServerInterfaceWrapper) GetJob(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// BindRelayNode operation middleware
+func (siw *ServerInterfaceWrapper) BindRelayNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BindRelayNodeParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BindRelayNode(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGatewayAccountRelayBindings operation middleware
+func (siw *ServerInterfaceWrapper) GetGatewayAccountRelayBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGatewayAccountRelayBindings(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetNodeRelayBinding operation middleware
+func (siw *ServerInterfaceWrapper) GetNodeRelayBinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetNodeRelayBinding(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RebindRelayNode operation middleware
+func (siw *ServerInterfaceWrapper) RebindRelayNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RebindRelayNodeParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RebindRelayNode(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnbindRelayNode operation middleware
+func (siw *ServerInterfaceWrapper) UnbindRelayNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UnbindRelayNodeParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnbindRelayNode(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUnresolvedRelayBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListUnresolvedRelayBindings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUnresolvedRelayBindings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -3135,6 +3681,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/jobs/{job_id}", wrapper.GetJob)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/relay-bindings/nodes/{instance_id}", wrapper.GetNodeRelayBinding)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/relay-bindings/gateways/{instance_id}", wrapper.GetGatewayAccountRelayBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/relay-bindings/unresolved", wrapper.ListUnresolvedRelayBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/relay-bindings/bind", wrapper.BindRelayNode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/relay-bindings/rebind", wrapper.RebindRelayNode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/relay-bindings/unbind", wrapper.UnbindRelayNode)
 	})
 
 	return r

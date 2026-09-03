@@ -664,6 +664,9 @@ func TestRelayBindingRepository_Unbind(t *testing.T) {
 		if res.Outcome != jobstore.RelayBindingOutcomeAlreadyUnbound {
 			t.Fatalf("expected already_unbound, got %s", res.Outcome)
 		}
+		if res.OperationAt.IsZero() {
+			t.Fatal("already_unbound operation time is zero")
+		}
 
 		// Ensure no audit log was created for this request
 		var auditCount int
@@ -1696,4 +1699,3 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		}
 	})
 }
-

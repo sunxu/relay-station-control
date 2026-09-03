@@ -23,14 +23,14 @@
 
 ## 4. Security, concurrency, and acceptance
 
-- [ ] 4.1 接入既有 `super_admin`、CSRF、no-store 与审计边界；禁止 Secret、raw response、credential、unsafe URL 和原始错误泄漏
-- [ ] 4.2 补 PostgreSQL concurrency tests，证明同 Node 和同 Account 并发写入最多一个成功，rebind 无中间双绑定
-- [ ] 4.3 补 identity negative tests，证明 name/url/platform/type/status 相似或相同不能替代 `accounts.id`
-- [ ] 4.4 补 stale snapshot、missing/deleted Account、Node/Gateway mismatch、Node/admin delete RESTRICT、temporal immutability 和固定 audit shape tests
-- [ ] 4.5 验证 binding 不修改 Directory snapshot/current state、Sub2API/CLIProxyAPI 配置，不进入请求调度或 duplicate ownership
+- [x] 4.1 接入既有 `super_admin`、CSRF、no-store 与审计边界；禁止 Secret、raw response、credential、unsafe URL 和原始错误泄漏
+- [x] 4.2 补 PostgreSQL concurrency tests，证明同 Node 和同 Account 并发写入最多一个成功，rebind 无中间双绑定
+- [x] 4.3 补 identity negative tests，证明 name/url/platform/type/status 相似或相同不能替代 `accounts.id`
+- [x] 4.4 补 stale snapshot、missing/deleted Account、Node/Gateway mismatch、Node/admin delete RESTRICT、temporal immutability 和固定 audit shape tests
+- [x] 4.5 验证 binding 不修改 Directory snapshot/current state、Sub2API/CLIProxyAPI 配置，不进入请求调度或 duplicate ownership
 
 ## 5. Validation and documentation
 
-- [ ] 5.1 补最小 Migration up/down/up、store integration、API security 和 redaction acceptance
+- [x] 5.1 补最小 Migration up/down/up、store integration、API security 和 redaction acceptance
 - [ ] 5.2 更新 runbook，覆盖 bind/rebind/unbind、freshness、unresolved/unknown、冲突和 rollback
 - [ ] 5.3 运行 `make generate`、相关测试、`openspec validate add-relay-node-gateway-account-binding --type change --strict --no-interactive` 和 `git diff --check`

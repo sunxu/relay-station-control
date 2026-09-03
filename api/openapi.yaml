@@ -18,6 +18,7 @@ tags:
   - name: assets
   - name: account-inventory
   - name: jobs
+  - name: relay-bindings
 paths:
   /api/healthz:
     get:
@@ -977,6 +978,213 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/relay-bindings/nodes/{instance_id}:
+    get:
+      operationId: getNodeRelayBinding
+      summary: Read current Gateway Account binding and resolution for one Relay Node
+      description: |
+        Returns query-derived resolution and redacted context for the specified Relay Node.
+        Never contacts Relay Node or Gateway, and never returns credentials or secrets.
+      tags: [relay-bindings]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+      responses:
+        "200":
+          description: Current Node-centric binding view.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeRelayBindingResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/relay-bindings/gateways/{instance_id}:
+    get:
+      operationId: getGatewayAccountRelayBindings
+      summary: Read Gateway Account-centric binding views for one Gateway Instance
+      description: |
+        Returns the complete current Directory snapshot accounts and their bound Nodes.
+        Never returns credentials or secrets.
+      tags: [relay-bindings]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+      responses:
+        "200":
+          description: Gateway Account-centric binding envelope.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayAccountRelayBindingsResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/relay-bindings/unresolved:
+    get:
+      operationId: listUnresolvedRelayBindings
+      summary: List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
+      description: |
+        Returns all unresolved binding relations across registered Gateways.
+      tags: [relay-bindings]
+      responses:
+        "200":
+          description: List of unresolved binding relations.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnresolvedRelayBindingsResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/relay-bindings/bind:
+    post:
+      operationId: bindRelayNode
+      summary: Bind an unbound Relay Node to a fresh Gateway Account
+      description: |
+        Requires super_admin session and CSRF proof. Validates Directory freshness (<=540s)
+        and account presence within a single transactional boundary.
+      tags: [relay-bindings]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindRelayNodeRequest"
+      responses:
+        "200":
+          description: Relay Node successfully bound to Gateway Account.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayBindingMutationResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/relay-bindings/rebind:
+    post:
+      operationId: rebindRelayNode
+      summary: Atomically rebind a currently bound Relay Node to another fresh Gateway Account
+      description: |
+        Requires super_admin session and CSRF proof. Closes the old interval and creates a new
+        interval in a single transaction with identical timestamp.
+      tags: [relay-bindings]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RebindRelayNodeRequest"
+      responses:
+        "200":
+          description: Relay Node successfully rebound to new Gateway Account.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayBindingMutationResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/relay-bindings/unbind:
+    post:
+      operationId: unbindRelayNode
+      summary: Unbind a currently bound Relay Node
+      description: |
+        Requires super_admin session and CSRF proof. Closes open interval with administrator_unbind.
+        Idempotent if already unbound.
+      tags: [relay-bindings]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnbindRelayNodeRequest"
+      responses:
+        "200":
+          description: Relay Node unbind mutation completed.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayBindingMutationResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     SessionCookie:
@@ -1050,6 +1258,13 @@ components:
         maximum: 200
         default: 50
     NodeInstanceId:
+      name: instance_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GatewayInstanceId:
       name: instance_id
       in: path
       required: true
@@ -2147,6 +2362,13 @@ components:
         - not_found
         - internal_error
         - temporarily_unavailable
+        - directory_unavailable
+        - directory_stale
+        - account_not_found
+        - node_conflict
+        - account_conflict
+        - already_unbound
+        - no_current_binding
 
     ErrorResponse:
       type: object
@@ -2168,3 +2390,289 @@ components:
           type: integer
           minimum: 1
           maximum: 86400
+
+    RelayBindingResolution:
+      type: string
+      enum: [unbound, resolved, unresolved, unknown]
+
+    RelayBindingFreshness:
+      type: string
+      enum: [fresh, stale, unavailable]
+
+    RelayBindingContextSource:
+      type: string
+      enum: [current, last_known, none]
+
+    GatewayAccountContext:
+      type: object
+      additionalProperties: false
+      required: [account_id, name, platform, type, status]
+      properties:
+        account_id:
+          type: integer
+          format: int64
+          minimum: 1
+        name:
+          type: string
+        platform:
+          type: string
+        type:
+          type: string
+        url:
+          type: [string, "null"]
+          format: uri
+        status:
+          type: string
+
+    RelayNodeGatewayAccountBindingDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - binding_id
+        - relay_node_id
+        - gateway_instance_id
+        - gateway_account_id
+        - evidence_snapshot_id
+        - bound_at
+        - bound_by
+        - bind_reason
+      properties:
+        binding_id:
+          type: string
+          format: uuid
+        relay_node_id:
+          type: string
+          format: uuid
+        gateway_instance_id:
+          type: string
+          format: uuid
+        gateway_account_id:
+          type: integer
+          format: int64
+          minimum: 1
+        evidence_snapshot_id:
+          type: string
+          format: uuid
+        bound_at:
+          type: string
+          format: date-time
+        bound_by:
+          type: string
+          format: uuid
+        bind_reason:
+          type: string
+          enum: [administrator_bind, administrator_rebind]
+        ended_at:
+          type: [string, "null"]
+          format: date-time
+        ended_by:
+          type: [string, "null"]
+          format: uuid
+        end_reason:
+          type: [string, "null"]
+          enum: [administrator_unbind, administrator_rebind]
+
+    NodeRelayBindingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - relay_node_id
+        - resolution
+        - directory_freshness
+        - context_source
+        - observed_at
+      properties:
+        relay_node_id:
+          type: string
+          format: uuid
+        current_binding:
+          oneOf:
+            - $ref: "#/components/schemas/RelayNodeGatewayAccountBindingDetail"
+            - type: "null"
+        gateway_instance_id:
+          type: [string, "null"]
+          format: uuid
+        gateway_account_id:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+        resolution:
+          $ref: "#/components/schemas/RelayBindingResolution"
+        directory_freshness:
+          $ref: "#/components/schemas/RelayBindingFreshness"
+        last_success_observation_at:
+          type: [string, "null"]
+          format: date-time
+        context_source:
+          $ref: "#/components/schemas/RelayBindingContextSource"
+        account_context:
+          oneOf:
+            - $ref: "#/components/schemas/GatewayAccountContext"
+            - type: "null"
+        observed_at:
+          type: string
+          format: date-time
+
+    GatewayAccountCentricBindingItem:
+      type: object
+      additionalProperties: false
+      required:
+        - gateway_account_id
+        - account_context
+        - resolution
+        - context_source
+      properties:
+        gateway_account_id:
+          type: integer
+          format: int64
+          minimum: 1
+        account_context:
+          $ref: "#/components/schemas/GatewayAccountContext"
+        bound_relay_node_id:
+          type: [string, "null"]
+          format: uuid
+        current_binding:
+          oneOf:
+            - $ref: "#/components/schemas/RelayNodeGatewayAccountBindingDetail"
+            - type: "null"
+        resolution:
+          $ref: "#/components/schemas/RelayBindingResolution"
+        context_source:
+          $ref: "#/components/schemas/RelayBindingContextSource"
+
+    GatewayAccountRelayBindingsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - gateway_instance_id
+        - directory_freshness
+        - observed_at
+        - accounts
+      properties:
+        gateway_instance_id:
+          type: string
+          format: uuid
+        directory_freshness:
+          $ref: "#/components/schemas/RelayBindingFreshness"
+        current_snapshot_id:
+          type: [string, "null"]
+          format: uuid
+        last_success_observation_at:
+          type: [string, "null"]
+          format: date-time
+        observed_at:
+          type: string
+          format: date-time
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/GatewayAccountCentricBindingItem"
+
+    UnresolvedRelayBindingItem:
+      type: object
+      additionalProperties: false
+      required:
+        - current_binding
+        - resolution
+        - directory_freshness
+        - context_source
+        - observed_at
+      properties:
+        current_binding:
+          $ref: "#/components/schemas/RelayNodeGatewayAccountBindingDetail"
+        resolution:
+          $ref: "#/components/schemas/RelayBindingResolution"
+        directory_freshness:
+          $ref: "#/components/schemas/RelayBindingFreshness"
+        last_success_observation_at:
+          type: [string, "null"]
+          format: date-time
+        context_source:
+          $ref: "#/components/schemas/RelayBindingContextSource"
+        last_known_account_context:
+          oneOf:
+            - $ref: "#/components/schemas/GatewayAccountContext"
+            - type: "null"
+        observed_at:
+          type: string
+          format: date-time
+
+    UnresolvedRelayBindingsResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnresolvedRelayBindingItem"
+
+    BindRelayNodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - relay_node_id
+        - gateway_instance_id
+        - gateway_account_id
+      properties:
+        relay_node_id:
+          type: string
+          format: uuid
+        gateway_instance_id:
+          type: string
+          format: uuid
+        gateway_account_id:
+          type: integer
+          format: int64
+          minimum: 1
+
+    RebindRelayNodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - relay_node_id
+        - new_gateway_instance_id
+        - new_gateway_account_id
+      properties:
+        relay_node_id:
+          type: string
+          format: uuid
+        new_gateway_instance_id:
+          type: string
+          format: uuid
+        new_gateway_account_id:
+          type: integer
+          format: int64
+          minimum: 1
+
+    UnbindRelayNodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - relay_node_id
+      properties:
+        relay_node_id:
+          type: string
+          format: uuid
+
+    RelayBindingMutationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - outcome
+        - operation_at
+      properties:
+        outcome:
+          type: string
+          enum: [success, already_unbound]
+        binding:
+          oneOf:
+            - $ref: "#/components/schemas/RelayNodeGatewayAccountBindingDetail"
+            - type: "null"
+        previous_binding:
+          oneOf:
+            - $ref: "#/components/schemas/RelayNodeGatewayAccountBindingDetail"
+            - type: "null"
+        operation_at:
+          type: string
+          format: date-time

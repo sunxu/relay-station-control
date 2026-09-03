@@ -818,6 +818,13 @@ export const ErrorCode = {
   not_found: 'not_found',
   internal_error: 'internal_error',
   temporarily_unavailable: 'temporarily_unavailable',
+  directory_unavailable: 'directory_unavailable',
+  directory_stale: 'directory_stale',
+  account_not_found: 'account_not_found',
+  node_conflict: 'node_conflict',
+  account_conflict: 'account_conflict',
+  already_unbound: 'already_unbound',
+  no_current_binding: 'no_current_binding',
 } as const;
 
 export interface ErrorResponse {
@@ -838,6 +845,171 @@ export interface ErrorResponse {
      * @maximum 86400
      */
   retry_after_seconds?: number;
+}
+
+export type RelayBindingResolution = typeof RelayBindingResolution[keyof typeof RelayBindingResolution];
+
+
+export const RelayBindingResolution = {
+  unbound: 'unbound',
+  resolved: 'resolved',
+  unresolved: 'unresolved',
+  unknown: 'unknown',
+} as const;
+
+export type RelayBindingFreshness = typeof RelayBindingFreshness[keyof typeof RelayBindingFreshness];
+
+
+export const RelayBindingFreshness = {
+  fresh: 'fresh',
+  stale: 'stale',
+  unavailable: 'unavailable',
+} as const;
+
+export type RelayBindingContextSource = typeof RelayBindingContextSource[keyof typeof RelayBindingContextSource];
+
+
+export const RelayBindingContextSource = {
+  current: 'current',
+  last_known: 'last_known',
+  none: 'none',
+} as const;
+
+export interface GatewayAccountContext {
+  /** @minimum 1 */
+  account_id: number;
+  name: string;
+  platform: string;
+  type: string;
+  /** @nullable */
+  url?: string | null;
+  status: string;
+}
+
+export type RelayNodeGatewayAccountBindingDetailBindReason = typeof RelayNodeGatewayAccountBindingDetailBindReason[keyof typeof RelayNodeGatewayAccountBindingDetailBindReason];
+
+
+export const RelayNodeGatewayAccountBindingDetailBindReason = {
+  administrator_bind: 'administrator_bind',
+  administrator_rebind: 'administrator_rebind',
+} as const;
+
+/**
+ * @nullable
+ */
+export type RelayNodeGatewayAccountBindingDetailEndReason = typeof RelayNodeGatewayAccountBindingDetailEndReason[keyof typeof RelayNodeGatewayAccountBindingDetailEndReason] | null;
+
+
+export const RelayNodeGatewayAccountBindingDetailEndReason = {
+  administrator_unbind: 'administrator_unbind',
+  administrator_rebind: 'administrator_rebind',
+} as const;
+
+export interface RelayNodeGatewayAccountBindingDetail {
+  binding_id: string;
+  relay_node_id: string;
+  gateway_instance_id: string;
+  /** @minimum 1 */
+  gateway_account_id: number;
+  evidence_snapshot_id: string;
+  bound_at: string;
+  bound_by: string;
+  bind_reason: RelayNodeGatewayAccountBindingDetailBindReason;
+  /** @nullable */
+  ended_at?: string | null;
+  /** @nullable */
+  ended_by?: string | null;
+  /** @nullable */
+  end_reason?: RelayNodeGatewayAccountBindingDetailEndReason;
+}
+
+export interface NodeRelayBindingResponse {
+  relay_node_id: string;
+  current_binding?: RelayNodeGatewayAccountBindingDetail | null;
+  /** @nullable */
+  gateway_instance_id?: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  gateway_account_id?: number | null;
+  resolution: RelayBindingResolution;
+  directory_freshness: RelayBindingFreshness;
+  /** @nullable */
+  last_success_observation_at?: string | null;
+  context_source: RelayBindingContextSource;
+  account_context?: GatewayAccountContext | null;
+  observed_at: string;
+}
+
+export interface GatewayAccountCentricBindingItem {
+  /** @minimum 1 */
+  gateway_account_id: number;
+  account_context: GatewayAccountContext;
+  /** @nullable */
+  bound_relay_node_id?: string | null;
+  current_binding?: RelayNodeGatewayAccountBindingDetail | null;
+  resolution: RelayBindingResolution;
+  context_source: RelayBindingContextSource;
+}
+
+export interface GatewayAccountRelayBindingsResponse {
+  gateway_instance_id: string;
+  directory_freshness: RelayBindingFreshness;
+  /** @nullable */
+  current_snapshot_id?: string | null;
+  /** @nullable */
+  last_success_observation_at?: string | null;
+  observed_at: string;
+  accounts: GatewayAccountCentricBindingItem[];
+}
+
+export interface UnresolvedRelayBindingItem {
+  current_binding: RelayNodeGatewayAccountBindingDetail;
+  resolution: RelayBindingResolution;
+  directory_freshness: RelayBindingFreshness;
+  /** @nullable */
+  last_success_observation_at?: string | null;
+  context_source: RelayBindingContextSource;
+  last_known_account_context?: GatewayAccountContext | null;
+  observed_at: string;
+}
+
+export interface UnresolvedRelayBindingsResponse {
+  items: UnresolvedRelayBindingItem[];
+}
+
+export interface BindRelayNodeRequest {
+  relay_node_id: string;
+  gateway_instance_id: string;
+  /** @minimum 1 */
+  gateway_account_id: number;
+}
+
+export interface RebindRelayNodeRequest {
+  relay_node_id: string;
+  new_gateway_instance_id: string;
+  /** @minimum 1 */
+  new_gateway_account_id: number;
+}
+
+export interface UnbindRelayNodeRequest {
+  relay_node_id: string;
+}
+
+export type RelayBindingMutationResponseOutcome = typeof RelayBindingMutationResponseOutcome[keyof typeof RelayBindingMutationResponseOutcome];
+
+
+export const RelayBindingMutationResponseOutcome = {
+  success: 'success',
+  already_unbound: 'already_unbound',
+} as const;
+
+export interface RelayBindingMutationResponse {
+  outcome: RelayBindingMutationResponseOutcome;
+  binding?: RelayNodeGatewayAccountBindingDetail | null;
+  previous_binding?: RelayNodeGatewayAccountBindingDetail | null;
+  operation_at: string;
 }
 
 /**
@@ -4416,3 +4588,818 @@ export function useGetJob<TData = Awaited<ReturnType<typeof getJob>>, TError = E
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export type getNodeRelayBindingResponse200 = {
+  data: NodeRelayBindingResponse
+  status: 200
+}
+
+export type getNodeRelayBindingResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getNodeRelayBindingResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getNodeRelayBindingResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getNodeRelayBindingResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getNodeRelayBindingResponseSuccess = (getNodeRelayBindingResponse200) & {
+  headers: Headers;
+};
+export type getNodeRelayBindingResponseError = (getNodeRelayBindingResponse400 | getNodeRelayBindingResponse401 | getNodeRelayBindingResponse404 | getNodeRelayBindingResponse503) & {
+  headers: Headers;
+};
+
+export type getNodeRelayBindingResponse = (getNodeRelayBindingResponseSuccess | getNodeRelayBindingResponseError)
+
+export const getGetNodeRelayBindingUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/relay-bindings/nodes/${instanceId}`
+}
+
+/**
+ * Returns query-derived resolution and redacted context for the specified Relay Node.
+ * Never contacts Relay Node or Gateway, and never returns credentials or secrets.
+ * @summary Read current Gateway Account binding and resolution for one Relay Node
+ */
+export const getNodeRelayBinding = async (instanceId: string, options?: RequestInit): Promise<getNodeRelayBindingResponse> => {
+
+  const res = await fetch(getGetNodeRelayBindingUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNodeRelayBindingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNodeRelayBindingResponse
+}
+
+
+
+
+
+export const getGetNodeRelayBindingQueryKey = (instanceId: string,) => {
+    return [
+    `/api/relay-bindings/nodes/${instanceId}`
+    ] as const;
+    }
+
+
+export const getGetNodeRelayBindingQueryOptions = <TData = Awaited<ReturnType<typeof getNodeRelayBinding>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeRelayBinding>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeRelayBindingQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeRelayBinding>>> = ({ signal }) => getNodeRelayBinding(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeRelayBinding>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNodeRelayBindingQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeRelayBinding>>>
+export type GetNodeRelayBindingQueryError = ErrorResponse
+
+
+export function useGetNodeRelayBinding<TData = Awaited<ReturnType<typeof getNodeRelayBinding>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeRelayBinding>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeRelayBinding>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeRelayBinding>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeRelayBinding<TData = Awaited<ReturnType<typeof getNodeRelayBinding>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeRelayBinding>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeRelayBinding>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeRelayBinding>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeRelayBinding<TData = Awaited<ReturnType<typeof getNodeRelayBinding>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeRelayBinding>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read current Gateway Account binding and resolution for one Relay Node
+ */
+
+export function useGetNodeRelayBinding<TData = Awaited<ReturnType<typeof getNodeRelayBinding>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeRelayBinding>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNodeRelayBindingQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getGatewayAccountRelayBindingsResponse200 = {
+  data: GatewayAccountRelayBindingsResponse
+  status: 200
+}
+
+export type getGatewayAccountRelayBindingsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getGatewayAccountRelayBindingsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getGatewayAccountRelayBindingsResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getGatewayAccountRelayBindingsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getGatewayAccountRelayBindingsResponseSuccess = (getGatewayAccountRelayBindingsResponse200) & {
+  headers: Headers;
+};
+export type getGatewayAccountRelayBindingsResponseError = (getGatewayAccountRelayBindingsResponse400 | getGatewayAccountRelayBindingsResponse401 | getGatewayAccountRelayBindingsResponse404 | getGatewayAccountRelayBindingsResponse503) & {
+  headers: Headers;
+};
+
+export type getGatewayAccountRelayBindingsResponse = (getGatewayAccountRelayBindingsResponseSuccess | getGatewayAccountRelayBindingsResponseError)
+
+export const getGetGatewayAccountRelayBindingsUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/relay-bindings/gateways/${instanceId}`
+}
+
+/**
+ * Returns the complete current Directory snapshot accounts and their bound Nodes.
+ * Never returns credentials or secrets.
+ * @summary Read Gateway Account-centric binding views for one Gateway Instance
+ */
+export const getGatewayAccountRelayBindings = async (instanceId: string, options?: RequestInit): Promise<getGatewayAccountRelayBindingsResponse> => {
+
+  const res = await fetch(getGetGatewayAccountRelayBindingsUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getGatewayAccountRelayBindingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getGatewayAccountRelayBindingsResponse
+}
+
+
+
+
+
+export const getGetGatewayAccountRelayBindingsQueryKey = (instanceId: string,) => {
+    return [
+    `/api/relay-bindings/gateways/${instanceId}`
+    ] as const;
+    }
+
+
+export const getGetGatewayAccountRelayBindingsQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGatewayAccountRelayBindingsQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>> = ({ signal }) => getGatewayAccountRelayBindings(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGatewayAccountRelayBindingsQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>>
+export type GetGatewayAccountRelayBindingsQueryError = ErrorResponse
+
+
+export function useGetGatewayAccountRelayBindings<TData = Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayAccountRelayBindings<TData = Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayAccountRelayBindings<TData = Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read Gateway Account-centric binding views for one Gateway Instance
+ */
+
+export function useGetGatewayAccountRelayBindings<TData = Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAccountRelayBindings>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGatewayAccountRelayBindingsQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listUnresolvedRelayBindingsResponse200 = {
+  data: UnresolvedRelayBindingsResponse
+  status: 200
+}
+
+export type listUnresolvedRelayBindingsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listUnresolvedRelayBindingsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listUnresolvedRelayBindingsResponseSuccess = (listUnresolvedRelayBindingsResponse200) & {
+  headers: Headers;
+};
+export type listUnresolvedRelayBindingsResponseError = (listUnresolvedRelayBindingsResponse401 | listUnresolvedRelayBindingsResponse503) & {
+  headers: Headers;
+};
+
+export type listUnresolvedRelayBindingsResponse = (listUnresolvedRelayBindingsResponseSuccess | listUnresolvedRelayBindingsResponseError)
+
+export const getListUnresolvedRelayBindingsUrl = () => {
+
+
+
+
+  return `/api/relay-bindings/unresolved`
+}
+
+/**
+ * Returns all unresolved binding relations across registered Gateways.
+ * @summary List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
+ */
+export const listUnresolvedRelayBindings = async ( options?: RequestInit): Promise<listUnresolvedRelayBindingsResponse> => {
+
+  const res = await fetch(getListUnresolvedRelayBindingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listUnresolvedRelayBindingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listUnresolvedRelayBindingsResponse
+}
+
+
+
+
+
+export const getListUnresolvedRelayBindingsQueryKey = () => {
+    return [
+    `/api/relay-bindings/unresolved`
+    ] as const;
+    }
+
+
+export const getListUnresolvedRelayBindingsQueryOptions = <TData = Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUnresolvedRelayBindingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>> = ({ signal }) => listUnresolvedRelayBindings({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListUnresolvedRelayBindingsQueryResult = NonNullable<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>>
+export type ListUnresolvedRelayBindingsQueryError = ErrorResponse
+
+
+export function useListUnresolvedRelayBindings<TData = Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUnresolvedRelayBindings>>,
+          TError,
+          Awaited<ReturnType<typeof listUnresolvedRelayBindings>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUnresolvedRelayBindings<TData = Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUnresolvedRelayBindings>>,
+          TError,
+          Awaited<ReturnType<typeof listUnresolvedRelayBindings>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUnresolvedRelayBindings<TData = Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
+ */
+
+export function useListUnresolvedRelayBindings<TData = Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnresolvedRelayBindings>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListUnresolvedRelayBindingsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type bindRelayNodeResponse200 = {
+  data: RelayBindingMutationResponse
+  status: 200
+}
+
+export type bindRelayNodeResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type bindRelayNodeResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type bindRelayNodeResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type bindRelayNodeResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type bindRelayNodeResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type bindRelayNodeResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type bindRelayNodeResponseSuccess = (bindRelayNodeResponse200) & {
+  headers: Headers;
+};
+export type bindRelayNodeResponseError = (bindRelayNodeResponse400 | bindRelayNodeResponse401 | bindRelayNodeResponse403 | bindRelayNodeResponse404 | bindRelayNodeResponse409 | bindRelayNodeResponse503) & {
+  headers: Headers;
+};
+
+export type bindRelayNodeResponse = (bindRelayNodeResponseSuccess | bindRelayNodeResponseError)
+
+export const getBindRelayNodeUrl = () => {
+
+
+
+
+  return `/api/relay-bindings/bind`
+}
+
+/**
+ * Requires super_admin session and CSRF proof. Validates Directory freshness (<=540s)
+ * and account presence within a single transactional boundary.
+ * @summary Bind an unbound Relay Node to a fresh Gateway Account
+ */
+export const bindRelayNode = async (bindRelayNodeRequest: BindRelayNodeRequest, options?: RequestInit): Promise<bindRelayNodeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getBindRelayNodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(bindRelayNodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bindRelayNodeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bindRelayNodeResponse
+}
+
+
+
+
+
+export const getBindRelayNodeMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bindRelayNode>>, TError,BindRelayNodeMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof bindRelayNode>>, TError,BindRelayNodeMutationVariables, TContext> => {
+
+const mutationKey = ['bindRelayNode'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bindRelayNode>>, BindRelayNodeMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  bindRelayNode(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BindRelayNodeMutationResult = NonNullable<Awaited<ReturnType<typeof bindRelayNode>>>
+    export type BindRelayNodeMutationBody = BindRelayNodeRequest
+    export type BindRelayNodeMutationError = ErrorResponse
+    export type BindRelayNodeMutationVariables = {data: BindRelayNodeRequest}
+
+    /**
+ * @summary Bind an unbound Relay Node to a fresh Gateway Account
+ */
+export const useBindRelayNode = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bindRelayNode>>, TError,BindRelayNodeMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof bindRelayNode>>,
+        TError,
+        BindRelayNodeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getBindRelayNodeMutationOptions(options), queryClient);
+    }
+
+export type rebindRelayNodeResponse200 = {
+  data: RelayBindingMutationResponse
+  status: 200
+}
+
+export type rebindRelayNodeResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type rebindRelayNodeResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type rebindRelayNodeResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type rebindRelayNodeResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type rebindRelayNodeResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type rebindRelayNodeResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type rebindRelayNodeResponseSuccess = (rebindRelayNodeResponse200) & {
+  headers: Headers;
+};
+export type rebindRelayNodeResponseError = (rebindRelayNodeResponse400 | rebindRelayNodeResponse401 | rebindRelayNodeResponse403 | rebindRelayNodeResponse404 | rebindRelayNodeResponse409 | rebindRelayNodeResponse503) & {
+  headers: Headers;
+};
+
+export type rebindRelayNodeResponse = (rebindRelayNodeResponseSuccess | rebindRelayNodeResponseError)
+
+export const getRebindRelayNodeUrl = () => {
+
+
+
+
+  return `/api/relay-bindings/rebind`
+}
+
+/**
+ * Requires super_admin session and CSRF proof. Closes the old interval and creates a new
+ * interval in a single transaction with identical timestamp.
+ * @summary Atomically rebind a currently bound Relay Node to another fresh Gateway Account
+ */
+export const rebindRelayNode = async (rebindRelayNodeRequest: RebindRelayNodeRequest, options?: RequestInit): Promise<rebindRelayNodeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRebindRelayNodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rebindRelayNodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rebindRelayNodeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rebindRelayNodeResponse
+}
+
+
+
+
+
+export const getRebindRelayNodeMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rebindRelayNode>>, TError,RebindRelayNodeMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof rebindRelayNode>>, TError,RebindRelayNodeMutationVariables, TContext> => {
+
+const mutationKey = ['rebindRelayNode'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rebindRelayNode>>, RebindRelayNodeMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  rebindRelayNode(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RebindRelayNodeMutationResult = NonNullable<Awaited<ReturnType<typeof rebindRelayNode>>>
+    export type RebindRelayNodeMutationBody = RebindRelayNodeRequest
+    export type RebindRelayNodeMutationError = ErrorResponse
+    export type RebindRelayNodeMutationVariables = {data: RebindRelayNodeRequest}
+
+    /**
+ * @summary Atomically rebind a currently bound Relay Node to another fresh Gateway Account
+ */
+export const useRebindRelayNode = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rebindRelayNode>>, TError,RebindRelayNodeMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof rebindRelayNode>>,
+        TError,
+        RebindRelayNodeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRebindRelayNodeMutationOptions(options), queryClient);
+    }
+
+export type unbindRelayNodeResponse200 = {
+  data: RelayBindingMutationResponse
+  status: 200
+}
+
+export type unbindRelayNodeResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type unbindRelayNodeResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type unbindRelayNodeResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type unbindRelayNodeResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type unbindRelayNodeResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type unbindRelayNodeResponseSuccess = (unbindRelayNodeResponse200) & {
+  headers: Headers;
+};
+export type unbindRelayNodeResponseError = (unbindRelayNodeResponse400 | unbindRelayNodeResponse401 | unbindRelayNodeResponse403 | unbindRelayNodeResponse404 | unbindRelayNodeResponse503) & {
+  headers: Headers;
+};
+
+export type unbindRelayNodeResponse = (unbindRelayNodeResponseSuccess | unbindRelayNodeResponseError)
+
+export const getUnbindRelayNodeUrl = () => {
+
+
+
+
+  return `/api/relay-bindings/unbind`
+}
+
+/**
+ * Requires super_admin session and CSRF proof. Closes open interval with administrator_unbind.
+ * Idempotent if already unbound.
+ * @summary Unbind a currently bound Relay Node
+ */
+export const unbindRelayNode = async (unbindRelayNodeRequest: UnbindRelayNodeRequest, options?: RequestInit): Promise<unbindRelayNodeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUnbindRelayNodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(unbindRelayNodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: unbindRelayNodeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as unbindRelayNodeResponse
+}
+
+
+
+
+
+export const getUnbindRelayNodeMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unbindRelayNode>>, TError,UnbindRelayNodeMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof unbindRelayNode>>, TError,UnbindRelayNodeMutationVariables, TContext> => {
+
+const mutationKey = ['unbindRelayNode'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unbindRelayNode>>, UnbindRelayNodeMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  unbindRelayNode(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnbindRelayNodeMutationResult = NonNullable<Awaited<ReturnType<typeof unbindRelayNode>>>
+    export type UnbindRelayNodeMutationBody = UnbindRelayNodeRequest
+    export type UnbindRelayNodeMutationError = ErrorResponse
+    export type UnbindRelayNodeMutationVariables = {data: UnbindRelayNodeRequest}
+
+    /**
+ * @summary Unbind a currently bound Relay Node
+ */
+export const useUnbindRelayNode = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unbindRelayNode>>, TError,UnbindRelayNodeMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof unbindRelayNode>>,
+        TError,
+        UnbindRelayNodeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUnbindRelayNodeMutationOptions(options), queryClient);
+    }

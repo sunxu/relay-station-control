@@ -128,9 +128,15 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodGet, "/api/assets/nodes/{instance_id}"}:       "getNodeAsset",
 		{http.MethodGet, "/api/assets/drivers"}:                   "listNodeDrivers",
 		{http.MethodGet, "/api/assets/provider-policies/current"}: "getCurrentProviderInventoryPolicy",
-		{http.MethodGet, "/api/jobs"}:                             "listJobs",
-		{http.MethodGet, "/api/jobs/{job_id}"}:                    "getJob",
-		{http.MethodPost, "/api/account-inventory/query"}:         "queryAccountInventory",
+		{http.MethodGet, "/api/jobs"}:                                 "listJobs",
+		{http.MethodGet, "/api/jobs/{job_id}"}:                        "getJob",
+		{http.MethodPost, "/api/account-inventory/query"}:             "queryAccountInventory",
+		{http.MethodGet, "/api/relay-bindings/nodes/{instance_id}"}:   "getNodeRelayBinding",
+		{http.MethodGet, "/api/relay-bindings/gateways/{instance_id}"}: "getGatewayAccountRelayBindings",
+		{http.MethodGet, "/api/relay-bindings/unresolved"}:            "listUnresolvedRelayBindings",
+		{http.MethodPost, "/api/relay-bindings/bind"}:                 "bindRelayNode",
+		{http.MethodPost, "/api/relay-bindings/rebind"}:               "rebindRelayNode",
+		{http.MethodPost, "/api/relay-bindings/unbind"}:               "unbindRelayNode",
 	}
 
 	if len(operations) != len(expected) {

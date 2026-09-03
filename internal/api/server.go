@@ -28,6 +28,7 @@ type Server struct {
 	accountInventory        assetstore.AccountInventoryReader
 	accountInventoryCursor  *assetstore.AccountInventoryCursorCodec
 	accountInventoryMetrics *AccountInventoryMetrics
+	relayBindings           *assetstore.RelayBindingRepository
 }
 
 type requestIDContextKey struct{}
@@ -108,6 +109,10 @@ func NewAuthenticatedServerWithAssetsJobsAndAccountInventory(
 
 func (s *Server) AccountInventoryMetrics() *AccountInventoryMetrics {
 	return s.accountInventoryMetrics
+}
+
+func (s *Server) SetRelayBindingRepository(repository *assetstore.RelayBindingRepository) {
+	s.relayBindings = repository
 }
 
 func (s *Server) GetHealthz(w http.ResponseWriter, r *http.Request) {
