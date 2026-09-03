@@ -508,6 +508,57 @@ type Environment struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type GatewayDirectoryCurrentState struct {
+	GatewayInstanceID         pgtype.UUID        `json:"gateway_instance_id"`
+	CurrentSnapshotID         pgtype.UUID        `json:"current_snapshot_id"`
+	CurrentContentFingerprint []byte             `json:"current_content_fingerprint"`
+	LastSuccessReceivedAt     pgtype.Timestamptz `json:"last_success_received_at"`
+	LastSourceGeneratedAt     pgtype.Timestamptz `json:"last_source_generated_at"`
+	LastSuccessRunID          pgtype.UUID        `json:"last_success_run_id"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+}
+
+type GatewayDirectoryIngestionRun struct {
+	IngestionRunID     pgtype.UUID        `json:"ingestion_run_id"`
+	GatewayInstanceID  pgtype.UUID        `json:"gateway_instance_id"`
+	ScheduledAt        pgtype.Timestamptz `json:"scheduled_at"`
+	Status             string             `json:"status"`
+	AttemptCount       int16              `json:"attempt_count"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	FirstStartedAt     pgtype.Timestamptz `json:"first_started_at"`
+	LastStartedAt      pgtype.Timestamptz `json:"last_started_at"`
+	LeaseExpiresAt     pgtype.Timestamptz `json:"lease_expires_at"`
+	LeaseFencingToken  pgtype.UUID        `json:"lease_fencing_token"`
+	TerminalAt         pgtype.Timestamptz `json:"terminal_at"`
+	Outcome            pgtype.Text        `json:"outcome"`
+	LastFailureClass   pgtype.Text        `json:"last_failure_class"`
+	SourceGeneratedAt  pgtype.Timestamptz `json:"source_generated_at"`
+	ReceivedAt         pgtype.Timestamptz `json:"received_at"`
+	ContentFingerprint []byte             `json:"content_fingerprint"`
+	SnapshotID         pgtype.UUID        `json:"snapshot_id"`
+	AccountCount       pgtype.Int4        `json:"account_count"`
+}
+
+type GatewayDirectorySnapshot struct {
+	SnapshotID                 pgtype.UUID        `json:"snapshot_id"`
+	GatewayInstanceID          pgtype.UUID        `json:"gateway_instance_id"`
+	Fingerprint                []byte             `json:"fingerprint"`
+	FingerprintEncodingVersion int16              `json:"fingerprint_encoding_version"`
+	SchemaVersion              int32              `json:"schema_version"`
+	AccountCount               int32              `json:"account_count"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+}
+
+type GatewayDirectorySnapshotItem struct {
+	SnapshotID pgtype.UUID `json:"snapshot_id"`
+	AccountID  int64       `json:"account_id"`
+	Name       string      `json:"name"`
+	Platform   string      `json:"platform"`
+	Type       string      `json:"type"`
+	Url        pgtype.Text `json:"url"`
+	Status     string      `json:"status"`
+}
+
 type GatewayInstance struct {
 	SingletonID            int16              `json:"singleton_id"`
 	InstanceID             pgtype.UUID        `json:"instance_id"`
