@@ -129,6 +129,26 @@ func (repository *GatewayDirectoryIngestionRepository) ExpiredRunningRuns(
 	return runs, nil
 }
 
+func (repository *GatewayDirectoryIngestionRepository) ListGatewayInstanceIDs(
+	ctx context.Context,
+) ([]uuid.UUID, error) {
+	if repository == nil {
+		return nil, ErrInvalidGatewayDirectoryIngestionQuery
+	}
+	rows, err := repository.queries.ListGatewayInstanceIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		if uuidFromPG(row) == uuid.Nil {
+			return nil, ErrGatewayDirectoryIngestionInconsistent
+		}
+		ids = append(ids, uuidFromPG(row))
+	}
+	return ids, nil
+}
+
 func (repository *GatewayDirectoryIngestionRepository) ReconcileOne(ctx context.Context) (*GatewayDirectoryReconcileResult, error) {
 	if repository == nil || repository.pool == nil {
 		return nil, ErrInvalidGatewayDirectoryIngestionQuery

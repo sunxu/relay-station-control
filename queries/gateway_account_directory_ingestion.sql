@@ -3,6 +3,11 @@ SELECT instance_id, management_endpoint, reader_secret_ref
 FROM gateway_instances
 WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid;
 
+-- name: ListGatewayInstanceIDs :many
+SELECT instance_id
+FROM gateway_instances
+ORDER BY instance_id;
+
 -- name: CreateOrGetGatewayDirectoryIngestionRun :one
 WITH locked_gateway AS (
     SELECT instance_id
