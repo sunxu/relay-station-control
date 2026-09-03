@@ -603,6 +603,406 @@ func (repository *RelayBindingRepository) GetCurrentBindingByAccount(
 	return &b, nil
 }
 
+type RelayBindingResolution string
+
+const (
+	RelayBindingResolutionUnbound    RelayBindingResolution = "unbound"
+	RelayBindingResolutionResolved   RelayBindingResolution = "resolved"
+	RelayBindingResolutionUnresolved RelayBindingResolution = "unresolved"
+	RelayBindingResolutionUnknown    RelayBindingResolution = "unknown"
+)
+
+type DirectoryFreshness string
+
+const (
+	DirectoryFreshnessFresh       DirectoryFreshness = "fresh"
+	DirectoryFreshnessStale       DirectoryFreshness = "stale"
+	DirectoryFreshnessUnavailable DirectoryFreshness = "unavailable"
+)
+
+type AccountContextSource string
+
+const (
+	AccountContextSourceCurrent   AccountContextSource = "current"
+	AccountContextSourceLastKnown AccountContextSource = "last_known"
+	AccountContextSourceNone      AccountContextSource = "none"
+)
+
+type GatewayAccountContext struct {
+	AccountID int64
+	Name      string
+	Platform  string
+	Type      string
+	URL       *string
+	Status    string
+}
+
+type NodeCentricBindingView struct {
+	RelayNodeID              uuid.UUID
+	CurrentBinding           *RelayNodeGatewayAccountBinding
+	GatewayInstanceID        *uuid.UUID
+	GatewayAccountID         *int64
+	Resolution               RelayBindingResolution
+	DirectoryFreshness       DirectoryFreshness
+	LastSuccessObservationAt *time.Time
+	ContextSource            AccountContextSource
+	AccountContext           *GatewayAccountContext
+	ObservedAt               time.Time
+}
+
+type GatewayAccountCentricBindingItem struct {
+	GatewayAccountID         int64
+	AccountContext           GatewayAccountContext
+	BoundRelayNodeID         *uuid.UUID
+	CurrentBinding           *RelayNodeGatewayAccountBinding
+	Resolution               RelayBindingResolution
+	ContextSource            AccountContextSource
+}
+
+type GatewayAccountCentricBindingView struct {
+	GatewayInstanceID        uuid.UUID
+	DirectoryFreshness       DirectoryFreshness
+	CurrentSnapshotID        *uuid.UUID
+	LastSuccessObservationAt *time.Time
+	ObservedAt               time.Time
+	Accounts                 []GatewayAccountCentricBindingItem
+}
+
+type UnresolvedGatewayAccountBindingItem struct {
+	CurrentBinding           RelayNodeGatewayAccountBinding
+	Resolution               RelayBindingResolution
+	DirectoryFreshness       DirectoryFreshness
+	LastSuccessObservationAt *time.Time
+	ContextSource            AccountContextSource
+	LastKnownAccountContext  *GatewayAccountContext
+	ObservedAt               time.Time
+}
+
+func (repository *RelayBindingRepository) GetNodeCentricBindingView(
+	ctx context.Context,
+	relayNodeID uuid.UUID,
+) (NodeCentricBindingView, error) {
+	if repository == nil || repository.pool == nil {
+		return NodeCentricBindingView{}, errors.New("store: relay binding repository is unavailable")
+	}
+	if relayNodeID == uuid.Nil {
+		return NodeCentricBindingView{}, ErrInvalidAssetQuery
+	}
+
+	row, err := repository.queries.GetNodeCentricBindingView(ctx, nullableUUID(relayNodeID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NodeCentricBindingView{}, ErrAssetNotFound
+	}
+	if err != nil {
+		return NodeCentricBindingView{}, err
+	}
+
+	observedAt := row.DbNow.Time.UTC()
+	result := NodeCentricBindingView{
+		RelayNodeID: uuidFromPG(row.RelayNodeID),
+		ObservedAt:  observedAt,
+	}
+
+	if !row.BindingID.Valid {
+		result.Resolution = RelayBindingResolutionUnbound
+		result.ContextSource = AccountContextSourceNone
+		result.DirectoryFreshness = DirectoryFreshnessUnavailable
+		return result, nil
+	}
+
+	binding := RelayNodeGatewayAccountBinding{
+		BindingID:          uuidFromPG(row.BindingID),
+		RelayNodeID:        uuidFromPG(row.RelayNodeID),
+		GatewayInstanceID:  uuidFromPG(row.GatewayInstanceID),
+		GatewayAccountID:   row.GatewayAccountID.Int64,
+		EvidenceSnapshotID: uuidFromPG(row.EvidenceSnapshotID),
+		BoundAt:            row.BoundAt.Time.UTC(),
+		BoundBy:            uuidFromPG(row.BoundBy),
+		BindReason:         row.BindReason.String,
+	}
+	result.CurrentBinding = &binding
+	gatewayID := binding.GatewayInstanceID
+	accountID := binding.GatewayAccountID
+	result.GatewayInstanceID = &gatewayID
+	result.GatewayAccountID = &accountID
+
+	// Check Directory state for Gateway
+	if !row.CurrentSnapshotID.Valid || !row.LastSuccessReceivedAt.Valid {
+		result.DirectoryFreshness = DirectoryFreshnessUnavailable
+		result.Resolution = RelayBindingResolutionUnknown
+		if row.EvidenceAccountID.Valid {
+			result.ContextSource = AccountContextSourceLastKnown
+			var url *string
+			if row.EvidenceUrl.Valid {
+				u := row.EvidenceUrl.String
+				url = &u
+			}
+			result.AccountContext = &GatewayAccountContext{
+				AccountID: row.EvidenceAccountID.Int64,
+				Name:      row.EvidenceName.String,
+				Platform:  row.EvidencePlatform.String,
+				Type:      row.EvidenceType.String,
+				URL:       url,
+				Status:    row.EvidenceStatus.String,
+			}
+		} else {
+			result.ContextSource = AccountContextSourceNone
+		}
+		return result, nil
+	}
+
+	lastSuccessAt := row.LastSuccessReceivedAt.Time.UTC()
+	result.LastSuccessObservationAt = &lastSuccessAt
+
+	if observedAt.Sub(lastSuccessAt) > 540*time.Second {
+		result.DirectoryFreshness = DirectoryFreshnessStale
+		result.Resolution = RelayBindingResolutionUnknown
+		if row.CurrentAccountID.Valid {
+			result.ContextSource = AccountContextSourceLastKnown
+			var url *string
+			if row.CurrentUrl.Valid {
+				u := row.CurrentUrl.String
+				url = &u
+			}
+			result.AccountContext = &GatewayAccountContext{
+				AccountID: row.CurrentAccountID.Int64,
+				Name:      row.CurrentName.String,
+				Platform:  row.CurrentPlatform.String,
+				Type:      row.CurrentType.String,
+				URL:       url,
+				Status:    row.CurrentStatus.String,
+			}
+		} else if row.EvidenceAccountID.Valid {
+			result.ContextSource = AccountContextSourceLastKnown
+			var url *string
+			if row.EvidenceUrl.Valid {
+				u := row.EvidenceUrl.String
+				url = &u
+			}
+			result.AccountContext = &GatewayAccountContext{
+				AccountID: row.EvidenceAccountID.Int64,
+				Name:      row.EvidenceName.String,
+				Platform:  row.EvidencePlatform.String,
+				Type:      row.EvidenceType.String,
+				URL:       url,
+				Status:    row.EvidenceStatus.String,
+			}
+		} else {
+			result.ContextSource = AccountContextSourceNone
+		}
+		return result, nil
+	}
+
+	result.DirectoryFreshness = DirectoryFreshnessFresh
+	if row.CurrentAccountID.Valid {
+		result.Resolution = RelayBindingResolutionResolved
+		result.ContextSource = AccountContextSourceCurrent
+		var url *string
+		if row.CurrentUrl.Valid {
+			u := row.CurrentUrl.String
+			url = &u
+		}
+		result.AccountContext = &GatewayAccountContext{
+			AccountID: row.CurrentAccountID.Int64,
+			Name:      row.CurrentName.String,
+			Platform:  row.CurrentPlatform.String,
+			Type:      row.CurrentType.String,
+			URL:       url,
+			Status:    row.CurrentStatus.String,
+		}
+	} else {
+		result.Resolution = RelayBindingResolutionUnresolved
+		result.ContextSource = AccountContextSourceNone
+	}
+
+	return result, nil
+}
+
+func (repository *RelayBindingRepository) GetGatewayAccountCentricBindingView(
+	ctx context.Context,
+	gatewayInstanceID uuid.UUID,
+) (GatewayAccountCentricBindingView, error) {
+	if repository == nil || repository.pool == nil {
+		return GatewayAccountCentricBindingView{}, errors.New("store: relay binding repository is unavailable")
+	}
+	if gatewayInstanceID == uuid.Nil {
+		return GatewayAccountCentricBindingView{}, ErrInvalidAssetQuery
+	}
+
+	rows, err := repository.queries.ListGatewayAccountCentricBindingViews(ctx, nullableUUID(gatewayInstanceID))
+	if err != nil {
+		return GatewayAccountCentricBindingView{}, err
+	}
+	if len(rows) == 0 {
+		return GatewayAccountCentricBindingView{}, ErrAssetNotFound
+	}
+
+	firstRow := rows[0]
+	observedAt := firstRow.DbNow.Time.UTC()
+	view := GatewayAccountCentricBindingView{
+		GatewayInstanceID: gatewayInstanceID,
+		ObservedAt:        observedAt,
+		Accounts:          []GatewayAccountCentricBindingItem{},
+	}
+
+	if firstRow.CurrentSnapshotID.Valid && firstRow.LastSuccessReceivedAt.Valid {
+		snapshotID := uuidFromPG(firstRow.CurrentSnapshotID)
+		view.CurrentSnapshotID = &snapshotID
+		lastSuccessAt := firstRow.LastSuccessReceivedAt.Time.UTC()
+		view.LastSuccessObservationAt = &lastSuccessAt
+		if observedAt.Sub(lastSuccessAt) > 540*time.Second {
+			view.DirectoryFreshness = DirectoryFreshnessStale
+		} else {
+			view.DirectoryFreshness = DirectoryFreshnessFresh
+		}
+	} else {
+		view.DirectoryFreshness = DirectoryFreshnessUnavailable
+	}
+
+	for _, row := range rows {
+		// If the snapshot has no items (empty snapshot or unavailable directory), gateway_account_id is NULL
+		if !row.GatewayAccountID.Valid {
+			continue
+		}
+
+		var url *string
+		if row.Url.Valid {
+			u := row.Url.String
+			url = &u
+		}
+		item := GatewayAccountCentricBindingItem{
+			GatewayAccountID: row.GatewayAccountID.Int64,
+			AccountContext: GatewayAccountContext{
+				AccountID: row.GatewayAccountID.Int64,
+				Name:      row.Name.String,
+				Platform:  row.Platform.String,
+				Type:      row.Type.String,
+				URL:       url,
+				Status:    row.Status.String,
+			},
+		}
+
+		if row.BindingID.Valid {
+			binding := RelayNodeGatewayAccountBinding{
+				BindingID:          uuidFromPG(row.BindingID),
+				RelayNodeID:        uuidFromPG(row.RelayNodeID),
+				GatewayInstanceID:  gatewayInstanceID,
+				GatewayAccountID:   row.GatewayAccountID.Int64,
+				EvidenceSnapshotID: uuidFromPG(row.EvidenceSnapshotID),
+				BoundAt:            row.BoundAt.Time.UTC(),
+				BoundBy:            uuidFromPG(row.BoundBy),
+				BindReason:         row.BindReason.String,
+			}
+			item.CurrentBinding = &binding
+			nodeID := binding.RelayNodeID
+			item.BoundRelayNodeID = &nodeID
+
+			if view.DirectoryFreshness == DirectoryFreshnessFresh {
+				item.Resolution = RelayBindingResolutionResolved
+				item.ContextSource = AccountContextSourceCurrent
+			} else {
+				item.Resolution = RelayBindingResolutionUnknown
+				item.ContextSource = AccountContextSourceLastKnown
+			}
+		} else {
+			item.Resolution = RelayBindingResolutionUnbound
+			if view.DirectoryFreshness == DirectoryFreshnessFresh {
+				item.ContextSource = AccountContextSourceCurrent
+			} else {
+				item.ContextSource = AccountContextSourceLastKnown
+			}
+		}
+
+		view.Accounts = append(view.Accounts, item)
+	}
+
+	return view, nil
+}
+
+func (repository *RelayBindingRepository) ListUnresolvedGatewayAccountBindings(
+	ctx context.Context,
+	gatewayInstanceID uuid.UUID,
+) ([]UnresolvedGatewayAccountBindingItem, error) {
+	if repository == nil || repository.pool == nil {
+		return nil, errors.New("store: relay binding repository is unavailable")
+	}
+	if gatewayInstanceID == uuid.Nil {
+		return nil, ErrInvalidAssetQuery
+	}
+
+	rows, err := repository.queries.ListUnresolvedGatewayAccountBindings(ctx, nullableUUID(gatewayInstanceID))
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		_, err := repository.queries.LockGatewayDirectoryInstance(ctx, nullableUUID(gatewayInstanceID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return []UnresolvedGatewayAccountBindingItem{}, nil
+	}
+
+	items := make([]UnresolvedGatewayAccountBindingItem, 0, len(rows))
+	for _, row := range rows {
+		observedAt := row.DbNow.Time.UTC()
+		binding := RelayNodeGatewayAccountBinding{
+			BindingID:          uuidFromPG(row.BindingID),
+			RelayNodeID:        uuidFromPG(row.RelayNodeID),
+			GatewayInstanceID:  uuidFromPG(row.GatewayInstanceID),
+			GatewayAccountID:   row.GatewayAccountID,
+			EvidenceSnapshotID: uuidFromPG(row.EvidenceSnapshotID),
+			BoundAt:            row.BoundAt.Time.UTC(),
+			BoundBy:            uuidFromPG(row.BoundBy),
+			BindReason:         row.BindReason,
+		}
+
+		var lastKnownCtx *GatewayAccountContext
+		if row.EvidenceName.Valid {
+			var url *string
+			if row.EvidenceUrl.Valid {
+				u := row.EvidenceUrl.String
+				url = &u
+			}
+			lastKnownCtx = &GatewayAccountContext{
+				AccountID: row.GatewayAccountID,
+				Name:      row.EvidenceName.String,
+				Platform:  row.EvidencePlatform.String,
+				Type:      row.EvidenceType.String,
+				URL:       url,
+				Status:    row.EvidenceStatus.String,
+			}
+		}
+
+		item := UnresolvedGatewayAccountBindingItem{
+			CurrentBinding:          binding,
+			ObservedAt:              observedAt,
+			LastKnownAccountContext: lastKnownCtx,
+		}
+
+		if row.LastSuccessReceivedAt.Valid {
+			t := row.LastSuccessReceivedAt.Time.UTC()
+			item.LastSuccessObservationAt = &t
+			if observedAt.Sub(t) > 540*time.Second {
+				item.DirectoryFreshness = DirectoryFreshnessStale
+				item.Resolution = RelayBindingResolutionUnknown
+				item.ContextSource = AccountContextSourceLastKnown
+			} else {
+				item.DirectoryFreshness = DirectoryFreshnessFresh
+				item.Resolution = RelayBindingResolutionUnresolved
+				item.ContextSource = AccountContextSourceNone
+			}
+		} else {
+			item.DirectoryFreshness = DirectoryFreshnessUnavailable
+			item.Resolution = RelayBindingResolutionUnknown
+			item.ContextSource = AccountContextSourceLastKnown
+		}
+
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
 func bindingFromSQLC(row generated.RelayNodeGatewayAccountBinding) RelayNodeGatewayAccountBinding {
 	var endedAt *time.Time
 	if row.EndedAt.Valid {

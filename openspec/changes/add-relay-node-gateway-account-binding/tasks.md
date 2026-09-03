@@ -16,10 +16,10 @@
 
 ## 3. Resolution and reads
 
-- [ ] 3.1 实现 query-derived `unbound/resolved/unresolved/unknown`，只依赖 current binding、current accepted Directory 和 DB freshness
-- [ ] 3.2 实现 Node-centric current binding 查询，返回脱敏 Account context、resolution、freshness 和 observation time，并区分 current/last-known context
-- [ ] 3.3 实现 Gateway Account-centric 查询，覆盖 bound/unbound current Account 和目标已消失的 unresolved binding
-- [ ] 3.4 固化 Account 消失/同 ID 再出现/new ID/A→B→A/empty Directory/stale Directory 对 resolution 的影响
+- [x] 3.1 实现 query-derived `unbound/resolved/unresolved/unknown`，只依赖 current binding、current accepted Directory 和 DB freshness
+- [x] 3.2 实现 Node-centric current binding 查询，返回脱敏 Account context、resolution、freshness 和 observation time，并区分 current/last-known context
+- [x] 3.3 实现 Gateway Account-centric 查询，覆盖 bound/unbound current Account 和目标已消失的 unresolved binding
+- [x] 3.4 固化 Account 消失/同 ID 再出现/new ID/A→B→A/empty Directory/stale Directory 对 resolution 的影响
 
 ## 4. Security, concurrency, and acceptance
 

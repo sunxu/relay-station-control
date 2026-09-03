@@ -1006,3 +1006,694 @@ func TestRelayBindingRepository_Concurrency(t *testing.T) {
 	})
 }
 
+func TestRelayBindingRepository_ReadModel(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
+	ctx := context.Background()
+	fixture := newRelayBindingSchemaFixture(t, ctx, database)
+
+	repo, err := jobstore.NewRelayBindingRepository(database.runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("node-centric read: unbound node", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		view, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.RelayNodeID != nodeID {
+			t.Fatalf("unexpected nodeID: %s", view.RelayNodeID)
+		}
+		if view.Resolution != jobstore.RelayBindingResolutionUnbound {
+			t.Fatalf("expected unbound, got %s", view.Resolution)
+		}
+		if view.ContextSource != jobstore.AccountContextSourceNone {
+			t.Fatalf("expected context source none, got %s", view.ContextSource)
+		}
+		if view.CurrentBinding != nil {
+			t.Fatal("expected nil current binding")
+		}
+	})
+
+	t.Run("node-centric read: resolved node with fresh current context", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+
+		accountID := fixture.accountIDs[0]
+		bindRes, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  accountID,
+			AdminID:           fixture.adminID,
+		})
+		if err != nil || bindRes.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind failed: %v", err)
+		}
+
+		view, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Resolution != jobstore.RelayBindingResolutionResolved {
+			t.Fatalf("expected resolved, got %s", view.Resolution)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessFresh {
+			t.Fatalf("expected fresh, got %s", view.DirectoryFreshness)
+		}
+		if view.ContextSource != jobstore.AccountContextSourceCurrent {
+			t.Fatalf("expected current context source, got %s", view.ContextSource)
+		}
+		if view.AccountContext == nil || view.AccountContext.AccountID != accountID {
+			t.Fatalf("expected account context for %d, got %+v", accountID, view.AccountContext)
+		}
+		if view.CurrentBinding == nil || view.CurrentBinding.GatewayAccountID != accountID {
+			t.Fatalf("unexpected current binding: %+v", view.CurrentBinding)
+		}
+	})
+
+	t.Run("node-centric read: unknown when directory is stale (distinguishes last-known context)", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		// Fresh initially
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+
+		accountID := fixture.accountIDs[0]
+		if res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  accountID,
+			AdminID:           fixture.adminID,
+		}); err != nil || res.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind failed: %v", err)
+		}
+
+		// Make directory stale (> 540s)
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-600*time.Second))
+
+		view, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Resolution != jobstore.RelayBindingResolutionUnknown {
+			t.Fatalf("expected unknown for stale directory, got %s", view.Resolution)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessStale {
+			t.Fatalf("expected stale freshness, got %s", view.DirectoryFreshness)
+		}
+		if view.ContextSource != jobstore.AccountContextSourceLastKnown {
+			t.Fatalf("expected last_known context source, got %s", view.ContextSource)
+		}
+		if view.AccountContext == nil || view.AccountContext.AccountID != accountID {
+			t.Fatalf("expected last-known account context for %d, got %+v", accountID, view.AccountContext)
+		}
+	})
+
+	t.Run("node-centric read: unresolved when account disappears from fresh snapshot", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+
+		accountID := fixture.accountIDs[0]
+		if res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  accountID,
+			AdminID:           fixture.adminID,
+		}); err != nil || res.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind failed: %v", err)
+		}
+
+		// Create snapshot 2 that does NOT contain accountID
+		snapshot2ID := uuid.New()
+		fingerprint2 := make([]byte, 32)
+		fingerprint2[0] = 0x02
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapshot2ID, fixture.gatewayID, fingerprint2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Insert item 888888 into snapshot2
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+			snapshot_id, account_id, name, platform, type, url, status
+		) VALUES ($1, 888888, 'other-acct', 'linux', 'apikey', 'https://other.test', 'active')`, snapshot2ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Update current state to snapshot2 (fresh)
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, snapshot2ID, dbNow.Add(-10*time.Second))
+
+		view, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Resolution != jobstore.RelayBindingResolutionUnresolved {
+			t.Fatalf("expected unresolved, got %s", view.Resolution)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessFresh {
+			t.Fatalf("expected fresh directory freshness, got %s", view.DirectoryFreshness)
+		}
+		if view.ContextSource != jobstore.AccountContextSourceNone {
+			t.Fatalf("expected context source none for missing account in fresh directory, got %s", view.ContextSource)
+		}
+		if view.AccountContext != nil {
+			t.Fatalf("expected nil account context, got %+v", view.AccountContext)
+		}
+	})
+
+	t.Run("fresh empty directory: all existing bindings become unresolved", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+
+		accountID := fixture.accountIDs[0]
+		if res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  accountID,
+			AdminID:           fixture.adminID,
+		}); err != nil || res.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind failed: %v", err)
+		}
+
+		// Create empty snapshot
+		emptySnapshotID := uuid.New()
+		emptyFingerprint := make([]byte, 32)
+		emptyFingerprint[0] = 0xee
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, emptySnapshotID, fixture.gatewayID, emptyFingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Update current state to empty snapshot (fresh)
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, emptySnapshotID, dbNow.Add(-5*time.Second))
+
+		view, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Resolution != jobstore.RelayBindingResolutionUnresolved {
+			t.Fatalf("expected unresolved on empty fresh directory, got %s", view.Resolution)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessFresh {
+			t.Fatalf("expected fresh directory, got %s", view.DirectoryFreshness)
+		}
+	})
+
+	t.Run("account-centric read and unresolved listings", func(t *testing.T) {
+		node1 := fixture.insertNode(t, ctx, database)
+		node2 := fixture.insertNode(t, ctx, database)
+		account1 := fixture.accountIDs[0]
+		account2 := fixture.accountIDs[1]
+		account3 := fixture.accountIDs[2] // unbound
+
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+
+		// Bind node1 -> account1, node2 -> account2
+		if res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       node1,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  account1,
+			AdminID:           fixture.adminID,
+		}); err != nil || res.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind node1 failed: %v", err)
+		}
+		if res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       node2,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  account2,
+			AdminID:           fixture.adminID,
+		}); err != nil || res.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind node2 failed: %v", err)
+		}
+
+		// List gateway accounts via envelope view
+		gwView, err := repo.GetGatewayAccountCentricBindingView(ctx, fixture.gatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gwView.DirectoryFreshness != jobstore.DirectoryFreshnessFresh {
+			t.Fatalf("expected fresh directory, got %s", gwView.DirectoryFreshness)
+		}
+		if gwView.CurrentSnapshotID == nil || *gwView.CurrentSnapshotID != fixture.snapshotID {
+			t.Fatalf("expected snapshot %s, got %v", fixture.snapshotID, gwView.CurrentSnapshotID)
+		}
+		if gwView.LastSuccessObservationAt == nil {
+			t.Fatal("expected non-nil last success observation")
+		}
+		if len(gwView.Accounts) < 3 {
+			t.Fatalf("expected at least 3 account views, got %d", len(gwView.Accounts))
+		}
+
+		// Check account1: bound to node1, resolved
+		var found1, found2, found3 bool
+		for _, av := range gwView.Accounts {
+			if av.GatewayAccountID == account1 {
+				found1 = true
+				if av.BoundRelayNodeID == nil || *av.BoundRelayNodeID != node1 {
+					t.Fatalf("account1 bound to wrong node: %+v", av.BoundRelayNodeID)
+				}
+				if av.Resolution != jobstore.RelayBindingResolutionResolved {
+					t.Fatalf("account1 resolution expected resolved, got %s", av.Resolution)
+				}
+				if av.ContextSource != jobstore.AccountContextSourceCurrent {
+					t.Fatalf("expected current context source, got %s", av.ContextSource)
+				}
+			}
+			if av.GatewayAccountID == account2 {
+				found2 = true
+				if av.BoundRelayNodeID == nil || *av.BoundRelayNodeID != node2 {
+					t.Fatalf("account2 bound to wrong node: %+v", av.BoundRelayNodeID)
+				}
+				if av.Resolution != jobstore.RelayBindingResolutionResolved {
+					t.Fatalf("account2 resolution expected resolved, got %s", av.Resolution)
+				}
+				if av.ContextSource != jobstore.AccountContextSourceCurrent {
+					t.Fatalf("expected current context source, got %s", av.ContextSource)
+				}
+			}
+			if av.GatewayAccountID == account3 {
+				found3 = true
+				if av.BoundRelayNodeID != nil {
+					t.Fatalf("account3 expected unbound, got bound to: %v", av.BoundRelayNodeID)
+				}
+				if av.Resolution != jobstore.RelayBindingResolutionUnbound {
+					t.Fatalf("account3 resolution expected unbound, got %s", av.Resolution)
+				}
+				if av.ContextSource != jobstore.AccountContextSourceCurrent {
+					t.Fatalf("expected current context source for unbound in fresh directory, got %s", av.ContextSource)
+				}
+			}
+		}
+		if !found1 || !found2 || !found3 {
+			t.Fatalf("did not find expected accounts: %v, %v, %v", found1, found2, found3)
+		}
+
+		// Unresolved list should be empty when all accounts are in snapshot
+		unresolvedList, err := repo.ListUnresolvedGatewayAccountBindings(ctx, fixture.gatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(unresolvedList) != 0 {
+			t.Fatalf("expected 0 unresolved bindings, got %d", len(unresolvedList))
+		}
+
+		// Now switch current state to snapshot that contains only account1
+		partialSnapshotID := uuid.New()
+		partialFingerprint := make([]byte, 32)
+		partialFingerprint[0] = 0x33
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, partialSnapshotID, fixture.gatewayID, partialFingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+			snapshot_id, account_id, name, platform, type, url, status
+		) VALUES ($1, $2, 'acct1', 'linux', 'apikey', 'https://acct1.test', 'active')`, partialSnapshotID, account1)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, partialSnapshotID, dbNow.Add(-5*time.Second))
+
+		// Now node2 (bound to account2) is unresolved
+		unresolvedList, err = repo.ListUnresolvedGatewayAccountBindings(ctx, fixture.gatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(unresolvedList) != 1 {
+			t.Fatalf("expected 1 unresolved binding, got %d", len(unresolvedList))
+		}
+		if unresolvedList[0].CurrentBinding.RelayNodeID != node2 || unresolvedList[0].CurrentBinding.GatewayAccountID != account2 {
+			t.Fatalf("unexpected unresolved binding item: %+v", unresolvedList[0])
+		}
+		if unresolvedList[0].Resolution != jobstore.RelayBindingResolutionUnresolved {
+			t.Fatalf("expected unresolved resolution, got %s", unresolvedList[0].Resolution)
+		}
+		if unresolvedList[0].LastKnownAccountContext == nil || unresolvedList[0].LastKnownAccountContext.AccountID != account2 {
+			t.Fatalf("expected last-known context for account2, got %+v", unresolvedList[0].LastKnownAccountContext)
+		}
+	})
+
+	t.Run("lifecycle transitions: reappear / new ID with same metadata / A->B->A reuse / stale->recovery", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		targetAccountID := fixture.accountIDs[0]
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+
+		// Step 1: Fresh snapshot A containing targetAccountID -> bind -> resolved
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+		if res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  targetAccountID,
+			AdminID:           fixture.adminID,
+		}); err != nil || res.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind failed: %v", err)
+		}
+
+		view1, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil || view1.Resolution != jobstore.RelayBindingResolutionResolved {
+			t.Fatalf("step 1 failed: %v, %+v", err, view1)
+		}
+
+		// Step 2: Switch to Snapshot B where targetAccountID disappeared (and new ID 777777 has identical name/url)
+		snapshotBID := uuid.New()
+		fingerprintB := make([]byte, 32)
+		fingerprintB[0] = 0xbb
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapshotBID, fixture.gatewayID, fingerprintB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Insert new ID with same name "account-0" as targetAccountID
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+			snapshot_id, account_id, name, platform, type, url, status
+		) VALUES ($1, 777777, 'account-0', 'linux', 'apikey', 'https://account-0.test', 'active')`, snapshotBID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, snapshotBID, dbNow.Add(-5*time.Second))
+
+		view2, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Resolution must be unresolved (not matched to 777777 despite same metadata)
+		if view2.Resolution != jobstore.RelayBindingResolutionUnresolved {
+			t.Fatalf("step 2: expected unresolved, got %s", view2.Resolution)
+		}
+		if view2.CurrentBinding.GatewayAccountID != targetAccountID {
+			t.Fatalf("step 2: binding target changed unexpectedly: %d", view2.CurrentBinding.GatewayAccountID)
+		}
+
+		// Step 3: A->B->A snapshot reuse: switch back to original snapshotID (Snapshot A)
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+
+		view3, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Automatically restored to resolved!
+		if view3.Resolution != jobstore.RelayBindingResolutionResolved {
+			t.Fatalf("step 3: expected auto-recovery to resolved, got %s", view3.Resolution)
+		}
+		if view3.ContextSource != jobstore.AccountContextSourceCurrent {
+			t.Fatalf("step 3: expected current context source, got %s", view3.ContextSource)
+		}
+
+		// Step 4: Stale -> Recovery
+		// Make snapshot stale
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-600*time.Second))
+		viewStale, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil || viewStale.Resolution != jobstore.RelayBindingResolutionUnknown {
+			t.Fatalf("step 4 stale failed: %v, %+v", err, viewStale)
+		}
+
+		// Ingestion runs and recovers freshness
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-2*time.Second))
+		viewRecovered, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil || viewRecovered.Resolution != jobstore.RelayBindingResolutionResolved {
+			t.Fatalf("step 4 recovery failed: %v, %+v", err, viewRecovered)
+		}
+	})
+
+	t.Run("regression A: account-centric fresh empty directory", func(t *testing.T) {
+		emptyGatewayID := uuid.New()
+		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
+			instance_id, display_name, probe_endpoint, probe_status,
+			consecutive_successes, consecutive_failures, created_at, updated_at
+		) VALUES ($1, 'gw-fresh-empty', 'https://gw-fresh-empty.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
+			emptyGatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		emptySnapshotID := uuid.New()
+		emptyFingerprint := make([]byte, 32)
+		emptyFingerprint[0] = 0xfa
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, emptySnapshotID, emptyGatewayID, emptyFingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		insertGatewayDirectoryCurrentState(t, ctx, database, emptyGatewayID, emptySnapshotID, dbNow.Add(-5*time.Second))
+
+		view, err := repo.GetGatewayAccountCentricBindingView(ctx, emptyGatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessFresh {
+			t.Fatalf("expected fresh freshness, got %s", view.DirectoryFreshness)
+		}
+		if view.CurrentSnapshotID == nil || *view.CurrentSnapshotID != emptySnapshotID {
+			t.Fatalf("expected current snapshot %s, got %v", emptySnapshotID, view.CurrentSnapshotID)
+		}
+		if view.LastSuccessObservationAt == nil {
+			t.Fatal("expected non-nil last success observation")
+		}
+		if len(view.Accounts) != 0 {
+			t.Fatalf("expected 0 accounts, got %d", len(view.Accounts))
+		}
+	})
+
+	t.Run("regression B: account-centric no directory / unavailable", func(t *testing.T) {
+		noDirGatewayID := uuid.New()
+		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
+			instance_id, display_name, probe_endpoint, probe_status,
+			consecutive_successes, consecutive_failures, created_at, updated_at
+		) VALUES ($1, 'gw-no-dir', 'https://gw-no-dir.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
+			noDirGatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		view, err := repo.GetGatewayAccountCentricBindingView(ctx, noDirGatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessUnavailable {
+			t.Fatalf("expected unavailable freshness, got %s", view.DirectoryFreshness)
+		}
+		if view.CurrentSnapshotID != nil {
+			t.Fatalf("expected nil current snapshot, got %v", view.CurrentSnapshotID)
+		}
+		if view.LastSuccessObservationAt != nil {
+			t.Fatalf("expected nil last success observation, got %v", view.LastSuccessObservationAt)
+		}
+		if len(view.Accounts) != 0 {
+			t.Fatalf("expected 0 accounts, got %d", len(view.Accounts))
+		}
+	})
+
+	t.Run("regression C: account-centric stale empty directory", func(t *testing.T) {
+		staleEmptyGatewayID := uuid.New()
+		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
+			instance_id, display_name, probe_endpoint, probe_status,
+			consecutive_successes, consecutive_failures, created_at, updated_at
+		) VALUES ($1, 'gw-stale-empty', 'https://gw-stale-empty.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
+			staleEmptyGatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		staleEmptySnapshotID := uuid.New()
+		staleEmptyFingerprint := make([]byte, 32)
+		staleEmptyFingerprint[0] = 0xfb
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, staleEmptySnapshotID, staleEmptyGatewayID, staleEmptyFingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		insertGatewayDirectoryCurrentState(t, ctx, database, staleEmptyGatewayID, staleEmptySnapshotID, dbNow.Add(-600*time.Second))
+
+		view, err := repo.GetGatewayAccountCentricBindingView(ctx, staleEmptyGatewayID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessStale {
+			t.Fatalf("expected stale freshness, got %s", view.DirectoryFreshness)
+		}
+		if view.CurrentSnapshotID == nil || *view.CurrentSnapshotID != staleEmptySnapshotID {
+			t.Fatalf("expected current snapshot %s, got %v", staleEmptySnapshotID, view.CurrentSnapshotID)
+		}
+		if view.LastSuccessObservationAt == nil {
+			t.Fatal("expected non-nil last success observation")
+		}
+		if len(view.Accounts) != 0 {
+			t.Fatalf("expected 0 accounts, got %d", len(view.Accounts))
+		}
+	})
+
+	t.Run("regression D: node-centric latest last-known context from current snapshot instead of old evidence snapshot", func(t *testing.T) {
+		nodeID := fixture.insertNode(t, ctx, database)
+		targetAccountID := fixture.accountIDs[0]
+
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+
+		// 1. Fresh Snapshot A where account name is "old-name" -> bind
+		snapshotAID := uuid.New()
+		fingerprintA := make([]byte, 32)
+		fingerprintA[0] = 0xaa
+		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapshotAID, fixture.gatewayID, fingerprintA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+			snapshot_id, account_id, name, platform, type, url, status
+		) VALUES ($1, $2, 'old-name', 'linux', 'apikey', 'https://old.test', 'active')`, snapshotAID, targetAccountID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, snapshotAID, dbNow.Add(-10*time.Second))
+
+		bindRes, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  targetAccountID,
+			AdminID:           fixture.adminID,
+		})
+		if err != nil || bindRes.Outcome != jobstore.RelayBindingOutcomeSuccess {
+			t.Fatalf("bind failed: %v", err)
+		}
+
+		// 2. Later ingestion advances to Snapshot C where targetAccountID has updated metadata "new-name"
+		snapshotCID := uuid.New()
+		fingerprintC := make([]byte, 32)
+		fingerprintC[0] = 0xcc
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapshotCID, fixture.gatewayID, fingerprintC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+			snapshot_id, account_id, name, platform, type, url, status
+		) VALUES ($1, $2, 'new-name', 'linux', 'apikey', 'https://new.test', 'active')`, snapshotCID, targetAccountID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// 3. Make Snapshot C stale (> 540s)
+		insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, snapshotCID, dbNow.Add(-600*time.Second))
+
+		view, err := repo.GetNodeCentricBindingView(ctx, nodeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Resolution != jobstore.RelayBindingResolutionUnknown {
+			t.Fatalf("expected resolution unknown, got %s", view.Resolution)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessStale {
+			t.Fatalf("expected stale directory, got %s", view.DirectoryFreshness)
+		}
+		if view.ContextSource != jobstore.AccountContextSourceLastKnown {
+			t.Fatalf("expected last_known context source, got %s", view.ContextSource)
+		}
+		if view.AccountContext == nil {
+			t.Fatal("expected non-nil account context")
+		}
+		// Context must come from current snapshot C ("new-name"), NOT evidence snapshot A ("old-name")
+		if view.AccountContext.Name != "new-name" {
+			t.Fatalf("expected latest last-known metadata 'new-name', got '%s'", view.AccountContext.Name)
+		}
+	})
+
+	t.Run("regression E: stale account-centric unbound account marked last_known", func(t *testing.T) {
+		staleGwID := uuid.New()
+		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
+			instance_id, display_name, probe_endpoint, probe_status,
+			consecutive_successes, consecutive_failures, created_at, updated_at
+		) VALUES ($1, 'gw-stale-unbound', 'https://gw-stale-unbound.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
+			staleGwID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		snapID := uuid.New()
+		snapFingerprint := make([]byte, 32)
+		snapFingerprint[0] = 0x99
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapID, staleGwID, snapFingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+			snapshot_id, account_id, name, platform, type, url, status
+		) VALUES ($1, 999111, 'unbound-stale-acct', 'linux', 'apikey', 'https://unbound.test', 'active')`, snapID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var dbNow time.Time
+		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			t.Fatal(err)
+		}
+		// Stale directory
+		insertGatewayDirectoryCurrentState(t, ctx, database, staleGwID, snapID, dbNow.Add(-600*time.Second))
+
+		view, err := repo.GetGatewayAccountCentricBindingView(ctx, staleGwID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.DirectoryFreshness != jobstore.DirectoryFreshnessStale {
+			t.Fatalf("expected stale directory, got %s", view.DirectoryFreshness)
+		}
+		if len(view.Accounts) != 1 {
+			t.Fatalf("expected 1 account, got %d", len(view.Accounts))
+		}
+		acct := view.Accounts[0]
+		if acct.Resolution != jobstore.RelayBindingResolutionUnbound {
+			t.Fatalf("expected unbound resolution, got %s", acct.Resolution)
+		}
+		if acct.ContextSource != jobstore.AccountContextSourceLastKnown {
+			t.Fatalf("expected last_known context source for unbound account in stale directory, got %s", acct.ContextSource)
+		}
+	})
+}
+

@@ -146,6 +146,106 @@ func (q *Queries) GetGatewayDirectorySnapshotItem(ctx context.Context, arg GetGa
 	return i, err
 }
 
+const getNodeCentricBindingView = `-- name: GetNodeCentricBindingView :one
+WITH db_now AS (
+    SELECT clock_timestamp()::timestamptz AS db_now
+)
+SELECT
+    node.instance_id AS relay_node_id,
+    binding.binding_id,
+    binding.gateway_instance_id,
+    binding.gateway_account_id,
+    binding.evidence_snapshot_id,
+    binding.bound_at,
+    binding.bound_by,
+    binding.bind_reason,
+    current_state.current_snapshot_id,
+    current_state.last_success_received_at,
+    current_item.account_id AS current_account_id,
+    current_item.name AS current_name,
+    current_item.platform AS current_platform,
+    current_item.type AS current_type,
+    current_item.url AS current_url,
+    current_item.status AS current_status,
+    evidence_item.account_id AS evidence_account_id,
+    evidence_item.name AS evidence_name,
+    evidence_item.platform AS evidence_platform,
+    evidence_item.type AS evidence_type,
+    evidence_item.url AS evidence_url,
+    evidence_item.status AS evidence_status,
+    db_now.db_now AS db_now
+FROM relay_node_assets AS node
+CROSS JOIN db_now
+LEFT JOIN relay_node_gateway_account_bindings AS binding
+    ON binding.relay_node_id = node.instance_id AND binding.ended_at IS NULL
+LEFT JOIN gateway_directory_current_state AS current_state
+    ON current_state.gateway_instance_id = binding.gateway_instance_id
+LEFT JOIN gateway_directory_snapshot_items AS current_item
+    ON current_item.snapshot_id = current_state.current_snapshot_id
+    AND current_item.account_id = binding.gateway_account_id
+LEFT JOIN gateway_directory_snapshot_items AS evidence_item
+    ON evidence_item.snapshot_id = binding.evidence_snapshot_id
+    AND evidence_item.account_id = binding.gateway_account_id
+WHERE node.instance_id = $1::uuid
+`
+
+type GetNodeCentricBindingViewRow struct {
+	RelayNodeID           pgtype.UUID        `json:"relay_node_id"`
+	BindingID             pgtype.UUID        `json:"binding_id"`
+	GatewayInstanceID     pgtype.UUID        `json:"gateway_instance_id"`
+	GatewayAccountID      pgtype.Int8        `json:"gateway_account_id"`
+	EvidenceSnapshotID    pgtype.UUID        `json:"evidence_snapshot_id"`
+	BoundAt               pgtype.Timestamptz `json:"bound_at"`
+	BoundBy               pgtype.UUID        `json:"bound_by"`
+	BindReason            pgtype.Text        `json:"bind_reason"`
+	CurrentSnapshotID     pgtype.UUID        `json:"current_snapshot_id"`
+	LastSuccessReceivedAt pgtype.Timestamptz `json:"last_success_received_at"`
+	CurrentAccountID      pgtype.Int8        `json:"current_account_id"`
+	CurrentName           pgtype.Text        `json:"current_name"`
+	CurrentPlatform       pgtype.Text        `json:"current_platform"`
+	CurrentType           pgtype.Text        `json:"current_type"`
+	CurrentUrl            pgtype.Text        `json:"current_url"`
+	CurrentStatus         pgtype.Text        `json:"current_status"`
+	EvidenceAccountID     pgtype.Int8        `json:"evidence_account_id"`
+	EvidenceName          pgtype.Text        `json:"evidence_name"`
+	EvidencePlatform      pgtype.Text        `json:"evidence_platform"`
+	EvidenceType          pgtype.Text        `json:"evidence_type"`
+	EvidenceUrl           pgtype.Text        `json:"evidence_url"`
+	EvidenceStatus        pgtype.Text        `json:"evidence_status"`
+	DbNow                 pgtype.Timestamptz `json:"db_now"`
+}
+
+func (q *Queries) GetNodeCentricBindingView(ctx context.Context, relayNodeID pgtype.UUID) (GetNodeCentricBindingViewRow, error) {
+	row := q.db.QueryRow(ctx, getNodeCentricBindingView, relayNodeID)
+	var i GetNodeCentricBindingViewRow
+	err := row.Scan(
+		&i.RelayNodeID,
+		&i.BindingID,
+		&i.GatewayInstanceID,
+		&i.GatewayAccountID,
+		&i.EvidenceSnapshotID,
+		&i.BoundAt,
+		&i.BoundBy,
+		&i.BindReason,
+		&i.CurrentSnapshotID,
+		&i.LastSuccessReceivedAt,
+		&i.CurrentAccountID,
+		&i.CurrentName,
+		&i.CurrentPlatform,
+		&i.CurrentType,
+		&i.CurrentUrl,
+		&i.CurrentStatus,
+		&i.EvidenceAccountID,
+		&i.EvidenceName,
+		&i.EvidencePlatform,
+		&i.EvidenceType,
+		&i.EvidenceUrl,
+		&i.EvidenceStatus,
+		&i.DbNow,
+	)
+	return i, err
+}
+
 const getRelayBindingDBTime = `-- name: GetRelayBindingDBTime :one
 SELECT clock_timestamp()::timestamptz
 `
@@ -213,6 +313,198 @@ func (q *Queries) InsertOpenRelayNodeGatewayAccountBinding(ctx context.Context, 
 		&i.EndReason,
 	)
 	return i, err
+}
+
+const listGatewayAccountCentricBindingViews = `-- name: ListGatewayAccountCentricBindingViews :many
+WITH db_now AS (
+    SELECT clock_timestamp()::timestamptz AS db_now
+), target_gateway AS (
+    SELECT instance_id
+    FROM gateway_instances
+    WHERE instance_id = $1::uuid
+)
+SELECT
+    target_gateway.instance_id AS gateway_instance_id,
+    current_state.current_snapshot_id,
+    current_state.last_success_received_at,
+    items.account_id AS gateway_account_id,
+    items.name,
+    items.platform,
+    items.type,
+    items.url,
+    items.status,
+    binding.binding_id,
+    binding.relay_node_id,
+    binding.evidence_snapshot_id,
+    binding.bound_at,
+    binding.bound_by,
+    binding.bind_reason,
+    db_now.db_now AS db_now
+FROM target_gateway
+CROSS JOIN db_now
+LEFT JOIN gateway_directory_current_state AS current_state
+    ON current_state.gateway_instance_id = target_gateway.instance_id
+LEFT JOIN gateway_directory_snapshot_items AS items
+    ON items.snapshot_id = current_state.current_snapshot_id
+LEFT JOIN relay_node_gateway_account_bindings AS binding
+    ON binding.gateway_instance_id = target_gateway.instance_id
+    AND binding.gateway_account_id = items.account_id
+    AND binding.ended_at IS NULL
+ORDER BY items.account_id ASC
+`
+
+type ListGatewayAccountCentricBindingViewsRow struct {
+	GatewayInstanceID     pgtype.UUID        `json:"gateway_instance_id"`
+	CurrentSnapshotID     pgtype.UUID        `json:"current_snapshot_id"`
+	LastSuccessReceivedAt pgtype.Timestamptz `json:"last_success_received_at"`
+	GatewayAccountID      pgtype.Int8        `json:"gateway_account_id"`
+	Name                  pgtype.Text        `json:"name"`
+	Platform              pgtype.Text        `json:"platform"`
+	Type                  pgtype.Text        `json:"type"`
+	Url                   pgtype.Text        `json:"url"`
+	Status                pgtype.Text        `json:"status"`
+	BindingID             pgtype.UUID        `json:"binding_id"`
+	RelayNodeID           pgtype.UUID        `json:"relay_node_id"`
+	EvidenceSnapshotID    pgtype.UUID        `json:"evidence_snapshot_id"`
+	BoundAt               pgtype.Timestamptz `json:"bound_at"`
+	BoundBy               pgtype.UUID        `json:"bound_by"`
+	BindReason            pgtype.Text        `json:"bind_reason"`
+	DbNow                 pgtype.Timestamptz `json:"db_now"`
+}
+
+func (q *Queries) ListGatewayAccountCentricBindingViews(ctx context.Context, gatewayInstanceID pgtype.UUID) ([]ListGatewayAccountCentricBindingViewsRow, error) {
+	rows, err := q.db.Query(ctx, listGatewayAccountCentricBindingViews, gatewayInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGatewayAccountCentricBindingViewsRow{}
+	for rows.Next() {
+		var i ListGatewayAccountCentricBindingViewsRow
+		if err := rows.Scan(
+			&i.GatewayInstanceID,
+			&i.CurrentSnapshotID,
+			&i.LastSuccessReceivedAt,
+			&i.GatewayAccountID,
+			&i.Name,
+			&i.Platform,
+			&i.Type,
+			&i.Url,
+			&i.Status,
+			&i.BindingID,
+			&i.RelayNodeID,
+			&i.EvidenceSnapshotID,
+			&i.BoundAt,
+			&i.BoundBy,
+			&i.BindReason,
+			&i.DbNow,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnresolvedGatewayAccountBindings = `-- name: ListUnresolvedGatewayAccountBindings :many
+WITH db_now AS (
+    SELECT clock_timestamp()::timestamptz AS db_now
+), target_gateway AS (
+    SELECT instance_id
+    FROM gateway_instances
+    WHERE instance_id = $1::uuid
+)
+SELECT
+    binding.binding_id,
+    binding.relay_node_id,
+    binding.gateway_instance_id,
+    binding.gateway_account_id,
+    binding.evidence_snapshot_id,
+    binding.bound_at,
+    binding.bound_by,
+    binding.bind_reason,
+    current_state.current_snapshot_id,
+    current_state.last_success_received_at,
+    evidence_item.name AS evidence_name,
+    evidence_item.platform AS evidence_platform,
+    evidence_item.type AS evidence_type,
+    evidence_item.url AS evidence_url,
+    evidence_item.status AS evidence_status,
+    db_now.db_now AS db_now
+FROM target_gateway
+CROSS JOIN db_now
+JOIN gateway_directory_current_state AS current_state
+    ON current_state.gateway_instance_id = target_gateway.instance_id
+JOIN relay_node_gateway_account_bindings AS binding
+    ON binding.gateway_instance_id = target_gateway.instance_id
+    AND binding.ended_at IS NULL
+LEFT JOIN gateway_directory_snapshot_items AS current_item
+    ON current_item.snapshot_id = current_state.current_snapshot_id
+    AND current_item.account_id = binding.gateway_account_id
+LEFT JOIN gateway_directory_snapshot_items AS evidence_item
+    ON evidence_item.snapshot_id = binding.evidence_snapshot_id
+    AND evidence_item.account_id = binding.gateway_account_id
+WHERE current_item.account_id IS NULL
+ORDER BY binding.gateway_account_id ASC, binding.relay_node_id ASC
+`
+
+type ListUnresolvedGatewayAccountBindingsRow struct {
+	BindingID             pgtype.UUID        `json:"binding_id"`
+	RelayNodeID           pgtype.UUID        `json:"relay_node_id"`
+	GatewayInstanceID     pgtype.UUID        `json:"gateway_instance_id"`
+	GatewayAccountID      int64              `json:"gateway_account_id"`
+	EvidenceSnapshotID    pgtype.UUID        `json:"evidence_snapshot_id"`
+	BoundAt               pgtype.Timestamptz `json:"bound_at"`
+	BoundBy               pgtype.UUID        `json:"bound_by"`
+	BindReason            string             `json:"bind_reason"`
+	CurrentSnapshotID     pgtype.UUID        `json:"current_snapshot_id"`
+	LastSuccessReceivedAt pgtype.Timestamptz `json:"last_success_received_at"`
+	EvidenceName          pgtype.Text        `json:"evidence_name"`
+	EvidencePlatform      pgtype.Text        `json:"evidence_platform"`
+	EvidenceType          pgtype.Text        `json:"evidence_type"`
+	EvidenceUrl           pgtype.Text        `json:"evidence_url"`
+	EvidenceStatus        pgtype.Text        `json:"evidence_status"`
+	DbNow                 pgtype.Timestamptz `json:"db_now"`
+}
+
+func (q *Queries) ListUnresolvedGatewayAccountBindings(ctx context.Context, gatewayInstanceID pgtype.UUID) ([]ListUnresolvedGatewayAccountBindingsRow, error) {
+	rows, err := q.db.Query(ctx, listUnresolvedGatewayAccountBindings, gatewayInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUnresolvedGatewayAccountBindingsRow{}
+	for rows.Next() {
+		var i ListUnresolvedGatewayAccountBindingsRow
+		if err := rows.Scan(
+			&i.BindingID,
+			&i.RelayNodeID,
+			&i.GatewayInstanceID,
+			&i.GatewayAccountID,
+			&i.EvidenceSnapshotID,
+			&i.BoundAt,
+			&i.BoundBy,
+			&i.BindReason,
+			&i.CurrentSnapshotID,
+			&i.LastSuccessReceivedAt,
+			&i.EvidenceName,
+			&i.EvidencePlatform,
+			&i.EvidenceType,
+			&i.EvidenceUrl,
+			&i.EvidenceStatus,
+			&i.DbNow,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockCurrentRelayNodeGatewayAccountBindingByAccount = `-- name: LockCurrentRelayNodeGatewayAccountBindingByAccount :one
