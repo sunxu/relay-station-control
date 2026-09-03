@@ -21,20 +21,20 @@
 - [x] 3.1 实现 Reconciler，用持久状态恢复过期 / 未知结果 / 重启中的 ingestion run
 - [x] 3.2 实现 fresh → stale → recovery 语义，确保失败不刷新 freshness，成功才恢复 fresh
 - [x] 3.3 实现每个 Gateway 最多一个 active run 的并发门禁，并补双 worker / 旧 fencing 负向测试
-- [ ] 3.4 为重复调度、worker 崩溃、提交未知和幂等恢复补恢复测试
-- [ ] 3.5 固化 commit 前丢失的内存响应不可重放、unknown commit 只靠幂等键/唯一约束/fencing 判断
+- [x] 3.4 为重复调度、worker 崩溃、提交未知和幂等恢复补恢复测试
+- [x] 3.5 固化 commit 前丢失的内存响应不可重放、unknown commit 只靠幂等键/唯一约束/fencing 判断
 - [x] 3.6 固化 lease 过期后在允许窗口内复用同一 durable run，否则终结失败的恢复语义
 
 ## 4. Security, redaction, and observability
 
-- [ ] 4.1 实现 raw response、service token reference、Gateway DB credential、endpoint 敏感字段的脱敏和拒绝路径
+- [x] 4.1 实现 raw response、service token reference、Gateway DB credential、endpoint 敏感字段的脱敏和拒绝路径
 - [x] 4.2 为 malformed URL、坏 schema、重复 id、unsafe URL、超限和 source-time sanity 注入 security-negative 测试
-- [ ] 4.3 补低基数状态指标、失败计数和脱敏日志/审计测试，确保不泄露 raw response 或 Secret
+- [x] 4.3 补低基数状态指标、失败计数和脱敏日志/审计测试，确保不泄露 raw response 或 Secret
 - [x] 4.4 冻结 `generated_at` 的 future tolerance、maximum source age 和 allowed backward skew 及其边界测试
 - [x] 4.5 冻结 fingerprint 字段集与固定 ID 升序序列，排除 generated_at/received_at/request_id/run_id/HTTP metadata
 
 ## 5. Validation and documentation
 
 - [x] 5.1 补最小的数据库迁移验证和 integration 测试，覆盖成功、未变化、失败、恢复和 stale 边界
-- [ ] 5.2 更新 Control runbook，说明 ingestion 启停、重启恢复和失败处置
+- [x] 5.2 更新 Control runbook，说明 ingestion 启停、重启恢复和失败处置
 - [x] 5.3 运行 `openspec validate add-gateway-account-directory-ingestion --type change --strict --no-interactive`、相关测试和 `git diff --check`

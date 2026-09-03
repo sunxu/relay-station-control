@@ -214,6 +214,34 @@ FROM gateway_directory_current_state
 WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
 FOR UPDATE;
 
+-- name: ListGatewayDirectoryRunStatusMetrics :many
+SELECT status, count(*)::bigint AS count
+FROM gateway_directory_ingestion_runs
+GROUP BY status
+ORDER BY status;
+
+-- name: ListGatewayDirectoryFailureClassMetrics :many
+SELECT last_failure_class, count(*)::bigint AS count
+FROM gateway_directory_ingestion_runs
+WHERE last_failure_class IS NOT NULL
+GROUP BY last_failure_class
+ORDER BY last_failure_class;
+
+-- name: GetGatewayDirectoryFreshnessMetrics :one
+WITH db_now AS (
+    SELECT clock_timestamp() AS db_now
+)
+SELECT
+    count(*) FILTER (WHERE current_state.last_success_received_at IS NULL)::bigint AS unknown_count,
+    count(*) FILTER (WHERE current_state.last_success_received_at IS NOT NULL
+        AND db_now.db_now - current_state.last_success_received_at <= interval '540 seconds')::bigint AS fresh_count,
+    count(*) FILTER (WHERE current_state.last_success_received_at IS NOT NULL
+        AND db_now.db_now - current_state.last_success_received_at > interval '540 seconds')::bigint AS stale_count
+FROM gateway_instances AS gateway
+LEFT JOIN gateway_directory_current_state AS current_state
+    ON current_state.gateway_instance_id = gateway.instance_id,
+db_now;
+
 -- name: GetGatewayDirectoryFinalizeRunningRun :one
 SELECT *
 FROM gateway_directory_ingestion_runs

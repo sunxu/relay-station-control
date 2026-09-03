@@ -385,6 +385,35 @@ func (q *Queries) GetGatewayDirectoryFinalizeRunningRun(ctx context.Context, arg
 	return i, err
 }
 
+const getGatewayDirectoryFreshnessMetrics = `-- name: GetGatewayDirectoryFreshnessMetrics :one
+WITH db_now AS (
+    SELECT clock_timestamp() AS db_now
+)
+SELECT
+    count(*) FILTER (WHERE current_state.last_success_received_at IS NULL)::bigint AS unknown_count,
+    count(*) FILTER (WHERE current_state.last_success_received_at IS NOT NULL
+        AND db_now.db_now - current_state.last_success_received_at <= interval '540 seconds')::bigint AS fresh_count,
+    count(*) FILTER (WHERE current_state.last_success_received_at IS NOT NULL
+        AND db_now.db_now - current_state.last_success_received_at > interval '540 seconds')::bigint AS stale_count
+FROM gateway_instances AS gateway
+LEFT JOIN gateway_directory_current_state AS current_state
+    ON current_state.gateway_instance_id = gateway.instance_id,
+db_now
+`
+
+type GetGatewayDirectoryFreshnessMetricsRow struct {
+	UnknownCount int64 `json:"unknown_count"`
+	FreshCount   int64 `json:"fresh_count"`
+	StaleCount   int64 `json:"stale_count"`
+}
+
+func (q *Queries) GetGatewayDirectoryFreshnessMetrics(ctx context.Context) (GetGatewayDirectoryFreshnessMetricsRow, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryFreshnessMetrics)
+	var i GetGatewayDirectoryFreshnessMetricsRow
+	err := row.Scan(&i.UnknownCount, &i.FreshCount, &i.StaleCount)
+	return i, err
+}
+
 const getGatewayDirectoryIngestionRun = `-- name: GetGatewayDirectoryIngestionRun :one
 SELECT ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count
 FROM gateway_directory_ingestion_runs
@@ -589,6 +618,71 @@ func (q *Queries) ListExpiredGatewayDirectoryIngestionRuns(ctx context.Context, 
 			&i.SnapshotID,
 			&i.AccountCount,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGatewayDirectoryFailureClassMetrics = `-- name: ListGatewayDirectoryFailureClassMetrics :many
+SELECT last_failure_class, count(*)::bigint AS count
+FROM gateway_directory_ingestion_runs
+WHERE last_failure_class IS NOT NULL
+GROUP BY last_failure_class
+ORDER BY last_failure_class
+`
+
+type ListGatewayDirectoryFailureClassMetricsRow struct {
+	LastFailureClass pgtype.Text `json:"last_failure_class"`
+	Count            int64       `json:"count"`
+}
+
+func (q *Queries) ListGatewayDirectoryFailureClassMetrics(ctx context.Context) ([]ListGatewayDirectoryFailureClassMetricsRow, error) {
+	rows, err := q.db.Query(ctx, listGatewayDirectoryFailureClassMetrics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGatewayDirectoryFailureClassMetricsRow{}
+	for rows.Next() {
+		var i ListGatewayDirectoryFailureClassMetricsRow
+		if err := rows.Scan(&i.LastFailureClass, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGatewayDirectoryRunStatusMetrics = `-- name: ListGatewayDirectoryRunStatusMetrics :many
+SELECT status, count(*)::bigint AS count
+FROM gateway_directory_ingestion_runs
+GROUP BY status
+ORDER BY status
+`
+
+type ListGatewayDirectoryRunStatusMetricsRow struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+func (q *Queries) ListGatewayDirectoryRunStatusMetrics(ctx context.Context) ([]ListGatewayDirectoryRunStatusMetricsRow, error) {
+	rows, err := q.db.Query(ctx, listGatewayDirectoryRunStatusMetrics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGatewayDirectoryRunStatusMetricsRow{}
+	for rows.Next() {
+		var i ListGatewayDirectoryRunStatusMetricsRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
