@@ -649,6 +649,20 @@ type RelayNodeAsset struct {
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 }
 
+type RelayNodeGatewayAccountBinding struct {
+	BindingID          pgtype.UUID        `json:"binding_id"`
+	RelayNodeID        pgtype.UUID        `json:"relay_node_id"`
+	GatewayInstanceID  pgtype.UUID        `json:"gateway_instance_id"`
+	GatewayAccountID   int64              `json:"gateway_account_id"`
+	EvidenceSnapshotID pgtype.UUID        `json:"evidence_snapshot_id"`
+	BoundAt            pgtype.Timestamptz `json:"bound_at"`
+	BoundBy            pgtype.UUID        `json:"bound_by"`
+	BindReason         string             `json:"bind_reason"`
+	EndedAt            pgtype.Timestamptz `json:"ended_at"`
+	EndedBy            pgtype.UUID        `json:"ended_by"`
+	EndReason          pgtype.Text        `json:"end_reason"`
+}
+
 type RelayNodeInventoryMonitoringActivation struct {
 	MonitoringActivationID pgtype.UUID                      `json:"monitoring_activation_id"`
 	InstanceID             pgtype.UUID                      `json:"instance_id"`
