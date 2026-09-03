@@ -242,4 +242,77 @@ func TestGatewayDirectorySchemaFoundation(t *testing.T) {
 			snapshotUpdate, snapshotDelete, itemUpdate, itemDelete,
 		)
 	}
+
+	const failedRunID = "00000000-0000-4000-8000-00000000d103"
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO gateway_directory_ingestion_runs(
+			ingestion_run_id, gateway_instance_id, scheduled_at, status,
+			attempt_count, created_at, first_started_at, last_started_at,
+			lease_expires_at, lease_fencing_token, terminal_at, last_failure_class
+		) VALUES (
+			$1::uuid, $2::uuid, '2026-09-03T00:06:00Z'::timestamptz,
+			'failed', 1,
+			'2026-09-03T00:06:00Z'::timestamptz,
+			'2026-09-03T00:06:05Z'::timestamptz,
+			'2026-09-03T00:06:05Z'::timestamptz,
+			NULL, NULL,
+			'2026-09-03T00:06:10Z'::timestamptz,
+			'transport'
+		)
+	`, failedRunID, gatewayID); err != nil {
+		t.Fatalf("insert failed terminal run: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "succeeded update",
+			sql: `
+				UPDATE gateway_directory_ingestion_runs
+				SET outcome = outcome
+				WHERE ingestion_run_id = $1::uuid
+			`,
+			args: []any{runID},
+		},
+		{
+			name: "failed update",
+			sql: `
+				UPDATE gateway_directory_ingestion_runs
+				SET outcome = outcome
+				WHERE ingestion_run_id = $1::uuid
+			`,
+			args: []any{failedRunID},
+		},
+		{
+			name: "illegal transition",
+			sql: `
+				UPDATE gateway_directory_ingestion_runs
+				SET status = 'retry_wait'
+				WHERE ingestion_run_id = $1::uuid
+			`,
+			args: []any{secondRun},
+		},
+		{
+			name: "identity update",
+			sql: `
+				UPDATE gateway_directory_ingestion_runs
+				SET scheduled_at = '2026-09-03T00:06:00Z'::timestamptz
+				WHERE ingestion_run_id = $1::uuid
+			`,
+			args: []any{secondRun},
+		},
+	} {
+		if _, err := tx.Exec(ctx, "SAVEPOINT gateway_directory_run_guard"); err != nil {
+			t.Fatal(err)
+		}
+		_, err := tx.Exec(ctx, tc.sql, tc.args...)
+		requireGatewayDirectorySQLState(t, err, "23514")
+		if _, err := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT gateway_directory_run_guard"); err != nil {
+			t.Fatal(err)
+		}
+		_ = tc.name
+	}
 }

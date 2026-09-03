@@ -297,6 +297,57 @@ CREATE TABLE gateway_directory_current_state (
         ON UPDATE RESTRICT ON DELETE RESTRICT
 );
 
+-- Ingestion runs stay mutable only while non-terminal.  Once succeeded/failed,
+-- they become immutable evidence and only exact state-machine transitions may
+-- occur before that point.
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION public.control_protect_gateway_directory_ingestion_run()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.status IN ('succeeded', 'failed') THEN
+            RAISE EXCEPTION 'gateway directory ingestion run is immutable once terminal'
+                USING ERRCODE = '23514';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    IF OLD.status IN ('succeeded', 'failed') THEN
+        RAISE EXCEPTION 'gateway directory ingestion run is immutable once terminal'
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.ingestion_run_id <> OLD.ingestion_run_id
+       OR NEW.gateway_instance_id <> OLD.gateway_instance_id
+       OR NEW.scheduled_at <> OLD.scheduled_at
+       OR NEW.created_at <> OLD.created_at THEN
+        RAISE EXCEPTION 'gateway directory ingestion run identity is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
+        IF NOT (
+            (OLD.status = 'pending' AND NEW.status IN ('running', 'failed'))
+            OR (OLD.status = 'running' AND NEW.status IN ('retry_wait', 'succeeded', 'failed'))
+            OR (OLD.status = 'retry_wait' AND NEW.status IN ('running', 'failed'))
+        ) THEN
+            RAISE EXCEPTION 'gateway directory ingestion run status transition is invalid'
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+
+CREATE TRIGGER gateway_directory_ingestion_runs_guard
+BEFORE UPDATE OR DELETE ON gateway_directory_ingestion_runs
+FOR EACH ROW EXECUTE FUNCTION public.control_protect_gateway_directory_ingestion_run();
+
 REVOKE ALL ON TABLE
     gateway_directory_ingestion_runs,
     gateway_directory_snapshots,
