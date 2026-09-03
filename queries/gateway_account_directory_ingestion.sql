@@ -144,3 +144,135 @@ ORDER BY account_id ASC;
 SELECT *
 FROM gateway_directory_current_state
 WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid;
+
+-- name: LockGatewayDirectoryInstance :one
+SELECT instance_id
+FROM gateway_instances
+WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid
+FOR UPDATE;
+
+-- name: GetGatewayDirectoryCurrentStateForUpdate :one
+SELECT *
+FROM gateway_directory_current_state
+WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+FOR UPDATE;
+
+-- name: GetGatewayDirectoryFinalizeRunningRun :one
+SELECT *
+FROM gateway_directory_ingestion_runs
+WHERE ingestion_run_id = sqlc.arg(ingestion_run_id)::uuid
+  AND gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+  AND status = 'running'
+  AND lease_fencing_token = sqlc.arg(lease_fencing_token)::uuid
+  AND lease_expires_at > sqlc.arg(db_now)::timestamptz
+FOR UPDATE;
+
+-- name: InsertGatewayDirectorySnapshot :one
+INSERT INTO gateway_directory_snapshots (
+    gateway_instance_id,
+    fingerprint,
+    fingerprint_encoding_version,
+    schema_version,
+    account_count
+) VALUES (
+    sqlc.arg(gateway_instance_id)::uuid,
+    sqlc.arg(fingerprint)::bytea,
+    1,
+    sqlc.arg(schema_version)::integer,
+    sqlc.arg(account_count)::integer
+)
+ON CONFLICT (gateway_instance_id, fingerprint) DO NOTHING
+RETURNING *;
+
+-- name: UpsertGatewayDirectoryCurrentState :one
+INSERT INTO gateway_directory_current_state (
+    gateway_instance_id,
+    current_snapshot_id,
+    current_content_fingerprint,
+    last_success_received_at,
+    last_source_generated_at,
+    last_success_run_id,
+    updated_at
+) VALUES (
+    sqlc.arg(gateway_instance_id)::uuid,
+    sqlc.arg(current_snapshot_id)::uuid,
+    sqlc.arg(current_content_fingerprint)::bytea,
+    sqlc.arg(last_success_received_at)::timestamptz,
+    sqlc.arg(last_source_generated_at)::timestamptz,
+    sqlc.arg(last_success_run_id)::uuid,
+    sqlc.arg(updated_at)::timestamptz
+)
+ON CONFLICT (gateway_instance_id) DO UPDATE SET
+    current_snapshot_id = EXCLUDED.current_snapshot_id,
+    current_content_fingerprint = EXCLUDED.current_content_fingerprint,
+    last_success_received_at = EXCLUDED.last_success_received_at,
+    last_source_generated_at = EXCLUDED.last_source_generated_at,
+    last_success_run_id = EXCLUDED.last_success_run_id,
+    updated_at = EXCLUDED.updated_at
+RETURNING *;
+
+-- name: FinalizeGatewayDirectoryIngestionRunSucceeded :one
+WITH final_now AS (
+    SELECT clock_timestamp() AS db_now
+), lease_guard AS (
+    SELECT
+        EXISTS (
+            SELECT 1
+            FROM gateway_directory_ingestion_runs AS run, final_now
+            WHERE run.ingestion_run_id = sqlc.arg(ingestion_run_id)::uuid
+              AND run.gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+              AND run.status = 'running'
+              AND run.lease_fencing_token = sqlc.arg(lease_fencing_token)::uuid
+              AND run.lease_expires_at > final_now.db_now
+        ) AS lease_valid,
+        EXISTS (
+            SELECT 1
+            FROM gateway_directory_ingestion_runs AS run, final_now
+            WHERE run.ingestion_run_id = sqlc.arg(ingestion_run_id)::uuid
+              AND run.gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+              AND run.status = 'running'
+              AND run.lease_fencing_token = sqlc.arg(lease_fencing_token)::uuid
+              AND run.lease_expires_at > final_now.db_now
+              AND sqlc.arg(source_generated_at)::timestamptz <= final_now.db_now + interval '30 seconds'
+              AND sqlc.arg(source_generated_at)::timestamptz >= final_now.db_now - interval '24 hours'
+              AND (
+                  sqlc.arg(previous_source_generated_at)::timestamptz IS NULL
+                  OR sqlc.arg(source_generated_at)::timestamptz >= sqlc.arg(previous_source_generated_at)::timestamptz - interval '5 minutes'
+              )
+        ) AS source_time_valid
+), updated AS (
+    UPDATE gateway_directory_ingestion_runs AS run
+    SET status = 'succeeded',
+        terminal_at = final_now.db_now,
+        received_at = final_now.db_now,
+        source_generated_at = sqlc.arg(source_generated_at)::timestamptz,
+        content_fingerprint = sqlc.arg(content_fingerprint)::bytea,
+        snapshot_id = sqlc.arg(snapshot_id)::uuid,
+        account_count = sqlc.arg(account_count)::integer,
+        outcome = sqlc.arg(outcome)::text,
+        lease_expires_at = NULL,
+        lease_fencing_token = NULL
+    FROM final_now, lease_guard
+    WHERE run.ingestion_run_id = sqlc.arg(ingestion_run_id)::uuid
+      AND run.gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+      AND run.status = 'running'
+      AND run.lease_fencing_token = sqlc.arg(lease_fencing_token)::uuid
+      AND lease_guard.lease_valid
+      AND lease_guard.source_time_valid
+    RETURNING 'succeeded'::text AS decision, final_now.db_now::timestamptz AS final_received_at
+), source_time_invalid AS (
+    SELECT 'source_time_invalid'::text AS decision, final_now.db_now::timestamptz AS final_received_at
+    FROM final_now, lease_guard
+    WHERE lease_guard.lease_valid
+      AND NOT lease_guard.source_time_valid
+), lost_lease AS (
+    SELECT 'lost_lease'::text AS decision, final_now.db_now::timestamptz AS final_received_at
+    FROM final_now, lease_guard
+    WHERE NOT lease_guard.lease_valid
+)
+SELECT decision, final_received_at FROM updated
+UNION ALL
+SELECT decision, final_received_at FROM source_time_invalid
+UNION ALL
+SELECT decision, final_received_at FROM lost_lease
+LIMIT 1;

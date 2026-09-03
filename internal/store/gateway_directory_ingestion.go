@@ -18,13 +18,14 @@ var (
 
 type GatewayDirectoryIngestionRepository struct {
 	queries *generated.Queries
+	pool    *pgxpool.Pool
 }
 
 func NewGatewayDirectoryIngestionRepository(pool *pgxpool.Pool) (*GatewayDirectoryIngestionRepository, error) {
 	if pool == nil {
 		return nil, errors.New("store: gateway directory ingestion database is unavailable")
 	}
-	return &GatewayDirectoryIngestionRepository{queries: generated.New(pool)}, nil
+	return &GatewayDirectoryIngestionRepository{queries: generated.New(pool), pool: pool}, nil
 }
 
 func (repository *GatewayDirectoryIngestionRepository) ScheduleCurrent(

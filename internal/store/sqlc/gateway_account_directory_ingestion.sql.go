@@ -181,6 +181,107 @@ func (q *Queries) CreateOrGetGatewayDirectoryIngestionRun(ctx context.Context, g
 	return i, err
 }
 
+const finalizeGatewayDirectoryIngestionRunSucceeded = `-- name: FinalizeGatewayDirectoryIngestionRunSucceeded :one
+WITH final_now AS (
+    SELECT clock_timestamp() AS db_now
+), lease_guard AS (
+    SELECT
+        EXISTS (
+            SELECT 1
+            FROM gateway_directory_ingestion_runs AS run, final_now
+            WHERE run.ingestion_run_id = $1::uuid
+              AND run.gateway_instance_id = $2::uuid
+              AND run.status = 'running'
+              AND run.lease_fencing_token = $3::uuid
+              AND run.lease_expires_at > final_now.db_now
+        ) AS lease_valid,
+        EXISTS (
+            SELECT 1
+            FROM gateway_directory_ingestion_runs AS run, final_now
+            WHERE run.ingestion_run_id = $1::uuid
+              AND run.gateway_instance_id = $2::uuid
+              AND run.status = 'running'
+              AND run.lease_fencing_token = $3::uuid
+              AND run.lease_expires_at > final_now.db_now
+              AND $4::timestamptz <= final_now.db_now + interval '30 seconds'
+              AND $4::timestamptz >= final_now.db_now - interval '24 hours'
+              AND (
+                  $5::timestamptz IS NULL
+                  OR $4::timestamptz >= $5::timestamptz - interval '5 minutes'
+              )
+        ) AS source_time_valid
+), updated AS (
+    UPDATE gateway_directory_ingestion_runs AS run
+    SET status = 'succeeded',
+        terminal_at = final_now.db_now,
+        received_at = final_now.db_now,
+        source_generated_at = $4::timestamptz,
+        content_fingerprint = $6::bytea,
+        snapshot_id = $7::uuid,
+        account_count = $8::integer,
+        outcome = $9::text,
+        lease_expires_at = NULL,
+        lease_fencing_token = NULL
+    FROM final_now, lease_guard
+    WHERE run.ingestion_run_id = $1::uuid
+      AND run.gateway_instance_id = $2::uuid
+      AND run.status = 'running'
+      AND run.lease_fencing_token = $3::uuid
+      AND lease_guard.lease_valid
+      AND lease_guard.source_time_valid
+    RETURNING 'succeeded'::text AS decision, final_now.db_now::timestamptz AS final_received_at
+), source_time_invalid AS (
+    SELECT 'source_time_invalid'::text AS decision, final_now.db_now::timestamptz AS final_received_at
+    FROM final_now, lease_guard
+    WHERE lease_guard.lease_valid
+      AND NOT lease_guard.source_time_valid
+), lost_lease AS (
+    SELECT 'lost_lease'::text AS decision, final_now.db_now::timestamptz AS final_received_at
+    FROM final_now, lease_guard
+    WHERE NOT lease_guard.lease_valid
+)
+SELECT decision, final_received_at FROM updated
+UNION ALL
+SELECT decision, final_received_at FROM source_time_invalid
+UNION ALL
+SELECT decision, final_received_at FROM lost_lease
+LIMIT 1
+`
+
+type FinalizeGatewayDirectoryIngestionRunSucceededParams struct {
+	IngestionRunID            pgtype.UUID        `json:"ingestion_run_id"`
+	GatewayInstanceID         pgtype.UUID        `json:"gateway_instance_id"`
+	LeaseFencingToken         pgtype.UUID        `json:"lease_fencing_token"`
+	SourceGeneratedAt         pgtype.Timestamptz `json:"source_generated_at"`
+	PreviousSourceGeneratedAt pgtype.Timestamptz `json:"previous_source_generated_at"`
+	ContentFingerprint        []byte             `json:"content_fingerprint"`
+	SnapshotID                pgtype.UUID        `json:"snapshot_id"`
+	AccountCount              int32              `json:"account_count"`
+	Outcome                   string             `json:"outcome"`
+}
+
+type FinalizeGatewayDirectoryIngestionRunSucceededRow struct {
+	Decision        string             `json:"decision"`
+	FinalReceivedAt pgtype.Timestamptz `json:"final_received_at"`
+}
+
+func (q *Queries) FinalizeGatewayDirectoryIngestionRunSucceeded(ctx context.Context, arg FinalizeGatewayDirectoryIngestionRunSucceededParams) (FinalizeGatewayDirectoryIngestionRunSucceededRow, error) {
+	row := q.db.QueryRow(ctx, finalizeGatewayDirectoryIngestionRunSucceeded,
+		arg.IngestionRunID,
+		arg.GatewayInstanceID,
+		arg.LeaseFencingToken,
+		arg.SourceGeneratedAt,
+		arg.PreviousSourceGeneratedAt,
+		arg.ContentFingerprint,
+		arg.SnapshotID,
+		arg.AccountCount,
+		arg.Outcome,
+	)
+	var i FinalizeGatewayDirectoryIngestionRunSucceededRow
+	err := row.Scan(&i.Decision, &i.FinalReceivedAt)
+	return i, err
+}
+
 const getGatewayDirectoryAttemptNow = `-- name: GetGatewayDirectoryAttemptNow :one
 SELECT clock_timestamp()::timestamptz AS db_now
 `
@@ -209,6 +310,77 @@ func (q *Queries) GetGatewayDirectoryCurrentState(ctx context.Context, gatewayIn
 		&i.LastSourceGeneratedAt,
 		&i.LastSuccessRunID,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getGatewayDirectoryCurrentStateForUpdate = `-- name: GetGatewayDirectoryCurrentStateForUpdate :one
+SELECT gateway_instance_id, current_snapshot_id, current_content_fingerprint, last_success_received_at, last_source_generated_at, last_success_run_id, updated_at
+FROM gateway_directory_current_state
+WHERE gateway_instance_id = $1::uuid
+FOR UPDATE
+`
+
+func (q *Queries) GetGatewayDirectoryCurrentStateForUpdate(ctx context.Context, gatewayInstanceID pgtype.UUID) (GatewayDirectoryCurrentState, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryCurrentStateForUpdate, gatewayInstanceID)
+	var i GatewayDirectoryCurrentState
+	err := row.Scan(
+		&i.GatewayInstanceID,
+		&i.CurrentSnapshotID,
+		&i.CurrentContentFingerprint,
+		&i.LastSuccessReceivedAt,
+		&i.LastSourceGeneratedAt,
+		&i.LastSuccessRunID,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getGatewayDirectoryFinalizeRunningRun = `-- name: GetGatewayDirectoryFinalizeRunningRun :one
+SELECT ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count
+FROM gateway_directory_ingestion_runs
+WHERE ingestion_run_id = $1::uuid
+  AND gateway_instance_id = $2::uuid
+  AND status = 'running'
+  AND lease_fencing_token = $3::uuid
+  AND lease_expires_at > $4::timestamptz
+FOR UPDATE
+`
+
+type GetGatewayDirectoryFinalizeRunningRunParams struct {
+	IngestionRunID    pgtype.UUID        `json:"ingestion_run_id"`
+	GatewayInstanceID pgtype.UUID        `json:"gateway_instance_id"`
+	LeaseFencingToken pgtype.UUID        `json:"lease_fencing_token"`
+	DbNow             pgtype.Timestamptz `json:"db_now"`
+}
+
+func (q *Queries) GetGatewayDirectoryFinalizeRunningRun(ctx context.Context, arg GetGatewayDirectoryFinalizeRunningRunParams) (GatewayDirectoryIngestionRun, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryFinalizeRunningRun,
+		arg.IngestionRunID,
+		arg.GatewayInstanceID,
+		arg.LeaseFencingToken,
+		arg.DbNow,
+	)
+	var i GatewayDirectoryIngestionRun
+	err := row.Scan(
+		&i.IngestionRunID,
+		&i.GatewayInstanceID,
+		&i.ScheduledAt,
+		&i.Status,
+		&i.AttemptCount,
+		&i.CreatedAt,
+		&i.FirstStartedAt,
+		&i.LastStartedAt,
+		&i.LeaseExpiresAt,
+		&i.LeaseFencingToken,
+		&i.TerminalAt,
+		&i.Outcome,
+		&i.LastFailureClass,
+		&i.SourceGeneratedAt,
+		&i.ReceivedAt,
+		&i.ContentFingerprint,
+		&i.SnapshotID,
+		&i.AccountCount,
 	)
 	return i, err
 }
@@ -333,6 +505,51 @@ func (q *Queries) GetGatewayDirectorySnapshotByFingerprint(ctx context.Context, 
 	return i, err
 }
 
+const insertGatewayDirectorySnapshot = `-- name: InsertGatewayDirectorySnapshot :one
+INSERT INTO gateway_directory_snapshots (
+    gateway_instance_id,
+    fingerprint,
+    fingerprint_encoding_version,
+    schema_version,
+    account_count
+) VALUES (
+    $1::uuid,
+    $2::bytea,
+    1,
+    $3::integer,
+    $4::integer
+)
+ON CONFLICT (gateway_instance_id, fingerprint) DO NOTHING
+RETURNING snapshot_id, gateway_instance_id, fingerprint, fingerprint_encoding_version, schema_version, account_count, created_at
+`
+
+type InsertGatewayDirectorySnapshotParams struct {
+	GatewayInstanceID pgtype.UUID `json:"gateway_instance_id"`
+	Fingerprint       []byte      `json:"fingerprint"`
+	SchemaVersion     int32       `json:"schema_version"`
+	AccountCount      int32       `json:"account_count"`
+}
+
+func (q *Queries) InsertGatewayDirectorySnapshot(ctx context.Context, arg InsertGatewayDirectorySnapshotParams) (GatewayDirectorySnapshot, error) {
+	row := q.db.QueryRow(ctx, insertGatewayDirectorySnapshot,
+		arg.GatewayInstanceID,
+		arg.Fingerprint,
+		arg.SchemaVersion,
+		arg.AccountCount,
+	)
+	var i GatewayDirectorySnapshot
+	err := row.Scan(
+		&i.SnapshotID,
+		&i.GatewayInstanceID,
+		&i.Fingerprint,
+		&i.FingerprintEncodingVersion,
+		&i.SchemaVersion,
+		&i.AccountCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listExpiredGatewayDirectoryIngestionRuns = `-- name: ListExpiredGatewayDirectoryIngestionRuns :many
 SELECT ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count
 FROM gateway_directory_ingestion_runs
@@ -415,6 +632,20 @@ func (q *Queries) ListGatewayDirectorySnapshotItems(ctx context.Context, snapsho
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockGatewayDirectoryInstance = `-- name: LockGatewayDirectoryInstance :one
+SELECT instance_id
+FROM gateway_instances
+WHERE instance_id = $1::uuid
+FOR UPDATE
+`
+
+func (q *Queries) LockGatewayDirectoryInstance(ctx context.Context, gatewayInstanceID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockGatewayDirectoryInstance, gatewayInstanceID)
+	var instance_id pgtype.UUID
+	err := row.Scan(&instance_id)
+	return instance_id, err
 }
 
 const recordGatewayDirectoryAttemptFailure = `-- name: RecordGatewayDirectoryAttemptFailure :one
@@ -509,6 +740,67 @@ func (q *Queries) RecordGatewayDirectoryAttemptFailure(ctx context.Context, arg 
 		&i.ContentFingerprint,
 		&i.SnapshotID,
 		&i.AccountCount,
+	)
+	return i, err
+}
+
+const upsertGatewayDirectoryCurrentState = `-- name: UpsertGatewayDirectoryCurrentState :one
+INSERT INTO gateway_directory_current_state (
+    gateway_instance_id,
+    current_snapshot_id,
+    current_content_fingerprint,
+    last_success_received_at,
+    last_source_generated_at,
+    last_success_run_id,
+    updated_at
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::bytea,
+    $4::timestamptz,
+    $5::timestamptz,
+    $6::uuid,
+    $7::timestamptz
+)
+ON CONFLICT (gateway_instance_id) DO UPDATE SET
+    current_snapshot_id = EXCLUDED.current_snapshot_id,
+    current_content_fingerprint = EXCLUDED.current_content_fingerprint,
+    last_success_received_at = EXCLUDED.last_success_received_at,
+    last_source_generated_at = EXCLUDED.last_source_generated_at,
+    last_success_run_id = EXCLUDED.last_success_run_id,
+    updated_at = EXCLUDED.updated_at
+RETURNING gateway_instance_id, current_snapshot_id, current_content_fingerprint, last_success_received_at, last_source_generated_at, last_success_run_id, updated_at
+`
+
+type UpsertGatewayDirectoryCurrentStateParams struct {
+	GatewayInstanceID         pgtype.UUID        `json:"gateway_instance_id"`
+	CurrentSnapshotID         pgtype.UUID        `json:"current_snapshot_id"`
+	CurrentContentFingerprint []byte             `json:"current_content_fingerprint"`
+	LastSuccessReceivedAt     pgtype.Timestamptz `json:"last_success_received_at"`
+	LastSourceGeneratedAt     pgtype.Timestamptz `json:"last_source_generated_at"`
+	LastSuccessRunID          pgtype.UUID        `json:"last_success_run_id"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpsertGatewayDirectoryCurrentState(ctx context.Context, arg UpsertGatewayDirectoryCurrentStateParams) (GatewayDirectoryCurrentState, error) {
+	row := q.db.QueryRow(ctx, upsertGatewayDirectoryCurrentState,
+		arg.GatewayInstanceID,
+		arg.CurrentSnapshotID,
+		arg.CurrentContentFingerprint,
+		arg.LastSuccessReceivedAt,
+		arg.LastSourceGeneratedAt,
+		arg.LastSuccessRunID,
+		arg.UpdatedAt,
+	)
+	var i GatewayDirectoryCurrentState
+	err := row.Scan(
+		&i.GatewayInstanceID,
+		&i.CurrentSnapshotID,
+		&i.CurrentContentFingerprint,
+		&i.LastSuccessReceivedAt,
+		&i.LastSourceGeneratedAt,
+		&i.LastSuccessRunID,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

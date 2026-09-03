@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/drivers/gatewaydirectory"
@@ -48,6 +50,35 @@ type GatewayDirectoryAttemptFailure struct {
 type GatewayDirectoryAttemptResult struct {
 	Success *GatewayDirectoryAttemptSuccess
 	Failure *GatewayDirectoryAttemptFailure
+}
+
+type GatewayDirectoryFinalizeOutcome string
+
+const (
+	GatewayDirectoryFinalizeOutcomeChanged   GatewayDirectoryFinalizeOutcome = "changed"
+	GatewayDirectoryFinalizeOutcomeUnchanged GatewayDirectoryFinalizeOutcome = "unchanged"
+)
+
+type GatewayDirectoryFinalizeFailureReason string
+
+const (
+	GatewayDirectoryFinalizeFailureLostLease         GatewayDirectoryFinalizeFailureReason = "lost_lease"
+	GatewayDirectoryFinalizeFailureSourceTimeInvalid GatewayDirectoryFinalizeFailureReason = "source_time_invalid"
+)
+
+type FinalizeSuccessResult struct {
+	Outcome    GatewayDirectoryFinalizeOutcome
+	SnapshotID uuid.UUID
+	ReceivedAt time.Time
+}
+
+type GatewayDirectoryFinalizeFailure struct {
+	Reason GatewayDirectoryFinalizeFailureReason
+}
+
+type GatewayDirectoryFinalizeResult struct {
+	Success *FinalizeSuccessResult
+	Failure *GatewayDirectoryFinalizeFailure
 }
 
 type GatewayDirectoryAttemptFailureInput struct {
@@ -262,4 +293,217 @@ func classifyGatewayDirectoryAttemptFailure(err error) (string, bool, error) {
 	default:
 		return string(gatewaydirectoryFailureClassUnknownExecution), true, nil
 	}
+}
+
+func (repository *GatewayDirectoryIngestionRepository) FinalizeSuccessfulAttempt(
+	ctx context.Context,
+	success GatewayDirectoryAttemptSuccess,
+) (GatewayDirectoryFinalizeResult, error) {
+	if repository == nil || repository.pool == nil || success.Request.IngestionRunID == uuid.Nil ||
+		success.Request.GatewayInstanceID == uuid.Nil || success.Request.LeaseFencingToken == uuid.Nil ||
+		success.Directory.SchemaVersion != 1 {
+		return GatewayDirectoryFinalizeResult{}, ErrInvalidGatewayDirectoryIngestionQuery
+	}
+	if success.AccountCount != len(success.Directory.Accounts) {
+		return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+	}
+	if success.Directory.FingerprintV1() != success.Fingerprint {
+		return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+	}
+
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return GatewayDirectoryFinalizeResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	txQueries := repository.queries.WithTx(tx)
+
+	if _, err := txQueries.LockGatewayDirectoryInstance(ctx, nullableUUID(success.Request.GatewayInstanceID)); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+		}
+		return GatewayDirectoryFinalizeResult{}, err
+	}
+
+	dbNow, err := txQueries.GetGatewayDirectoryAttemptNow(ctx)
+	if err != nil {
+		return GatewayDirectoryFinalizeResult{}, err
+	}
+	if !dbNow.Valid {
+		return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+	}
+	candidateReceivedAt := dbNow.Time.UTC()
+
+	runRow, err := txQueries.GetGatewayDirectoryFinalizeRunningRun(ctx, generated.GetGatewayDirectoryFinalizeRunningRunParams{
+		IngestionRunID:    nullableUUID(success.Request.IngestionRunID),
+		GatewayInstanceID: nullableUUID(success.Request.GatewayInstanceID),
+		LeaseFencingToken: nullableUUID(success.Request.LeaseFencingToken),
+		DbNow:             dbNow,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return GatewayDirectoryFinalizeResult{
+			Failure: &GatewayDirectoryFinalizeFailure{Reason: GatewayDirectoryFinalizeFailureLostLease},
+		}, nil
+	}
+	if err != nil {
+		return GatewayDirectoryFinalizeResult{}, err
+	}
+	if !validGatewayDirectoryIngestionRun(runRow) {
+		return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+	}
+
+	currentState, err := txQueries.GetGatewayDirectoryCurrentStateForUpdate(ctx, nullableUUID(success.Request.GatewayInstanceID))
+	var currentSnapshotID uuid.UUID
+	var currentContentFingerprint []byte
+	var lastSourceGeneratedAt *time.Time
+	var previousSourceGeneratedAt pgtype.Timestamptz
+	if errors.Is(err, pgx.ErrNoRows) {
+		currentState = generated.GatewayDirectoryCurrentState{}
+	} else if err != nil {
+		return GatewayDirectoryFinalizeResult{}, err
+	} else {
+		currentSnapshotID = uuidFromPG(currentState.CurrentSnapshotID)
+		currentContentFingerprint = append([]byte(nil), currentState.CurrentContentFingerprint...)
+		if currentState.LastSourceGeneratedAt.Valid {
+			previous := currentState.LastSourceGeneratedAt.Time.UTC()
+			lastSourceGeneratedAt = &previous
+			previousSourceGeneratedAt = currentState.LastSourceGeneratedAt
+		}
+	}
+
+	if err := gatewaydirectory.ValidateSourceTime(gatewaydirectory.DefaultSourceTimePolicy(), success.GeneratedAt, candidateReceivedAt, lastSourceGeneratedAt); err != nil {
+		return GatewayDirectoryFinalizeResult{
+			Failure: &GatewayDirectoryFinalizeFailure{Reason: GatewayDirectoryFinalizeFailureSourceTimeInvalid},
+		}, nil
+	}
+
+	snapshotID := currentSnapshotID
+	outcome := GatewayDirectoryFinalizeOutcomeChanged
+	insertedSnapshot := false
+	fingerprintBytes := success.Fingerprint[:]
+	if currentState.CurrentSnapshotID.Valid && bytes.Equal(currentContentFingerprint, fingerprintBytes) {
+		outcome = GatewayDirectoryFinalizeOutcomeUnchanged
+	} else {
+		snapshot, snapshotErr := txQueries.InsertGatewayDirectorySnapshot(ctx, generated.InsertGatewayDirectorySnapshotParams{
+			GatewayInstanceID: nullableUUID(success.Request.GatewayInstanceID),
+			Fingerprint:       fingerprintBytes,
+			SchemaVersion:     int32(success.Directory.SchemaVersion),
+			AccountCount:      int32(success.AccountCount),
+		})
+		if errors.Is(snapshotErr, pgx.ErrNoRows) {
+			snapshot, snapshotErr = txQueries.GetGatewayDirectorySnapshotByFingerprint(ctx, generated.GetGatewayDirectorySnapshotByFingerprintParams{
+				GatewayInstanceID: nullableUUID(success.Request.GatewayInstanceID),
+				Fingerprint:       fingerprintBytes,
+			})
+		} else {
+			insertedSnapshot = true
+		}
+		if snapshotErr != nil {
+			return GatewayDirectoryFinalizeResult{}, snapshotErr
+		}
+		snapshotID = uuidFromPG(snapshot.SnapshotID)
+		if snapshotID == uuid.Nil {
+			return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+		}
+	}
+
+	if insertedSnapshot {
+		if err := copyGatewayDirectorySnapshotItems(ctx, tx, snapshotID, success.Directory.Accounts); err != nil {
+			return GatewayDirectoryFinalizeResult{}, err
+		}
+	}
+
+	finalizeResult, runErr := txQueries.FinalizeGatewayDirectoryIngestionRunSucceeded(ctx, generated.FinalizeGatewayDirectoryIngestionRunSucceededParams{
+		IngestionRunID:            nullableUUID(success.Request.IngestionRunID),
+		GatewayInstanceID:         nullableUUID(success.Request.GatewayInstanceID),
+		LeaseFencingToken:         nullableUUID(success.Request.LeaseFencingToken),
+		SourceGeneratedAt:         pgtype.Timestamptz{Time: success.GeneratedAt.UTC(), Valid: true},
+		PreviousSourceGeneratedAt: previousSourceGeneratedAt,
+		ContentFingerprint:        fingerprintBytes,
+		SnapshotID:                nullableUUID(snapshotID),
+		AccountCount:              int32(success.AccountCount),
+		Outcome:                   string(outcome),
+	})
+	if runErr != nil {
+		return GatewayDirectoryFinalizeResult{}, runErr
+	}
+	if !finalizeResult.FinalReceivedAt.Valid {
+		return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+	}
+	finalReceivedAt := finalizeResult.FinalReceivedAt.Time.UTC()
+
+	switch finalizeResult.Decision {
+	case "succeeded":
+	case "lost_lease":
+		return GatewayDirectoryFinalizeResult{
+			Failure: &GatewayDirectoryFinalizeFailure{Reason: GatewayDirectoryFinalizeFailureLostLease},
+		}, nil
+	case "source_time_invalid":
+		return GatewayDirectoryFinalizeResult{
+			Failure: &GatewayDirectoryFinalizeFailure{Reason: GatewayDirectoryFinalizeFailureSourceTimeInvalid},
+		}, nil
+	default:
+		return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+	}
+
+	_, err = txQueries.UpsertGatewayDirectoryCurrentState(ctx, generated.UpsertGatewayDirectoryCurrentStateParams{
+		GatewayInstanceID:         nullableUUID(success.Request.GatewayInstanceID),
+		CurrentSnapshotID:         nullableUUID(snapshotID),
+		CurrentContentFingerprint: fingerprintBytes,
+		LastSuccessReceivedAt:     finalizeResult.FinalReceivedAt,
+		LastSourceGeneratedAt:     pgtype.Timestamptz{Time: success.GeneratedAt.UTC(), Valid: true},
+		LastSuccessRunID:          nullableUUID(success.Request.IngestionRunID),
+		UpdatedAt:                 finalizeResult.FinalReceivedAt,
+	})
+	if err != nil {
+		return GatewayDirectoryFinalizeResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return GatewayDirectoryFinalizeResult{}, err
+	}
+	return GatewayDirectoryFinalizeResult{
+		Success: &FinalizeSuccessResult{
+			Outcome:    outcome,
+			SnapshotID: snapshotID,
+			ReceivedAt: finalReceivedAt,
+		},
+	}, nil
+}
+
+func copyGatewayDirectorySnapshotItems(
+	ctx context.Context,
+	tx pgx.Tx,
+	snapshotID uuid.UUID,
+	accounts []gatewaydirectory.Account,
+) error {
+	if snapshotID == uuid.Nil {
+		return ErrInvalidGatewayDirectoryIngestionQuery
+	}
+	if len(accounts) == 0 {
+		return nil
+	}
+	rows := make([][]any, 0, len(accounts))
+	for _, account := range accounts {
+		var urlValue any
+		if account.URL != nil {
+			urlValue = *account.URL
+		}
+		rows = append(rows, []any{
+			snapshotID,
+			account.ID,
+			account.Name,
+			account.Platform,
+			account.Type,
+			urlValue,
+			account.Status,
+		})
+	}
+	_, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"gateway_directory_snapshot_items"},
+		[]string{"snapshot_id", "account_id", "name", "platform", "type", "url", "status"},
+		pgx.CopyFromRows(rows),
+	)
+	return err
 }
