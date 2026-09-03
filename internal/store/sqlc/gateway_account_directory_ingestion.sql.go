@@ -181,6 +181,17 @@ func (q *Queries) CreateOrGetGatewayDirectoryIngestionRun(ctx context.Context, g
 	return i, err
 }
 
+const getGatewayDirectoryAttemptNow = `-- name: GetGatewayDirectoryAttemptNow :one
+SELECT clock_timestamp()::timestamptz AS db_now
+`
+
+func (q *Queries) GetGatewayDirectoryAttemptNow(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryAttemptNow)
+	var db_now pgtype.Timestamptz
+	err := row.Scan(&db_now)
+	return db_now, err
+}
+
 const getGatewayDirectoryCurrentState = `-- name: GetGatewayDirectoryCurrentState :one
 SELECT gateway_instance_id, current_snapshot_id, current_content_fingerprint, last_success_received_at, last_source_generated_at, last_success_run_id, updated_at
 FROM gateway_directory_current_state
@@ -404,4 +415,100 @@ func (q *Queries) ListGatewayDirectorySnapshotItems(ctx context.Context, snapsho
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordGatewayDirectoryAttemptFailure = `-- name: RecordGatewayDirectoryAttemptFailure :one
+WITH db_now AS (
+    SELECT clock_timestamp() AS db_now
+), updated AS (
+    UPDATE gateway_directory_ingestion_runs AS run
+    SET status = CASE
+        WHEN $1::boolean
+             AND run.attempt_count < 2
+             AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+        THEN 'retry_wait'
+        ELSE 'failed'
+    END,
+    lease_expires_at = NULL,
+    lease_fencing_token = NULL,
+    terminal_at = CASE
+        WHEN $1::boolean
+             AND run.attempt_count < 2
+             AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+        THEN NULL
+        ELSE db_now.db_now
+    END,
+    last_failure_class = $2::text
+    FROM db_now
+    WHERE run.ingestion_run_id = $3::uuid
+      AND run.gateway_instance_id = $4::uuid
+      AND run.status = 'running'
+      AND run.lease_fencing_token = $5::uuid
+      AND run.lease_expires_at > db_now.db_now
+    RETURNING db_now, ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count
+)
+SELECT db_now, ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count FROM updated
+`
+
+type RecordGatewayDirectoryAttemptFailureParams struct {
+	Retryable         bool        `json:"retryable"`
+	LastFailureClass  string      `json:"last_failure_class"`
+	IngestionRunID    pgtype.UUID `json:"ingestion_run_id"`
+	GatewayInstanceID pgtype.UUID `json:"gateway_instance_id"`
+	LeaseFencingToken pgtype.UUID `json:"lease_fencing_token"`
+}
+
+type RecordGatewayDirectoryAttemptFailureRow struct {
+	DbNow              interface{}        `json:"db_now"`
+	IngestionRunID     pgtype.UUID        `json:"ingestion_run_id"`
+	GatewayInstanceID  pgtype.UUID        `json:"gateway_instance_id"`
+	ScheduledAt        pgtype.Timestamptz `json:"scheduled_at"`
+	Status             string             `json:"status"`
+	AttemptCount       int16              `json:"attempt_count"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	FirstStartedAt     pgtype.Timestamptz `json:"first_started_at"`
+	LastStartedAt      pgtype.Timestamptz `json:"last_started_at"`
+	LeaseExpiresAt     pgtype.Timestamptz `json:"lease_expires_at"`
+	LeaseFencingToken  pgtype.UUID        `json:"lease_fencing_token"`
+	TerminalAt         pgtype.Timestamptz `json:"terminal_at"`
+	Outcome            pgtype.Text        `json:"outcome"`
+	LastFailureClass   pgtype.Text        `json:"last_failure_class"`
+	SourceGeneratedAt  pgtype.Timestamptz `json:"source_generated_at"`
+	ReceivedAt         pgtype.Timestamptz `json:"received_at"`
+	ContentFingerprint []byte             `json:"content_fingerprint"`
+	SnapshotID         pgtype.UUID        `json:"snapshot_id"`
+	AccountCount       pgtype.Int4        `json:"account_count"`
+}
+
+func (q *Queries) RecordGatewayDirectoryAttemptFailure(ctx context.Context, arg RecordGatewayDirectoryAttemptFailureParams) (RecordGatewayDirectoryAttemptFailureRow, error) {
+	row := q.db.QueryRow(ctx, recordGatewayDirectoryAttemptFailure,
+		arg.Retryable,
+		arg.LastFailureClass,
+		arg.IngestionRunID,
+		arg.GatewayInstanceID,
+		arg.LeaseFencingToken,
+	)
+	var i RecordGatewayDirectoryAttemptFailureRow
+	err := row.Scan(
+		&i.DbNow,
+		&i.IngestionRunID,
+		&i.GatewayInstanceID,
+		&i.ScheduledAt,
+		&i.Status,
+		&i.AttemptCount,
+		&i.CreatedAt,
+		&i.FirstStartedAt,
+		&i.LastStartedAt,
+		&i.LeaseExpiresAt,
+		&i.LeaseFencingToken,
+		&i.TerminalAt,
+		&i.Outcome,
+		&i.LastFailureClass,
+		&i.SourceGeneratedAt,
+		&i.ReceivedAt,
+		&i.ContentFingerprint,
+		&i.SnapshotID,
+		&i.AccountCount,
+	)
+	return i, err
 }

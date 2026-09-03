@@ -24,6 +24,8 @@ const (
 	AllowedBackwardSkew        = 5 * time.Minute
 )
 
+var ErrSourceTimeInvalid = errors.New("gatewaydirectory: source time invalid")
+
 // DirectoryResponse is a normalized, validated snapshot of the Gateway API
 // Account Directory.
 type DirectoryResponse struct {
@@ -66,18 +68,18 @@ func ValidateSourceTime(policy SourceTimePolicy, generatedAt, receivedAt time.Ti
 		policy.BackwardTolerance = AllowedBackwardSkew
 	}
 	if generatedAt.IsZero() || receivedAt.IsZero() {
-		return errors.New("gatewaydirectory: source time invalid")
+		return ErrSourceTimeInvalid
 	}
 	if generatedAt.After(receivedAt.Add(policy.FutureTolerance)) {
-		return errors.New("gatewaydirectory: source time too far in future")
+		return ErrSourceTimeInvalid
 	}
 	if receivedAt.Sub(generatedAt) > policy.MaximumSourceAge {
-		return errors.New("gatewaydirectory: source time too old")
+		return ErrSourceTimeInvalid
 	}
 	if previousSuccessfulGeneratedAt != nil && !previousSuccessfulGeneratedAt.IsZero() {
 		previous := previousSuccessfulGeneratedAt.Add(-policy.BackwardTolerance)
 		if generatedAt.Before(previous) {
-			return errors.New("gatewaydirectory: source time regressed")
+			return ErrSourceTimeInvalid
 		}
 	}
 	return nil
@@ -99,24 +101,21 @@ func parseDirectoryResponse(body io.Reader, maxBodyBytes int64) (DirectoryRespon
 		return DirectoryResponse{}, [sha256.Size]byte{}, err
 	}
 	if !utf8.Valid(encoded) {
-		return DirectoryResponse{}, [sha256.Size]byte{}, &FetchError{
-			Reason:    rootdrivers.ReasonResponseInvalid,
-			Retryable: false,
-		}
+		return DirectoryResponse{}, [sha256.Size]byte{}, &FetchError{Reason: rootdrivers.ReasonContractInvalid, Retryable: false}
 	}
 	var raw rawDirectoryResponse
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&raw); err != nil {
 		return DirectoryResponse{}, [sha256.Size]byte{}, &FetchError{
-			Reason:    rootdrivers.ReasonResponseInvalid,
+			Reason:    rootdrivers.ReasonContractInvalid,
 			Retryable: false,
 			Err:       err,
 		}
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
 		return DirectoryResponse{}, [sha256.Size]byte{}, &FetchError{
-			Reason:    rootdrivers.ReasonResponseInvalid,
+			Reason:    rootdrivers.ReasonContractInvalid,
 			Retryable: false,
 			Err:       err,
 		}
@@ -345,10 +344,7 @@ func readBounded(body io.Reader, maxBytes int64) ([]byte, error) {
 	}
 	encoded, err := io.ReadAll(io.LimitReader(body, maxBytes+1))
 	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, &FetchError{Reason: rootdrivers.ReasonNetworkUnavailable, Retryable: true, Err: err}
-		}
-		return nil, &FetchError{Reason: rootdrivers.ReasonNetworkUnavailable, Retryable: true, Err: err}
+		return nil, &FetchError{Reason: rootdrivers.ReasonPartialRead, Retryable: true, Err: err}
 	}
 	if int64(len(encoded)) > maxBytes {
 		return nil, &FetchError{Reason: rootdrivers.ReasonResponseTooLarge, Retryable: false}

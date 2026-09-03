@@ -43,6 +43,9 @@ WHERE NOT EXISTS (SELECT 1 FROM active_gateway)
   AND NOT EXISTS (SELECT 1 FROM inserted)
 LIMIT 1;
 
+-- name: GetGatewayDirectoryAttemptNow :one
+SELECT clock_timestamp()::timestamptz AS db_now;
+
 -- name: ClaimGatewayDirectoryIngestionRun :one
 WITH db_now AS (
     SELECT clock_timestamp() AS db_now
@@ -67,6 +70,38 @@ WITH db_now AS (
     FROM candidate, db_now
     WHERE run.ingestion_run_id = candidate.ingestion_run_id
     RETURNING run.*
+)
+SELECT * FROM updated;
+
+-- name: RecordGatewayDirectoryAttemptFailure :one
+WITH db_now AS (
+    SELECT clock_timestamp() AS db_now
+), updated AS (
+    UPDATE gateway_directory_ingestion_runs AS run
+    SET status = CASE
+        WHEN sqlc.arg(retryable)::boolean
+             AND run.attempt_count < 2
+             AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+        THEN 'retry_wait'
+        ELSE 'failed'
+    END,
+    lease_expires_at = NULL,
+    lease_fencing_token = NULL,
+    terminal_at = CASE
+        WHEN sqlc.arg(retryable)::boolean
+             AND run.attempt_count < 2
+             AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+        THEN NULL
+        ELSE db_now.db_now
+    END,
+    last_failure_class = sqlc.arg(last_failure_class)::text
+    FROM db_now
+    WHERE run.ingestion_run_id = sqlc.arg(ingestion_run_id)::uuid
+      AND run.gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+      AND run.status = 'running'
+      AND run.lease_fencing_token = sqlc.arg(lease_fencing_token)::uuid
+      AND run.lease_expires_at > db_now.db_now
+    RETURNING *
 )
 SELECT * FROM updated;
 

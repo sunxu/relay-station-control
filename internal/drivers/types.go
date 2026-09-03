@@ -52,6 +52,7 @@ const (
 	ReasonRedirectRejected       Reason = "redirect_rejected"
 	ReasonTimeout                Reason = "timeout"
 	ReasonCancelled              Reason = "cancelled"
+	ReasonPartialRead            Reason = "partial_read"
 	ReasonHTTPStatus             Reason = "http_status"
 	ReasonResponseInvalid        Reason = "response_invalid"
 	ReasonResponseTooLarge       Reason = "response_too_large"

@@ -25,9 +25,10 @@ var errRedirectRejected = errors.New("gatewaydirectory: redirect rejected")
 // FetchError keeps the failure classification closed without exposing raw
 // network details, response bodies, or endpoint data.
 type FetchError struct {
-	Reason    rootdrivers.Reason
-	Retryable bool
-	Err       error
+	Reason     rootdrivers.Reason
+	HTTPStatus int
+	Retryable  bool
+	Err        error
 }
 
 func (e *FetchError) Error() string {
@@ -122,15 +123,17 @@ func (c *Client) Fetch(ctx context.Context, reference rootdrivers.SecretReferenc
 			return nil
 		case httpResponse.StatusCode == http.StatusTooManyRequests || httpResponse.StatusCode >= http.StatusInternalServerError:
 			return &FetchError{
-				Reason:    rootdrivers.ReasonHTTPStatus,
-				Retryable: true,
-				Err:       fmt.Errorf("gatewaydirectory: unexpected http status %d", httpResponse.StatusCode),
+				Reason:     rootdrivers.ReasonHTTPStatus,
+				HTTPStatus: httpResponse.StatusCode,
+				Retryable:  true,
+				Err:        fmt.Errorf("gatewaydirectory: unexpected http status %d", httpResponse.StatusCode),
 			}
 		default:
 			return &FetchError{
-				Reason:    rootdrivers.ReasonHTTPStatus,
-				Retryable: false,
-				Err:       fmt.Errorf("gatewaydirectory: unexpected http status %d", httpResponse.StatusCode),
+				Reason:     rootdrivers.ReasonHTTPStatus,
+				HTTPStatus: httpResponse.StatusCode,
+				Retryable:  false,
+				Err:        fmt.Errorf("gatewaydirectory: unexpected http status %d", httpResponse.StatusCode),
 			}
 		}
 	})
