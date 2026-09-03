@@ -3,28 +3,43 @@ SELECT instance_id, management_endpoint, reader_secret_ref
 FROM gateway_instances
 WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid;
 
--- name: GetGatewayDirectoryCurrentScheduledAt :one
-SELECT to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 180) * 180)::timestamptz AS scheduled_at;
-
 -- name: CreateOrGetGatewayDirectoryIngestionRun :one
-WITH inserted AS (
+WITH locked_gateway AS (
+    SELECT instance_id
+    FROM gateway_instances
+    WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid
+    FOR UPDATE
+), db_now AS (
+    SELECT clock_timestamp() AS db_now
+), current_slot AS (
+    SELECT to_timestamp(floor(extract(epoch FROM db_now.db_now) / 180) * 180)::timestamptz AS scheduled_at
+    FROM db_now
+), active_gateway AS (
+    SELECT 1
+    FROM gateway_directory_ingestion_runs AS active
+    JOIN locked_gateway ON active.gateway_instance_id = locked_gateway.instance_id
+    WHERE active.status IN ('pending', 'running', 'retry_wait')
+    LIMIT 1
+), inserted AS (
     INSERT INTO gateway_directory_ingestion_runs (
         gateway_instance_id,
         scheduled_at
-    )
-    VALUES (
-        sqlc.arg(gateway_instance_id)::uuid,
-        sqlc.arg(scheduled_at)::timestamptz
-    )
+    ) SELECT
+        locked_gateway.instance_id,
+        current_slot.scheduled_at
+    FROM locked_gateway
+    CROSS JOIN current_slot
+    WHERE NOT EXISTS (SELECT 1 FROM active_gateway)
     ON CONFLICT (gateway_instance_id, scheduled_at) DO NOTHING
-    RETURNING *
+    RETURNING *, true AS created
 )
 SELECT * FROM inserted
 UNION ALL
-SELECT existing.*
+SELECT existing.*, false AS created
 FROM gateway_directory_ingestion_runs AS existing
-WHERE existing.gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
-  AND existing.scheduled_at = sqlc.arg(scheduled_at)::timestamptz
+JOIN locked_gateway ON existing.gateway_instance_id = locked_gateway.instance_id
+JOIN current_slot ON existing.scheduled_at = current_slot.scheduled_at
+WHERE NOT EXISTS (SELECT 1 FROM active_gateway)
   AND NOT EXISTS (SELECT 1 FROM inserted)
 LIMIT 1;
 

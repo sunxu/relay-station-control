@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	generated "github.com/sunxu/relay-station-control/internal/store/sqlc"
@@ -30,22 +29,22 @@ func NewGatewayDirectoryIngestionRepository(pool *pgxpool.Pool) (*GatewayDirecto
 
 func (repository *GatewayDirectoryIngestionRepository) ScheduleCurrent(
 	ctx context.Context, gatewayInstanceID uuid.UUID,
-) (generated.GatewayDirectoryIngestionRun, error) {
+) (generated.GatewayDirectoryIngestionRun, bool, bool, error) {
 	if gatewayInstanceID == uuid.Nil {
-		return generated.GatewayDirectoryIngestionRun{}, ErrInvalidGatewayDirectoryIngestionQuery
+		return generated.GatewayDirectoryIngestionRun{}, false, false, ErrInvalidGatewayDirectoryIngestionQuery
 	}
-	scheduledAt, err := repository.queries.GetGatewayDirectoryCurrentScheduledAt(ctx)
+	row, err := repository.queries.CreateOrGetGatewayDirectoryIngestionRun(ctx, nullableUUID(gatewayInstanceID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return generated.GatewayDirectoryIngestionRun{}, false, true, nil
+	}
 	if err != nil {
-		return generated.GatewayDirectoryIngestionRun{}, err
+		return generated.GatewayDirectoryIngestionRun{}, false, false, err
 	}
-	if !scheduledAt.Valid || scheduledAt.Time.IsZero() {
-		return generated.GatewayDirectoryIngestionRun{}, ErrGatewayDirectoryIngestionInconsistent
+	run := gatewayDirectoryIngestionRunFromCreateRow(row)
+	if !validGatewayDirectoryIngestionRun(run) {
+		return generated.GatewayDirectoryIngestionRun{}, false, false, ErrGatewayDirectoryIngestionInconsistent
 	}
-	return repository.queries.CreateOrGetGatewayDirectoryIngestionRun(ctx,
-		generated.CreateOrGetGatewayDirectoryIngestionRunParams{
-			GatewayInstanceID: nullableUUID(gatewayInstanceID),
-			ScheduledAt:       scheduledAt,
-		})
+	return run, row.Created, false, nil
 }
 
 func (repository *GatewayDirectoryIngestionRepository) ClaimRunnable(
@@ -65,12 +64,17 @@ func (repository *GatewayDirectoryIngestionRepository) ClaimRunnable(
 	if err != nil {
 		return nil, err
 	}
-	if !validGatewayDirectoryIngestionRun(row) {
+	run := gatewayDirectoryIngestionRunFromClaimRow(row)
+	if !validGatewayDirectoryIngestionRun(run) {
 		return nil, ErrGatewayDirectoryIngestionInconsistent
 	}
-	return &row, nil
+	return &run, nil
 }
 
+// LeaseValid is only a read-side observation/pre-check.
+// It does not provide fencing-write permission by itself; every later state
+// update must atomically check ingestion_run_id + status='running' +
+// lease_fencing_token in the same UPDATE/transaction that mutates the row.
 func (repository *GatewayDirectoryIngestionRepository) LeaseValid(
 	ctx context.Context, ingestionRunID, gatewayInstanceID, fencingToken uuid.UUID,
 ) (*generated.GatewayDirectoryIngestionRun, error) {
@@ -122,4 +126,50 @@ func validGatewayDirectoryIngestionRun(row generated.GatewayDirectoryIngestionRu
 		row.Status != "" &&
 		row.AttemptCount >= 0 && row.AttemptCount <= 2 &&
 		row.CreatedAt.Valid
+}
+
+func gatewayDirectoryIngestionRunFromCreateRow(row generated.CreateOrGetGatewayDirectoryIngestionRunRow) generated.GatewayDirectoryIngestionRun {
+	return generated.GatewayDirectoryIngestionRun{
+		IngestionRunID:     row.IngestionRunID,
+		GatewayInstanceID:  row.GatewayInstanceID,
+		ScheduledAt:        row.ScheduledAt,
+		Status:             row.Status,
+		AttemptCount:       row.AttemptCount,
+		CreatedAt:          row.CreatedAt,
+		FirstStartedAt:     row.FirstStartedAt,
+		LastStartedAt:      row.LastStartedAt,
+		LeaseExpiresAt:     row.LeaseExpiresAt,
+		LeaseFencingToken:  row.LeaseFencingToken,
+		TerminalAt:         row.TerminalAt,
+		Outcome:            row.Outcome,
+		LastFailureClass:   row.LastFailureClass,
+		SourceGeneratedAt:  row.SourceGeneratedAt,
+		ReceivedAt:         row.ReceivedAt,
+		ContentFingerprint: row.ContentFingerprint,
+		SnapshotID:         row.SnapshotID,
+		AccountCount:       row.AccountCount,
+	}
+}
+
+func gatewayDirectoryIngestionRunFromClaimRow(row generated.ClaimGatewayDirectoryIngestionRunRow) generated.GatewayDirectoryIngestionRun {
+	return generated.GatewayDirectoryIngestionRun{
+		IngestionRunID:     row.IngestionRunID,
+		GatewayInstanceID:  row.GatewayInstanceID,
+		ScheduledAt:        row.ScheduledAt,
+		Status:             row.Status,
+		AttemptCount:       row.AttemptCount,
+		CreatedAt:          row.CreatedAt,
+		FirstStartedAt:     row.FirstStartedAt,
+		LastStartedAt:      row.LastStartedAt,
+		LeaseExpiresAt:     row.LeaseExpiresAt,
+		LeaseFencingToken:  row.LeaseFencingToken,
+		TerminalAt:         row.TerminalAt,
+		Outcome:            row.Outcome,
+		LastFailureClass:   row.LastFailureClass,
+		SourceGeneratedAt:  row.SourceGeneratedAt,
+		ReceivedAt:         row.ReceivedAt,
+		ContentFingerprint: row.ContentFingerprint,
+		SnapshotID:         row.SnapshotID,
+		AccountCount:       row.AccountCount,
+	}
 }
