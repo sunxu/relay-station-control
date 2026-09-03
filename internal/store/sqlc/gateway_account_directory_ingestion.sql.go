@@ -648,6 +648,80 @@ func (q *Queries) LockGatewayDirectoryInstance(ctx context.Context, gatewayInsta
 	return instance_id, err
 }
 
+const reconcileGatewayDirectoryIngestionRun = `-- name: ReconcileGatewayDirectoryIngestionRun :one
+WITH db_now AS (
+    SELECT clock_timestamp() AS db_now
+), candidate AS (
+    SELECT
+        run.ingestion_run_id,
+        run.status AS previous_status,
+        run.last_failure_class
+    FROM gateway_directory_ingestion_runs AS run, db_now
+    WHERE (
+        (run.status = 'running' AND run.lease_expires_at <= db_now.db_now)
+        OR (run.status = 'pending' AND db_now.db_now >= run.scheduled_at + interval '120 seconds')
+        OR (run.status = 'retry_wait' AND db_now.db_now >= run.scheduled_at + interval '120 seconds')
+    )
+    ORDER BY run.scheduled_at ASC, run.created_at ASC, run.gateway_instance_id ASC
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1
+), updated AS (
+    UPDATE gateway_directory_ingestion_runs AS run
+    SET status = CASE
+        WHEN candidate.previous_status = 'running'
+             AND run.attempt_count < 2
+             AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+        THEN 'retry_wait'
+        ELSE 'failed'
+    END,
+    terminal_at = CASE
+        WHEN candidate.previous_status = 'running'
+             AND run.attempt_count < 2
+             AND db_now.db_now < run.scheduled_at + interval '120 seconds'
+        THEN NULL
+        ELSE db_now.db_now
+    END,
+    lease_expires_at = NULL,
+    lease_fencing_token = NULL,
+    last_failure_class = CASE
+        WHEN candidate.previous_status = 'running' THEN 'lease_lost'
+        WHEN candidate.previous_status = 'pending' THEN 'start_deadline_expired'
+        ELSE candidate.last_failure_class
+    END,
+    outcome = NULL,
+    source_generated_at = NULL,
+    received_at = NULL,
+    content_fingerprint = NULL,
+    snapshot_id = NULL,
+    account_count = NULL
+    FROM candidate, db_now
+    WHERE run.ingestion_run_id = candidate.ingestion_run_id
+    RETURNING run.ingestion_run_id, candidate.previous_status, run.status, run.attempt_count, run.last_failure_class
+)
+SELECT ingestion_run_id, previous_status, status, attempt_count, last_failure_class FROM updated
+`
+
+type ReconcileGatewayDirectoryIngestionRunRow struct {
+	IngestionRunID   pgtype.UUID `json:"ingestion_run_id"`
+	PreviousStatus   string      `json:"previous_status"`
+	Status           string      `json:"status"`
+	AttemptCount     int16       `json:"attempt_count"`
+	LastFailureClass pgtype.Text `json:"last_failure_class"`
+}
+
+func (q *Queries) ReconcileGatewayDirectoryIngestionRun(ctx context.Context) (ReconcileGatewayDirectoryIngestionRunRow, error) {
+	row := q.db.QueryRow(ctx, reconcileGatewayDirectoryIngestionRun)
+	var i ReconcileGatewayDirectoryIngestionRunRow
+	err := row.Scan(
+		&i.IngestionRunID,
+		&i.PreviousStatus,
+		&i.Status,
+		&i.AttemptCount,
+		&i.LastFailureClass,
+	)
+	return i, err
+}
+
 const recordGatewayDirectoryAttemptFailure = `-- name: RecordGatewayDirectoryAttemptFailure :one
 WITH db_now AS (
     SELECT clock_timestamp() AS db_now

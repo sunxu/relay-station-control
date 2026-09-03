@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	generated "github.com/sunxu/relay-station-control/internal/store/sqlc"
@@ -19,6 +20,14 @@ var (
 type GatewayDirectoryIngestionRepository struct {
 	queries *generated.Queries
 	pool    *pgxpool.Pool
+}
+
+type GatewayDirectoryReconcileResult struct {
+	RunID        uuid.UUID
+	From         string
+	To           string
+	AttemptCount int
+	FailureClass string
 }
 
 func NewGatewayDirectoryIngestionRepository(pool *pgxpool.Pool) (*GatewayDirectoryIngestionRepository, error) {
@@ -118,6 +127,42 @@ func (repository *GatewayDirectoryIngestionRepository) ExpiredRunningRuns(
 		runs = append(runs, row)
 	}
 	return runs, nil
+}
+
+func (repository *GatewayDirectoryIngestionRepository) ReconcileOne(ctx context.Context) (*GatewayDirectoryReconcileResult, error) {
+	if repository == nil || repository.pool == nil {
+		return nil, ErrInvalidGatewayDirectoryIngestionQuery
+	}
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	row, err := repository.queries.WithTx(tx).ReconcileGatewayDirectoryIngestionRun(ctx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23514" {
+			return nil, ErrGatewayDirectoryIngestionInconsistent
+		}
+		return nil, err
+	}
+	if row.IngestionRunID.Valid == false || row.PreviousStatus == "" || row.Status == "" {
+		return nil, ErrGatewayDirectoryIngestionInconsistent
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &GatewayDirectoryReconcileResult{
+		RunID:        uuidFromPG(row.IngestionRunID),
+		From:         row.PreviousStatus,
+		To:           row.Status,
+		AttemptCount: int(row.AttemptCount),
+		FailureClass: row.LastFailureClass.String,
+	}, nil
 }
 
 func validGatewayDirectoryIngestionRun(row generated.GatewayDirectoryIngestionRun) bool {
