@@ -46,9 +46,9 @@ Control SHALL 固定以下第一版执行预算：`max_attempts = 2`、`attempt 
 - **WHEN** ingestion run 的首个 attempt 在 5 秒内成功提交
 - **THEN** run 进入 succeeded，并记录 changed 或 unchanged outcome
 
-#### Scenario: 首次 attempt 失败后可重试
-- **WHEN** 第一次 attempt 失败且仍在 `scheduled_at + 120s` 之前，且未耗尽 max_attempts
-- **THEN** run 可以进入 retry_wait 并允许第二次 fenced attempt
+#### Scenario: retryable failure 且预算仍可用
+- **WHEN** 第一次 attempt 遇到 retryable failure，且在 `scheduled_at + 120s` 之前并且 attempts 未耗尽
+- **THEN** run 进入 retry_wait
 
 #### Scenario: 第二次 attempt 仍失败
 - **WHEN** 第二次 attempt 失败或超时
@@ -57,6 +57,10 @@ Control SHALL 固定以下第一版执行预算：`max_attempts = 2`、`attempt 
 ### Requirement: Control SHALL 冻结 retryability 分类
 
 Control SHALL 将以下情况视为 retryable：transport/network failure、timeout、partial read、429、5xx、Control transient finalize/commit failure，以及允许恢复的 lease/unknown execution。Control SHALL 将以下情况视为 non-retryable：401、403、404、其它非 429 的 4xx、200 contract invalid、source-time reject、hard-limit reject、Secret unavailable/invalid。non-retryable 情况 MUST 直接 failed，不得进入 retry_wait。
+
+#### Scenario: retryable failure 且预算仍可用
+- **WHEN** 第一次 attempt 遇到 retryable failure，且在 `scheduled_at + 120s` 之前并且 attempts 未耗尽
+- **THEN** run 进入 retry_wait
 
 #### Scenario: transport failure
 - **WHEN** fetch 遇到 transport/network failure
@@ -168,7 +172,7 @@ Control SHALL 以 `schema_version` 加上按 `id` 升序排列的 `id`、`name`�
 
 ### Requirement: Control SHALL 使用固定 HTTP fetch contract
 
-Control SHALL 以 `GET /internal/v1/api-account-directory` 通过 HTTPS fetch Directory，并 MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body 或读取超限 MUST 直接失败并把整轮 ingestion 标记为 failed；raw body MUST NOT 被持久化。
+Control SHALL 以 `GET /internal/v1/api-account-directory` 通过 HTTPS fetch Directory，并 MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body、retryable failure 以及读取超限 MUST 先记录 attempt failure，再按 retryability 分类；raw body MUST NOT 被持久化。
 
 #### Scenario: 正常 fetch
 - **WHEN** Control 以 HTTPS 对 `GET /internal/v1/api-account-directory` 发起带 Bearer token 的请求

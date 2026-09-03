@@ -44,7 +44,7 @@ empty Directory 是合法的 content snapshot；它对应一个 snapshot 加 0 �
 1. Scheduler 以 epoch-aligned 180 秒 slot 为每个 Gateway 创建/唤醒 ingestion run；`scheduled_at` 必须落在该 slot，且 `(gateway_instance_id, scheduled_at)` 唯一，重复 tick 或重启只能复用同一 run。
 2. Worker 通过 PostgreSQL lease/fencing 认领唯一 active run。
 3. Worker 读取 Gateway Directory，先做 whole-response validation，再做 canonical normalization。
-4. 如果 validation 失败、timeout、partial read 或 response 含 contract 外额外字段：写入失败 run，保留 current snapshot pointer 和 freshness，不创建新 snapshot。
+4. 如果 validation 失败、timeout、partial read、response 含 contract 外额外字段，或 fetch 发生 retryable / non-retryable failure：先记录 attempt failure，再按 retryability 分类；retryable 且 attempt/window 尚可用时进入 retry_wait，non-retryable 或预算耗尽时进入 failed。validation/contract reject 直接 failed。
 5. 如果 validation 成功但 normalized content 未变化：仅在最终成功提交时刷新 `last_success_received_at`、`last_source_generated_at` 和 last success run 引用。
 6. 如果 normalized content 相对 current 变化：先按 `(gateway_instance_id, fingerprint)` 查找历史 snapshot；存在则复用，不存在才在同一事务创建 snapshot + items，然后推进 current pointer 并写成功观察状态。
 7. 如果 worker 需要重试，只有最终成功提交的那次 attempt 才能刷新 freshness；中间失败 attempt 只能留下失败证据。
