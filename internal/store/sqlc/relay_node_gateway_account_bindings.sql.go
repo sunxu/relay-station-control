@@ -119,6 +119,33 @@ func (q *Queries) GetCurrentRelayNodeGatewayAccountBindingByNode(ctx context.Con
 	return i, err
 }
 
+const getGatewayDirectorySnapshotItem = `-- name: GetGatewayDirectorySnapshotItem :one
+SELECT snapshot_id, account_id, name, platform, type, url, status
+FROM gateway_directory_snapshot_items
+WHERE snapshot_id = $1::uuid
+  AND account_id = $2::bigint
+`
+
+type GetGatewayDirectorySnapshotItemParams struct {
+	SnapshotID pgtype.UUID `json:"snapshot_id"`
+	AccountID  int64       `json:"account_id"`
+}
+
+func (q *Queries) GetGatewayDirectorySnapshotItem(ctx context.Context, arg GetGatewayDirectorySnapshotItemParams) (GatewayDirectorySnapshotItem, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectorySnapshotItem, arg.SnapshotID, arg.AccountID)
+	var i GatewayDirectorySnapshotItem
+	err := row.Scan(
+		&i.SnapshotID,
+		&i.AccountID,
+		&i.Name,
+		&i.Platform,
+		&i.Type,
+		&i.Url,
+		&i.Status,
+	)
+	return i, err
+}
+
 const getRelayBindingDBTime = `-- name: GetRelayBindingDBTime :one
 SELECT clock_timestamp()::timestamptz
 `
@@ -188,6 +215,39 @@ func (q *Queries) InsertOpenRelayNodeGatewayAccountBinding(ctx context.Context, 
 	return i, err
 }
 
+const lockCurrentRelayNodeGatewayAccountBindingByAccount = `-- name: LockCurrentRelayNodeGatewayAccountBindingByAccount :one
+SELECT binding_id, relay_node_id, gateway_instance_id, gateway_account_id, evidence_snapshot_id, bound_at, bound_by, bind_reason, ended_at, ended_by, end_reason
+FROM relay_node_gateway_account_bindings
+WHERE gateway_instance_id = $1::uuid
+  AND gateway_account_id = $2::bigint
+  AND ended_at IS NULL
+FOR UPDATE
+`
+
+type LockCurrentRelayNodeGatewayAccountBindingByAccountParams struct {
+	GatewayInstanceID pgtype.UUID `json:"gateway_instance_id"`
+	GatewayAccountID  int64       `json:"gateway_account_id"`
+}
+
+func (q *Queries) LockCurrentRelayNodeGatewayAccountBindingByAccount(ctx context.Context, arg LockCurrentRelayNodeGatewayAccountBindingByAccountParams) (RelayNodeGatewayAccountBinding, error) {
+	row := q.db.QueryRow(ctx, lockCurrentRelayNodeGatewayAccountBindingByAccount, arg.GatewayInstanceID, arg.GatewayAccountID)
+	var i RelayNodeGatewayAccountBinding
+	err := row.Scan(
+		&i.BindingID,
+		&i.RelayNodeID,
+		&i.GatewayInstanceID,
+		&i.GatewayAccountID,
+		&i.EvidenceSnapshotID,
+		&i.BoundAt,
+		&i.BoundBy,
+		&i.BindReason,
+		&i.EndedAt,
+		&i.EndedBy,
+		&i.EndReason,
+	)
+	return i, err
+}
+
 const lockCurrentRelayNodeGatewayAccountBindingByNode = `-- name: LockCurrentRelayNodeGatewayAccountBindingByNode :one
 SELECT binding_id, relay_node_id, gateway_instance_id, gateway_account_id, evidence_snapshot_id, bound_at, bound_by, bind_reason, ended_at, ended_by, end_reason
 FROM relay_node_gateway_account_bindings
@@ -213,4 +273,40 @@ func (q *Queries) LockCurrentRelayNodeGatewayAccountBindingByNode(ctx context.Co
 		&i.EndReason,
 	)
 	return i, err
+}
+
+const lockGatewayDirectoryCurrentState = `-- name: LockGatewayDirectoryCurrentState :one
+SELECT gateway_instance_id, current_snapshot_id, current_content_fingerprint, last_success_received_at, last_source_generated_at, last_success_run_id, updated_at
+FROM gateway_directory_current_state
+WHERE gateway_instance_id = $1::uuid
+FOR UPDATE
+`
+
+func (q *Queries) LockGatewayDirectoryCurrentState(ctx context.Context, gatewayInstanceID pgtype.UUID) (GatewayDirectoryCurrentState, error) {
+	row := q.db.QueryRow(ctx, lockGatewayDirectoryCurrentState, gatewayInstanceID)
+	var i GatewayDirectoryCurrentState
+	err := row.Scan(
+		&i.GatewayInstanceID,
+		&i.CurrentSnapshotID,
+		&i.CurrentContentFingerprint,
+		&i.LastSuccessReceivedAt,
+		&i.LastSourceGeneratedAt,
+		&i.LastSuccessRunID,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockRelayNodeAssetForBinding = `-- name: LockRelayNodeAssetForBinding :one
+SELECT instance_id
+FROM relay_node_assets
+WHERE instance_id = $1::uuid
+FOR UPDATE
+`
+
+func (q *Queries) LockRelayNodeAssetForBinding(ctx context.Context, instanceID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockRelayNodeAssetForBinding, instanceID)
+	var instance_id pgtype.UUID
+	err := row.Scan(&instance_id)
+	return instance_id, err
 }

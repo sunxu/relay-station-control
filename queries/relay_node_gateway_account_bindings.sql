@@ -1,6 +1,24 @@
 -- name: GetRelayBindingDBTime :one
 SELECT clock_timestamp()::timestamptz;
 
+-- name: LockRelayNodeAssetForBinding :one
+SELECT instance_id
+FROM relay_node_assets
+WHERE instance_id = sqlc.arg(instance_id)::uuid
+FOR UPDATE;
+
+-- name: LockGatewayDirectoryCurrentState :one
+SELECT *
+FROM gateway_directory_current_state
+WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+FOR UPDATE;
+
+-- name: GetGatewayDirectorySnapshotItem :one
+SELECT snapshot_id, account_id, name, platform, type, url, status
+FROM gateway_directory_snapshot_items
+WHERE snapshot_id = sqlc.arg(snapshot_id)::uuid
+  AND account_id = sqlc.arg(account_id)::bigint;
+
 -- name: GetCurrentRelayNodeGatewayAccountBindingByNode :one
 SELECT *
 FROM relay_node_gateway_account_bindings
@@ -18,6 +36,14 @@ WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
 SELECT *
 FROM relay_node_gateway_account_bindings
 WHERE relay_node_id = sqlc.arg(relay_node_id)::uuid
+  AND ended_at IS NULL
+FOR UPDATE;
+
+-- name: LockCurrentRelayNodeGatewayAccountBindingByAccount :one
+SELECT *
+FROM relay_node_gateway_account_bindings
+WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid
+  AND gateway_account_id = sqlc.arg(gateway_account_id)::bigint
   AND ended_at IS NULL
 FOR UPDATE;
 

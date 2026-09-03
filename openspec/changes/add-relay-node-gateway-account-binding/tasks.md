@@ -8,10 +8,10 @@
 
 ## 2. Binding writes
 
-- [ ] 2.1 实现 bind：使用同一 PostgreSQL transaction/DB time验证 fresh current Directory、Account ID、资产 identity、并发唯一性并写 audit
-- [ ] 2.2 实现 atomic rebind：关闭旧 interval、插入新 interval和写 audit 同事务，不产生可观察中间状态
-- [ ] 2.3 实现 unbind：逻辑关闭 current interval并保留历史；重复 unbind 保持幂等
-- [ ] 2.4 固化 stale/no Directory、missing Account、Node/Gateway 不存在和 current binding conflict 的稳定 fail-closed 结果
+- [x] 2.1 实现 bind：使用同一 PostgreSQL transaction/DB time验证 fresh current Directory、Account ID、资产 identity、并发唯一性并写 audit
+- [x] 2.2 实现 atomic rebind：关闭旧 interval、插入新 interval和写 audit 同事务，不产生可观察中间状态
+- [x] 2.3 实现 unbind：逻辑关闭 current interval并保留历史；重复 unbind 保持幂等
+- [x] 2.4 固化 stale/no Directory、missing Account、Node/Gateway 不存在和 current binding conflict 的稳定 fail-closed 结果
 - [x] 2.5 补 DB immutability guard：identity/bound/evidence不可变、open interval仅可原子close一次、closed interval不可变、DELETE/TRUNCATE拒绝
 
 ## 3. Resolution and reads
