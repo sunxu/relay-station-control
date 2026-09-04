@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,6 +65,65 @@ type CrossNodeDuplicateOwnershipEvaluation struct {
 	// (detect/reopen); false for refresh/degrade/add/remove/resolve against
 	// an already-existing occurrence.
 	Created bool
+	// FirstSeenAt is the occurrence's first_seen_at (the moment the
+	// underlying duplicate was first detected), reused as alert context
+	// (see CrossNodeDuplicateOwnershipAlertEvent) -- for a resolved
+	// occurrence this is its original detection time, not this pass's
+	// EvaluationAt.
+	FirstSeenAt time.Time
+}
+
+// CrossNodeDuplicateOwnershipAlertTransition identifies which lifecycle
+// transition triggered an alert observation (see
+// CrossNodeDuplicateOwnershipAlertObserver). Refresh/degrade/affected-node
+// add-remove passes that neither create nor resolve an occurrence never
+// fire an alert (design.md §6a: do not create a new alert on every
+// refresh; same occurrence keeps the same alert logical identity).
+type CrossNodeDuplicateOwnershipAlertTransition string
+
+const (
+	// CrossNodeDuplicateOwnershipAlertActive fires for a brand-new ACTIVE
+	// occurrence row: first detect, or reopen after a prior RESOLVED
+	// occurrence (design.md: reopen creates a new occurrence -> new alert
+	// occurrence).
+	CrossNodeDuplicateOwnershipAlertActive CrossNodeDuplicateOwnershipAlertTransition = "active"
+	// CrossNodeDuplicateOwnershipAlertResolved fires exactly once, at the
+	// ACTIVE->RESOLVED transition of an existing occurrence.
+	CrossNodeDuplicateOwnershipAlertResolved CrossNodeDuplicateOwnershipAlertTransition = "resolved"
+)
+
+// CrossNodeDuplicateOwnershipAlertEvent is the alert-relevant context for
+// one lifecycle transition. Severity is always "Critical" (design.md §6b:
+// fixed, never derived from Gateway binding/Gateway Account status/
+// scheduler state/traffic/health score). It never carries credentials,
+// API keys, tokens, passwords, secrets, or raw upstream payloads -- the
+// occurrence/evidence data model this is built from has no such fields.
+type CrossNodeDuplicateOwnershipAlertEvent struct {
+	Transition    CrossNodeDuplicateOwnershipAlertTransition
+	Severity      string
+	OccurrenceID  uuid.UUID
+	EnvironmentID string
+	AccountKey    string
+	// Provider is accountKey's "provider:email" prefix (see
+	// validAccountInventoryCursorKey), included only as a display
+	// convenience since account_key already contains it in full.
+	Provider      string
+	AffectedNodes []uuid.UUID
+	FirstSeenAt   time.Time
+}
+
+// CrossNodeDuplicateOwnershipAlertObserver receives one alert-worthy
+// lifecycle transition per Evaluate() call, after that transition has
+// already committed. Observation happens after tx.Commit succeeds and
+// never blocks or rolls back the lifecycle write, mirroring the existing
+// jobs.Logger pattern used elsewhere in this codebase.
+type CrossNodeDuplicateOwnershipAlertObserver interface {
+	Observe(ctx context.Context, event CrossNodeDuplicateOwnershipAlertEvent)
+}
+
+type crossNodeDuplicateOwnershipNoopAlertObserver struct{}
+
+func (crossNodeDuplicateOwnershipNoopAlertObserver) Observe(context.Context, CrossNodeDuplicateOwnershipAlertEvent) {
 }
 
 // crossNodeDuplicateEvidenceRow is the per-Node classification returned by
@@ -90,7 +150,8 @@ type crossNodeDuplicateEvidenceRow struct {
 // Gateway Directory, Binding, or scheduler/runtime state, and never performs
 // API/UI/alert/auto-remediation work.
 type CrossNodeDuplicateOwnershipLifecycleRepository struct {
-	pool *pgxpool.Pool
+	pool          *pgxpool.Pool
+	alertObserver CrossNodeDuplicateOwnershipAlertObserver
 }
 
 // NewCrossNodeDuplicateOwnershipLifecycleRepository constructs a repository
@@ -99,7 +160,19 @@ func NewCrossNodeDuplicateOwnershipLifecycleRepository(pool *pgxpool.Pool) (*Cro
 	if pool == nil {
 		return nil, errors.New("store: cross-node duplicate ownership lifecycle database is unavailable")
 	}
-	return &CrossNodeDuplicateOwnershipLifecycleRepository{pool: pool}, nil
+	return &CrossNodeDuplicateOwnershipLifecycleRepository{pool: pool, alertObserver: crossNodeDuplicateOwnershipNoopAlertObserver{}}, nil
+}
+
+// SetAlertObserver wires an optional alert sink (see
+// CrossNodeDuplicateOwnershipAlertObserver). Passing nil restores the
+// default no-op observer. Additive/optional, like the read-model reader
+// setter on api.Server: existing callers that never set an observer are
+// unaffected.
+func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) SetAlertObserver(observer CrossNodeDuplicateOwnershipAlertObserver) {
+	if observer == nil {
+		observer = crossNodeDuplicateOwnershipNoopAlertObserver{}
+	}
+	repository.alertObserver = observer
 }
 
 // Evaluate runs one full lifecycle evaluation pass for the given
@@ -163,7 +236,32 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) Evaluate(
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	repository.observeAlertTransition(ctx, environmentID, accountKey, result)
 	return result, nil
+}
+
+// observeAlertTransition fires the alert observer exactly for the two
+// alert-worthy transitions (fresh create/reopen, and ACTIVE->RESOLVED);
+// every other outcome (refresh/degrade/affected-node add-remove that stays
+// ACTIVE) is intentionally silent so a refresh never creates a new alert.
+func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) observeAlertTransition(
+	ctx context.Context, environmentID, accountKey string, result *CrossNodeDuplicateOwnershipEvaluation,
+) {
+	var transition CrossNodeDuplicateOwnershipAlertTransition
+	switch {
+	case result.Created:
+		transition = CrossNodeDuplicateOwnershipAlertActive
+	case result.Status == "RESOLVED":
+		transition = CrossNodeDuplicateOwnershipAlertResolved
+	default:
+		return
+	}
+	provider, _, _ := strings.Cut(accountKey, ":")
+	repository.alertObserver.Observe(ctx, CrossNodeDuplicateOwnershipAlertEvent{
+		Transition: transition, Severity: "Critical", OccurrenceID: result.OccurrenceID,
+		EnvironmentID: environmentID, AccountKey: accountKey, Provider: provider,
+		AffectedNodes: result.AffectedNodes, FirstSeenAt: result.FirstSeenAt,
+	})
 }
 
 // listEligibleOwnersTx calls control_list_eligible_cross_node_owners_v1
@@ -413,7 +511,8 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) create(
 	}
 	return &CrossNodeDuplicateOwnershipEvaluation{
 		OccurrenceID: occurrenceID, Status: "ACTIVE", EvidenceState: "complete",
-		AffectedNodes: confirmed, Added: confirmed, EvaluationID: evaluationID, EvaluationAt: evaluationAt, Created: true,
+		AffectedNodes: confirmed, Added: confirmed, EvaluationID: evaluationID, EvaluationAt: evaluationAt,
+		Created: true, FirstSeenAt: evaluationAt,
 	}, nil
 }
 
@@ -536,7 +635,7 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 		return &CrossNodeDuplicateOwnershipEvaluation{
 			OccurrenceID: occurrenceID, Status: "RESOLVED", EvidenceState: "complete",
 			AffectedNodes: retained, Added: toAdd, Removed: toRemove,
-			EvaluationID: evaluationID, EvaluationAt: evaluationAt,
+			EvaluationID: evaluationID, EvaluationAt: evaluationAt, FirstSeenAt: existing.FirstSeenAt.Time,
 		}, nil
 	}
 
@@ -557,7 +656,7 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 	return &CrossNodeDuplicateOwnershipEvaluation{
 		OccurrenceID: occurrenceID, Status: "ACTIVE", EvidenceState: evidenceState,
 		AffectedNodes: retained, Added: toAdd, Removed: toRemove,
-		EvaluationID: evaluationID, EvaluationAt: evaluationAt,
+		EvaluationID: evaluationID, EvaluationAt: evaluationAt, FirstSeenAt: existing.FirstSeenAt.Time,
 	}, nil
 }
 

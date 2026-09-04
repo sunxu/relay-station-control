@@ -238,6 +238,11 @@ func main() {
 		logger.Error("cross-node duplicate occurrence repository initialization failed", "component", "cross_node_duplicate_ownership")
 		os.Exit(1)
 	}
+	crossNodeDuplicateMetricsRepository, err := assetstore.NewCrossNodeDuplicateOwnershipMetricsRepository(pool)
+	if err != nil {
+		logger.Error("cross-node duplicate ownership metrics repository initialization failed", "component", "cross_node_duplicate_ownership")
+		os.Exit(1)
+	}
 	jobKinds, err := jobRepository.JobKinds(context.Background())
 	if err != nil {
 		logger.Error("durable job catalog unavailable", "component", "jobs")
@@ -293,6 +298,12 @@ func main() {
 		os.Exit(1)
 	}
 	metricsRegistry.MustRegister(jobCollector)
+	crossNodeDuplicateMetricsCollector, err := assetstore.NewCrossNodeDuplicateOwnershipMetricsCollector(crossNodeDuplicateMetricsRepository)
+	if err != nil {
+		logger.Error("cross-node duplicate ownership metrics collector initialization failed", "component", "cross_node_duplicate_ownership")
+		os.Exit(1)
+	}
+	metricsRegistry.MustRegister(crossNodeDuplicateMetricsCollector)
 	router.Handle("/metrics", promhttp.HandlerFor(metricsRegistry, promhttp.HandlerOpts{}))
 
 	apiServer, err := controlapi.NewAuthenticatedServerWithAssetsJobsAndAccountInventory(
