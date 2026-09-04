@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -125,16 +126,17 @@ func TestRelayNodeGatewayAccountBindingSchema(t *testing.T) {
 
 	t.Run("foreign keys and reasons", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
+		unusedAccountID := fixture.accountIDs[9]
 		for name, statement := range map[string]string{
 			"missing node": `INSERT INTO relay_node_gateway_account_bindings(
 				relay_node_id,gateway_instance_id,gateway_account_id,evidence_snapshot_id,bound_by,bind_reason
-			) VALUES ('00000000-0000-0000-0000-000000000001','` + fixture.gatewayID.String() + `',103,'` + fixture.snapshotID.String() + `','` + fixture.adminID.String() + `','administrator_bind')`,
+			) VALUES ('00000000-0000-0000-0000-000000000001','` + fixture.gatewayID.String() + `',` + fmt.Sprint(unusedAccountID) + `,'` + fixture.snapshotID.String() + `','` + fixture.adminID.String() + `','administrator_bind')`,
 			"missing gateway": `INSERT INTO relay_node_gateway_account_bindings(
 				relay_node_id,gateway_instance_id,gateway_account_id,evidence_snapshot_id,bound_by,bind_reason
-			) VALUES ('` + nodeID.String() + `','00000000-0000-0000-0000-000000000001',103,'` + fixture.snapshotID.String() + `','` + fixture.adminID.String() + `','administrator_bind')`,
+			) VALUES ('` + nodeID.String() + `','00000000-0000-0000-0000-000000000001',` + fmt.Sprint(unusedAccountID) + `,'` + fixture.snapshotID.String() + `','` + fixture.adminID.String() + `','administrator_bind')`,
 			"missing admin": `INSERT INTO relay_node_gateway_account_bindings(
 				relay_node_id,gateway_instance_id,gateway_account_id,evidence_snapshot_id,bound_by,bind_reason
-			) VALUES ('` + nodeID.String() + `','` + fixture.gatewayID.String() + `',103,'` + fixture.snapshotID.String() + `','00000000-0000-0000-0000-000000000001','administrator_bind')`,
+			) VALUES ('` + nodeID.String() + `','` + fixture.gatewayID.String() + `',` + fmt.Sprint(unusedAccountID) + `,'` + fixture.snapshotID.String() + `','00000000-0000-0000-0000-000000000001','administrator_bind')`,
 		} {
 			t.Run(name, func(t *testing.T) {
 				_, err := database.owner.Exec(ctx, statement)
@@ -224,12 +226,14 @@ func TestRelayNodeGatewayAccountBindingSchema(t *testing.T) {
 	t.Run("node gateway and admin deletes are restricted", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
 		fixture.insertBinding(t, ctx, database, nodeID, fixture.accountIDs[8], "administrator_bind")
+		// ON DELETE RESTRICT raises restrict_violation (23001), not
+		// foreign_key_violation (23503).
 		_, err := database.owner.Exec(ctx, `DELETE FROM relay_node_assets WHERE instance_id=$1`, nodeID)
-		requireGatewayDirectorySQLState(t, err, "23503")
+		requireGatewayDirectorySQLState(t, err, "23001")
 		_, err = database.owner.Exec(ctx, `DELETE FROM gateway_instances WHERE instance_id=$1`, fixture.gatewayID)
-		requireGatewayDirectorySQLState(t, err, "23503")
+		requireGatewayDirectorySQLState(t, err, "23001")
 		_, err = database.owner.Exec(ctx, `DELETE FROM control_admin_users WHERE admin_id=$1`, fixture.adminID)
-		requireGatewayDirectorySQLState(t, err, "23503")
+		requireGatewayDirectorySQLState(t, err, "23001")
 	})
 }
 

@@ -76,6 +76,26 @@ func TestRelayBindingRepository_Bind(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Run("gateway exists without current directory returns directory_unavailable", func(t *testing.T) {
+		// gateway_instances is a singleton table; this must run before any
+		// other subtest populates gateway_directory_current_state for the
+		// fixture gateway, so it uses the fixture gateway directly.
+		nodeID := fixture.insertNode(t, ctx, database)
+
+		res, err := repo.Bind(ctx, jobstore.BindParams{
+			RelayNodeID:       nodeID,
+			GatewayInstanceID: fixture.gatewayID,
+			GatewayAccountID:  fixture.accountIDs[0],
+			AdminID:           fixture.adminID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Outcome != jobstore.RelayBindingOutcomeDirectoryUnavailable {
+			t.Fatalf("expected directory_unavailable, got %s", res.Outcome)
+		}
+	})
+
 	t.Run("successful bind with audit and DB operation time", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
 		// set current state fresh (10s ago)
@@ -257,33 +277,6 @@ func TestRelayBindingRepository_Bind(t *testing.T) {
 		}
 		if res.Outcome != jobstore.RelayBindingOutcomeGatewayNotFound {
 			t.Fatalf("expected gateway_not_found, got %s", res.Outcome)
-		}
-	})
-
-	t.Run("gateway exists without current directory returns directory_unavailable", func(t *testing.T) {
-		nodeID := fixture.insertNode(t, ctx, database)
-		// Insert gateway without current directory state
-		emptyGatewayID := uuid.New()
-		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
-			instance_id, display_name, probe_endpoint, probe_status,
-			consecutive_successes, consecutive_failures, created_at, updated_at
-		) VALUES ($1, 'empty-gw', 'https://empty-gw.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
-			emptyGatewayID)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := repo.Bind(ctx, jobstore.BindParams{
-			RelayNodeID:       nodeID,
-			GatewayInstanceID: emptyGatewayID,
-			GatewayAccountID:  fixture.accountIDs[0],
-			AdminID:           fixture.adminID,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Outcome != jobstore.RelayBindingOutcomeDirectoryUnavailable {
-			t.Fatalf("expected directory_unavailable, got %s", res.Outcome)
 		}
 	})
 
@@ -483,8 +476,8 @@ func TestRelayBindingRepository_Rebind(t *testing.T) {
 
 	t.Run("rebind fails closed when directory is stale", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
-		account1 := fixture.accountIDs[0]
-		account2 := fixture.accountIDs[1]
+		account1 := fixture.accountIDs[5]
+		account2 := fixture.accountIDs[6]
 
 		// Bind first while fresh
 		if res, err := repo.Bind(ctx, jobstore.BindParams{
@@ -528,7 +521,7 @@ func TestRelayBindingRepository_Rebind(t *testing.T) {
 
 	t.Run("rebind fails closed when target account missing from snapshot", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
-		account1 := fixture.accountIDs[0]
+		account1 := fixture.accountIDs[7]
 
 		var dbNow time.Time
 		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
@@ -869,28 +862,36 @@ func TestRelayBindingRepository_Concurrency(t *testing.T) {
 
 	t.Run("audit log insert failure rolls back bind and rebind completely", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
-		account1 := fixture.accountIDs[0]
-		account2 := fixture.accountIDs[1]
+		account1 := fixture.accountIDs[5]
+		account2 := fixture.accountIDs[6]
 
 		canaryRequestID := "req-audit-fail-canary-" + uuid.NewString()
 
-		// Install test-only trigger on audit_logs that fails with 55000 when request_id matches canary
+		// Install test-only trigger on audit_logs that fails with 55000 when request_id matches canary.
+		// Multi-statement text with bind parameters is unsupported by the
+		// extended query protocol, so each DDL statement is a separate Exec
+		// and the canary (test-generated, not user input) is inlined as a
+		// literal.
 		_, err := database.owner.Exec(ctx, `
 			CREATE OR REPLACE FUNCTION test_fail_canary_audit_insert()
-			RETURNS trigger AS $$
+			RETURNS trigger AS $func$
 			BEGIN
-				IF NEW.request_id = $1 THEN
+				IF NEW.request_id = '`+canaryRequestID+`' THEN
 					RAISE EXCEPTION 'injected test audit failure' USING ERRCODE = '55000';
 				END IF;
 				RETURN NEW;
 			END;
-			$$ LANGUAGE plpgsql;
-
+			$func$ LANGUAGE plpgsql;
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = database.owner.Exec(ctx, `
 			CREATE TRIGGER trg_test_fail_canary_audit_insert
 			BEFORE INSERT ON audit_logs
 			FOR EACH ROW
 			EXECUTE FUNCTION test_fail_canary_audit_insert();
-		`, canaryRequestID)
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -951,18 +952,17 @@ func TestRelayBindingRepository_Concurrency(t *testing.T) {
 
 		// 3. Rebind with canary request_id: audit insert fails with 55000 -> full rollback
 		rebindCanaryID := "req-rebind-canary-" + uuid.NewString()
-		// Update canary trigger function or check prefix
 		_, err = database.owner.Exec(ctx, `
 			CREATE OR REPLACE FUNCTION test_fail_canary_audit_insert()
-			RETURNS trigger AS $$
+			RETURNS trigger AS $func$
 			BEGIN
-				IF NEW.request_id = $1 OR NEW.request_id = $2 THEN
+				IF NEW.request_id = '`+canaryRequestID+`' OR NEW.request_id = '`+rebindCanaryID+`' THEN
 					RAISE EXCEPTION 'injected test audit failure' USING ERRCODE = '55000';
 				END IF;
 				RETURN NEW;
 			END;
-			$$ LANGUAGE plpgsql;
-		`, canaryRequestID, rebindCanaryID)
+			$func$ LANGUAGE plpgsql;
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1077,6 +1077,10 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		if view.CurrentBinding == nil || view.CurrentBinding.GatewayAccountID != accountID {
 			t.Fatalf("unexpected current binding: %+v", view.CurrentBinding)
 		}
+
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: nodeID, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind failed: %v", err)
+		}
 	})
 
 	t.Run("node-centric read: unknown when directory is stale (distinguishes last-known context)", func(t *testing.T) {
@@ -1116,6 +1120,10 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		}
 		if view.AccountContext == nil || view.AccountContext.AccountID != accountID {
 			t.Fatalf("expected last-known account context for %d, got %+v", accountID, view.AccountContext)
+		}
+
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: nodeID, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind failed: %v", err)
 		}
 	})
 
@@ -1174,6 +1182,10 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		if view.AccountContext != nil {
 			t.Fatalf("expected nil account context, got %+v", view.AccountContext)
 		}
+
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: nodeID, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind failed: %v", err)
+		}
 	})
 
 	t.Run("fresh empty directory: all existing bindings become unresolved", func(t *testing.T) {
@@ -1217,6 +1229,10 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		}
 		if view.DirectoryFreshness != jobstore.DirectoryFreshnessFresh {
 			t.Fatalf("expected fresh directory, got %s", view.DirectoryFreshness)
+		}
+
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: nodeID, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind failed: %v", err)
 		}
 	})
 
@@ -1358,6 +1374,13 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		if unresolvedList[0].LastKnownAccountContext == nil || unresolvedList[0].LastKnownAccountContext.AccountID != account2 {
 			t.Fatalf("expected last-known context for account2, got %+v", unresolvedList[0].LastKnownAccountContext)
 		}
+
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: node1, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind node1 failed: %v", err)
+		}
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: node2, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind node2 failed: %v", err)
+		}
 	})
 
 	t.Run("lifecycle transitions: reappear / new ID with same metadata / A->B->A reuse / stale->recovery", func(t *testing.T) {
@@ -1445,15 +1468,18 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		if err != nil || viewRecovered.Resolution != jobstore.RelayBindingResolutionResolved {
 			t.Fatalf("step 4 recovery failed: %v, %+v", err, viewRecovered)
 		}
+
+		if _, err := repo.Unbind(ctx, jobstore.UnbindParams{RelayNodeID: nodeID, AdminID: fixture.adminID}); err != nil {
+			t.Fatalf("cleanup unbind failed: %v", err)
+		}
 	})
 
 	t.Run("regression A: account-centric fresh empty directory", func(t *testing.T) {
-		emptyGatewayID := uuid.New()
-		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
-			instance_id, display_name, probe_endpoint, probe_status,
-			consecutive_successes, consecutive_failures, created_at, updated_at
-		) VALUES ($1, 'gw-fresh-empty', 'https://gw-fresh-empty.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
-			emptyGatewayID)
+		// gateway_instances is a singleton table; use a fresh isolated
+		// database so this gateway has never had current_state written.
+		freshDB := newIsolatedJobDatabase(t)
+		freshFixture := newRelayBindingSchemaFixture(t, ctx, freshDB)
+		freshRepo, err := jobstore.NewRelayBindingRepository(freshDB.runtime)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1461,20 +1487,19 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		emptySnapshotID := uuid.New()
 		emptyFingerprint := make([]byte, 32)
 		emptyFingerprint[0] = 0xfa
-		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+		if _, err := freshDB.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
 			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
-		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, emptySnapshotID, emptyGatewayID, emptyFingerprint)
-		if err != nil {
+		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, emptySnapshotID, freshFixture.gatewayID, emptyFingerprint); err != nil {
 			t.Fatal(err)
 		}
 
 		var dbNow time.Time
-		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+		if err := freshDB.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
 			t.Fatal(err)
 		}
-		insertGatewayDirectoryCurrentState(t, ctx, database, emptyGatewayID, emptySnapshotID, dbNow.Add(-5*time.Second))
+		insertGatewayDirectoryCurrentState(t, ctx, freshDB, freshFixture.gatewayID, emptySnapshotID, dbNow.Add(-5*time.Second))
 
-		view, err := repo.GetGatewayAccountCentricBindingView(ctx, emptyGatewayID)
+		view, err := freshRepo.GetGatewayAccountCentricBindingView(ctx, freshFixture.gatewayID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1493,17 +1518,16 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 	})
 
 	t.Run("regression B: account-centric no directory / unavailable", func(t *testing.T) {
-		noDirGatewayID := uuid.New()
-		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
-			instance_id, display_name, probe_endpoint, probe_status,
-			consecutive_successes, consecutive_failures, created_at, updated_at
-		) VALUES ($1, 'gw-no-dir', 'https://gw-no-dir.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
-			noDirGatewayID)
+		// gateway_instances is a singleton table; use a fresh isolated
+		// database so this gateway has never had current_state written.
+		freshDB := newIsolatedJobDatabase(t)
+		freshFixture := newRelayBindingSchemaFixture(t, ctx, freshDB)
+		freshRepo, err := jobstore.NewRelayBindingRepository(freshDB.runtime)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		view, err := repo.GetGatewayAccountCentricBindingView(ctx, noDirGatewayID)
+		view, err := freshRepo.GetGatewayAccountCentricBindingView(ctx, freshFixture.gatewayID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1522,12 +1546,11 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 	})
 
 	t.Run("regression C: account-centric stale empty directory", func(t *testing.T) {
-		staleEmptyGatewayID := uuid.New()
-		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
-			instance_id, display_name, probe_endpoint, probe_status,
-			consecutive_successes, consecutive_failures, created_at, updated_at
-		) VALUES ($1, 'gw-stale-empty', 'https://gw-stale-empty.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
-			staleEmptyGatewayID)
+		// gateway_instances is a singleton table; use a fresh isolated
+		// database so this gateway has never had current_state written.
+		freshDB := newIsolatedJobDatabase(t)
+		freshFixture := newRelayBindingSchemaFixture(t, ctx, freshDB)
+		freshRepo, err := jobstore.NewRelayBindingRepository(freshDB.runtime)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1535,20 +1558,19 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		staleEmptySnapshotID := uuid.New()
 		staleEmptyFingerprint := make([]byte, 32)
 		staleEmptyFingerprint[0] = 0xfb
-		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+		if _, err := freshDB.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
 			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
-		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, staleEmptySnapshotID, staleEmptyGatewayID, staleEmptyFingerprint)
-		if err != nil {
+		) VALUES ($1, $2, $3, 1, 0, clock_timestamp())`, staleEmptySnapshotID, freshFixture.gatewayID, staleEmptyFingerprint); err != nil {
 			t.Fatal(err)
 		}
 
 		var dbNow time.Time
-		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+		if err := freshDB.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
 			t.Fatal(err)
 		}
-		insertGatewayDirectoryCurrentState(t, ctx, database, staleEmptyGatewayID, staleEmptySnapshotID, dbNow.Add(-600*time.Second))
+		insertGatewayDirectoryCurrentState(t, ctx, freshDB, freshFixture.gatewayID, staleEmptySnapshotID, dbNow.Add(-600*time.Second))
 
-		view, err := repo.GetGatewayAccountCentricBindingView(ctx, staleEmptyGatewayID)
+		view, err := freshRepo.GetGatewayAccountCentricBindingView(ctx, freshFixture.gatewayID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1647,12 +1669,11 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 	})
 
 	t.Run("regression E: stale account-centric unbound account marked last_known", func(t *testing.T) {
-		staleGwID := uuid.New()
-		_, err := database.owner.Exec(ctx, `INSERT INTO gateway_instances(
-			instance_id, display_name, probe_endpoint, probe_status,
-			consecutive_successes, consecutive_failures, created_at, updated_at
-		) VALUES ($1, 'gw-stale-unbound', 'https://gw-stale-unbound.test', 'healthy', 1, 0, clock_timestamp(), clock_timestamp())`,
-			staleGwID)
+		// gateway_instances is a singleton table; use a fresh isolated
+		// database so this gateway has never had current_state written.
+		freshDB := newIsolatedJobDatabase(t)
+		freshFixture := newRelayBindingSchemaFixture(t, ctx, freshDB)
+		freshRepo, err := jobstore.NewRelayBindingRepository(freshDB.runtime)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1660,27 +1681,25 @@ func TestRelayBindingRepository_ReadModel(t *testing.T) {
 		snapID := uuid.New()
 		snapFingerprint := make([]byte, 32)
 		snapFingerprint[0] = 0x99
-		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
+		if _, err := freshDB.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(
 			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count, created_at
-		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapID, staleGwID, snapFingerprint)
-		if err != nil {
+		) VALUES ($1, $2, $3, 1, 1, clock_timestamp())`, snapID, freshFixture.gatewayID, snapFingerprint); err != nil {
 			t.Fatal(err)
 		}
-		_, err = database.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
+		if _, err := freshDB.owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(
 			snapshot_id, account_id, name, platform, type, url, status
-		) VALUES ($1, 999111, 'unbound-stale-acct', 'linux', 'apikey', 'https://unbound.test', 'active')`, snapID)
-		if err != nil {
+		) VALUES ($1, 999111, 'unbound-stale-acct', 'linux', 'apikey', 'https://unbound.test', 'active')`, snapID); err != nil {
 			t.Fatal(err)
 		}
 
 		var dbNow time.Time
-		if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+		if err := freshDB.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
 			t.Fatal(err)
 		}
 		// Stale directory
-		insertGatewayDirectoryCurrentState(t, ctx, database, staleGwID, snapID, dbNow.Add(-600*time.Second))
+		insertGatewayDirectoryCurrentState(t, ctx, freshDB, freshFixture.gatewayID, snapID, dbNow.Add(-600*time.Second))
 
-		view, err := repo.GetGatewayAccountCentricBindingView(ctx, staleGwID)
+		view, err := freshRepo.GetGatewayAccountCentricBindingView(ctx, freshFixture.gatewayID)
 		if err != nil {
 			t.Fatal(err)
 		}

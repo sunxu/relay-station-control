@@ -32,5 +32,5 @@
 ## 5. Validation and documentation
 
 - [x] 5.1 补最小 Migration up/down/up、store integration、API security 和 redaction acceptance
-- [ ] 5.2 更新 runbook，覆盖 bind/rebind/unbind、freshness、unresolved/unknown、冲突和 rollback
-- [ ] 5.3 运行 `make generate`、相关测试、`openspec validate add-relay-node-gateway-account-binding --type change --strict --no-interactive` 和 `git diff --check`
+- [x] 5.2 更新 runbook，覆盖 bind/rebind/unbind、freshness、unresolved/unknown、冲突和 rollback
+- [x] 5.3 运行 `make generate`、相关测试、`openspec validate add-relay-node-gateway-account-binding --type change --strict --no-interactive` 和 `git diff --check`
