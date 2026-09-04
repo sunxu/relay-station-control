@@ -32,7 +32,7 @@ func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 		}
 	}
 
-	assertVersion(t, 14)
+	assertVersion(t, 15)
 
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "12"); err != nil {
 		t.Fatal(err)
@@ -57,23 +57,26 @@ func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 	if err := database.owner.QueryRow(ctx, `SELECT
 		to_regprocedure('public.control_list_eligible_cross_node_owners_v1(text)') IS NOT NULL
 		OR to_regprocedure('public.control_list_cross_node_duplicate_candidates_v1()') IS NOT NULL
+		OR to_regprocedure('public.control_evaluate_cross_node_duplicate_evidence_v1(text,uuid[],timestamptz)') IS NOT NULL
 	`).Scan(&functionsExist); err != nil {
 		t.Fatal(err)
 	}
 	if functionsExist {
-		t.Fatal("expected migration 14 down to drop both readonly query functions")
+		t.Fatal("expected migration 14/15 down to drop all three readonly query functions")
 	}
 
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
 		t.Fatal(err)
 	}
-	assertVersion(t, 14)
+	assertVersion(t, 15)
 }
 
 // TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp proves
 // migration 00014 (Phase 2 SECURITY DEFINER query access) is symmetric on a
 // clean schema: 14 -> 13 -> 14 round-trips cleanly, without touching
-// migration 00013's occurrence/evidence tables or history.
+// migration 00013's occurrence/evidence tables or history. Migration 00015
+// is stepped down first since it has no history of its own to protect and
+// sits on top of 00014.
 func TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp(t *testing.T) {
 	database := newIsolatedJobDatabase(t)
 	ctx := context.Background()
@@ -89,6 +92,10 @@ func TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp(t *testing.T) {
 		}
 	}
 
+	assertVersion(t, 15)
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "14"); err != nil {
+		t.Fatal(err)
+	}
 	assertVersion(t, 14)
 
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
@@ -125,6 +132,73 @@ func TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertVersion(t, 14)
+}
+
+// TestCrossNodeDuplicateOwnershipEvidenceEvaluationMigrationUpDownUp proves
+// migration 00015 (Phase 3 evidence-evaluation SECURITY DEFINER query
+// access) is symmetric on a clean schema: 15 -> 14 -> 15 round-trips
+// cleanly, without touching migrations 00013/00014's tables, functions, or
+// history.
+func TestCrossNodeDuplicateOwnershipEvidenceEvaluationMigrationUpDownUp(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
+	ctx := context.Background()
+
+	assertVersion := func(t *testing.T, want int32) {
+		t.Helper()
+		var got int32
+		if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("migration version = %d, want %d", got, want)
+		}
+	}
+
+	assertVersion(t, 15)
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatal(err)
+	}
+	assertVersion(t, 14)
+
+	var evaluateFunctionExists bool
+	if err := database.owner.QueryRow(ctx, `SELECT
+		to_regprocedure('public.control_evaluate_cross_node_duplicate_evidence_v1(text,uuid[],timestamptz)') IS NOT NULL
+	`).Scan(&evaluateFunctionExists); err != nil {
+		t.Fatal(err)
+	}
+	if evaluateFunctionExists {
+		t.Fatal("expected migration 15 down to drop the evidence-evaluation readonly function")
+	}
+	var ownerQueryFunctionsExist bool
+	if err := database.owner.QueryRow(ctx, `SELECT
+		to_regprocedure('public.control_list_eligible_cross_node_owners_v1(text)') IS NOT NULL
+		AND to_regprocedure('public.control_list_cross_node_duplicate_candidates_v1()') IS NOT NULL
+	`).Scan(&ownerQueryFunctionsExist); err != nil {
+		t.Fatal(err)
+	}
+	if !ownerQueryFunctionsExist {
+		t.Fatal("migration 15 down must not touch migration 14's readonly query functions")
+	}
+	var tablesExist bool
+	if err := database.owner.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables
+		WHERE table_name IN (
+			'cross_node_duplicate_occurrences',
+			'cross_node_duplicate_occurrence_nodes',
+			'cross_node_duplicate_occurrence_evidence'
+		)
+	)`).Scan(&tablesExist); err != nil {
+		t.Fatal(err)
+	}
+	if !tablesExist {
+		t.Fatal("migration 15 down must not touch migration 13's occurrence/evidence tables")
+	}
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+		t.Fatal(err)
+	}
+	assertVersion(t, 15)
 }
 
 // TestCrossNodeDuplicateOwnershipMigrationDownFailsClosedWithHistory proves
@@ -307,4 +381,50 @@ func TestCrossNodeDuplicateOwnershipRuntimePrivilegeMatrix(t *testing.T) {
 			t.Fatalf("expected relay_control_runtime child INSERT (which locks parent occurrence FOR UPDATE) to succeed: %v", err)
 		}
 	})
+}
+
+// TestCrossNodeDuplicateOwnershipEvidenceEvaluationRuntimePrivileges proves
+// the exact least-privilege EXECUTE matrix frozen in migration 00015:
+// relay_control_runtime (and only relay_control_runtime) may EXECUTE the
+// evidence-evaluation SECURITY DEFINER function, and it still has zero
+// direct SELECT access on account_inventory/account_inventory_provider_states.
+func TestCrossNodeDuplicateOwnershipEvidenceEvaluationRuntimePrivileges(t *testing.T) {
+	ctx := context.Background()
+	database := newIsolatedJobDatabase(t)
+
+	var databaseError *pgconn.PgError
+	if _, err := database.runtime.Exec(ctx, `SELECT 1 FROM account_inventory LIMIT 1`); !errors.As(err, &databaseError) || databaseError.Code != "42501" {
+		t.Fatalf("runtime direct SELECT account_inventory SQLSTATE = %v", err)
+	}
+	if _, err := database.runtime.Exec(ctx, `SELECT 1 FROM account_inventory_provider_states LIMIT 1`); !errors.As(err, &databaseError) || databaseError.Code != "42501" {
+		t.Fatalf("runtime direct SELECT account_inventory_provider_states SQLSTATE = %v", err)
+	}
+
+	if _, err := database.runtime.Exec(ctx, `SELECT * FROM control_evaluate_cross_node_duplicate_evidence_v1('openai:priv-eval@example.com', ARRAY[]::uuid[], clock_timestamp())`); err != nil {
+		t.Fatalf("expected relay_control_runtime EXECUTE on control_evaluate_cross_node_duplicate_evidence_v1 to succeed: %v", err)
+	}
+
+	type permission struct {
+		name      string
+		arguments int
+		role      string
+		allowed   bool
+	}
+	wanted := []permission{
+		{"control_evaluate_cross_node_duplicate_evidence_v1", 3, "relay_control_runtime", true},
+		{"control_evaluate_cross_node_duplicate_evidence_v1", 3, "public", false},
+		{"control_evaluate_cross_node_duplicate_evidence_v1", 3, "relay_control_asset_registrar", false},
+	}
+	for _, expected := range wanted {
+		var allowed bool
+		if err := database.owner.QueryRow(ctx, `SELECT has_function_privilege($3,p.oid,'EXECUTE')
+			FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid=p.pronamespace
+			WHERE n.nspname='public' AND p.proname=$1 AND p.pronargs=$2`,
+			expected.name, expected.arguments, expected.role).Scan(&allowed); err != nil {
+			t.Fatal(err)
+		}
+		if allowed != expected.allowed {
+			t.Fatalf("%s/%s execute = %t, want %t", expected.name, expected.role, allowed, expected.allowed)
+		}
+	}
 }
