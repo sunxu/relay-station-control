@@ -108,25 +108,25 @@ Occurrence 的数据模型 MUST 区分两类数据：occurrence mutable projecti
 - **WHEN** occurrence 被标记为 RESOLVED
 - **THEN** 对应 resolve evidence 以追加方式写入且不可修改，occurrence mutable projection 只更新 `resolved_at` 与最新引用
 
-### Requirement: Control SHALL 保存最小 evidence 且不持久化敏感数据
+### Requirement: Control SHALL 保存最小 evidence 且不持久化敏感 credential 数据
 
-Cross-node duplicate occurrence 的 evidence MUST 至少能够证明：涉及的 Relay Node ID、各 Node 对应的 current promoted snapshot/evidence identity 引用、`observed_at`/evidence freshness 判定结果、occurrence 的 detect/refresh/resolve 时间、resolve evidence。Evidence MUST NOT 保存 credential、secret、token、API key 或 raw upstream 响应。`account_key`（`normalized_provider + ':' + normalized_email`）仍是 Account Inventory 唯一 ownership identity，本 capability 不建立第二套业务 identity；但 plaintext `account_key`/完整 normalized email 属于敏感 identity，新的 occurrence/evidence persistence 默认 MUST NOT 重复存储 plaintext `account_key` 或完整 normalized email，MUST 优先复用既有 masked/HMAC identity 或安全 source reference。UI/metrics/alerts/logs MUST NOT 输出 plaintext `account_key` 或完整 normalized email。
+Cross-node duplicate occurrence 的 evidence MUST 至少能够证明：涉及的 Relay Node ID、各 Node 对应的 current promoted snapshot/evidence identity 引用、`observed_at`/evidence freshness 判定结果、occurrence 的 detect/refresh/resolve 时间、resolve evidence。Evidence MUST NOT 保存 credential、API key、access token、refresh token、password、Secret 实际内容或 raw upstream 响应/payload。`account_key`（`normalized_provider + ':' + normalized_email`）仍是 Account Inventory 唯一 ownership identity，本 capability 不建立第二套业务 identity；`account_key`/normalized email/原始账号识别信息 MAY 直接持久化与展示，不属于本 capability 的禁止敏感字段，不要求 masked/HMAC 标识。
 
 #### Scenario: evidence 包含必要可追溯字段
 - **WHEN** Control 创建或刷新一条 occurrence
 - **THEN** evidence 中可查得涉及 Node ID、各 Node 对应的 current promoted snapshot 引用、`observed_at`、evidence freshness 判定结果和 occurrence 生命周期时间戳
 
-#### Scenario: evidence 不包含敏感/原始数据
+#### Scenario: evidence 不包含敏感 credential/原始数据
 - **WHEN** Control 持久化 occurrence evidence
-- **THEN** evidence MUST NOT 包含 credential、secret、token、raw upstream 响应或未脱敏的完整 email
+- **THEN** evidence MUST NOT 包含 credential、API key、access token、refresh token、password、Secret 实际内容或 raw upstream 响应/payload
 
-#### Scenario: 账号标识默认使用安全引用
-- **WHEN** Control 在 occurrence/evidence persistence 中表达账号标识
-- **THEN** 默认使用既有 masked/HMAC identity 或安全 source reference，不重复存储 plaintext `account_key`/完整 normalized email；若确需持久化 plaintext `account_key`，必须先经过独立 security review
+#### Scenario: 账号标识直接复用 canonical account_key，仅由 occurrence 持久化
+- **WHEN** Control 在 occurrence persistence 中表达账号标识
+- **THEN** occurrence 直接持久化既有 Account Inventory canonical `account_key`（`normalized_provider + ':' + normalized_email`），不新增第二套 fingerprint/HMAC identity，不需要脱敏存储；evidence persistence MUST NOT 重复持久化 `account_key`，evidence 通过所属 `occurrence_id` 继承账号 identity，read model 需要账号信息时经 `occurrence_id` join occurrence 取得
 
-#### Scenario: 展示层不输出 plaintext 标识
-- **WHEN** UI、metrics、alerts 或 logs 展示 occurrence 相关账号标识
-- **THEN** 输出 MUST 使用既有 masked/HMAC 形式，不得输出 plaintext `account_key` 或完整 normalized email
+#### Scenario: 管理界面与授权 API 可返回账号标识
+- **WHEN** 授权 Control 管理界面或 API 展示 occurrence 相关账号标识
+- **THEN** 输出 MAY 包含 `account_key`、provider、normalized email 或原始账号识别信息；Prometheus metrics label MUST NOT 使用完整 email/account_key 作为高基数标签，账号级上下文只出现在 alert payload/read model，不出现在 metrics label
 
 ### Requirement: Ownership Fact、Gateway Binding 与 Binding Resolution SHALL 保持相互独立
 

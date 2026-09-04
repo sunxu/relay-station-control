@@ -149,10 +149,9 @@ WHERE account.instance_id       = :node                        -- Node identity�
 
 ### 输出四：identity/privacy
 
-- Phase 1A 的两个查询都在 PostgreSQL 内部对 `account_inventory.account_key`（plaintext，含 `normalized_provider:normalized_email`）做等值比较/分组，这已经发生在 Account Inventory 既有受保护数据边界内（`account_inventory` 表本身已经是受保护的 Control 内部表，非公开只读 API 直接暴露 plaintext），符合 design.md 第 6c 节"Detection 逻辑内部 MAY 在既有受保护 Account Inventory 数据边界内使用 plaintext account_key"的边界。
-- Phase 1A 本轮**不新增任何 plaintext account_key persistence**——两个查询都是只读 SELECT，不写入任何新表/新列。
-- Phase 1A 的调查过程与本文档**不将 account_key 输出到日志/metrics/普通 API**；本节仅在设计文档内以代码引用形式描述查询形状，不包含任何真实账号数据。
-- 若后续 occurrence（Phase 1B/Phase 3）需要稳定的 safe identity 表示 account_key，本轮**不选择新算法**，留给 Phase 1B 按第 6c 节决定（复用既有 masked/HMAC 或安全引用）。
+- Phase 1A 的两个查询都在 PostgreSQL 内部对 `account_inventory.account_key`（plaintext，含 `normalized_provider:normalized_email`）做等值比较/分组，这已经发生在 Account Inventory 既有受保护数据边界内。
+- Phase 1A 本轮**不新增任何新表**——两个查询都是只读 SELECT，不写入任何新表/新列。
+- 账号识别信息（`account_key`/normalized email）的持久化与展示边界见第 6c 节：用户已明确决定原始账号/邮箱允许在 Control 中持久化和展示，Phase 1B 不需要为 account_key 设计 fingerprint/HMAC 派生 identity，直接复用既有 canonical `account_key` 即可。
 
 ### 输出五：existing persistence survey（只调查，不设计）
 
@@ -167,6 +166,322 @@ WHERE account.instance_id       = :node                        -- Node identity�
 
 **Phase 1B 输入（仅供后续 Phase 1B 参考，本轮不设计新表）**：不存在可直接复用的 generic occurrence/alert persistence；`audit_logs` 的 append-only 保护模式（触发器拒绝 UPDATE/DELETE + CHECK allowlist）值得作为 Phase 1B 设计 evidence observation 表时的参考范式，但需要一张新的、语义独立的最小 occurrence/evidence 表（对应 tasks.md 2.1-2.6，仍待 Phase 1B 单独设计与 Review）。
 
+## Phase 1B Persistence Design（本轮修订，只做设计，不新增 Migration/不建表/不写 detection worker）
+
+> **本轮更新**：用户已明确决定原始账号（`account_key`）、邮箱允许在 Control 中持久化和展示。此前基于"没有合适的 masked/HMAC 长期 dedupe identity"得出的 Security Design Gap 结论**已撤销**——该结论只在"account_key 必须脱敏"的前提下成立，现在前提已被用户显式取消。Phase 1B 不再需要为账号 identity 设计/寻找 fingerprint/HMAC 机制，直接复用 Account Inventory 既有 canonical `account_key`（`normalized_provider + ':' + normalized_email`）作为 occurrence 的账号 identity 列，不新增第二套 identity。
+
+### 1B.1 账号 identity 决策（不再阻塞）
+
+- `cross_node_duplicate_occurrences` 直接持久化 canonical plaintext `account_key`（`text NOT NULL`，值即 `normalized_provider + ':' + normalized_email`，与 `account_inventory.account_key` 同一表示）作为账号维度的 identity 列；`cross_node_duplicate_occurrence_evidence` **不**重复持久化 `account_key`，evidence 通过 `occurrence_id` 归属继承账号 identity，read model 需要账号信息时经 `occurrence_id` join occurrence 取得（见 1B.4/1B.7）。
+- 不新增 fingerprint/HMAC 派生列，不引入新的 key-management/轮换问题——因为不再需要"跨 key 轮换仍可匹配"的确定性摘要，`account_key` 本身就是稳定、确定性、不随时间/进程重启变化的值。
+- `internal/auth/fingerprint.go`（HMAC，绑定 key version，轮换后旧摘要不可追溯）与 `account_inventory_cursor.go`（可逆加密，非确定性，仅 15 分钟 TTL 分页用途）与本 capability **不再相关**，Phase 1B 不复用、不参考这两个机制。
+
+### 1B.2 Occurrence 可变投影（mutable projection）
+
+> 以下 §1B.2–1B.4 的多个 immutability 触发器共用同一个通用"无条件拒绝"函数 `control_reject_cross_node_duplicate_mutation`（用于拒绝 TRUNCATE 等无需区分具体字段的场景），概念上在实际 Migration 中只需定义一次：
+>
+> ```sql
+> -- +goose StatementBegin
+> CREATE FUNCTION control_reject_cross_node_duplicate_mutation() RETURNS trigger
+> LANGUAGE plpgsql
+> AS $$
+> BEGIN
+>     RAISE EXCEPTION '% is immutable', TG_TABLE_NAME USING ERRCODE = '42501';
+> END;
+> $$;
+> -- +goose StatementEnd
+> ```
+
+| 字段 | 说明 |
+|---|---|
+| `occurrence_id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()`（identity，创建后 immutable） |
+| `environment_id` | `text NOT NULL REFERENCES environments(environment_id)`（对应 `environments.environment_id`，非 `name`；identity，创建后 immutable） |
+| `account_key` | `text NOT NULL`（直接复用 Account Inventory canonical 形式，`normalized_provider + ':' + normalized_email`；plaintext 持久化，用户已明确允许；identity，创建后 immutable） |
+| `conflict_type` | `text NOT NULL CHECK (conflict_type = 'cross_node_duplicate_ownership')`（第一版固定值，预留未来扩展；identity，创建后 immutable） |
+| `status` | `text NOT NULL CHECK (status IN ('ACTIVE', 'RESOLVED'))`（仅允许 `ACTIVE -> RESOLVED` 一次性单向迁移，见下方 mutation rules） |
+| `severity` | `text NOT NULL CHECK (severity = 'Critical')`（第一版固定值，见 §5；创建后 immutable） |
+| `first_seen_at` | `timestamptz NOT NULL`（创建后 immutable） |
+| `last_seen_at` | `timestamptz NOT NULL CHECK (last_seen_at >= first_seen_at)`（ACTIVE 期间可更新） |
+| `resolved_at` | `timestamptz NULL CHECK ((status = 'RESOLVED') = (resolved_at IS NOT NULL))`（仅允许 `NULL -> non-NULL`，且必须与 `status ACTIVE -> RESOLVED` 同一次 UPDATE 一起发生） |
+| `evidence_state` | `text NOT NULL CHECK (evidence_state IN ('complete', 'degraded'))`（ACTIVE 期间可更新） |
+| `last_fully_verified_at` | `timestamptz NULL`（最近一次"全部 affected Node 均为 complete evidence"的时间；`evidence_state = 'degraded'` 时可能早于 `last_seen_at`；ACTIVE 期间可更新） |
+| `latest_evaluation_id` | `uuid NULL`（指向 1B.4 表中最新一次 evaluation 的 `evaluation_id`分组标识，而非单条 observation——因为一次 evaluation 会为多个 Node 各产生一条 observation，occurrence 只需要记录"最新一次评估是哪一次"，具体该次评估涉及的全部 per-node observation 通过 `evaluation_id` 反查 1B.4 表获得；ACTIVE 期间可更新） |
+
+**Dedupe/唯一性约束**：使用部分唯一索引（`environment_id, account_key, conflict_type` 三列均为 plaintext canonical 值）：
+
+```sql
+CREATE UNIQUE INDEX cross_node_duplicate_occurrence_active_uidx
+    ON cross_node_duplicate_occurrences (environment_id, account_key, conflict_type)
+    WHERE status = 'ACTIVE';
+```
+
+- 语义：同一 `environment_id + account_key + conflict_type` 组合，同一时刻最多一条 `status = 'ACTIVE'` 行（`WHERE status = 'ACTIVE'` 使得 RESOLVED 行不占用该唯一性，天然允许 RESOLVED 后开新 occurrence/reopen）。
+- `(environment_id, account_key, conflict_type)` 三元组是逻辑身份，`occurrence_id` 才是物理主键。
+- 该索引的并发语义修正见 1B.8"detect 冲突处理流程"（不能假设 `ON CONFLICT ... DO NOTHING RETURNING` 会返回已存在行）。
+
+**Occurrence 数据库级 mutation rules（冻结，未来 Migration MUST 通过 DB trigger/constraint 强制，不依赖 Go 层约定）**：
+
+- **永久 immutable 字段**（创建后任何时候都 MUST NOT 被 UPDATE，无论 ACTIVE 还是 RESOLVED）：`occurrence_id`、`environment_id`、`account_key`、`conflict_type`、`severity`、`first_seen_at`。
+- **ACTIVE 状态下允许的合法修改**：`last_seen_at`、`evidence_state`、`last_fully_verified_at`、`latest_evaluation_id`（均可多次更新）；`status` 仅允许 `ACTIVE -> RESOLVED` 一次性迁移；`resolved_at` 仅允许 `NULL -> non-NULL`，且 MUST 与 `status` 的 `ACTIVE -> RESOLVED` 迁移在同一次 `UPDATE` 语句中一起完成（不允许先改 `resolved_at` 再改 `status`，或反之，避免出现"RESOLVED 但 resolved_at 仍为 NULL"或"resolved_at 非空但仍 ACTIVE"的中间态）。
+- **禁止的修改**：修改上述 identity 字段；`status` 从 `RESOLVED -> ACTIVE`（reopen 只能通过创建新 `occurrence_id` 实现，见 1B.8）；对已经是 `RESOLVED` 的行做任何字段的 UPDATE（包括看似"无害"的字段，例如 `last_seen_at`）；`DELETE`；`TRUNCATE`。
+
+用 DB 触发器强制（覆盖上述全部规则，不只是"RESOLVED 后不可变"）：
+
+```sql
+-- +goose StatementBegin
+CREATE FUNCTION control_enforce_cross_node_duplicate_occurrence_mutation() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'cross_node_duplicate_occurrences: DELETE is forbidden' USING ERRCODE = '42501';
+    END IF;
+
+    -- identity 字段永久 immutable
+    IF NEW.occurrence_id <> OLD.occurrence_id
+       OR NEW.environment_id <> OLD.environment_id
+       OR NEW.account_key <> OLD.account_key
+       OR NEW.conflict_type <> OLD.conflict_type
+       OR NEW.severity <> OLD.severity
+       OR NEW.first_seen_at <> OLD.first_seen_at THEN
+        RAISE EXCEPTION 'cross_node_duplicate_occurrences: identity fields are immutable' USING ERRCODE = '42501';
+    END IF;
+
+    -- RESOLVED 行整体冻结：不允许对已 RESOLVED 的行做任何进一步 UPDATE
+    IF OLD.status = 'RESOLVED' THEN
+        RAISE EXCEPTION 'cross_node_duplicate_occurrences: RESOLVED occurrence is immutable' USING ERRCODE = '42501';
+    END IF;
+
+    -- status 只允许 ACTIVE -> RESOLVED，禁止 RESOLVED -> ACTIVE（此分支实际上已被上面的 OLD.status='RESOLVED' 挡住，
+    -- 保留此显式检查作为双重防御，避免未来重排触发器逻辑时误开口子）
+    IF OLD.status = 'ACTIVE' AND NEW.status = 'ACTIVE' THEN
+        NULL; -- 允许 ACTIVE 期间的其它字段更新
+    ELSIF OLD.status = 'ACTIVE' AND NEW.status = 'RESOLVED' THEN
+        IF NEW.resolved_at IS NULL THEN
+            RAISE EXCEPTION 'cross_node_duplicate_occurrences: resolved_at MUST be set in the same UPDATE as ACTIVE -> RESOLVED' USING ERRCODE = '42501';
+        END IF;
+    ELSE
+        RAISE EXCEPTION 'cross_node_duplicate_occurrences: invalid status transition' USING ERRCODE = '42501';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+
+CREATE TRIGGER cross_node_duplicate_occurrence_enforce_mutation
+BEFORE UPDATE OR DELETE ON cross_node_duplicate_occurrences
+FOR EACH ROW EXECUTE FUNCTION control_enforce_cross_node_duplicate_occurrence_mutation();
+
+CREATE TRIGGER cross_node_duplicate_occurrence_reject_truncate
+BEFORE TRUNCATE ON cross_node_duplicate_occurrences
+FOR EACH STATEMENT EXECUTE FUNCTION control_reject_cross_node_duplicate_mutation();
+```
+
+（`TRUNCATE` 复用本节开头定义的通用拒绝函数 `control_reject_cross_node_duplicate_mutation`，其函数体只是无条件 `RAISE EXCEPTION`，与具体表名无关，可以跨表复用同一个函数体来拒绝 TRUNCATE。）
+
+**`latest_evaluation_id` 一致性约束（冻结，未来 Migration 需通过 trigger 强制）**：
+
+- 语义：当 `cross_node_duplicate_occurrences.latest_evaluation_id IS NOT NULL` 时，数据库 MUST 保证存在至少一条 `cross_node_duplicate_occurrence_evidence` 行满足 `occurrence_evidence.occurrence_id = occurrence.occurrence_id AND occurrence_evidence.evaluation_id = occurrence.latest_evaluation_id`——即 `latest_evaluation_id` 永远指向"属于本 occurrence 的、已经存在的一次 evaluation"，不允许指向不存在的 evaluation，也不允许指向其它 occurrence 的 evaluation。
+- 实现方式（概念，非本轮落地）：在 `control_enforce_cross_node_duplicate_occurrence_mutation` 中，当 `NEW.latest_evaluation_id IS NOT NULL AND NEW.latest_evaluation_id IS DISTINCT FROM OLD.latest_evaluation_id` 时，追加一次 `EXISTS` 检查：
+  ```sql
+  IF NEW.latest_evaluation_id IS NOT NULL THEN
+      IF NOT EXISTS (
+          SELECT 1 FROM cross_node_duplicate_occurrence_evidence e
+          WHERE e.occurrence_id = NEW.occurrence_id
+            AND e.evaluation_id = NEW.latest_evaluation_id
+      ) THEN
+          RAISE EXCEPTION 'cross_node_duplicate_occurrences: latest_evaluation_id must reference an existing evidence evaluation for this occurrence' USING ERRCODE = '42501';
+      END IF;
+  END IF;
+  ```
+  这不是一个物理 FK（`evaluation_id` 不是 evidence 表的主键/唯一列，一次 evaluation 对应 N 条 observation 行），而是一个基于 `EXISTS` 的一致性检查，效果等价于"逻辑外键"。
+- **写入顺序固定**（应用层 MUST 遵守，数据库层通过上述 `EXISTS` 检查间接强制）：同一事务内，MUST 先 `INSERT` 本次 evaluation 的全部 N 条 immutable evidence observation（共享同一 `evaluation_id`/`evaluation_at`），再 `UPDATE` occurrence 投影的 `latest_evaluation_id` 指向该 `evaluation_id`。反过来（先更新 `latest_evaluation_id` 再插入 evidence）会在 `UPDATE` 那一刻触发上述 `EXISTS` 检查失败，因为此时该 `evaluation_id` 尚未有任何 evidence 行存在。
+- 不新增独立的 evaluation 表：`evaluation_id`/`evaluation_at` 仍只是 evidence 表上的分组列，`latest_evaluation_id` 一致性完全通过"evidence 表上是否存在匹配行"的 `EXISTS` 查询表达，不需要为 evaluation 本身建一张新表。
+
+### 1B.3 Affected Node Set 物理表示：选 A（normalized child table）
+
+
+比较两个方案：
+
+| 角度 | A. normalized child table | B. canonical uuid array |
+|---|---|---|
+| FK 到 `relay_node_assets` | 原生支持逐行 `FOREIGN KEY (instance_id) REFERENCES relay_node_assets(instance_id)`，Node 删除/失效可被数据库约束保护 | 数组内的 uuid 无法建 FK，只能应用层校验，Node 被删除后数组内会残留悬空引用 |
+| add 单个 Node | `INSERT` 一行，天然幂等（配合 `UNIQUE(occurrence_id, instance_id)`） | 需要读出数组、去重、`UPDATE ... SET nodes = array_append/distinct(...)`，存在竞态（两个并发 refresh 都基于旧数组计算新数组，后写覆盖前写） |
+| remove 单个 Node | `DELETE ... WHERE occurrence_id=? AND instance_id=?`（且应保留该 Node 最后一次 evidence 的 observation 历史，不删 evidence，只删 membership 行） | 需要数组内定位删除，同样存在竞态窗口 |
+| 3+ Node | 天然支持任意基数，无预设上限 | 同样支持，但每次变更都要整列重写 |
+| concurrent refresh | 行级锁（`SELECT ... FOR UPDATE` 单行）天然隔离，不同 Node 的并发 add/remove 互不阻塞 | 整个数组是一列，任何一次 add/remove 都要锁整行，并发 add 不同 Node 时会互相阻塞/丢失更新 |
+| query by Node（"这个 Node 涉及哪些 occurrence"） | 直接 `WHERE instance_id = ?` 走索引 | 需要 `nodes @> ARRAY[?]` GIN 索引，可行但多一层索引维护成本 |
+| evidence linkage | child 行可以直接携带"该 Node 在此 occurrence 中首次/最近被证明为 owner 的时间"等每 Node 维度的字段 | 数组只有 Node ID，没有位置可以挂每 Node 元数据，必须另开一张表——退化为方案 A 的一部分 |
+| history/audit correctness | remove 时只删除 membership 行，evidence observation（1B.4）不受影响，仍可查到"某 Node 曾经是 affected"的完整历史 | 数组被覆盖后无法从当前行反推历史成员，必须完全依赖 evidence 表重建 |
+| 未来 Topology read model | 可以直接 join `relay_node_assets`/未来 Topology 表，按 Node 维度做扇出查询 | 需要先 unnest 数组再 join，读模型侧多一层转换 |
+
+**结论：选 A（normalized child table）**。概念 schema：
+
+```sql
+CREATE TABLE cross_node_duplicate_occurrence_nodes (
+    occurrence_id uuid NOT NULL REFERENCES cross_node_duplicate_occurrences(occurrence_id),
+    instance_id uuid NOT NULL REFERENCES relay_node_assets(instance_id),
+    first_confirmed_at timestamptz NOT NULL,
+    PRIMARY KEY (occurrence_id, instance_id)
+);
+```
+
+Node pair 不作为 identity——这张表的主键是 `(occurrence_id, instance_id)`（单 Node 维度的成员关系），不存在也不允许 `(occurrence_id, instance_id_a, instance_id_b)` 这种 pairwise 结构。
+
+**Affected-node child table 数据库级 mutation rules（冻结，未来 Migration MUST 通过 DB trigger 检查 parent status）**：
+
+- **UPDATE 永远禁止**：这张表只有"存在"或"不存在"两种状态，没有可变字段——`first_confirmed_at` 创建后 immutable，不存在合法的 UPDATE 场景。
+- **INSERT 只有 parent `occurrence.status = 'ACTIVE'` 时允许**：detect 首次创建 occurrence 与 refresh 阶段新增 owner 都发生在 parent 仍 ACTIVE 期间；parent 已 RESOLVED 后 MUST NOT 再 INSERT 新的 affected node（RESOLVED occurrence 是历史快照，不再接受成员变更）。
+- **DELETE 只有 parent `occurrence.status = 'ACTIVE'` 且存在合法 fresh absence evidence 时允许**：对应第 4 节冻结的"缩减"规则（该 Node 自己新的合格 fresh+complete evidence 证明账号已不 present）；parent RESOLVED 后 MUST NOT 再 DELETE（历史成员关系必须保持不变，便于回溯"这条 occurrence 曾经涉及哪些 Node"）。
+- **TRUNCATE 拒绝**。
+- **evidence observation 不因 membership remove 而删除**：DELETE 一行 `cross_node_duplicate_occurrence_nodes` 只是移除"当前仍是 affected owner"的成员关系标记，1B.4 中该 Node 此前写入的全部 evidence observation 保持不变（本来就是不同的表，DELETE 这张表的行不会级联删除 evidence）。
+
+```sql
+-- +goose StatementBegin
+CREATE FUNCTION control_enforce_cross_node_duplicate_occurrence_node_mutation() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    parent_status text;
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        RAISE EXCEPTION 'cross_node_duplicate_occurrence_nodes: UPDATE is forbidden' USING ERRCODE = '42501';
+    END IF;
+
+    IF TG_OP = 'INSERT' THEN
+        SELECT status INTO parent_status FROM cross_node_duplicate_occurrences WHERE occurrence_id = NEW.occurrence_id FOR UPDATE;
+        IF parent_status IS DISTINCT FROM 'ACTIVE' THEN
+            RAISE EXCEPTION 'cross_node_duplicate_occurrence_nodes: INSERT only allowed while parent occurrence is ACTIVE' USING ERRCODE = '42501';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        SELECT status INTO parent_status FROM cross_node_duplicate_occurrences WHERE occurrence_id = OLD.occurrence_id FOR UPDATE;
+        IF parent_status IS DISTINCT FROM 'ACTIVE' THEN
+            RAISE EXCEPTION 'cross_node_duplicate_occurrence_nodes: DELETE only allowed while parent occurrence is ACTIVE' USING ERRCODE = '42501';
+        END IF;
+        -- 合法 fresh absence evidence 的存在性由应用层事务在同一 detect/refresh pass 中先写入 evidence observation 再 DELETE 保证，
+        -- 数据库层只强制 parent 必须 ACTIVE，不在触发器内重新判定 evidence freshness（避免把 Phase 1A 冻结的判定逻辑复制进触发器）
+        RETURN OLD;
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+-- +goose StatementEnd
+
+CREATE TRIGGER cross_node_duplicate_occurrence_node_enforce_mutation
+BEFORE INSERT OR UPDATE OR DELETE ON cross_node_duplicate_occurrence_nodes
+FOR EACH ROW EXECUTE FUNCTION control_enforce_cross_node_duplicate_occurrence_node_mutation();
+
+CREATE TRIGGER cross_node_duplicate_occurrence_node_reject_truncate
+BEFORE TRUNCATE ON cross_node_duplicate_occurrence_nodes
+FOR EACH STATEMENT EXECUTE FUNCTION control_reject_cross_node_duplicate_mutation();
+```
+
+### 1B.4 Append-only Evidence Observation
+
+> **本轮修订**：evidence 表不再持久化 `account_key`——账号 identity 只在 occurrence 行上保存一次，evidence 通过其 `occurrence_id` 归属天然继承账号身份，避免同一账号在多张表重复存储。新增 `source_scheduled_at`（retention-safe source identity 的一部分，见下方）。`latest_evaluation_id` 的语义修正见 1B.2。
+
+```sql
+CREATE TABLE cross_node_duplicate_occurrence_evidence (
+    observation_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    occurrence_id uuid NOT NULL REFERENCES cross_node_duplicate_occurrences(occurrence_id),
+    instance_id uuid NOT NULL REFERENCES relay_node_assets(instance_id),
+    observation_kind text NOT NULL CHECK (observation_kind IN ('owner_confirmed', 'absence_confirmed', 'degraded')),
+    -- retention-safe source pointer：刻意不建 FK/不设 ON DELETE 动作，见 1B.5
+    source_poll_run_id uuid NULL,
+    source_provider text NOT NULL,
+    source_scheduled_at timestamptz NOT NULL,   -- source identity 的一部分，见下方"source identity"；对应产生该条证据的具体 poll/health 调度时槽
+    source_completed_at timestamptz NOT NULL,   -- 表达 complete/observed 时间，不替代 scheduled slot identity；对应 present 路径 state.last_complete_at 或 absence/degraded 路径对应 finalize/health 完成时间
+    evaluation_id uuid NOT NULL,   -- 同一次 detect/refresh pass 的分组标识，见下方"evaluation 分组"
+    evaluation_at timestamptz NOT NULL, -- 对应该次 pass 的单次 clock_timestamp()（Phase 1A 冻结的 single database_now）
+    recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT cross_node_duplicate_evidence_no_future_eval CHECK (evaluation_at >= source_completed_at)
+);
+
+CREATE INDEX cross_node_duplicate_evidence_occurrence_idx
+    ON cross_node_duplicate_occurrence_evidence (occurrence_id, recorded_at DESC);
+CREATE INDEX cross_node_duplicate_evidence_occurrence_evaluation_idx
+    ON cross_node_duplicate_occurrence_evidence (occurrence_id, evaluation_id);
+
+CREATE TRIGGER cross_node_duplicate_evidence_reject_update_delete
+BEFORE UPDATE OR DELETE ON cross_node_duplicate_occurrence_evidence
+FOR EACH ROW EXECUTE FUNCTION control_reject_cross_node_duplicate_mutation();
+CREATE TRIGGER cross_node_duplicate_evidence_reject_truncate
+BEFORE TRUNCATE ON cross_node_duplicate_occurrence_evidence
+FOR EACH STATEMENT EXECUTE FUNCTION control_reject_cross_node_duplicate_mutation();
+```
+
+直接复用 `audit_logs`（`00002` L461-475）验证过的 DB 层 `BEFORE UPDATE OR DELETE`/`BEFORE TRUNCATE` 拒绝触发器范式——不依赖 Go service 约定。
+
+**`source_poll_run_id` 刻意不加 FK 约束**（关键修正，见 1B.5）：这张表本身是 immutable（禁止任何 UPDATE），如果 `source_poll_run_id` 是 `REFERENCES account_inventory_poll_runs(poll_run_id) ON DELETE SET NULL`，那么 retention 删除对应 `poll_run` 行时，PostgreSQL 会对本表执行一次系统级 `UPDATE ... SET source_poll_run_id = NULL`——这个 UPDATE 会命中本表自己的 `BEFORE UPDATE OR DELETE` 拒绝触发器并报错，导致 Account Inventory 的既有 retention 操作被本表意外阻塞。因此 `source_poll_run_id` 只是一个**写入时复制的信息性 uuid 值**，不建立任何 FK/`ON DELETE`动作，也**不是** source identity 的必要字段（见下方"source identity"）——poll run 存在时可用于人工交叉核对，poll run 被 retention 清理后该列的值仍然保留（可能"悬空"，但这是预期行为，不影响历史可解释性）。
+
+**source identity（不依赖 `source_poll_run_id`）**：这条 evidence observation 真正的、不可篡改的来源标识是 `instance_id + source_scheduled_at + source_provider` 三元组——即"哪个 Node、哪个 Provider、对应哪一次调度时槽（scheduled slot）产生了这条证据"。三者均在写入时复制，不依赖任何可能被 retention 清理的 FK。`source_completed_at` 只表达该次调度实际完成/观测到的时间，是辅助的可读时间戳，不替代 `source_scheduled_at` 作为 identity 的角色（两者可能不同：`scheduled_at` 是调度时槽起点，`completed_at` 是该次调度实际完成的时间）。
+
+来源区分（对应 `observation_kind`）：
+
+- `owner_confirmed` / `absence_confirmed`：`source_scheduled_at` 使用对应 promoted Provider current state 在该次 promotion 时的**调度时槽**（即触发本次 present/absence lifecycle 判定的那次 poll run 的调度时间，对应 `account_inventory_provider_states` 当次刷新所依据的 poll run 调度信息，而不是账号行上过时的 `current_poll_run_id`，与 Phase 1A 冻结的 absence evidence 来源结论一致，见 1B.6）。
+- `degraded`：`source_scheduled_at` 使用**实际产生该 health/degraded observation** 的 `health_scheduled_at`（`account_inventory_provider_states.health_scheduled_at`，`00009` L868 起），因为 degrade 判定与 present/absence 的 promotion 判定是两条独立路径（见 Phase 1A"degraded 是否影响 eligibility"结论：health 刷新与 promotion 解耦），不能混用 promotion 的调度时槽来描述一次 health degrade 观测。
+
+**evaluation 分组**：每次 detect/refresh pass（对某个 occurrence 的一次判定）在事务开始时生成一个 `evaluation_id`（`gen_random_uuid()`）并只取一次 `clock_timestamp()` 作为 `evaluation_at`（与 Phase 1A 冻结的单次 `database_now` 范式一致）；本次 pass 中对多个 Node 追加的所有 evidence observation 共享同一个 `evaluation_id`/`evaluation_at`，使得同一次判定产生的证据可以按 `(occurrence_id, evaluation_id)` 分组查询、互相比对，不需要靠 `recorded_at` 时间窗口模糊分组。occurrence 行的 `latest_evaluation_id`（1B.2）只记录"最新一次是哪个 evaluation_id"，具体该次涉及的 N 条 per-node observation 通过索引 `(occurrence_id, evaluation_id)` 一次查询获得，不需要 occurrence 反过来指向某一条具体 observation。
+
+### 1B.5 Retention-cleared Source Pointer 策略（修正：不使用 FK，source identity 不依赖 poll_run）
+
+Phase 1A 已证明 `account_inventory_provider_states.current_poll_run_id` 可因 retention 合法变为 NULL（`ON DELETE SET NULL`，`00006` L124-127）。Evidence observation 本身是 immutable（1B.4 的拒绝触发器），因此**不能对一个禁止 UPDATE 的表施加会触发系统级 UPDATE 的 FK（`ON DELETE SET NULL`/`ON DELETE CASCADE` 均不行——前者触发 UPDATE，后者触发 DELETE，两者都会命中拒绝触发器）**。
+
+**选择：不建 FK 的 nullable 历史指针（仅信息性）+ `instance_id + source_scheduled_at + source_provider` 作为 retention-safe 的 source identity**：
+
+- `source_poll_run_id`：普通 `uuid NULL` 列，写入时复制当时的 `poll_run_id`，不设任何外键约束/级联动作，也不是 source identity 的必要组成部分。poll run 尚未被 retention 清理时，应用层可以自行按值 join `account_inventory_poll_runs` 做人工交叉核对；清理后该列的值可能不再对应任何现存行，但这不会触发任何数据库错误，也不影响本表自身的 immutability。
+- `instance_id`（已是表的 NOT NULL 列）+ `source_scheduled_at` + `source_provider`：三者共同构成 source identity，写入时**直接复制**（不是引用）当时的调度时槽、provider 名称，这些是非敏感、不含 credential/secret 的最小元数据，一旦写入永远不依赖 `poll_run` 行是否还存在即可解释"这条 evidence 对应哪个 Node、哪个 Provider、哪一次调度"。
+- `source_completed_at` + `evaluation_id` + `evaluation_at`：补充可读的完成时间与评估分组标识，进一步丰富可解释性，但不是 identity 的必要字段。
+- 结果：即使 `source_poll_run_id` 事后变得悬空，`instance_id + source_scheduled_at + source_provider`（source identity）叠加 `observation_kind` + `source_completed_at` + `evaluation_id` + `evaluation_at` 仍然完整可解释这条历史 evidence 的来源与新鲜度，不需要"阻止 Account Inventory 现有 retention"，也不会因为 retention 清理而导致本表任何一行被意外修改。
+
+### 1B.6 Absence Evidence 引用（不使用 `account.current_poll_run_id`）
+
+Phase 1A 已证明 `account_inventory.current_poll_run_id` 只在 present 路径的 `INSERT ... ON CONFLICT` 写入，absence 转换（`lifecycle` 变为 `suspected_missing`/`missing`）不会更新它（`00007` L495-520）。因此：
+
+- `absence_confirmed` 类型的 observation，其 `source_poll_run_id`/`source_provider`/`source_completed_at` 必须来自**促成本次 absence lifecycle 转换的那一次 Provider promotion/finalize 事件**，而不是从 `account_inventory` 行上读取任何 `current_poll_run_id`。
+- 当该次 finalize 对应的 `poll_run` 行仍存在时：`source_poll_run_id` 直接复制它的值，可用于人工交叉核对 finalize 细节（无 FK 强制，见 1B.5）。
+- 当该 `poll_run` 行已被 retention 清理：`source_provider` + `source_completed_at`（finalize 完成时间，写入时复制）+ `observation_kind = 'absence_confirmed'` 三者依然完整证明"某次已完成的合格 promotion 判定该 account 在该 Node 缺席"，不依赖 poll_run 行存活。
+- 这一约束适用于 Phase 1B 设计的所有 resolve evidence。
+
+### 1B.7 隐私分析（修订：账号识别信息不再受限）
+
+- `cross_node_duplicate_occurrences` 直接持久化 `account_key`（plaintext canonical 形式），这是用户已明确批准的设计决策，不再是 Security Design Gap。`cross_node_duplicate_occurrence_evidence` 不重复存储 `account_key`——evidence 只通过 `occurrence_id` 归属，天然继承账号 identity；读模型/展示层需要账号信息时，通过 `occurrence_id` join `cross_node_duplicate_occurrences` 取得 `account_key`/provider/normalized email，不在 evidence 行上重复冗余存储。
+- 三张概念表（occurrence / occurrence_nodes / evidence）仍然 MUST NOT 包含：credential、API key、access token、refresh token、password、Secret 实际内容、raw upstream 响应/payload。
+- Node identity 使用现有 `relay_node_assets.instance_id`，Provider 名称是既有非敏感枚举。
+- 展示层（Phase 5 read model/API、管理界面）MAY 直接返回 `account_key`/provider/normalized email，不要求 masked/HMAC 处理；Prometheus metrics label（Phase 6）仍必须只用固定低基数标签（`environment`/`conflict_type`/`status`/`severity`），不得把 `account_key`/email 放进 metrics label。
+
+### 1B.8 事务边界 / 并发能力（冻结能力，不实现 worker）
+
+- **detect（修正：`ON CONFLICT DO NOTHING RETURNING` 不能"拿到 existing 行"，PostgreSQL 语义上冲突时该语句直接不返回任何行）**：单个数据库事务内，先根据当前 source truth 得到 duplicate candidate，生成本次 pass 的 `evaluation_id`/`evaluation_at`（单次 `clock_timestamp()`），尝试：
+  ```sql
+  INSERT INTO cross_node_duplicate_occurrences (environment_id, account_key, conflict_type, severity, first_seen_at, last_seen_at, ...)
+  VALUES (...)
+  ON CONFLICT (environment_id, account_key, conflict_type) WHERE status = 'ACTIVE' DO NOTHING
+  RETURNING occurrence_id;
+  ```
+  - **若 INSERT 成功（`RETURNING` 返回一行）**：说明这是该 semantic key 首次出现的 ACTIVE occurrence，直接使用这个新 `occurrence_id` 写入 `cross_node_duplicate_occurrence_nodes`（`ON CONFLICT (occurrence_id, instance_id) DO NOTHING` 幂等）以及本次 evaluation 涉及的每个 Node 各一条 `owner_confirmed` evidence observation（共享同一 `evaluation_id`/`evaluation_at`）。
+  - **若 INSERT 未插入任何行（`RETURNING` 为空）**：说明同一 semantic key 已存在一条 ACTIVE occurrence（发生了 partial unique index 冲突，`DO NOTHING` 使该语句静默跳过，不返回被冲突的既有行）。此时 MUST 显式 `SELECT occurrence_id FROM cross_node_duplicate_occurrences WHERE environment_id=? AND account_key=? AND conflict_type=? AND status='ACTIVE' FOR UPDATE` 取得该 existing occurrence 的行锁，在锁内**重新读取当前 ownership source truth**、重新生成/确认本次 evaluation（可复用同一个 `evaluation_id`/`evaluation_at`，或视为同一次 pass 的延续），再按下方的 refresh/add/remove/resolve 规则处理——不得假设 `DO NOTHING RETURNING` 本身已经把 existing occurrence 的数据带回来。
+  - 1B.2 的部分唯一索引（`WHERE status='ACTIVE'`）只负责"同一 semantic key 同时最多一条 ACTIVE occurrence"这一件事；它不负责、也不能负责把 existing occurrence 的行数据返回给调用方——这是 occurrence 行锁+ 显式 `SELECT` 的职责。
+- **occurrence row lock + re-evaluate**：任何 refresh/resolve 操作（包括上面 detect 冲突后走入的分支）在写入前 MUST 先 `SELECT ... FROM cross_node_duplicate_occurrences WHERE occurrence_id = ? FOR UPDATE`（或按 `(environment_id, account_key, conflict_type) WHERE status='ACTIVE'` 定位后再 `FOR UPDATE`）锁定该 occurrence 行，在同一事务内完成"重新评估 membership → 决定 add/remove/refresh/resolve → 写入 evidence → 更新投影"的全部步骤后提交；这保证同一 occurrence 的并发 detection pass 被行锁天然序列化。**职责划分**：部分唯一索引负责"不同 semantic key 之间，同一时刻最多一条 ACTIVE occurrence"；occurrence 行锁负责"同一个 existing occurrence 上的多次 lifecycle mutation 相互串行化"，两者是互补但不同的机制，不能互相替代。是否还需要额外的 worker lease/fencing token（例如防止同一 detection worker 的多个实例同时对同一批 occurrence 做 detect pass）留待 Phase 4 决策，本轮不冻结。
+- **refresh**（membership 未变化）：持有行锁后，更新 `last_seen_at`/`evidence_state`/`last_fully_verified_at`/`latest_evaluation_id`，并追加 evidence observation；不触碰 `cross_node_duplicate_occurrence_nodes`。
+- **refresh**（membership 变化，add/remove）：持有行锁后，add 走 `INSERT ... ON CONFLICT (occurrence_id, instance_id) DO NOTHING`，remove 走 `DELETE ... WHERE occurrence_id=? AND instance_id=?`（仅当该 Node 有新合格 fresh+complete absent evidence 时才允许，业务层校验），随后追加对应 evidence observation 并更新 occurrence 投影字段。
+- **resolve**（修正：evidence 类型按各 Node 实际证明的状态区分，不是全部追加 `absence_confirmed`）：持有行锁后，对 occurrence 当前保留的 affected Node 集合中**仍被新合格 evidence 证明为 present 的至多一个 Node**追加一条 `owner_confirmed` evidence observation，对**本次新合格 evidence 证明已不 present 的 Node**追加一条 `absence_confirmed` evidence observation——即 remaining owner 用 `owner_confirmed`、removed owner 用 `absence_confirmed`，覆盖 occurrence 当前保留的全部 affected Node；随后 `UPDATE ... SET status='RESOLVED', resolved_at=clock_timestamp() WHERE occurrence_id=? AND status='ACTIVE'`——这次 UPDATE 一旦成功，1B.2 的 RESOLVED 拒绝触发器即让该行永久冻结，同时部分唯一索引对该 semantic key 释放，允许后续 reopen。
+- **reopen**：不是对旧 occurrence 的操作，而是重新走一次 detect 流程，产生**新的 `occurrence_id`**（旧 occurrence 保持 `RESOLVED` 且数据库层不可变，构成完整历史）。
+- **并发防护来源**：1B.2 的部分唯一索引（跨 semantic key）+ occurrence 行锁（同一 occurrence 内的串行化）+ RESOLVED 不可变触发器（防止 resolve 后被意外修改）三者组合，不需要额外的应用层分布式锁；worker lease/fencing token 是否需要留 Phase 4。
+
+### 1B.9 Rollback / Migration 策略（建议，仅设计不落地）
+
+- 新增表全部是 **additive**（新增表 + 新增触发器/函数），不修改任何既有 Account Inventory/Binding 表结构。
+- 建议遵循 `00011`/`00012` 已验证的模式：Migration 的 `-- +goose Down` 在**存在任何 occurrence 或 evidence 历史行时 fail closed**（`RAISE EXCEPTION ... USING ERRCODE = '55000'`，参考 `00011` L241-249 的 `DO $$ ... IF EXISTS (...) THEN RAISE EXCEPTION ... END IF; END $$;` 写法），避免静默丢失 duplicate-ownership 审计证据。
+- 若确实需要在**没有任何历史**的 clean 环境回滚（例如设计返工阶段），Down 应该可行（`DROP TABLE`/`DROP TRIGGER`/`DROP FUNCTION`），并需要提供 up/down/up acceptance（与 Binding change `TestGatewayDirectoryAndRelayBindingMigrationsUpDownUp` 同等验收模式）。
+- **DELETE 历史永久禁止**：与 evidence observation 的 immutable 设计一致——一旦产生 occurrence/evidence 历史，不允许任何路径（包括回滚）删除已记录的 evidence；这一点必须在未来实际 Migration 的 Down 分支中体现为 fail-closed guard，而不是靠 Go 层约定。
+- 以上均为**建议**，任何 Migration 草案本身仍必须在 Phase 1B 正式落地前单独提交 Review（不在本轮创建）。
+
 ## 2. Duplicate 定义
 
 ```text
@@ -174,7 +489,7 @@ cross_node_duplicate(account_key) :=
     |{ node : eligible_owner_evidence[node, provider, account_key] 成立 }| >= 2
 ```
 
-MUST 同时满足 `same account_key` 与 `different relay_node_assets.instance_id`；`account_key` 沿用 Account Inventory 既有规范化定义（`normalized_provider + ':' + normalized_email`），仍是 Account Inventory 唯一 ownership identity，不新增第二套业务 identity。`account_key`（及其组成的 plaintext normalized email）属于敏感 identity，其存储、展示与脱敏边界见第 6c 节。
+MUST 同时满足 `same account_key` 与 `different relay_node_assets.instance_id`；`account_key` 沿用 Account Inventory 既有规范化定义（`normalized_provider + ':' + normalized_email`），仍是 Account Inventory 唯一 ownership identity，不新增第二套业务 identity；`account_key`/normalized email/原始账号识别信息允许在 Control 中持久化与展示，其边界见第 6c 节（仅约束 credential/secret/token/raw payload，不再约束账号识别信息本身）。
 
 Node-local duplicate（同一 Node 单次/current Inventory 内部重复 identity）已经由 Phase 2/3 的 `account_inventory_poll_duplicates` 与 promotion 阻断机制独立处理，属于该 Provider snapshot 完整性错误。Cross-node duplicate 的实现 MUST NOT 复用 node-local duplicate 的事件、告警或 metric，也 MUST NOT 用同一个 `duplicate=true` 布尔值合并二者语义。
 
@@ -297,21 +612,20 @@ occurrence mutable projection 只更新"最新引用"指向这些 append-only ob
 
 MUST NOT 保存：
 
-- credential、secret、token、API key、raw upstream 响应；
+- credential、API key、access token、refresh token、password、Secret 实际内容、raw upstream 响应/payload；
 - Gateway Directory 或 Binding 的任何字段作为 evidence（只能在展示层作为独立 context 关联展示，不写入 evidence 结构）。
 
-account_key/完整 normalized email 的持久化边界见第 6c 节。
+account_key/normalized email 的持久化与展示边界见第 6c 节（本 capability 已放开对账号识别信息本身的限制，只保留对 credential/secret 类数据的限制）。
 
-### 6c. account_key 隐私边界
+### 6c. account_key 持久化与展示边界
 
-`account_key = normalized_provider + ':' + normalized_email` 仍是 Account Inventory 唯一 ownership identity，本 change 不建立第二套业务 identity；`logical_conflict_key` 在**语义上**仍由 `environments.environment_id + account_key + conflict_type` 决定，但其**物理持久化表示**（是否直接存储 plaintext account_key，或使用等价的安全引用）留给 Phase 1 决策，不得据此创建第二套 ownership truth。
+`account_key = normalized_provider + ':' + normalized_email` 仍是 Account Inventory 唯一 ownership identity，本 change 不建立第二套业务 identity；`logical_conflict_key` 直接使用 `environments.environment_id + account_key + conflict_type`，`account_key` 以既有 canonical 形式直接参与，不新增 fingerprint/HMAC 派生列。
 
-- Plaintext `account_key` / normalized email 属于敏感 identity。
-- Detection 逻辑内部 MAY 在既有受保护 Account Inventory 数据边界内使用 plaintext `account_key`（例如与 `account_inventory.account_key` 做等值比较），因为该数据本身已经在既有保护边界内。
-- 新的 occurrence/evidence persistence（第 6a/6b 节新增的存储）默认 MUST NOT 重复存储 plaintext `account_key` 或完整 normalized email。
-- Phase 1 MUST 优先复用既有 masked/HMAC identity 或安全 source reference（例如引用 `account_inventory` 主键而非复制 email 明文）表达 occurrence/evidence 中的账号标识。
-- UI/metrics/alerts/logs 永远 MUST NOT 输出 plaintext `account_key` 或完整 normalized email。
-- 若实现阶段（Phase 1）经过调查证明新表必须持久化 plaintext `account_key`，MUST 停止并单独发起 security review，不得静默加入 schema。
+- 用户已明确决定：原始账号（`account_key`）、normalized email 允许在 Control 中直接持久化和展示，不属于本 capability 的敏感字段禁止范围。
+- `cross_node_duplicate_occurrences`（第 6a 节）MAY 直接存储 `account_key`（plaintext canonical 形式），不需要 masked/HMAC 派生，也不需要额外脱敏列；`cross_node_duplicate_occurrence_evidence`（第 6b 节）不重复存储 `account_key`，只通过 `occurrence_id` 归属继承账号 identity，read model 需要账号信息时经 `occurrence_id` join occurrence 取得。
+- Control 管理界面与授权 API MAY 直接返回 `account_key`、provider、normalized email 或原始账号识别信息，不要求 masked/HMAC 输出。
+- Prometheus metrics label 仍 MUST NOT 使用完整 email/account_key 作为高基数标签；推荐只使用固定低基数标签（例如 `environment`、`conflict_type`、`status`、`severity`），账号级上下文只出现在 alert payload/read model 中，不进入 metrics label。
+- 仍然 MUST NOT 保存或输出：credential、API key、access token、refresh token、password、Secret 实际内容、raw upstream 响应/payload——这一敏感边界与账号识别信息无关，账号/email 不再归入本 capability 的禁止敏感字段。
 
 ## 7. Binding Relationship
 
@@ -348,8 +662,8 @@ Binding Resolution         (unbound/resolved/unresolved/unknown, 已归档 chang
 12. **retention**：occurrence 和 evidence 历史的保留期限，是否对齐既有 audit/history 保留策略。
 13. **acknowledgement 是否属于 occurrence truth**：若引入人工确认，必须明确它是否影响 ACTIVE/RESOLVED 状态机（默认倾向于不影响，acknowledgement 只是独立 metadata）。
 14. **alert/notification 与 occurrence 的关系**：本轮只冻结 occurrence lifecycle（`ACTIVE | RESOLVED`）与 severity（固定 Critical）；alert/notification delivery record 是否与 occurrence 1:1，或 occurrence 只是 alert 的数据来源而非同一张记录，仍是 Phase 6 的独立决策项，本设计不预先假定两者是同一记录。
-15. **masked identity 输出**：occurrence 展示层的账号标识脱敏规则，必须复用既有 Account Inventory masked/HMAC identity 约束。
-16. **metrics names**：必须遵循既有 Prometheus 标签约束（`environment + alert_type + account_key` fingerprint 范式，`account_key` 只能以既有 masked/HMAC 形式出现，不得输出 plaintext），具体指标名留给实现阶段。
+15. **账号识别信息展示字段**：occurrence 展示层可以直接返回 `account_key`/provider/normalized email 等账号识别信息，不要求 masked/HMAC 处理；具体展示字段集合留给 Phase 5 决定。
+16. **metrics names**：Prometheus label 只能使用固定低基数标签（例如 `environment`、`conflict_type`、`status`、`severity`），不得使用 account_key/email 作为 label；具体指标名留给实现阶段。
 17. **read model/API needs**：查询维度（按 Node、按 account_key、按状态）留给 Phase 5 设计。
 18. **Node-centric Topology 后续接入方式**：occurrence 如何在 Node-centric 视图中展示为只读关联信息，不得反向影响 Node/Binding/Inventory 状态。
 
@@ -373,7 +687,7 @@ Binding Resolution         (unbound/resolved/unresolved/unknown, 已归档 chang
 - **Phase 2 — current ownership query**：实现只读、bounded 的"当前合格 owner 集合"查询，验证与 Phase 2/3 Inventory 判定完全一致，不写入任何 occurrence。
 - **Phase 3 — detection + occurrence lifecycle**：实现 detect/refresh/degrade/resolve/reopen 状态机与 dedupe 约束。
 - **Phase 4 — reconciliation/concurrency**：实现重启/补跑一致性、并发安全性与（如需要）lease/fencing。
-- **Phase 5 — read model/API**：实现只读查询接口与 masked identity 输出，不做 UI。
+- **Phase 5 — read model/API**：实现只读查询接口，可直接返回 `account_key`/provider/normalized email 等账号识别信息，不做 UI。
 - **Phase 6 — alerts/metrics acceptance**：接入告警与指标，验收 fingerprint 与命名规范。
 - **Phase 7 — validation/runbook/archive**：完整回归、runbook 文档与 OpenSpec archive。
 
@@ -383,4 +697,4 @@ Binding Resolution         (unbound/resolved/unresolved/unknown, 已归档 chang
 - **pairwise alert 爆炸**：若实现阶段按 Node pair 建表会违反第 3 节固定 identity；必须在 Phase 3 验收中显式测试 3+ Node 场景只产生一条 occurrence。
 - **stale evidence 误 resolve**：第 4 节明确"证据缺失不能触发 resolve"，必须在 Phase 3/4 验收中覆盖"部分 Node stale 时 occurrence 保持 ACTIVE"的场景。
 - **与 Binding 耦合**：第 7 节明确三者独立；必须在验收中证明 Binding 状态变化不触发 detection 重算，也不改变 severity。
-- **evidence 泄露**：第 6 节明确禁止保存 credential/secret/raw payload/完整 email；必须在实现阶段复用既有 masked identity 机制。
+- **evidence 泄露**：第 6 节明确禁止保存 credential/API key/access token/refresh token/password/Secret 内容/raw payload；账号识别信息（account_key/email）允许持久化与展示，不属于此风险范围，但 Prometheus label 仍必须保持低基数，不得把账号信息塞进 metrics label。

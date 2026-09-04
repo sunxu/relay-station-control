@@ -7,7 +7,7 @@
 - [x] 0.1 对照 System Design R4.7（12.2 节）、Account Inventory Phase 2/3 已归档契约、Gateway Directory ingestion 与 Relay Node ↔ Gateway Account Binding 已归档契约，冻结 ownership source of truth、duplicate 定义、conflict identity、occurrence 生命周期、severity、evidence 模型与 Binding 边界
 - [x] 0.2 冻结 non-goals：不自动修改 Gateway/CLIProxyAPI、不自动 unbind/rebind、不参与 routing/scheduling、不做 failover/retry/breaker、不自动修复 duplicate、不做 capacity recommendation、不把 Gateway binding/status 当作 ownership truth
 - [x] 0.3 冻结 Phase 1A/1B、2–7 拆分边界与每阶段最小交付范围
-- [x] 0.4 列出待实现阶段逐项决策但本轮不实现的技术边界（schema 拆分为 Phase 1A/1B、查询条件复用、freshness 阈值来源、worker cadence、事务边界、并发/lease/fencing、occurrence dedupe 约束、evidence 存储形态、ACTIVE/RESOLVED persistence、degraded metadata、reconciliation/restart、retention、acknowledgement、alert/notification 关系、masked identity、metrics 命名、read model/API、Topology 接入）
+- [x] 0.4 列出待实现阶段逐项决策但本轮不实现的技术边界（schema 拆分为 Phase 1A/1B、查询条件复用、freshness 阈值来源、worker cadence、事务边界、并发/lease/fencing、occurrence dedupe 约束、evidence 存储形态、ACTIVE/RESOLVED persistence、degraded metadata、reconciliation/restart、retention、acknowledgement、alert/notification 关系、账号识别信息展示字段、metrics 命名、read model/API、Topology 接入）
 
 ## 1. Phase 1A — source query feasibility
 
@@ -19,12 +19,12 @@
 
 是否新增 occurrence/evidence schema 与 Phase 1A 是否需要新 index 是两个独立问题，互不隐式触发。
 
-- [ ] 2.1 调查是否存在可安全复用的 generic occurrence/alert persistence；若存在，评估复用可行性
-- [ ] 2.2 若无法复用，设计最小 additive occurrence/evidence persistence：schema 只保存 conflict lifecycle/evidence（occurrence mutable projection + append-only evidence observation），不复制 Inventory truth
-- [ ] 2.3 明确 occurrence dedupe 唯一约束设计草案（同一 `logical_conflict_key` 在 ACTIVE 状态下唯一）
-- [ ] 2.4 明确 evidence observation 的 append-only/immutable 实现方式（禁止 UPDATE/DELETE）
-- [ ] 2.5 明确 account_key 持久化边界：默认使用既有 masked/HMAC identity 或安全引用；若必须持久化 plaintext account_key，单独发起 security review 并停止等待批准
-- [ ] 2.6 任何 Migration 设计草案必须先单独 Review，不得在本 Phase 静默提交
+- [x] 2.1 调查是否存在可安全复用的 generic occurrence/alert persistence；若存在，评估复用可行性 —— 已确认不存在（design.md Phase 1A persistence survey），Phase 1B 需从零设计
+- [x] 2.2 设计最小 additive occurrence/evidence persistence 的结构（occurrence mutable projection + affected-node child table + append-only evidence observation）—— 已在 design.md §1B.2/§1B.3/§1B.4 完成设计；`account_key` 直接复用 Account Inventory canonical plaintext 表示，不再是待定占位列
+- [x] 2.3 明确 occurrence dedupe 唯一约束设计草案 —— 已给出：`(environment_id, account_key, conflict_type) WHERE status='ACTIVE'` 部分唯一索引（design.md §1B.2），RESOLVED 后释放，允许 reopen；另加 RESOLVED 行数据库层不可变触发器
+- [x] 2.4 明确 evidence observation 的 append-only/immutable 实现方式（禁止 UPDATE/DELETE）—— 已完成：复用 `audit_logs` 的 `BEFORE UPDATE OR DELETE`/`BEFORE TRUNCATE` 拒绝触发器范式（design.md §1B.4）；`source_poll_run_id` 刻意不建 FK，避免 retention 删除触发系统级 UPDATE 命中拒绝触发器（design.md §1B.4/§1B.5）
+- [x] 2.5 明确账号 identity 直接复用 plaintext canonical `account_key`，不新增第二套 fingerprint/HMAC identity —— 用户已明确决定原始账号/邮箱允许持久化与展示；此前的 Security Design Gap（fingerprint/HMAC 长期 dedupe 不可行）已撤销，因为其阻塞前提（account_key 必须脱敏）已被取消（design.md §1B.1/§1B.7）
+- [ ] 2.6 任何 Migration 设计草案必须先单独 Review，不得在本 Phase 静默提交 —— design.md §1B.9 已给出建议方向，但 Migration 本身尚未设计/提交独立 Review，因此本轮不勾选；Phase 1B Design 可在 2.1–2.5 完成后进入 Final Review，2.6 留待下一轮 Migration Review 完成后再勾选
 
 ## 3. Phase 2 — current ownership query
 
@@ -54,13 +54,13 @@
 ## 6. Phase 5 — read model/API
 
 - [ ] 6.1 设计并实现只读 occurrence 查询（按 Node、按 account_key、按状态）
-- [ ] 6.2 实现 masked identity 输出，复用既有 Account Inventory masked/HMAC 与 `super_admin` 全量访问边界；不输出 plaintext account_key
+- [ ] 6.2 实现只读查询返回账号识别信息（`account_key`/provider/normalized email），复用既有 `super_admin` 全量访问边界；不要求 masked/HMAC 处理
 - [ ] 6.3 设计 Node-centric Topology 后续接入方式（只读关联展示，不反向影响 Node/Binding/Inventory 状态）
 
 ## 7. Phase 6 — alerts/metrics acceptance
 
-- [ ] 7.1 决策 alert/notification delivery record 与 occurrence 的对应关系（是否 1:1），接入 ACTIVE/RESOLVED 告警；semantic alert fingerprint identity = `environments.environment_id + alert_type + account_key`，但实际 alert label/emitted fingerprint material MUST 使用既有 masked/HMAC safe identity representation，不得输出 plaintext account_key
-- [ ] 7.2 补 Prometheus metrics，验证命名遵循既有标签约束，account_key 只以 masked/HMAC 形式出现
+- [ ] 7.1 决策 alert/notification delivery record 与 occurrence 的对应关系（是否 1:1），接入 ACTIVE/RESOLVED 告警；alert 可包含 `account_key`/provider/email 作为可读上下文，不要求 masked/HMAC 处理
+- [ ] 7.2 补 Prometheus metrics，验证命名遵循固定低基数标签约束（`environment`/`conflict_type`/`status`/`severity`），不得使用 `account_key`/email 作为 metrics label
 - [ ] 7.3 验证 severity 固定 Critical，不受 Gateway binding/status 影响
 
 ## 8. Phase 7 — validation/runbook/archive
