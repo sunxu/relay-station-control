@@ -65,6 +65,108 @@ MUST NOT 使用以下内容创造、消除或覆盖 ownership fact：
 - Gateway Account `status`（active/disabled）、`schedulable`、`weight`、cooldown、breaker 状态；
 - 任何 scheduler、runtime、health check 或进程存活状态。
 
+## Phase 1A Investigation Findings（本轮新增，只做调查，不改契约/不新增 Migration/不新增表/不写 detection worker）
+
+以下内容基于对实际 schema、SQL 函数与 store Go 代码的检查，用于证明/推翻 §1 的 `eligible_owner_evidence` 是否可以由既有 `account_inventory*` 表只读满足。全部引用均可在下列文件复核：`migrations/00005_account_inventory_poll_run_foundation.sql`、`migrations/00006_account_inventory_snapshot_foundation.sql`、`migrations/00007_account_inventory_lifecycle_foundation.sql`、`migrations/00008_account_inventory_readonly_query.sql`、`migrations/00009_account_inventory_history_compaction.sql`（该文件內多次 `CREATE OR REPLACE`，Up 中最终生效版本在第 4643 行 `-- +goose Down` **之前**的最后一次定义，即约第 1103–1240 行；第 4927 行之后的同名定义属于 Down 回滚段，不是当前生效版本）、`internal/store/account_inventory_readonly_query.go`。
+
+### 输出一：精确 eligible-owner predicate
+
+```sql
+-- eligible_owner(node, account_key) 为真，当且仅当（单次 evaluation 只取一次 wall-clock，见下方 single database_now 说明）：
+WITH evaluation AS (SELECT clock_timestamp() AS database_now)
+SELECT 1
+FROM account_inventory AS account
+JOIN account_inventory_provider_states AS state
+  ON state.instance_id = account.instance_id
+ AND state.provider    = account.provider
+CROSS JOIN evaluation
+WHERE account.instance_id       = :node                        -- Node identity：account_inventory.instance_id（00007 L77，FK → relay_node_assets.instance_id）
+  AND account.account_key       = :account_key                  -- account_inventory.account_key（00007 L78，CHECK = provider || ':' || normalized_email，00007 L112）
+  AND account.lifecycle         = 'present'                     -- 00007 L149-163 account_inventory_lifecycle_shape CHECK；present 是四态之一
+  AND state.state               = 'current'                     -- 00006 L128 account_inventory_provider_state_fixed CHECK：该列当前恒为 'current'（无其它取值）
+  AND state.last_complete_at    IS NOT NULL                     -- 00006 L120（NOT NULL 列，恒非空，此判断为防御性对齐既有 readonly-query 的一致性写法）
+  AND (evaluation.database_now - state.last_complete_at)
+      <= interval '15 minutes'                                  -- freshness：见下方"freshness 来源"，使用单一 evaluation.database_now，不逐行重新取 wall-clock
+  AND (account.lifecycle = 'out_of_scope')
+      = (state.monitoring_status = 'out_of_scope')               -- 与 account_inventory_provider_states.monitoring_status 保持一致（00007 L64-73），镜像既有 readonly-query 的一致性 guard（00009 L1199-1201/L4927 附近）
+```
+
+`state.current_poll_run_id` **MUST NOT** 出现在 eligibility predicate 中——`current_poll_run_id` 是可空 source pointer（`00006` L118，无 `NOT NULL` 约束），既有 retention/compaction 路径（`00006` L127 `ON DELETE SET NULL (current_poll_run_id)`）允许在保留策略生效后合法地把该指针清空，此时 `account_inventory_provider_states` 这一行的 `state='current'`、`last_complete_at`、`monitoring_status` 等 current-state 字段依然完全有效、依然可以参与 eligibility 判定。`current_poll_run_id` 非 NULL 时可以作为 consistency/evidence reference（例如 Phase 1B 设计 evidence observation 时用它引用具体 poll run），但它是否存在**不得**成为 ownership eligibility 的前提条件。
+
+逐字段来源与结论：
+
+- **Node identity**：`account_inventory.instance_id`（`00007` L77），FK 到 `relay_node_assets(instance_id)`（`00007` L165-166）。
+- **provider**：`account_inventory.provider`（`00007` L77），仅用于 join `account_inventory_provider_states`，不是 eligible-owner 的独立筛选维度（一个 account_key 只属于一个 provider，`account_key = provider || ':' || normalized_email` 已强制关联，`00007` L112）。
+- **account_key**：`account_inventory.account_key`（`00007` L78），主键组成部分（`(instance_id, account_key)`，`00007` L100）。
+- **lifecycle = present**：`account_inventory.lifecycle`（`00007` L91），四态 CHECK 见 `00007` L149-163（`present` / `suspected_missing` / `missing` / `out_of_scope`）。
+- **provider state = current**：`account_inventory_provider_states.state`（`00006` L128），当前 schema 下该列被 CHECK 固定为 `'current'`（`account_inventory_provider_state_fixed`，`00006` L128），即该列目前恒真，只作为未来可能引入其它取值时的防御性判断保留。
+- **current_poll_run_id attribution（谁的 pointer 对应谁的证据）**：`account_inventory.current_poll_run_id`（`00007` L94）**只**在"present"路径（`INSERT ... ON CONFLICT (instance_id, account_key) DO UPDATE`，`00007` L531-576）里被写入/刷新为本次 promoted poll run 的 `target_poll_run_id`——即：对当前 `lifecycle='present'` 且在最新 promoted snapshot 中出现的 account，其 `current_poll_run_id` 对应"最近一次证明它 present 的 promotion"。而对 `suspected_missing`/`missing` 的 absence transition（`00007` L495-520 的 UPDATE 分支），SET 子句只更新 `lifecycle`/`consecutive_missing_count`/`missing_since`/`updated_at`，**不更新** `current_poll_run_id`——因此该账号变为 `suspected_missing`/`missing` 之后，其行上的 `current_poll_run_id` 仍然指向它最后一次 `present` 时的那次 promotion，而不是"本次证明它缺席"的那次 poll run。**结论：`account.current_poll_run_id` 不得作为 absence evidence 的来源**；absence evidence 的真正来源是"新的合格 Provider promotion（即触发本次 absence transition 的那次 finalize 事务本身）+ lifecycle transition 的结果（`lifecycle` 列的新值）+ 对应的 Provider current state（`account_inventory_provider_states` 在同一次 finalize 事务中被刷新的 `current_poll_run_id`/`last_complete_at` 等）或等价的 promotion evidence（例如该次 finalize 事务的 `poll_run_id` 本身，如需要引用）"，而不是账号行自身陈旧的 `current_poll_run_id`。Phase 1B 设计 resolve evidence（第 4 节 resolve 规则要求的"新合格 evidence 证明 present owner ≤ 1"）时 MUST 遵守这一点：resolve 时用于证明"该 Node 上 account_key 已不 present"的 evidence 引用，必须指向触发该次 absence transition 的那次 finalize/poll run（或 Provider current state 的最新引用），不能引用账号行上过时的 `current_poll_run_id`。
+- **inventory_mode = runtime / provider_snapshot_complete = true**：**不需要在查询时重新判断**。触发器 `control_validate_account_inventory_promotion`（`00006` L280-317）强制：只要某 `account_inventory_poll_provider_results.promotion_applied = true`（即该 provider 在该次 poll run 被提升为 current），就必须同时满足 `NEW.contract_valid`、`NEW.inventory_mode = 'runtime'`、`NEW.node_identity_complete`、`result.snapshot_complete`，且 `account_inventory_provider_states.current_poll_run_id` 已经指向这个 poll run（`00006` L295-303，此为 promotion **发生那一刻**的一次性一致性约束，不代表该 pointer 此后必须永久非空）。因此 `account_inventory.lifecycle = 'present'` 这一事实本身就传递性地保证了它来自一次 `runtime` 且 `snapshot_complete = true` 的 promotion，无需额外 join `account_inventory_poll_provider_results` 复查（原始 `00008` 函数体确实多 join 了一次这张表作为额外一致性 guard，属于防御性冗余，不是 eligibility 的必要条件；Phase 1B 可自行决定是否保留这层防御性 join）。
+- **degraded 是否影响 eligibility**：**不影响**。当前 schema 已把"健康状态"从 promotion 路径解耦：`account_inventory_provider_states.health_degraded` / `health_reason` / `health_scheduled_at`（`00009` L866-868 新增列，`00009` L920 起 NOT NULL + CHECK）由触发器 `control_refresh_account_inventory_provider_health_v1`（`00009` L1055-1084）在**每次** finalize（不限定是否 promoted，只要不是 `policy_changed`/`stale_poll` 跳过）时刷新，反映"最近一次 poll 是否失败/降级"，与 `lifecycle='present'` 的 promotion 事实完全独立。当前生效版本的 `control_query_current_account_inventory_v1`（`00009` L1103-1240）只把 `health_degraded` 作为输出的 `provider_degraded` 展示字段，不参与 WHERE 过滤。
+- **freshness 使用哪一个 DB timestamp / 阈值来源 / single database_now**：`account_inventory_provider_states.last_complete_at`（`00006` L119，NOT NULL，且 CHECK `last_complete_at = source_observed_at`，`00006` L138）。阈值是硬编码字面量 `interval '15 minutes'`，出现在 `control_query_current_account_inventory_v1` 函数体内（`00008` L141，`00009` L1222 与 L4927 附近各一次，三处字面量完全相同），**不是**任何配置表/常量/Go 代码里的可配置值；Go 代码（`internal/store/account_inventory_readonly_query.go`）里搜索不到该阈值，说明它只存在于这条 PL/pgSQL 函数体里。Phase 1B 若要复用，必须直接复用这个字面量语义（同一个 15 分钟窗口），不得引入第二个数值或让它可配置。一次 `ListEligibleOwnersByAccountKey` 或 `ListCrossNodeDuplicateCandidates` evaluation **MUST** 只取得一次 `clock_timestamp()`（如上 `WITH evaluation AS (SELECT clock_timestamp() AS database_now)`），所有参与判定的行统一对比同一个 `evaluation.database_now`，不得对每一行分别重新调用 `clock_timestamp()`（否则同一次 evaluation 内不同行可能因执行耗时跨越 15 分钟边界而得到不一致的 fresh/stale 判定，破坏"同一次 evaluation 内 fresh/stale 判定必须一致"的前提）。既有 `control_query_current_account_inventory_v1` 已经遵循这一范式（函数体首行 `database_now timestamptz := clock_timestamp();`，`00008` L44/`00009` L1116，只取一次），Phase 1A/1B 的新查询 MUST 保持同样的单次求值范式。
+- **policy_changed / skipped promotion 如何排除**：`account_inventory_poll_provider_results.promotion_skipped_reason = 'policy_changed'`（或其它 `promotion_skipped_reason`）时 `promotion_applied = false`（CHECK `account_inventory_poll_provider_promotion_shape`，`00006` L20-24），该 provider 在该 poll run 上完全不产生 `account_inventory`/`account_inventory_provider_states` 的任何写入（`control_finalize_account_inventory_poll_run_with_lifecycle` 只在 `promotion_applied` 的 provider 上执行 UPDATE/INSERT 循环，`00007` L479-486 起的 FOR 循环条件），也就是说：eligible-owner predicate 天然排除它——它根本不出现在或不刷新 `account_inventory`/`account_inventory_provider_states` 里，无需额外 WHERE 条件。
+- **suspected_missing / missing / out_of_scope 如何处理**：均不满足 `lifecycle = 'present'`，天然被上面的 predicate 排除，不需要额外分支。
+
+### 输出二：absence / unverifiable matrix
+
+| 情况 | owner present evidence | absence evidence | unverifiable | 依据 |
+|---|---|---|---|---|
+| fresh complete + account present | 是（`lifecycle='present'` 且 `last_complete_at` 在 15 分钟内） | 否 | 否 | `00007` L149-151 present shape；`00009` L1222 freshness |
+| fresh complete + account absent（本次 promoted 快照未见该 account_key） | 否 | **是**（`lifecycle` 立即翻转为 `suspected_missing`，见下） | 否 | `00007` L479-509：仅当该 provider 本次 `promotion_applied` 且 `snapshot_items` 中不含该 `account_key` 时才发生此 UPDATE，天然要求"fresh+complete"前提 |
+| suspected_missing（1 次连续 promoted 未见） | 否 | 是（第一次 fresh+complete 缺席证据） | 否 | `00007` L152-154；`consecutive_missing_count=1` |
+| missing（2 次连续 promoted 未见） | 否 | 是（更强的 fresh+complete 缺席证据，`missing_since` 落定） | 否 | `00007` L155-157 |
+| out_of_scope（provider 被移出 active policy scope） | 否 | **否**——`out_of_scope` 只表示"Control 主动停止监控"，不是"upstream 证明账号不存在"的证据 | **是**（对 ownership 判定而言不可验证，不能当作缺席证据） | `00007` L158-160；`account_inventory_provider_states.monitoring_status`（`00007` L64-70）语义是"是否仍在监控范围"，不是账号存在性 |
+| stale（`state.last_complete_at` 超过 15 分钟） | 沿用上次已知 lifecycle（不因 stale 本身改变） | 否 | 是（无法用当前证据重新确认，只能作为 evidence_state=degraded 的 metadata） | `00009` L1222 freshness 判定；本身不改写 `lifecycle` |
+| provider incomplete（`identity_complete=false` 或 `snapshot_complete=false`，即 `reason<>'complete'`） | 否（不产生新的 present 证据） | 否（不产生新的 absence 证据） | **是**——`promotion_applied` 恒为 false（CHECK `account_inventory_poll_provider_promotion_shape`，且触发器要求 `promotion_applied` 才允许覆盖 lifecycle），本次周期对 `account_inventory` 完全不写入 | `00006` L20-24；`00006` L280-317 |
+| failed/timeout/abandoned（poll run 未 finalized 或 `contract_valid=false`） | 否 | 否 | 是——同上，未 promote，`account_inventory` 不受影响；仅 `health_degraded`/`health_reason` 被刷新为 metadata | `00005` L104-179 状态机；`00009` L1055-1084 health 刷新触发器 |
+| disk fallback（`inventory_mode='disk_fallback'`） | 否 | 否 | 是——`control_validate_account_inventory_promotion` 强制 `promotion_applied` 需要 `inventory_mode='runtime'`，disk_fallback 永不 promote | `00006` L295-297 |
+| policy_changed promotion skipped | 否 | 否 | 是——显式跳过，无任何写入 | `00006` L20-24 |
+
+**重点回答**："fresh complete snapshot 中 account 不在当前 truth" 到底通过哪张表/字段证明：不是通过"历史 snapshot 里没有它"来猜测，而是通过 `account_inventory.lifecycle` 列本身的当前值（`present`/`suspected_missing`/`missing`）——这个值只在一次 `promotion_applied=true`（即 fresh、`contract_valid`、`runtime`、`node_identity_complete`、`snapshot_complete` 全部满足）的 poll run 里，由 `control_finalize_account_inventory_poll_run_with_lifecycle` 显式 UPDATE 推进（`00007` L479-509：对该 provider 本次 `snapshot_items` 中不存在的既有 `present`/`suspected_missing` 账号执行 lifecycle 降级）。也就是说，"缺席"从来不是通过比较两次快照的差集在查询时临时算出来的，而是 Account Inventory 自己的 finalize 事务在写入时就已经把"这次 fresh+complete 快照没有它"固化成了 `lifecycle` 列的当前值；cross-node duplicate 的 Phase 2 查询只需要读这个已经固化的 `lifecycle` 值，不需要、也不允许自己重新比较任何历史 snapshot。注意：这个"固化"依据是 `lifecycle` 列本身的新值，**不是** `account.current_poll_run_id`（该字段在 absence transition 时不会被更新，见上方"current_poll_run_id attribution"），absence evidence 引用应指向触发本次 transition 的 finalize/poll run 或 Provider current state，而非账号行上的陈旧 pointer。
+
+### 输出三：query feasibility
+
+**`ListEligibleOwnersByAccountKey(account_key)`**（给定一个 account_key，返回当前所有满足 predicate 的 Node）：
+
+- 预计 SQL 形状：`WITH evaluation AS (SELECT clock_timestamp() AS database_now) SELECT account.instance_id FROM account_inventory account JOIN account_inventory_provider_states state ON (...) CROSS JOIN evaluation WHERE account.account_key = $1 AND account.lifecycle = 'present' AND state.state='current' AND evaluation.database_now - state.last_complete_at <= interval '15 minutes' AND ...`（即上面 predicate 加 `account_key = $1`，去掉 `instance_id = :node` 限制；同样只取一次 `database_now`）。
+- 需要 join：`account_inventory` ⋈ `account_inventory_provider_states`（两表足够；不需要 `account_inventory_poll_runs`/`account_inventory_poll_provider_results`，理由见输出一）。
+- 现有 index 是否覆盖：**不完全覆盖**。`account_inventory` 主键是 `(instance_id, account_key)`（`00007` L100），既有二级索引 `account_inventory_lifecycle_read_idx (instance_id, provider, lifecycle, account_key)`（`00007` L171-172）、`account_inventory_normalized_email_read_idx (instance_id, normalized_email, account_key)`、`account_inventory_basic_status_read_idx (instance_id, basic_status, account_key)`（均 `00008` L6-9）**全部以 `instance_id` 开头**，没有任何一个能支持"跨全部 Node、按 account_key 精确查找"而不做全表扫描。
+- 是否会全表扫描：**是**，在当前 index 集合下，`WHERE account_key = $1`（不带 `instance_id`）只能走顺序扫描或对主键做全索引扫描后按 `account_key` 过滤（因为主键前导列是 `instance_id`，`account_key` 不是前导列，无法走 index 等值查找）。
+- 约 1,000 accounts / 多 Node 时成本：单个 environment 内 Node 数量通常个位数到十几个，每 Node 账号数量上限受 `account_inventory_poll_runs_counts_bounded` 间接约束（每次 poll `source_record_count <= 1000`，`00005` L78-82），全表规模预计在"Node 数 × 账号数"量级（数千到一两万行），对全表扫描而言可接受，但**不是长期可扩展方案**——若 Node/账号规模显著增长，这类跨 Node 精确点查会退化。
+- 是否需要 query-side 新 index：**若要避免全表扫描，需要**，例如 `(account_key) INCLUDE (instance_id, lifecycle)` 或 `(account_key, instance_id) WHERE lifecycle = 'present'`（partial index）。这类 index **只服务 Phase 2 的只读查询**，不引入任何新的 ownership truth 列，且必须单独 Review（见 §8 item 1 的 Phase 1A/1B 拆分原则）。
+
+**`ListCrossNodeDuplicateCandidates()`**（找出所有当前存在 ≥2 个不同 Node 满足 predicate 的 account_key）：
+
+- 预计 SQL 形状：`WITH evaluation AS (SELECT clock_timestamp() AS database_now) SELECT account.account_key FROM account_inventory account JOIN account_inventory_provider_states state ON (...) CROSS JOIN evaluation WHERE account.lifecycle='present' AND state.state='current' AND evaluation.database_now - state.last_complete_at <= interval '15 minutes' AND ... GROUP BY account.account_key HAVING count(DISTINCT account.instance_id) >= 2`（同样只取一次 `database_now`）。
+- 需要 join：同上，两表。
+- 现有 index 是否覆盖：**不覆盖**，同样因为需要按 `account_key` 聚合而非按 `instance_id` 过滤，现有 index 都以 `instance_id` 前导，`GROUP BY account_key` 无法利用任何现有 index 做聚合前排序/分组，只能靠顺序扫描 + 内存 hash 聚合。
+- 是否会全表扫描：**是**（这是一次全量扫描 + 聚合的查询，天然如此，不太可能靠单一 index 完全避免，即使加了 `(account_key)` 前导 index，`HAVING count(...) >=2` 仍需要扫描该 account_key 的所有匹配行——但扫描范围会从"全表"收窄到"该 account_key 的所有行"，对全量 detection 场景来说，仍然需要遍历全表以枚举所有 account_key）。
+- 约 1,000 accounts / 多 Node 时成本：全表规模数千到一两万行，做一次全表 `GROUP BY + HAVING` 的聚合查询在这个量级下是可接受的批量查询（每个 detection cycle 跑一次，不是每请求跑一次）；不适合作为高频交互式 API 查询，适合作为 Phase 3 detection worker 的周期性批量扫描。
+- 是否需要 query-side 新 index：**可选而非必须**。若 detection cadence 较低（例如与 poll run 周期对齐，几分钟一次），全表扫描 + 内存聚合的成本可接受，可以不加新 index；若要压缩扫描范围（例如只扫 `lifecycle='present'` 的行），partial index `(account_key) WHERE lifecycle='present'` 有帮助，但同样只是 query-side 优化，不改变 ownership 语义。
+- 是否需要 materialized ownership table：**不需要**。以上两个查询都可以用纯只读 SQL（必要时加 query-side index）在既有 `account_inventory`/`account_inventory_provider_states` 上完成，不需要新建一张物化的 "当前 ownership" 表来复制 Inventory truth。
+
+**结论**：优先目标"纯 SQL query-derived，不新增 ownership truth"**可以达成**。Phase 1A 不需要新表；是否需要 1-2 个 query-side 索引留给 Phase 2 视实际 detection cadence/量级决定，且必须单独 Review，不与 Phase 1B 的 occurrence/evidence persistence 决策混在一起（见 §8 item 1）。
+
+### 输出四：identity/privacy
+
+- Phase 1A 的两个查询都在 PostgreSQL 内部对 `account_inventory.account_key`（plaintext，含 `normalized_provider:normalized_email`）做等值比较/分组，这已经发生在 Account Inventory 既有受保护数据边界内（`account_inventory` 表本身已经是受保护的 Control 内部表，非公开只读 API 直接暴露 plaintext），符合 design.md 第 6c 节"Detection 逻辑内部 MAY 在既有受保护 Account Inventory 数据边界内使用 plaintext account_key"的边界。
+- Phase 1A 本轮**不新增任何 plaintext account_key persistence**——两个查询都是只读 SELECT，不写入任何新表/新列。
+- Phase 1A 的调查过程与本文档**不将 account_key 输出到日志/metrics/普通 API**；本节仅在设计文档内以代码引用形式描述查询形状，不包含任何真实账号数据。
+- 若后续 occurrence（Phase 1B/Phase 3）需要稳定的 safe identity 表示 account_key，本轮**不选择新算法**，留给 Phase 1B 按第 6c 节决定（复用既有 masked/HMAC 或安全引用）。
+
+### 输出五：existing persistence survey（只调查，不设计）
+
+在 `internal/store/`、`internal/api/`、`migrations/*.sql`（排除 `openspec/` 与本 change 自身）中搜索 `occurrence`、`incident`、`alert`、`acknowledg` 等词：
+
+- **occurrence**：仅命中 `account_inventory_poll_duplicates.occurrence_count`（`00006` L84-103，node-local 重复计数列）与其对应 Go 代码；不存在任何通用 "occurrence" 实体/表/repository。**结论：不存在，需要 Phase 1B 自行设计**。
+- **incident**：无命中（除本 change 自身的 openspec 文档）。**结论：不存在**。
+- **alert / notification delivery**：在 `.go`/`.sql`（排除测试与 openspec）中**零命中**——Control 目前没有任何 alert/notification 持久化实体、表或 Go 包。**结论：不存在，Phase 6 需要从零决定 alert delivery 的持久化方式（或决定不持久化，只做只读展示+外部 webhook）**。
+- **acknowledgement persistence**：搜索命中的唯一一处（`internal/store/account_inventory_lifecycle_failure_schema_integration_test.go:223`）是测试注释里的英文单词 "acknowledgement"（描述一次数据库写入确认），与人工确认/ack 功能无关。**结论：不存在**。
+- **event/evidence history（可复用的通用审计基础设施）**：Control 已有 `audit_logs`（`migrations/00002_administrator_authentication.sql` L471-475：`CREATE TRIGGER audit_logs_reject_update_delete BEFORE UPDATE OR DELETE ON audit_logs`、`CREATE TRIGGER audit_logs_reject_truncate BEFORE TRUNCATE ON audit_logs`）——该表有数据库级 `BEFORE UPDATE OR DELETE`/`BEFORE TRUNCATE` rejection trigger，是真正的 immutable append-only pattern（不是"没有保护"的偶然 append-only，而是 DB 层强制拒绝任何修改/删除）；其 `category`/`action` 枚举是显式 allowlist（见 `00008` L167-184 等迁移中反复出现的 `audit_logs_category_valid`/`audit_logs_action_valid` CHECK 约束扩展模式）。但其语义是"哪个管理员做了什么管理操作"，是管理员审计日志，与"系统检测到的 ownership 冲突证据/occurrence 生命周期"语义完全不同（owner、触发主体、生命周期、查询维度均不同）。**结论：可以参考其 trigger-based rejection + CHECK allowlist 的保护范式（Phase 1B 设计 evidence observation 表时可以复用同样的"BEFORE UPDATE OR DELETE 拒绝触发器"模式来实现 append-only），但不能直接复用这张表本身来存储 occurrence/evidence 数据**。
+- **Prometheus metrics 基础设施**：`internal/pollobservability/metrics.go`、`internal/historyruntime/metrics.go`、`internal/api/account_inventory_metrics.go`、`internal/store/gateway_directory_metrics.go` 等已建立通用 Prometheus 指标注册/命名模式。**结论：可复用其命名/注册模式（Phase 6 的 metrics 应遵循同样的包结构与标签约束），但没有现成的"occurrence 指标"，需要新增**。
+
+**Phase 1B 输入（仅供后续 Phase 1B 参考，本轮不设计新表）**：不存在可直接复用的 generic occurrence/alert persistence；`audit_logs` 的 append-only 保护模式（触发器拒绝 UPDATE/DELETE + CHECK allowlist）值得作为 Phase 1B 设计 evidence observation 表时的参考范式，但需要一张新的、语义独立的最小 occurrence/evidence 表（对应 tasks.md 2.1-2.6，仍待 Phase 1B 单独设计与 Review）。
+
 ## 2. Duplicate 定义
 
 ```text

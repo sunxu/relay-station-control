@@ -11,9 +11,9 @@
 
 ## 1. Phase 1A — source query feasibility
 
-- [ ] 1.1 证明 ownership source query（合格 owner 集合判定）能否直接复用既有 `account_inventory*` 表的只读查询满足
-- [ ] 1.2 验证该判定不复制 Account Inventory 的 identity/lifecycle/current truth，只做只读查询
-- [ ] 1.3 若确实无法通过既有查询满足，报告具体 query/index 缺口，query-side schema/index 变更单独 Review
+- [x] 1.1 证明 ownership source query（合格 owner 集合判定）能否直接复用既有 `account_inventory*` 表的只读查询满足 —— **证明成立**：`ListEligibleOwnersByAccountKey`/`ListCrossNodeDuplicateCandidates` 均可只 join `account_inventory` + `account_inventory_provider_states` 两表实现，无需新表，无需依赖 `state.current_poll_run_id` 非空（可空 retention pointer）；单次 evaluation 只取一次 `clock_timestamp()`；证据与精确 predicate 见 design.md "Phase 1A Investigation Findings"
+- [x] 1.2 验证该判定不复制 Account Inventory 的 identity/lifecycle/current truth，只做只读查询 —— 已验证：两个候选查询均为纯 SELECT（含只读 `GROUP BY`/`HAVING`），不写入、不新增列，不复制 `lifecycle` 等字段到别处；已确认 `account_inventory.current_poll_run_id` 不携带 absence evidence（absence transition 不更新该字段），resolve evidence 引用不得使用它
+- [x] 1.3 若确实无法通过既有查询满足，报告具体 query/index 缺口，query-side schema/index 变更单独 Review —— 已报告：现有 index 均以 `instance_id` 前导，不支持跨 Node 按 `account_key` 精确查找/聚合，需要时可加 `(account_key) INCLUDE (instance_id, lifecycle)` 或等价 partial index，该 index 变更留给 Phase 2 视 detection cadence 决定并单独 Review
 
 ## 2. Phase 1B — occurrence/evidence persistence
 
