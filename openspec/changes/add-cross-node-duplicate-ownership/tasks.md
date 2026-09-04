@@ -24,7 +24,7 @@
 - [x] 2.3 明确 occurrence dedupe 唯一约束设计草案 —— 已给出：`(environment_id, account_key, conflict_type) WHERE status='ACTIVE'` 部分唯一索引（design.md §1B.2），RESOLVED 后释放，允许 reopen；另加 RESOLVED 行数据库层不可变触发器
 - [x] 2.4 明确 evidence observation 的 append-only/immutable 实现方式（禁止 UPDATE/DELETE）—— 已完成：复用 `audit_logs` 的 `BEFORE UPDATE OR DELETE`/`BEFORE TRUNCATE` 拒绝触发器范式（design.md §1B.4）；`source_poll_run_id` 刻意不建 FK，避免 retention 删除触发系统级 UPDATE 命中拒绝触发器（design.md §1B.4/§1B.5）
 - [x] 2.5 明确账号 identity 直接复用 plaintext canonical `account_key`，不新增第二套 fingerprint/HMAC identity —— 用户已明确决定原始账号/邮箱允许持久化与展示；此前的 Security Design Gap（fingerprint/HMAC 长期 dedupe 不可行）已撤销，因为其阻塞前提（account_key 必须脱敏）已被取消（design.md §1B.1/§1B.7）
-- [ ] 2.6 任何 Migration 设计草案必须先单独 Review，不得在本 Phase 静默提交 —— design.md §1B.9 已给出建议方向，但 Migration 本身尚未设计/提交独立 Review，因此本轮不勾选；Phase 1B Design 可在 2.1–2.5 完成后进入 Final Review，2.6 留待下一轮 Migration Review 完成后再勾选
+- [x] 2.6 任何 Migration 设计草案必须先单独 Review，不得在本 Phase 静默提交 —— migrations/00013_cross_node_duplicate_ownership_foundation.sql 已完成独立 Migration Architecture Review（含 P1/P2 修正轮）；schema/privilege/up-down-up/history fail-closed acceptance 均通过
 
 ## 3. Phase 2 — current ownership query
 
