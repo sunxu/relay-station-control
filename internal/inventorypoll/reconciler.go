@@ -55,6 +55,7 @@ func (reconciler *Reconciler) ReconcileOnce(ctx context.Context) (ReconcileResul
 	if result.RetryWait > 0 {
 		reconciler.notify()
 	}
+	reconciler.config.lifecycleObserver(ctx)
 	return result, nil
 }
 

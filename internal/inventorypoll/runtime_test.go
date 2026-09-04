@@ -208,6 +208,59 @@ func TestReconcilerDelegatesDatabaseTimeStateMachineAndNeverCallsDriver(t *testi
 	}
 }
 
+// TestReconcilerCallsLifecycleObserverOnEverySuccessfulReconcileEvenWhenIdle
+// covers acceptance A: duplicate owner freshness/staleness evolves purely
+// with wall-clock time, with no new finalize required, so the periodic
+// lifecycle trigger must fire on every successful ReconcileOnce database
+// round trip -- including the common case where ReconcileExpired finds
+// nothing to reclaim (RetryWait=0, Abandoned=0).
+func TestReconcilerCallsLifecycleObserverOnEverySuccessfulReconcileEvenWhenIdle(t *testing.T) {
+	configuration, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	configuration.lifecycleObserver = func(context.Context) { calls.Add(1) }
+	repository := &fakeRepository{reconcileResult: ReconcileResult{RetryWait: 0, Abandoned: 0}}
+	reconciler := newReconciler(repository, configuration, nil)
+
+	if _, err := reconciler.ReconcileOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("lifecycle observer calls after an idle (0/0) reconcile = %d, want 1", calls.Load())
+	}
+
+	if _, err := reconciler.ReconcileOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("lifecycle observer calls after a second idle reconcile = %d, want 2", calls.Load())
+	}
+}
+
+// TestReconcilerNeverCallsLifecycleObserverOnDatabaseFailure covers
+// acceptance B: a failed ReconcileExpired must not trigger downstream
+// duplicate ownership reconciliation, since there is no new reconciled
+// database state to react to.
+func TestReconcilerNeverCallsLifecycleObserverOnDatabaseFailure(t *testing.T) {
+	configuration, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	configuration.lifecycleObserver = func(context.Context) { calls.Add(1) }
+	repository := &fakeRepository{reconcileErr: errors.New("database-canary")}
+	reconciler := newReconciler(repository, configuration, nil)
+
+	if _, err := reconciler.ReconcileOnce(context.Background()); err == nil {
+		t.Fatal("expected a database error")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("lifecycle observer calls after a failed reconcile = %d, want 0", calls.Load())
+	}
+}
+
 func TestWorkerAcquiresSemaphoreBeforeClaimAndHonorsConcurrency(t *testing.T) {
 	configuration := smallTestConfig()
 	configuration.MaxMonitoredNodes = 2
@@ -540,18 +593,19 @@ func TestWorkerCallsLifecycleObserverOnlyAfterSuccessfulFinalize(t *testing.T) {
 	}
 }
 
-func TestServiceCallsLifecycleObserverOnceOnStartupBeforeSchedulerAndWorker(t *testing.T) {
-	var sequence atomic.Int32
-	var reconcileOrder, observerOrder atomic.Int32
+// TestServiceCallsLifecycleObserverExactlyOnceOnStartup covers acceptance C:
+// the startup lifecycle observer call now happens implicitly inside
+// Service.reconcileUntilAvailable's underlying successful
+// Reconciler.ReconcileOnce call (see reconciler.go), so Service.Run must not
+// also call it explicitly -- that would double-invoke it on startup. The
+// periodic Reconciler.Run loop is given a very long interval so it cannot
+// tick during this test window, isolating the startup call.
+func TestServiceCallsLifecycleObserverExactlyOnceOnStartup(t *testing.T) {
+	var calls atomic.Int32
 	configuration := smallTestConfig()
-	configuration.LifecycleObserver = func(context.Context) {
-		observerOrder.Store(sequence.Add(1))
-	}
+	configuration.ReconcileInterval = 2 * time.Second
+	configuration.LifecycleObserver = func(context.Context) { calls.Add(1) }
 	repository := &fakeRepository{scheduleResult: ScheduleResult{ScheduledAt: time.Unix(3_000, 0).UTC()}}
-	repository.reconcileHook = func(context.Context) error {
-		reconcileOrder.CompareAndSwap(0, sequence.Add(1))
-		return nil
-	}
 	driver := &fakeDriver{}
 	service, err := NewService(repository, driver, configuration)
 	if err != nil {
@@ -560,14 +614,20 @@ func TestServiceCallsLifecycleObserverOnceOnStartupBeforeSchedulerAndWorker(t *t
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- service.Run(ctx) }()
-	waitFor(t, time.Second, func() bool { return observerOrder.Load() != 0 })
-	if reconcileOrder.Load() == 0 || reconcileOrder.Load() >= observerOrder.Load() {
-		t.Fatalf("lifecycle observer must fire strictly after the startup reconciliation barrier: reconcile=%d observer=%d",
-			reconcileOrder.Load(), observerOrder.Load())
-	}
+	waitFor(t, time.Second, func() bool { return calls.Load() != 0 })
+	// Give any (incorrect) second explicit call in Run a chance to land
+	// before asserting the final count.
+	time.Sleep(20 * time.Millisecond)
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("lifecycle observer calls on startup = %d, want exactly 1 (Service.Run must not call it a second time)", calls.Load())
+	}
+	_, _, _, reconciles := repository.counts()
+	if reconciles != 1 {
+		t.Fatalf("reconcile calls during startup window = %d, want exactly 1", reconciles)
 	}
 }
 

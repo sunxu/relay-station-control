@@ -34,12 +34,10 @@ func (service *Service) Run(ctx context.Context) error {
 	if err := service.reconcileUntilAvailable(ctx); err != nil {
 		return err
 	}
-	// Startup catch-up: the same trigger point Worker uses after every
-	// ongoing FinalizeFenced (see Worker.execute), invoked once here so a
-	// caller's downstream reconciliation observes whatever Account
-	// Inventory truth already exists in the database, without waiting for
-	// the next successfully finalized poll run.
-	service.config.lifecycleObserver(ctx)
+	// Startup catch-up happens implicitly here: reconcileUntilAvailable's
+	// final successful Reconciler.ReconcileOnce call already invokes
+	// lifecycleObserver (see reconciler.go), so no separate call is made in
+	// Run itself -- doing so would invoke the observer twice on startup.
 	runContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errorsChannel := make(chan error, 3)

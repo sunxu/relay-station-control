@@ -50,22 +50,29 @@ type Config struct {
 	Clock                  Clock
 	Observer               Observer
 	// LifecycleObserver is an optional hook for a caller that wants to react
-	// to Account Inventory truth becoming available or changing, without
-	// this package needing to know what that caller does (design intent:
-	// reuse this existing control loop as the sole trigger for a downstream
-	// reconciliation, instead of adding a second scheduler). It is called:
+	// to Account Inventory truth becoming available, changing, or simply
+	// aging (freshness/staleness is time-dependent, not only
+	// finalize-dependent), without this package needing to know what that
+	// caller does (design intent: reuse this existing control loop as the
+	// sole trigger for a downstream reconciliation, instead of adding a
+	// second scheduler). It is called:
 	//
-	//  1. once, after the startup database-time reconciliation barrier in
-	//     Service.Run succeeds (startup catch-up), and
+	//  1. once per successful Reconciler.ReconcileOnce database round trip
+	//     (Reconciler.Run's periodic loop, and transitively
+	//     Service.reconcileUntilAvailable's startup barrier, since that
+	//     barrier is itself a ReconcileOnce call) -- this covers both
+	//     startup catch-up and ongoing periodic freshness/time-based state
+	//     evolution, even when ReconcileExpired reports zero retry-wait and
+	//     zero abandoned runs, and
 	//  2. once per Worker-claimed run immediately after that run's
-	//     FinalizeFenced call commits successfully (ongoing trigger, since
-	//     a successful finalize is the only point Account Inventory truth
-	//     changes).
+	//     FinalizeFenced call commits successfully (low-latency trigger for
+	//     brand-new Account Inventory truth).
 	//
-	// It is never called on a failed finalize, never blocks Scheduler or
-	// Worker dispatch beyond the single claimed run it followed, and any
-	// error it produces is the caller's own concern -- this package never
-	// inspects, logs, or retries it. Defaults to a no-op when nil.
+	// It is never called when ReconcileExpired or a finalize fails, never
+	// blocks Scheduler or Worker dispatch beyond the single claimed run or
+	// reconcile pass it followed, and any error it produces is the
+	// caller's own concern -- this package never inspects, logs, or
+	// retries it. Defaults to a no-op when nil.
 	LifecycleObserver func(ctx context.Context)
 }
 

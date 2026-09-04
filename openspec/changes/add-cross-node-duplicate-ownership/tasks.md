@@ -258,22 +258,39 @@
       `first_seen_at`，绝不包含 credential/token/secret/raw payload。
       触发机制复用现有 Account Inventory poll runtime 的既有 control
       loop（`internal/inventorypoll.Config.LifecycleObserver`，
-      `internal/inventorypoll/service.go`/`worker.go`）：启动时
-      `Service.Run()` 在 `reconcileUntilAvailable()` 成功后调用一次
-      （startup catch-up），随后每次 `Worker.execute()` 成功
-      `FinalizeFenced`（即每次 promotion）后再调用一次（ongoing
-      reconciliation）——这不是新的 request routing scheduler，也不是
-      新的 Duplicate Ownership scheduler，只是把现有 Inventory control
-      loop 当作 source-truth-changed 触发器。测试证据：
+      `internal/inventorypoll/reconciler.go`/`service.go`/`worker.go`），
+      共三类触发语义：(1) startup catch-up——
+      `Service.reconcileUntilAvailable()` 首次成功调用
+      `Reconciler.ReconcileOnce()` 时即已触发一次（`Service.Run()`
+      不再重复显式调用，避免启动时触发两次）；(2) periodic freshness
+      reconciliation——`Reconciler.ReconcileOnce()` 在每次成功完成数据库
+      `ReconcileExpired` 后都会调用一次，即使该次 `RetryWait=0`/
+      `Abandoned=0`，用于捕获“owner freshness 随数据库时间自然从 fresh
+      变 stale，但没有任何新 finalize 发生”的场景，DB reconcile 失败时
+      不调用；(3) low-latency ongoing reconciliation——`Worker.execute()`
+      成功 `FinalizeFenced`（即每次 promotion）后再调用一次，用于对新
+      Inventory truth 的低延迟响应。三者均不是新的 request routing
+      scheduler，也不是新的 Duplicate Ownership scheduler，只是把现有
+      Inventory control loop 当作 source-truth-changed 触发器。触发
+      context 使用 `context.WithTimeout(parent, ...)`（非
+      `WithoutCancel`），父 context 取消会正确传播。测试证据：
       `TestCrossNodeDuplicateOwnershipProductionWiring`
       （`cmd/control/cross_node_duplicate_ownership_production_wiring_test.go`，
       真实隔离数据库：restart/startup 路径从已存在的 duplicate truth
       创建 ACTIVE occurrence + 触发一次 active alert；unchanged-truth
       refresh 不重复 occurrence/alert；Node fresh-absent 后下一次
       trigger 调用 resolve occurrence + 触发一次 resolved alert）、
+      `TestCrossNodeDuplicateOwnershipProductionTriggerCatchesTimeOnlyStaleness`
+      （同文件，真实隔离数据库：无任何新 finalize，仅将 Node B provider
+      state 回拨超过 15 分钟 stale 阈值，下一次 trigger 调用即把 occurrence
+      转为 ACTIVE/degraded，membership 保持 A/B 不变，不 resolve）、
+      `TestCrossNodeDuplicateOwnershipTriggerContextRespectsParentCancellation`
+      （同文件，确定性验证父 context 取消会传播到派生 context）、
       `internal/inventorypoll` 新增的
+      `TestReconcilerCallsLifecycleObserverOnEverySuccessfulReconcileEvenWhenIdle`/
+      `TestReconcilerNeverCallsLifecycleObserverOnDatabaseFailure`/
+      `TestServiceCallsLifecycleObserverExactlyOnceOnStartup`/
       `TestWorkerCallsLifecycleObserverOnlyAfterSuccessfulFinalize`/
-      `TestServiceCallsLifecycleObserverOnceOnStartupBeforeSchedulerAndWorker`/
       `TestNilLifecycleObserverDefaultsToNoopAndNeverPanics`，全部 PASS。
 - [x] 7.2 补 Prometheus metrics，验证命名遵循固定低基数标签约束（`environment`/`conflict_type`/`status`/`severity`），不得使用 `account_key`/email 作为 metrics label
       新增 `CrossNodeDuplicateOwnershipMetricsRepository`/

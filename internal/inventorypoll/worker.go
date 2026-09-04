@@ -173,15 +173,17 @@ func (worker *Worker) execute(parent context.Context, claim ClaimedRun) {
 		Component: EventComponentWorker, Action: EventActionFinalize, Result: result, Reason: reason,
 		State: state, AttemptBucket: attemptBucket(claim.Attempt, claim.MaxAttempts), InstanceID: claim.InstanceID,
 	})
-	// Ongoing trigger: a successful finalize is the only point Account
-	// Inventory truth changes, so this is the sole place -- besides the one
-	// startup call in Service.Run -- that calls the optional
-	// LifecycleObserver hook. Uses parent (not finalizeContext, which is
-	// about to be canceled by the caller's defer and may already be near
-	// its own deadline), matching the design intent that the hook bounds
-	// its own work. A failed finalize never triggers it: this path must
-	// never let a downstream reconciliation observe truth this Worker
-	// itself failed to commit.
+	// Low-latency trigger: a successful finalize is one of the two points
+	// this package calls the optional LifecycleObserver hook (the other is
+	// Reconciler.ReconcileOnce's periodic/startup success path, see
+	// reconciler.go) -- this one exists so brand-new Account Inventory
+	// truth is observed without waiting for the next periodic reconcile
+	// interval. Uses parent (not finalizeContext, which is about to be
+	// canceled by the caller's defer and may already be near its own
+	// deadline), matching the design intent that the hook bounds its own
+	// work. A failed finalize never triggers it: this path must never let
+	// a downstream reconciliation observe truth this Worker itself failed
+	// to commit.
 	if finalizeErr == nil {
 		worker.config.lifecycleObserver(parent)
 	}
