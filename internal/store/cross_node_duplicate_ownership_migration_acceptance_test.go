@@ -14,7 +14,9 @@ import (
 // TestCrossNodeDuplicateOwnershipMigrationUpDownUp proves migration 00013 is
 // additive and symmetric on a clean schema: 13 -> 12 -> 13 round-trips
 // cleanly, and the pre-existing migration 12 fail-closed rollback guard is
-// unaffected by this additive migration.
+// unaffected by this additive migration. Migration 00014 (Phase 2 query
+// access) sits on top and is stepped down first since it has no history of
+// its own to protect.
 func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 	database := newIsolatedJobDatabase(t)
 	ctx := context.Background()
@@ -30,9 +32,9 @@ func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 		}
 	}
 
-	assertVersion(t, 13)
+	assertVersion(t, 14)
 
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "12"); err != nil {
 		t.Fatal(err)
 	}
 	assertVersion(t, 12)
@@ -51,17 +53,86 @@ func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 	if tablesExist {
 		t.Fatal("expected migration 13 down to drop all three cross-node duplicate tables")
 	}
+	var functionsExist bool
+	if err := database.owner.QueryRow(ctx, `SELECT
+		to_regprocedure('public.control_list_eligible_cross_node_owners_v1(text)') IS NOT NULL
+		OR to_regprocedure('public.control_list_cross_node_duplicate_candidates_v1()') IS NOT NULL
+	`).Scan(&functionsExist); err != nil {
+		t.Fatal(err)
+	}
+	if functionsExist {
+		t.Fatal("expected migration 14 down to drop both readonly query functions")
+	}
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+		t.Fatal(err)
+	}
+	assertVersion(t, 14)
+}
+
+// TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp proves
+// migration 00014 (Phase 2 SECURITY DEFINER query access) is symmetric on a
+// clean schema: 14 -> 13 -> 14 round-trips cleanly, without touching
+// migration 00013's occurrence/evidence tables or history.
+func TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
+	ctx := context.Background()
+
+	assertVersion := func(t *testing.T, want int32) {
+		t.Helper()
+		var got int32
+		if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("migration version = %d, want %d", got, want)
+		}
+	}
+
+	assertVersion(t, 14)
+
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatal(err)
+	}
+	assertVersion(t, 13)
+
+	var functionsExist bool
+	if err := database.owner.QueryRow(ctx, `SELECT
+		to_regprocedure('public.control_list_eligible_cross_node_owners_v1(text)') IS NOT NULL
+		OR to_regprocedure('public.control_list_cross_node_duplicate_candidates_v1()') IS NOT NULL
+	`).Scan(&functionsExist); err != nil {
+		t.Fatal(err)
+	}
+	if functionsExist {
+		t.Fatal("expected migration 14 down to drop both readonly query functions")
+	}
+	var tablesExist bool
+	if err := database.owner.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables
+		WHERE table_name IN (
+			'cross_node_duplicate_occurrences',
+			'cross_node_duplicate_occurrence_nodes',
+			'cross_node_duplicate_occurrence_evidence'
+		)
+	)`).Scan(&tablesExist); err != nil {
+		t.Fatal(err)
+	}
+	if !tablesExist {
+		t.Fatal("migration 14 down must not touch migration 13's occurrence/evidence tables")
+	}
 
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
 		t.Fatal(err)
 	}
-	assertVersion(t, 13)
+	assertVersion(t, 14)
 }
 
 // TestCrossNodeDuplicateOwnershipMigrationDownFailsClosedWithHistory proves
 // that once any occurrence, affected-node, or evidence history row exists,
 // migration 00013's Down is fail-closed (SQLSTATE 55000) and the history
-// remains fully intact afterward.
+// remains fully intact afterward. Migration 00014 has no history of its own,
+// so stepping down to 12 first un-applies it cleanly before hitting 00013's
+// guard.
 func TestCrossNodeDuplicateOwnershipMigrationDownFailsClosedWithHistory(t *testing.T) {
 	database := newIsolatedJobDatabase(t)
 	ctx := context.Background()
@@ -76,7 +147,7 @@ func TestCrossNodeDuplicateOwnershipMigrationDownFailsClosedWithHistory(t *testi
 	}
 	fixture.insertEvidence(t, ctx, database, occurrenceID, fixture.nodeA, "owner_confirmed", uuid.New(), now)
 
-	err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down")
+	err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "12")
 	if err == nil {
 		t.Fatal("expected migration 13 down to fail closed while occurrence history exists")
 	}
@@ -84,8 +155,9 @@ func TestCrossNodeDuplicateOwnershipMigrationDownFailsClosedWithHistory(t *testi
 		t.Fatalf("expected SQLSTATE 55000 from migration 13 fail-closed guard, got: %v", err)
 	}
 
-	// History must remain fully intact: still exactly the version-13
-	// schema, and the rows are untouched.
+	// History must remain fully intact: migration 14 is un-applied (it has
+	// no history of its own), but 13 (the version protecting this history)
+	// is still applied, and the rows are untouched.
 	var version int32
 	if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 		t.Fatal(err)

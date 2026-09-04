@@ -482,6 +482,13 @@ Phase 1A 已证明 `account_inventory.current_poll_run_id` 只在 present 路径
 - **DELETE 历史永久禁止**：与 evidence observation 的 immutable 设计一致——一旦产生 occurrence/evidence 历史，不允许任何路径（包括回滚）删除已记录的 evidence；这一点必须在未来实际 Migration 的 Down 分支中体现为 fail-closed guard，而不是靠 Go 层约定。
 - 以上均为**建议**，任何 Migration 草案本身仍必须在 Phase 1B 正式落地前单独提交 Review（不在本轮创建）。
 
+## Phase 2 Implementation Findings（实现完成，含生产权限修正）
+
+- **只读查询实现**：`ListEligibleOwnersByAccountKey`/`ListCrossNodeDuplicateCandidates`（`internal/store/cross_node_duplicate_ownership_query.go`）逐字实现本节冻结的 eligible-owner predicate，单次 `database_now := clock_timestamp()`。
+- **生产权限缺口与修正**：`relay_control_runtime` 对 `account_inventory`/`account_inventory_provider_states` 无直接 SELECT（`REVOKE ALL`，`00007` L841-843），这一权限边界**保持不变，未被放宽**。改为新增 additive migration `00014_cross_node_duplicate_ownership_query_access.sql`，沿用既有 `control_query_current_account_inventory_v1`（`00008`）的 SECURITY DEFINER readonly-query 范式：新增两个 `STABLE SECURITY DEFINER` 函数 `control_list_eligible_cross_node_owners_v1(account_key)` 与 `control_list_cross_node_duplicate_candidates_v1()`，`OWNER TO relay_control_migrator`，`REVOKE EXECUTE FROM PUBLIC`，仅 `GRANT EXECUTE TO relay_control_runtime`。sqlc 层查询相应改为调用这两个函数（不再直接 `SELECT account_inventory*`）；Go repository 公开 API（`CrossNodeDuplicateOwnershipReader`）不变。
+- **`ListCrossNodeDuplicateCandidates` 的 bounded 语义**：该查询是 batch detection query，其扫描范围 bounded by 当前 Account Inventory 全量数据集（受 `account_inventory_lifecycle='present'` 等既有约束天然限定的当前有效行），不是分页/交互式 API query，第一版不得为了人为加 `LIMIT` 而漏掉任何 duplicate account_key。260 行代表性 fixture 上的 `EXPLAIN (ANALYZE, BUFFERS)` 显示 `account_inventory` 走 Seq Scan、`account_inventory_provider_states` 走既有 PK Index Scan，两查询均 <1ms；该证据支持"当前规模下不新增 index"的既定结论。未来若数据规模显著增长确需分页/分片，完整一次 detection cycle 仍必须覆盖全部 current Inventory，不得因分页机制而产生"部分 Node 未被本轮扫描到"的漏检窗口。
+- **Runtime privilege acceptance**：新增测试证明 `relay_control_runtime` 可以直接 `EXECUTE` 这两个函数并得到正确结果，但直接 `SELECT account_inventory`/`account_inventory_provider_states` 仍 `42501`；PUBLIC 与非授权角色（`relay_control_asset_registrar`）对两个函数均无 `EXECUTE`。
+
 ## 2. Duplicate 定义
 
 ```text

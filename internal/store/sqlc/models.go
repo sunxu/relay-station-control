@@ -491,6 +491,41 @@ type ControlBootstrapState struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CrossNodeDuplicateOccurrence struct {
+	OccurrenceID        pgtype.UUID        `json:"occurrence_id"`
+	EnvironmentID       string             `json:"environment_id"`
+	AccountKey          string             `json:"account_key"`
+	ConflictType        string             `json:"conflict_type"`
+	Status              string             `json:"status"`
+	Severity            string             `json:"severity"`
+	FirstSeenAt         pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt          pgtype.Timestamptz `json:"last_seen_at"`
+	ResolvedAt          pgtype.Timestamptz `json:"resolved_at"`
+	EvidenceState       string             `json:"evidence_state"`
+	LastFullyVerifiedAt pgtype.Timestamptz `json:"last_fully_verified_at"`
+	LatestEvaluationID  pgtype.UUID        `json:"latest_evaluation_id"`
+}
+
+type CrossNodeDuplicateOccurrenceEvidence struct {
+	ObservationID     pgtype.UUID        `json:"observation_id"`
+	OccurrenceID      pgtype.UUID        `json:"occurrence_id"`
+	InstanceID        pgtype.UUID        `json:"instance_id"`
+	ObservationKind   string             `json:"observation_kind"`
+	SourcePollRunID   pgtype.UUID        `json:"source_poll_run_id"`
+	SourceProvider    string             `json:"source_provider"`
+	SourceScheduledAt pgtype.Timestamptz `json:"source_scheduled_at"`
+	SourceCompletedAt pgtype.Timestamptz `json:"source_completed_at"`
+	EvaluationID      pgtype.UUID        `json:"evaluation_id"`
+	EvaluationAt      pgtype.Timestamptz `json:"evaluation_at"`
+	RecordedAt        pgtype.Timestamptz `json:"recorded_at"`
+}
+
+type CrossNodeDuplicateOccurrenceNode struct {
+	OccurrenceID     pgtype.UUID        `json:"occurrence_id"`
+	InstanceID       pgtype.UUID        `json:"instance_id"`
+	FirstConfirmedAt pgtype.Timestamptz `json:"first_confirmed_at"`
+}
+
 type DriverCapability struct {
 	NodeType              string             `json:"node_type"`
 	DriverContractVersion string             `json:"driver_contract_version"`
