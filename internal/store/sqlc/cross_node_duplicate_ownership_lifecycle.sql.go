@@ -119,6 +119,45 @@ func (q *Queries) InsertCrossNodeDuplicateOccurrenceNode(ctx context.Context, ar
 	return err
 }
 
+const listActiveCrossNodeDuplicateOccurrenceKeys = `-- name: ListActiveCrossNodeDuplicateOccurrenceKeys :many
+SELECT environment_id, account_key
+FROM cross_node_duplicate_occurrences
+WHERE status = 'ACTIVE'
+`
+
+type ListActiveCrossNodeDuplicateOccurrenceKeysRow struct {
+	EnvironmentID string `json:"environment_id"`
+	AccountKey    string `json:"account_key"`
+}
+
+// Phase 4 (add-cross-node-duplicate-ownership) restart/backfill
+// reconciliation (design.md §5.1): every (environment_id, account_key) that
+// currently has an ACTIVE occurrence, so a reconciliation pass can also
+// resolve/degrade occurrences whose account_key has dropped out of the
+// current duplicate candidate set (e.g. down to a single owner, or all the
+// way to zero eligible owners) since the last detect/refresh pass.
+// relay_control_runtime already has SELECT on this table (migrations/00013);
+// no new grant is required.
+func (q *Queries) ListActiveCrossNodeDuplicateOccurrenceKeys(ctx context.Context) ([]ListActiveCrossNodeDuplicateOccurrenceKeysRow, error) {
+	rows, err := q.db.Query(ctx, listActiveCrossNodeDuplicateOccurrenceKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveCrossNodeDuplicateOccurrenceKeysRow{}
+	for rows.Next() {
+		var i ListActiveCrossNodeDuplicateOccurrenceKeysRow
+		if err := rows.Scan(&i.EnvironmentID, &i.AccountKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCrossNodeDuplicateOccurrenceNodes = `-- name: ListCrossNodeDuplicateOccurrenceNodes :many
 SELECT instance_id, first_confirmed_at
 FROM cross_node_duplicate_occurrence_nodes
@@ -222,6 +261,7 @@ func (q *Queries) ResolveCrossNodeDuplicateOccurrence(ctx context.Context, arg R
 }
 
 const selectActiveCrossNodeDuplicateOccurrenceForUpdate = `-- name: SelectActiveCrossNodeDuplicateOccurrenceForUpdate :one
+
 SELECT occurrence_id, environment_id, account_key, conflict_type, status,
     severity, first_seen_at, last_seen_at, resolved_at, evidence_state,
     last_fully_verified_at, latest_evaluation_id
@@ -238,6 +278,14 @@ type SelectActiveCrossNodeDuplicateOccurrenceForUpdateParams struct {
 	AccountKey    string `json:"account_key"`
 }
 
+// Phase 3 (add-cross-node-duplicate-ownership) lifecycle transaction DML.
+// These queries operate directly on the tables created by migration 00013;
+// relay_control_runtime already has the exact grants they need
+// (SELECT/INSERT on cross_node_duplicate_occurrences plus UPDATE on the
+// mutable projection columns, SELECT/INSERT/DELETE on
+// cross_node_duplicate_occurrence_nodes, SELECT/INSERT on
+// cross_node_duplicate_occurrence_evidence -- see migrations/00013 grants
+// section). No new migration/grant is required for this file.
 // Row-locks the existing ACTIVE occurrence (if any) for this semantic key
 // before re-evaluating source truth, per design.md §1B.8.
 func (q *Queries) SelectActiveCrossNodeDuplicateOccurrenceForUpdate(ctx context.Context, arg SelectActiveCrossNodeDuplicateOccurrenceForUpdateParams) (CrossNodeDuplicateOccurrence, error) {
@@ -258,29 +306,4 @@ func (q *Queries) SelectActiveCrossNodeDuplicateOccurrenceForUpdate(ctx context.
 		&i.LatestEvaluationID,
 	)
 	return i, err
-}
-
-const selectClockTimestamp = `-- name: SelectClockTimestamp :one
-
-SELECT clock_timestamp()::timestamptz AS now
-`
-
-// Phase 3 (add-cross-node-duplicate-ownership) lifecycle transaction DML.
-// These queries operate directly on the tables created by migration 00013;
-// relay_control_runtime already has the exact grants they need
-// (SELECT/INSERT on cross_node_duplicate_occurrences plus UPDATE on the
-// mutable projection columns, SELECT/INSERT/DELETE on
-// cross_node_duplicate_occurrence_nodes, SELECT/INSERT on
-// cross_node_duplicate_occurrence_evidence -- see migrations/00013 grants
-// section). No new migration/grant is required for this file.
-// A single, explicit wall-clock read taken once per lifecycle evaluation
-// pass and threaded through every subsequent statement in the same
-// transaction (occurrence timestamps, evidence evaluation_at, evidence
-// source metadata via EvaluateCrossNodeDuplicateEvidence's at_time
-// parameter) so the whole pass is coherent against one instant in time.
-func (q *Queries) SelectClockTimestamp(ctx context.Context) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, selectClockTimestamp)
-	var now pgtype.Timestamptz
-	err := row.Scan(&now)
-	return now, err
 }

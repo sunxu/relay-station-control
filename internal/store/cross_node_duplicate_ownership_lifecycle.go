@@ -20,6 +20,18 @@ func pgTime(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
 }
 
+// crossNodeDuplicateOwnershipInsertRaceObserved is a no-op by default. It
+// exists solely so a test can install a hook (via the exported
+// SetCrossNodeDuplicateOwnershipInsertRaceHookForTest helper defined in
+// cross_node_duplicate_ownership_lifecycle_internal_test.go, a _test.go
+// file never compiled into production) and deterministically prove that
+// create()'s INSERT-race fallback (re-select FOR UPDATE, re-discover,
+// re-evaluate -- see create() below) was actually executed, rather than
+// merely inferring it from the two workers converging on the same
+// occurrence_id (Phase 4 Final Review item four). It is never read or
+// written by any other production code path.
+var crossNodeDuplicateOwnershipInsertRaceObserved = func() {}
+
 // ErrInvalidCrossNodeDuplicateOwnershipLifecycleInput is returned when the
 // caller supplies an environment_id/account_key that does not pass basic
 // validation before any database work begins.
@@ -41,7 +53,7 @@ type CrossNodeDuplicateOwnershipEvaluation struct {
 	Added         []uuid.UUID
 	Removed       []uuid.UUID
 	// EvaluationID identifies this lifecycle pass's evaluation. It always
-	// reflects the evaluation actually performed in Go (evaluateEvidenceTx),
+	// reflects the evaluation actually performed in Go (evaluateEvidenceAtDatabaseNowTx),
 	// but a zero-evidence degraded pass (every retained Node unclassifiable
 	// this pass) persists no evidence rows for it, so occurrence.latest_evaluation_id
 	// in the database is left pointing at the previous pass that did have
@@ -176,44 +188,68 @@ func listEligibleOwnersTx(ctx context.Context, queries *generated.Queries, accou
 	return owners, nil
 }
 
-// evaluateEvidenceTx calls control_evaluate_cross_node_duplicate_evidence_v1
-// (migrations/00015) for exactly the given instance_ids at the single
-// evaluationAt instant, and returns a map keyed by instance_id. A Node
-// omitted from the returned map could not be evaluated this pass (no
+// evaluateEvidenceAtDatabaseNowTx calls
+// control_evaluate_cross_node_duplicate_evidence_v1 (migrations/00015) for
+// exactly the given instance_ids, and returns both the evaluationAt this
+// pass captured and a map keyed by instance_id. A Node omitted from the
+// returned map could not be evaluated this pass (no
 // account_inventory_provider_states row at all for this account_key's
 // provider) and must be treated as unverifiable/degraded by the caller.
-func evaluateEvidenceTx(
-	ctx context.Context, queries *generated.Queries, accountKey string, instanceIDs []uuid.UUID, evaluationAt time.Time,
-) (map[uuid.UUID]crossNodeDuplicateEvidenceRow, error) {
-	result := make(map[uuid.UUID]crossNodeDuplicateEvidenceRow, len(instanceIDs))
-	if len(instanceIDs) == 0 {
-		return result, nil
-	}
+//
+// Phase 4 Final Review item one: this single PostgreSQL statement both
+// captures evaluationAt (clock_timestamp()) and reads the per-Node evidence
+// inside that statement's own MVCC snapshot -- it is never split into a
+// separate SelectClockTimestamp statement followed by a second evidence
+// query, because under READ COMMITTED each statement gets its own fresh
+// snapshot, and a promotion that committed strictly *after* an
+// independently-captured evaluationAt (but before the second statement ran)
+// could otherwise be misattributed to "as of evaluationAt".
+func evaluateEvidenceAtDatabaseNowTx(
+	ctx context.Context, queries *generated.Queries, accountKey string, instanceIDs []uuid.UUID,
+) (time.Time, map[uuid.UUID]crossNodeDuplicateEvidenceRow, error) {
 	pgIDs := make([]pgtype.UUID, len(instanceIDs))
 	for i, id := range instanceIDs {
 		pgIDs[i] = nullableUUID(id)
 	}
-	encodedRows, err := queries.EvaluateCrossNodeDuplicateEvidence(ctx, generated.EvaluateCrossNodeDuplicateEvidenceParams{
+	rows, err := queries.EvaluateCrossNodeDuplicateEvidenceAtDatabaseNow(ctx, generated.EvaluateCrossNodeDuplicateEvidenceAtDatabaseNowParams{
 		AccountKey:  accountKey,
 		InstanceIds: pgIDs,
-		AtTime:      pgTime(evaluationAt),
 	})
 	if err != nil {
-		return nil, err
+		return time.Time{}, nil, err
 	}
-	for _, encoded := range encodedRows {
+	if len(rows) == 0 {
+		// LEFT JOIN LATERAL ... ON TRUE against a single-row evaluation CTE
+		// always yields at least one row; zero rows here would mean the
+		// evaluation CTE itself produced nothing, which should be
+		// impossible.
+		return time.Time{}, nil, errors.New("store: cross-node duplicate ownership evidence evaluation returned no evaluationAt")
+	}
+	if !rows[0].EvaluationAt.Valid {
+		return time.Time{}, nil, errors.New("store: cross-node duplicate ownership evidence evaluation returned a null evaluationAt")
+	}
+	evaluationAt := rows[0].EvaluationAt.Time
+	result := make(map[uuid.UUID]crossNodeDuplicateEvidenceRow, len(instanceIDs))
+	for _, r := range rows {
+		if len(r.Evaluated) == 0 {
+			// The LATERAL evaluate() call produced no row for this
+			// instance_id this pass (no account_inventory_provider_states
+			// row visible, or its source metadata was strictly after
+			// evaluationAt -- migrations/00016's defense-in-depth guard).
+			continue
+		}
 		var row crossNodeDuplicateEvidenceRow
-		if err := decodeStrictJSON(encoded, &row); err != nil {
-			return nil, err
+		if err := decodeStrictJSON(r.Evaluated, &row); err != nil {
+			return time.Time{}, nil, err
 		}
 		switch row.ObservationKind {
 		case "owner_confirmed", "absence_confirmed", "degraded":
 		default:
-			return nil, fmt.Errorf("store: cross-node duplicate ownership evidence evaluation returned unknown observation_kind %q", row.ObservationKind)
+			return time.Time{}, nil, fmt.Errorf("store: cross-node duplicate ownership evidence evaluation returned unknown observation_kind %q", row.ObservationKind)
 		}
 		result[row.InstanceID] = row
 	}
-	return result, nil
+	return evaluationAt, result, nil
 }
 
 // filterOwnerConfirmedCandidates returns, in candidate order, only the
@@ -316,13 +352,7 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) create(
 		return nil, nil
 	}
 
-	evaluationAtPG, err := queries.SelectClockTimestamp(ctx)
-	if err != nil {
-		return nil, err
-	}
-	evaluationAt := evaluationAtPG.Time
-
-	evalResults, err := evaluateEvidenceTx(ctx, queries, accountKey, eligible, evaluationAt)
+	evaluationAt, evalResults, err := evaluateEvidenceAtDatabaseNowTx(ctx, queries, accountKey, eligible)
 	if err != nil {
 		return nil, err
 	}
@@ -346,6 +376,7 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) create(
 		// against the now-locked row (Phase 3 review item 2 -- a
 		// pre-lock evaluationAt must never be reused for a post-lock
 		// lifecycle decision).
+		crossNodeDuplicateOwnershipInsertRaceObserved()
 		existing, selectErr := queries.SelectActiveCrossNodeDuplicateOccurrenceForUpdate(ctx,
 			generated.SelectActiveCrossNodeDuplicateOccurrenceForUpdateParams{
 				EnvironmentID: environmentID, AccountKey: accountKey,
@@ -424,14 +455,8 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 	}
 	sortUUIDs(allNodes)
 
-	evaluationAtPG, err := queries.SelectClockTimestamp(ctx)
-	if err != nil {
-		return nil, err
-	}
-	evaluationAt := evaluationAtPG.Time
-
 	evaluationID := uuid.New()
-	evalResults, err := evaluateEvidenceTx(ctx, queries, existing.AccountKey, allNodes, evaluationAt)
+	evaluationAt, evalResults, err := evaluateEvidenceAtDatabaseNowTx(ctx, queries, existing.AccountKey, allNodes)
 	if err != nil {
 		return nil, err
 	}

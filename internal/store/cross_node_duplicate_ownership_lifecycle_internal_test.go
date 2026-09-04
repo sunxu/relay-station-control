@@ -6,6 +6,24 @@ import (
 	"github.com/google/uuid"
 )
 
+// SetCrossNodeDuplicateOwnershipInsertRaceHookForTest installs fn to be
+// called synchronously every time create() loses the ON CONFLICT DO
+// NOTHING RETURNING race and falls back to re-selecting the existing row
+// FOR UPDATE. It restores the previous (no-op) hook when the returned
+// restore func runs. Exported so the black-box concurrency regression in
+// package store_test (cross_node_duplicate_ownership_concurrency_test.go)
+// can deterministically prove the fallback path executed; this symbol only
+// exists in the test binary (defined in a _test.go file) and is never part
+// of the production build.
+func SetCrossNodeDuplicateOwnershipInsertRaceHookForTest(fn func()) (restore func()) {
+	previous := crossNodeDuplicateOwnershipInsertRaceObserved
+	if fn == nil {
+		fn = func() {}
+	}
+	crossNodeDuplicateOwnershipInsertRaceObserved = fn
+	return func() { crossNodeDuplicateOwnershipInsertRaceObserved = previous }
+}
+
 // TestFilterOwnerConfirmedCandidates exercises the "discovery found >= 2
 // candidates but the authoritative reconfirm at evaluationAt confirms fewer
 // than 2" branch deterministically (Phase 3 review items 1 and 5), without

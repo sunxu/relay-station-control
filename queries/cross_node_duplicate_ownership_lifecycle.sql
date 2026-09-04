@@ -7,14 +7,6 @@
 -- cross_node_duplicate_occurrence_evidence -- see migrations/00013 grants
 -- section). No new migration/grant is required for this file.
 
--- name: SelectClockTimestamp :one
--- A single, explicit wall-clock read taken once per lifecycle evaluation
--- pass and threaded through every subsequent statement in the same
--- transaction (occurrence timestamps, evidence evaluation_at, evidence
--- source metadata via EvaluateCrossNodeDuplicateEvidence's at_time
--- parameter) so the whole pass is coherent against one instant in time.
-SELECT clock_timestamp()::timestamptz AS now;
-
 -- name: SelectActiveCrossNodeDuplicateOccurrenceForUpdate :one
 -- Row-locks the existing ACTIVE occurrence (if any) for this semantic key
 -- before re-evaluating source truth, per design.md §1B.8.
@@ -114,3 +106,16 @@ SET status = 'RESOLVED',
     last_fully_verified_at = sqlc.arg(evaluation_at),
     latest_evaluation_id = sqlc.arg(evaluation_id)
 WHERE occurrence_id = sqlc.arg(occurrence_id) AND status = 'ACTIVE';
+
+-- name: ListActiveCrossNodeDuplicateOccurrenceKeys :many
+-- Phase 4 (add-cross-node-duplicate-ownership) restart/backfill
+-- reconciliation (design.md §5.1): every (environment_id, account_key) that
+-- currently has an ACTIVE occurrence, so a reconciliation pass can also
+-- resolve/degrade occurrences whose account_key has dropped out of the
+-- current duplicate candidate set (e.g. down to a single owner, or all the
+-- way to zero eligible owners) since the last detect/refresh pass.
+-- relay_control_runtime already has SELECT on this table (migrations/00013);
+-- no new grant is required.
+SELECT environment_id, account_key
+FROM cross_node_duplicate_occurrences
+WHERE status = 'ACTIVE';

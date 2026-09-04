@@ -51,9 +51,106 @@
 
 ## 5. Phase 4 — reconciliation/concurrency
 
-- [ ] 5.1 设计并实现进程重启/补跑后的一致性重算（幂等，不重复创建 occurrence）
-- [ ] 5.2 评估并按需实现并发 lease/fencing，或证明幂等 upsert + 唯一约束已足够
-- [ ] 5.3 补并发 detection/refresh/resolve 竞态的 PostgreSQL regression
+- [x] 5.1 设计并实现进程重启/补跑后的一致性重算（幂等，不重复创建 occurrence）。
+      实现：`CrossNodeDuplicateOwnershipReconciler.Reconcile(ctx, environmentID)`
+      （`cross_node_duplicate_ownership_reconciliation.go`），不复制第二套
+      lifecycle 逻辑——只计算 key set 后逐 key 委派给既有 Phase 3
+      `Evaluate()`。Key set = Phase 2 `ListCrossNodeDuplicateCandidates`
+      （当前 duplicate）∪ 新增只读查询
+      `ListActiveCrossNodeDuplicateOccurrenceKeys`（当前 ACTIVE occurrence，
+      即使已跌出 candidate 列表也必须能被 resolve/degrade），按
+      environment_id+account_key 去重、确定性排序。
+      证据（`TestCrossNodeDuplicateOwnershipReconciliation`，7 子测试全 PASS）：
+      restart 复用既有 ACTIVE occurrence；停机期间新增 duplicate 被创建；
+      停机期间 Node fresh-absent 被 resolve；停机期间 Node stale 被
+      degrade（不 resolve）；A/B/C 停机期间 C fresh-absent 缩减为 A/B 仍
+      ACTIVE；连续 reconcile 2/3 次幂等（occurrence 数量/occurrence_id/
+      membership 不变，不产生 pairwise occurrence）；非法 environment_id
+      输入在触达数据库前被拒绝。
+- [x] 5.2 评估并按需实现并发 lease/fencing，或证明幂等 upsert + 唯一约束已足够。
+      **结论：Phase 4 不需要 lease/fencing。**
+      证据（`TestCrossNodeDuplicateOwnershipConcurrency`，使用独立
+      `pgxpool` 真实并发连接/事务，非 Go goroutine 内存模拟，8 子测试全
+      PASS，并以 `-count=10` 重复验证无 flaky）：
+      (1) 并发 first detect：两 worker 同 account_key 竞争，最终只有一条
+      ACTIVE occurrence，两侧读到同一 occurrence_id——由 partial unique
+      index 的 `INSERT ... ON CONFLICT DO NOTHING RETURNING` 空结果触发
+      重新 `FOR UPDATE` + 重新 discovery/evaluate 的既有路径覆盖；
+      (1b) 同一 insert-race fallback 分支额外用确定性 test-only hook
+      （`crossNodeDuplicateOwnershipInsertRaceObserved`，仅存在于
+      production `.go` 文件中的一个未导出包级变量，配合白盒 `_test.go`
+      文件里导出的 `SetCrossNodeDuplicateOwnershipInsertRaceHookForTest`
+      安装函数——该导出符号只存在于测试二进制，不出现在生产构建里）直接
+      证明该分支被真正进入 >=1 次，而不是仅凭最终 occurrence_id 相同去
+      推断；
+      (2) 并发 refresh/refresh：由 occurrence `FOR UPDATE` 行锁天然串行化，
+      membership 正确、无 lost update；
+      (3) 并发 refresh/resolve：后拿到锁的一方重新读取 source truth 后
+      决策，不会用锁前的判断覆盖已经 RESOLVED 的结果；
+      (4) 并发 add/remove：同一行锁下 membership 变更不丢失；
+      (5) 并发 reopen：RESOLVED 历史后两 worker 同时看到 duplicate，只创建
+      一条新 ACTIVE occurrence，旧 RESOLVED 行不被触碰；
+      (6) reconciler vs 正常 worker：`CrossNodeDuplicateOwnershipReconciler.Reconcile`
+      与 `CrossNodeDuplicateOwnershipLifecycleRepository.Evaluate` 对同一
+      ACTIVE duplicate 并发执行，最终只有一条 ACTIVE occurrence、
+      occurrence_id 唯一、membership 正确；
+      (7) reconciler vs 正常 worker 的 resolve-eligible 场景：两者对同一
+      resolve-eligible account_key 并发执行，最终 occurrence 只能是
+      RESOLVED，不会被恢复为 ACTIVE。
+      以上场景均只依赖已有 DB 原语（ACTIVE partial unique index、
+      occurrence `FOR UPDATE`、evidence
+      `(occurrence_id,evaluation_id,instance_id)` 唯一约束、单事务
+      lifecycle、single-statement evaluationAt/MVCC snapshot，见 5.3），
+      未观察到 duplicate occurrence 重复创建、stale 决策覆盖、
+      resolve/refresh membership 破坏、evidence/projection 不一致，或
+      restart worker 与正常 worker 竞争产生错误状态；因此不引入分布式
+      lease/fencing。
+- [x] 5.3 补并发 detection/refresh/resolve 竞态的 PostgreSQL regression。
+      见 5.2 证据（`TestCrossNodeDuplicateOwnershipConcurrency`，真实独立
+      连接/事务）。另外发现并修复一个真实的 source-truth 快照竞态
+      （Phase 4 review item F）：`control_evaluate_cross_node_duplicate_evidence_v1`
+      原本在 READ COMMITTED 下，`SelectClockTimestamp` 与该函数自身的 SQL
+      语句是两条独立语句，各自拿到独立快照；若 Inventory 恰好在
+      `evaluationAt` 之后、第二条语句执行之前提交新 promotion，旧的
+      `fresh_verifiable` 判断（`(at_time - last_complete_at) <= interval
+      '15 minutes'`，在 `last_complete_at > at_time` 时因负数区间恒真）会把
+      "evaluationAt 之后才出现的事实"误判为"evaluationAt 时刻已经存在"，
+      从而持久化非法的 `source_completed_at > evaluation_at` evidence。
+      **根因修复**：不再由 Go 分两条独立语句执行
+      `SelectClockTimestamp` 再调用 evidence function，改为单一 sqlc
+      查询 `EvaluateCrossNodeDuplicateEvidenceAtDatabaseNow`：
+      `WITH evaluation AS (SELECT clock_timestamp()::timestamptz AS
+      evaluation_at) SELECT evaluation.evaluation_at, to_jsonb(evaluated)
+      FROM evaluation LEFT JOIN LATERAL
+      control_evaluate_cross_node_duplicate_evidence_v1(...) AS evaluated
+      ON TRUE`——`clock_timestamp()` 取值与 evidence 读取现在是同一条
+      SQL 语句、共享同一个 MVCC snapshot，`LEFT JOIN LATERAL ... ON TRUE`
+      保证即使 evidence 为空也仍能取得本次 evaluationAt。Go 侧
+      `evaluateEvidenceAtDatabaseNowTx` 统一产出该 evaluationAt，供
+      occurrence timestamps / evidence.evaluation_at / last_seen_at /
+      resolved_at / first_confirmed_at 复用。
+      migration `00016_cross_node_duplicate_ownership_evidence_evaluation_snapshot_guard.sql`
+      作为 defense-in-depth 保留并加强：除原有
+      `AND j.last_complete_at <= at_time AND j.health_scheduled_at <= at_time`
+      外，新增 `AND j.state_updated_at <= at_time AND
+      (j.account_updated_at IS NULL OR j.account_updated_at <= at_time)`
+      两个上界谓词（联查 `account_inventory.updated_at`），因为 degraded
+      的 `source_completed_at` 代理值取自 `state.updated_at`，而
+      policy-only 迁移（如
+      `control_activate_provider_policy_with_lifecycle`）可以推进
+      `provider_states.updated_at`/`account_inventory.updated_at` 而不
+      推进 `last_complete_at`/`health_scheduled_at`。
+      测试证据：
+      `TestCrossNodeDuplicateOwnershipEvidenceEvaluationSnapshotRace`
+      （defense-in-depth 回归，人工传入更早 at_time 验证仍被拦截）、
+      新增 `TestCrossNodeDuplicateOwnershipEvidenceEvaluationPolicyOnlyTimestampGuard`
+      （用真实 `control_activate_provider_policy_with_lifecycle` policy-only
+      迁移推进 `state.updated_at`/`account_updated_at` 至晚于 at_time，
+      `last_complete_at`/`health_scheduled_at` 保持不变，验证函数返回
+      0 行——不会把该行当作可持久化的 degraded evidence 返回）、
+      `TestCrossNodeDuplicateOwnershipEvidenceEvaluationSnapshotGuardMigrationUpDownUp`
+      验证 16→15→16 up/down/up 干净可逆、不触碰 00013 表/00014 函数，均
+      PASS。
 
 ## 6. Phase 5 — read model/API
 
