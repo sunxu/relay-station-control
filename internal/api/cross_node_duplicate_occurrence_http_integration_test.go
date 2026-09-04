@@ -208,6 +208,13 @@ func TestCrossNodeDuplicateOccurrenceHTTPReadOnly(t *testing.T) {
 		}
 	})
 
+	t.Run("evidence sub-resource returns not found for an unknown occurrence", func(t *testing.T) {
+		response := do(http.MethodGet, "/api/cross-node-duplicate-occurrences/"+uuid.New().String()+"/evidence", token)
+		if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
 	t.Run("write methods are not allowed on read-only resources", func(t *testing.T) {
 		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 			for _, path := range []string{

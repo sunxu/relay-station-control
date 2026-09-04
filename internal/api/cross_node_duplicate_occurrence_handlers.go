@@ -167,6 +167,10 @@ func (s *Server) ListCrossNodeDuplicateOccurrenceEvidence(w http.ResponseWriter,
 	if !s.authorizeCrossNodeDuplicateOccurrenceRead(w, r) {
 		return
 	}
+	if _, err := s.crossNodeDuplicateOccurrences.GetOccurrence(r.Context(), uuid.UUID(occurrenceId)); err != nil {
+		s.crossNodeDuplicateOccurrenceReadError(w, r, err)
+		return
+	}
 	limit := defaultCrossNodeDuplicateOccurrencePageLimit
 	if params.Limit != nil {
 		limit = *params.Limit

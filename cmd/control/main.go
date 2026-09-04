@@ -205,7 +205,24 @@ func main() {
 		os.Exit(1)
 	}
 	assetMetrics := controlapi.NewAssetMetrics()
-	inventoryPollRuntime, err := newAccountInventoryPollRuntime(pool, nodeDrivers, inventoryPollConfig, logger)
+	crossNodeDuplicateReader, err := assetstore.NewCrossNodeDuplicateOwnershipRepository(pool)
+	if err != nil {
+		logger.Error("cross-node duplicate ownership query initialization failed", "component", "cross_node_duplicate_ownership")
+		os.Exit(1)
+	}
+	crossNodeDuplicateLifecycle, err := assetstore.NewCrossNodeDuplicateOwnershipLifecycleRepository(pool)
+	if err != nil {
+		logger.Error("cross-node duplicate ownership lifecycle initialization failed", "component", "cross_node_duplicate_ownership")
+		os.Exit(1)
+	}
+	crossNodeDuplicateLifecycle.SetAlertObserver(crossNodeDuplicateOwnershipSlogAlertObserver{logger: logger})
+	crossNodeDuplicateReconciler, err := assetstore.NewCrossNodeDuplicateOwnershipReconciler(pool, crossNodeDuplicateReader, crossNodeDuplicateLifecycle)
+	if err != nil {
+		logger.Error("cross-node duplicate ownership reconciler initialization failed", "component", "cross_node_duplicate_ownership")
+		os.Exit(1)
+	}
+	crossNodeDuplicateTrigger := newCrossNodeDuplicateOwnershipReconciliationTrigger(crossNodeDuplicateReconciler, environmentIdentity.ID, logger)
+	inventoryPollRuntime, err := newAccountInventoryPollRuntime(pool, nodeDrivers, inventoryPollConfig, logger, crossNodeDuplicateTrigger)
 	if err != nil {
 		logger.Error("account inventory poll initialization failed", "component", "account_inventory_poll", "reason", "initialization_failed")
 		os.Exit(1)

@@ -246,14 +246,35 @@
       occurrence_id 与原 occurrence 不同）、
       `TestCrossNodeDuplicateOwnershipAlertObserverDefaultIsNoop`
       （未安装观察者时 Evaluate 行为不变），全部 PASS。
-      注：项目里没有任何触发 `Evaluate()`/`Reconcile()` 的生产 scheduler/
-      worker（`cmd/control/main.go` 未构造
-      `CrossNodeDuplicateOwnershipLifecycleRepository`）——这是历次
-      Phase 说明里明确"不要新增 scheduler"共同作用的结果，触发机制不在
-      本 change 范围内。因此本阶段只交付并测试可被任何未来调用方
-      （测试/未来 scheduler/运维脚本）复用的、正确的 alert 观察者钩子，
-      不在 `main.go` 里构造一个当前无人调用的 lifecycle repository 实例
-      （那将是无效的死代码）。
+      注：生产触发已接入——`cmd/control/cross_node_duplicate_ownership.go`
+      构造真正的 `CrossNodeDuplicateOwnershipRepository`/
+      `CrossNodeDuplicateOwnershipLifecycleRepository`/
+      `CrossNodeDuplicateOwnershipReconciler`，并在 `main()` 中通过
+      `lifecycle.SetAlertObserver(crossNodeDuplicateOwnershipSlogAlertObserver{...})`
+      安装**具体**生产 alert observer（不是默认 no-op）：把
+      active/resolved transition 写入既有结构化 `slog.Logger`，字段包含
+      `component`/`action`/`transition`/`severity`/`occurrence_id`/
+      `environment_id`/`account_key`/`provider`/`affected_nodes`/
+      `first_seen_at`，绝不包含 credential/token/secret/raw payload。
+      触发机制复用现有 Account Inventory poll runtime 的既有 control
+      loop（`internal/inventorypoll.Config.LifecycleObserver`，
+      `internal/inventorypoll/service.go`/`worker.go`）：启动时
+      `Service.Run()` 在 `reconcileUntilAvailable()` 成功后调用一次
+      （startup catch-up），随后每次 `Worker.execute()` 成功
+      `FinalizeFenced`（即每次 promotion）后再调用一次（ongoing
+      reconciliation）——这不是新的 request routing scheduler，也不是
+      新的 Duplicate Ownership scheduler，只是把现有 Inventory control
+      loop 当作 source-truth-changed 触发器。测试证据：
+      `TestCrossNodeDuplicateOwnershipProductionWiring`
+      （`cmd/control/cross_node_duplicate_ownership_production_wiring_test.go`，
+      真实隔离数据库：restart/startup 路径从已存在的 duplicate truth
+      创建 ACTIVE occurrence + 触发一次 active alert；unchanged-truth
+      refresh 不重复 occurrence/alert；Node fresh-absent 后下一次
+      trigger 调用 resolve occurrence + 触发一次 resolved alert）、
+      `internal/inventorypoll` 新增的
+      `TestWorkerCallsLifecycleObserverOnlyAfterSuccessfulFinalize`/
+      `TestServiceCallsLifecycleObserverOnceOnStartupBeforeSchedulerAndWorker`/
+      `TestNilLifecycleObserverDefaultsToNoopAndNeverPanics`，全部 PASS。
 - [x] 7.2 补 Prometheus metrics，验证命名遵循固定低基数标签约束（`environment`/`conflict_type`/`status`/`severity`），不得使用 `account_key`/email 作为 metrics label
       新增 `CrossNodeDuplicateOwnershipMetricsRepository`/
       `CrossNodeDuplicateOwnershipMetricsCollector`
@@ -270,10 +291,10 @@
       按 Collector 模式（同 `internal/jobs.Collector`）每次 scrape 现查
       一次，不缓存陈旧计数；provider 失败时返回
       `prometheus.NewInvalidMetric`，不返回陈旧值。已在
-      `cmd/control/main.go` 注册进 `metricsRegistry`（与 metric 无关的
-      trigger 缺失问题不影响这里——该 collector 只读现有
-      `cross_node_duplicate_occurrences` 表当前行数，即使目前没有生产
-      scheduler 写入新 occurrence，也能正确反映"当前为 0"）。
+      `cmd/control/main.go` 注册进 `metricsRegistry`（该 collector 只读
+      现有 `cross_node_duplicate_occurrences` 表当前行数，与生产
+      reconciliation trigger 是否已写入 occurrence 无关，均能正确反映
+      当前状态）。
       测试证据：`TestCrossNodeDuplicateOwnershipMetricsCollector`
       （固定 label 值、`CollectAndCompare` 精确匹配预期文本、provider
       失败时 gather 报错、nil provider 被拒绝）、

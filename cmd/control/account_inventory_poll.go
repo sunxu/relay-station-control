@@ -140,6 +140,7 @@ func newAccountInventoryPollRuntime(
 	nodeDrivers nodeDriverRuntime,
 	configuration accountInventoryPollRuntimeConfig,
 	logger *slog.Logger,
+	lifecycleObserver func(context.Context),
 ) (accountInventoryPollRuntime, error) {
 	repository, err := controlstore.NewInventoryPollRepository(pool)
 	if err != nil {
@@ -168,6 +169,7 @@ func newAccountInventoryPollRuntime(
 		return accountInventoryPollRuntime{}, errors.New("account inventory poll requires the read-only node driver")
 	}
 	configuration.poll.Observer = accountInventoryPollLogObserver{observer: controlpollobs.NewObserver(logger)}
+	configuration.poll.LifecycleObserver = lifecycleObserver
 	service, err := controlpoll.NewService(repository, nodeDrivers.registry, configuration.poll)
 	if err != nil {
 		return accountInventoryPollRuntime{}, err

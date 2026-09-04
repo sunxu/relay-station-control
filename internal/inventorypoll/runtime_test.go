@@ -512,6 +512,80 @@ func TestFiftyNodeCapacityNeverExceedsTenConcurrentDrivers(t *testing.T) {
 	}
 }
 
+func TestWorkerCallsLifecycleObserverOnlyAfterSuccessfulFinalize(t *testing.T) {
+	configuration, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	configuration.lifecycleObserver = func(context.Context) { calls.Add(1) }
+	driver := &fakeDriver{}
+
+	failing := &fakeRepository{finalizeErr: errors.New("database-canary")}
+	worker := newWorker(failing, driver, configuration)
+	worker.execute(context.Background(), testClaim("antigravity"))
+	if calls.Load() != 0 {
+		t.Fatalf("lifecycle observer called after failed finalize: %d", calls.Load())
+	}
+
+	succeeding := &fakeRepository{}
+	worker = newWorker(succeeding, driver, configuration)
+	worker.execute(context.Background(), testClaim("antigravity"))
+	if calls.Load() != 1 {
+		t.Fatalf("lifecycle observer not called exactly once after successful finalize: %d", calls.Load())
+	}
+	_, _, finalized, _ := succeeding.counts()
+	if finalized != 1 {
+		t.Fatalf("expected exactly one finalize, got %d", finalized)
+	}
+}
+
+func TestServiceCallsLifecycleObserverOnceOnStartupBeforeSchedulerAndWorker(t *testing.T) {
+	var sequence atomic.Int32
+	var reconcileOrder, observerOrder atomic.Int32
+	configuration := smallTestConfig()
+	configuration.LifecycleObserver = func(context.Context) {
+		observerOrder.Store(sequence.Add(1))
+	}
+	repository := &fakeRepository{scheduleResult: ScheduleResult{ScheduledAt: time.Unix(3_000, 0).UTC()}}
+	repository.reconcileHook = func(context.Context) error {
+		reconcileOrder.CompareAndSwap(0, sequence.Add(1))
+		return nil
+	}
+	driver := &fakeDriver{}
+	service, err := NewService(repository, driver, configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+	waitFor(t, time.Second, func() bool { return observerOrder.Load() != 0 })
+	if reconcileOrder.Load() == 0 || reconcileOrder.Load() >= observerOrder.Load() {
+		t.Fatalf("lifecycle observer must fire strictly after the startup reconciliation barrier: reconcile=%d observer=%d",
+			reconcileOrder.Load(), observerOrder.Load())
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNilLifecycleObserverDefaultsToNoopAndNeverPanics(t *testing.T) {
+	configuration, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver := &fakeDriver{}
+	repository := &fakeRepository{}
+	worker := newWorker(repository, driver, configuration)
+	worker.execute(context.Background(), testClaim("antigravity"))
+	_, _, finalized, _ := repository.counts()
+	if finalized != 1 {
+		t.Fatalf("expected finalize to succeed with default no-op observer: %d", finalized)
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

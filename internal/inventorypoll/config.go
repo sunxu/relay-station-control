@@ -1,6 +1,9 @@
 package inventorypoll
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 const (
 	DefaultPeriod                 = 5 * time.Minute
@@ -46,6 +49,24 @@ type Config struct {
 	ReconcileLimit         int
 	Clock                  Clock
 	Observer               Observer
+	// LifecycleObserver is an optional hook for a caller that wants to react
+	// to Account Inventory truth becoming available or changing, without
+	// this package needing to know what that caller does (design intent:
+	// reuse this existing control loop as the sole trigger for a downstream
+	// reconciliation, instead of adding a second scheduler). It is called:
+	//
+	//  1. once, after the startup database-time reconciliation barrier in
+	//     Service.Run succeeds (startup catch-up), and
+	//  2. once per Worker-claimed run immediately after that run's
+	//     FinalizeFenced call commits successfully (ongoing trigger, since
+	//     a successful finalize is the only point Account Inventory truth
+	//     changes).
+	//
+	// It is never called on a failed finalize, never blocks Scheduler or
+	// Worker dispatch beyond the single claimed run it followed, and any
+	// error it produces is the caller's own concern -- this package never
+	// inspects, logs, or retries it. Defaults to a no-op when nil.
+	LifecycleObserver func(ctx context.Context)
 }
 
 type ValidatedConfig struct {
@@ -68,6 +89,7 @@ type ValidatedConfig struct {
 	reconcileLimit         int
 	clock                  Clock
 	observer               Observer
+	lifecycleObserver      func(ctx context.Context)
 }
 
 func (configuration Config) Validate() (ValidatedConfig, error) {
@@ -106,6 +128,10 @@ func (configuration Config) Validate() (ValidatedConfig, error) {
 	if observer == nil {
 		observer = discardObserver{}
 	}
+	lifecycleObserver := configuration.LifecycleObserver
+	if lifecycleObserver == nil {
+		lifecycleObserver = func(context.Context) {}
+	}
 	return ValidatedConfig{
 		period: configuration.Period, pollStartGrace: configuration.PollStartGrace,
 		maxMonitoredNodes: configuration.MaxMonitoredNodes, concurrency: configuration.Concurrency,
@@ -117,6 +143,7 @@ func (configuration Config) Validate() (ValidatedConfig, error) {
 		databaseBackoffMaximum: configuration.DatabaseBackoffMaximum,
 		shutdownGrace:          configuration.ShutdownGrace, scheduleLimit: configuration.ScheduleLimit,
 		reconcileLimit: configuration.ReconcileLimit, clock: clock, observer: observer,
+		lifecycleObserver: lifecycleObserver,
 	}, nil
 }
 

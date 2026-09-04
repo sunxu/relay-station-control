@@ -45,7 +45,7 @@
 
 ## 8. Restart / 漏跑 reconciliation
 
-`CrossNodeDuplicateOwnershipOwnershipReconciler.Reconcile(environmentID)`（`internal/store/cross_node_duplicate_ownership_reconciliation.go`）：
+`CrossNodeDuplicateOwnershipReconciler.Reconcile(environmentID)`（`internal/store/cross_node_duplicate_ownership_reconciliation.go`）：
 
 - Key set = `ListCrossNodeDuplicateCandidates`（当前候选） ∪ `ListActiveCrossNodeDuplicateOccurrenceKeys`（当前数据库中仍 ACTIVE 的 occurrence key，覆盖"候选列表里已经消失，但数据库还是 ACTIVE"的场景）。
 - 去重后，对每个 key 复用现有 `LifecycleRepository.Evaluate()`，**不复制第二套 lifecycle 逻辑**。
@@ -78,7 +78,11 @@
 - Alert（`CrossNodeDuplicateOwnershipAlertObserver`，`internal/store/cross_node_duplicate_ownership_lifecycle.go`）：`Created==true` → `active` transition（覆盖首次 detect 与 reopen）；`Created==false && Status=="RESOLVED"` → `resolved` transition（reconcile 内唯一的 ACTIVE→RESOLVED 边界）；refresh/degrade/add-remove 保持 ACTIVE 时静默,不重复创建 alert。context 可包含 `account_key`、`provider`、`email`、affected Nodes、`occurrence_id`、`first_seen_at`；绝不包含 credential/API key/access token/refresh token/password/secret/raw upstream payload。
 - Metrics：Prometheus gauge `relay_control_cross_node_duplicate_occurrences`（`internal/store/cross_node_duplicate_ownership_metrics.go`），labels 为低基数的 `environment`/`conflict_type`/`status`/`severity`；不含 account_key/email/occurrence_id/instance_id 等高基数或敏感 label。
 - 4.9 独立性证据：Node-local duplicate（`account_inventory_poll_duplicates`）在整个代码库中没有任何 alert/metric 机制，因此与 cross-node duplicate 的 persistence/alert/metric 天然独立（`internal/store/cross_node_duplicate_ownership_independence_test.go`）。
-- 当前代码库没有任何 scheduler/worker 调用 `LifecycleRepository.Evaluate()` 或 `Reconciler.Reconcile()`（本 change 明确不新增 scheduler）；alert observer 与 metrics collector 均已在 store 层完整实现并测试，等待未来的 detect/reconcile 触发机制接入。Metrics collector 已在 `cmd/control/main.go` 注册（只读、报告当前 DB 状态，与是否有调用方写入新 occurrence 无关）。
+- 生产触发（`cmd/control/cross_node_duplicate_ownership.go`）：复用现有 Account Inventory poll runtime 的既有 control loop 作为 source-truth-changed 触发器，**不是新的 request routing scheduler，也不是新的 Duplicate Ownership scheduler**——只是把 `CrossNodeDuplicateOwnershipReconciler.Reconcile(ctx, environmentID)` 挂到 `inventorypoll.Config.LifecycleObserver`（`internal/inventorypoll/config.go`）这个可选回调上：
+  - Startup catch-up：`inventorypoll.Service.Run()` 在既有 `reconcileUntilAvailable()` 成功后立即调用一次（`internal/inventorypoll/service.go`），因此 Control 启动、且 DB 中已存在 duplicate Inventory truth 时,会创建/刷新 ACTIVE occurrence,无需人工调用。
+  - Ongoing reconciliation：`inventorypoll.Worker.execute()` 在每次成功 `FinalizeFenced`（即每次 promotion 写入 `account_inventory`）之后调用一次（`internal/inventorypoll/worker.go`），因此后续 Inventory truth 变化会在下一次既有 poll 周期内触发 reconciliation。
+  - 该回调默认 nil/no-op，失败只记录固定低敏错误日志（`component=cross_node_duplicate_ownership`，不含 account_key/email），不会回写或篡改 Account Inventory poll 的 source truth。
+- Alert observer 生产实现：`crossNodeDuplicateOwnershipSlogAlertObserver`（`cmd/control/cross_node_duplicate_ownership.go`）在 `main()` 中通过 `lifecycle.SetAlertObserver(...)` 安装，把 active/resolved transition 写入既有结构化 logger；生产环境不使用默认 no-op observer。Metrics collector 已在 `cmd/control/main.go` 注册（只读、报告当前 DB 状态）。
 
 ## 12. Read API
 
@@ -96,7 +100,7 @@
 | occurrence 一直 `degraded` 不 `resolve` | 检查该 owner Node 的 `account_inventory` 是否只是 stale（poll 间隔过长/暂时失败），而不是真正的 fresh absent；stale 是设计上的保守行为,不会被当作 resolve 的证据。 |
 | 同一 duplicate 短时间内出现多个 occurrence_id | 检查是否发生 resolve→reopen；同一 key 的 reopen 设计上会产生新 occurrence_id，这是预期行为，不是 bug。 |
 | Reconcile 后 ACTIVE 数量增加 | 违反幂等性,是回归；检查是否有代码路径绕开了 `ListCrossNodeDuplicateCandidates ∪ ListActiveCrossNodeDuplicateOccurrenceKeys` 或复制了第二套 lifecycle。 |
-| Metric `relay_control_cross_node_duplicate_occurrences` 一直是 0 | 确认是否已有任何调用方在生产环境触发 `LifecycleRepository.Evaluate()`；本 change 未提供 scheduler，需要接入方自行触发 detect/refresh。 |
+| Metric `relay_control_cross_node_duplicate_occurrences` 一直是 0 | 确认 Account Inventory poll 是否已启用（`lifecycleEnabled`）——生产 reconciliation trigger 挂在其既有 control loop 上，poll 未启用时 duplicate reconciliation 也不会运行；检查 `cross_node_duplicate_ownership` 相关错误日志。 |
 | Evidence 显示 `source_completed_at > evaluation_at` | 违反 00013 `no_future_eval` CHECK 与单 statement MVCC 快照设计,是回归；检查是否有代码路径绕开了 `EvaluateCrossNodeDuplicateEvidenceAtDatabaseNow` 而分两条 statement 取时间与证据。 |
 
 ## 14. Non-goals（本 change 不做）
