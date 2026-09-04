@@ -119,13 +119,13 @@ func (e AdministratorRole) Valid() bool {
 
 // Defines values for AdministratorActivationCompleteRequestStage.
 const (
-	Complete AdministratorActivationCompleteRequestStage = "complete"
+	AdministratorActivationCompleteRequestStageComplete AdministratorActivationCompleteRequestStage = "complete"
 )
 
 // Valid indicates whether the value is a known member of the AdministratorActivationCompleteRequestStage enum.
 func (e AdministratorActivationCompleteRequestStage) Valid() bool {
 	switch e {
-	case Complete:
+	case AdministratorActivationCompleteRequestStageComplete:
 		return true
 	default:
 		return false
@@ -243,6 +243,78 @@ func (e BootstrapState) Valid() bool {
 	case BootstrapStateInProgress:
 		return true
 	case BootstrapStateRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CrossNodeDuplicateOccurrenceEvidenceState.
+const (
+	CrossNodeDuplicateOccurrenceEvidenceStateComplete CrossNodeDuplicateOccurrenceEvidenceState = "complete"
+	CrossNodeDuplicateOccurrenceEvidenceStateDegraded CrossNodeDuplicateOccurrenceEvidenceState = "degraded"
+)
+
+// Valid indicates whether the value is a known member of the CrossNodeDuplicateOccurrenceEvidenceState enum.
+func (e CrossNodeDuplicateOccurrenceEvidenceState) Valid() bool {
+	switch e {
+	case CrossNodeDuplicateOccurrenceEvidenceStateComplete:
+		return true
+	case CrossNodeDuplicateOccurrenceEvidenceStateDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CrossNodeDuplicateOccurrenceObservationKind.
+const (
+	CrossNodeDuplicateOccurrenceObservationKindAbsenceConfirmed CrossNodeDuplicateOccurrenceObservationKind = "absence_confirmed"
+	CrossNodeDuplicateOccurrenceObservationKindDegraded         CrossNodeDuplicateOccurrenceObservationKind = "degraded"
+	CrossNodeDuplicateOccurrenceObservationKindOwnerConfirmed   CrossNodeDuplicateOccurrenceObservationKind = "owner_confirmed"
+)
+
+// Valid indicates whether the value is a known member of the CrossNodeDuplicateOccurrenceObservationKind enum.
+func (e CrossNodeDuplicateOccurrenceObservationKind) Valid() bool {
+	switch e {
+	case CrossNodeDuplicateOccurrenceObservationKindAbsenceConfirmed:
+		return true
+	case CrossNodeDuplicateOccurrenceObservationKindDegraded:
+		return true
+	case CrossNodeDuplicateOccurrenceObservationKindOwnerConfirmed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CrossNodeDuplicateOccurrenceStatus.
+const (
+	ACTIVE   CrossNodeDuplicateOccurrenceStatus = "ACTIVE"
+	RESOLVED CrossNodeDuplicateOccurrenceStatus = "RESOLVED"
+)
+
+// Valid indicates whether the value is a known member of the CrossNodeDuplicateOccurrenceStatus enum.
+func (e CrossNodeDuplicateOccurrenceStatus) Valid() bool {
+	switch e {
+	case ACTIVE:
+		return true
+	case RESOLVED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CrossNodeDuplicateOccurrenceSummarySeverity.
+const (
+	Critical CrossNodeDuplicateOccurrenceSummarySeverity = "Critical"
+)
+
+// Valid indicates whether the value is a known member of the CrossNodeDuplicateOccurrenceSummarySeverity enum.
+func (e CrossNodeDuplicateOccurrenceSummarySeverity) Valid() bool {
+	switch e {
+	case Critical:
 		return true
 	default:
 		return false
@@ -1003,6 +1075,61 @@ type CreateAdministratorRequest struct {
 	Reason      OperationReason `json:"reason"`
 }
 
+// CrossNodeDuplicateOccurrenceEvidenceItem defines model for CrossNodeDuplicateOccurrenceEvidenceItem.
+type CrossNodeDuplicateOccurrenceEvidenceItem struct {
+	EvaluationAt      time.Time                                   `json:"evaluation_at"`
+	EvaluationId      openapi_types.UUID                          `json:"evaluation_id"`
+	InstanceId        openapi_types.UUID                          `json:"instance_id"`
+	ObservationId     openapi_types.UUID                          `json:"observation_id"`
+	ObservationKind   CrossNodeDuplicateOccurrenceObservationKind `json:"observation_kind"`
+	RecordedAt        time.Time                                   `json:"recorded_at"`
+	SourceCompletedAt time.Time                                   `json:"source_completed_at"`
+	SourcePollRunId   *openapi_types.UUID                         `json:"source_poll_run_id,omitempty"`
+	SourceProvider    string                                      `json:"source_provider"`
+	SourceScheduledAt time.Time                                   `json:"source_scheduled_at"`
+}
+
+// CrossNodeDuplicateOccurrenceEvidenceListResponse defines model for CrossNodeDuplicateOccurrenceEvidenceListResponse.
+type CrossNodeDuplicateOccurrenceEvidenceListResponse struct {
+	Items      []CrossNodeDuplicateOccurrenceEvidenceItem `json:"items"`
+	NextCursor *string                                    `json:"next_cursor,omitempty"`
+}
+
+// CrossNodeDuplicateOccurrenceEvidenceState defines model for CrossNodeDuplicateOccurrenceEvidenceState.
+type CrossNodeDuplicateOccurrenceEvidenceState string
+
+// CrossNodeDuplicateOccurrenceListResponse defines model for CrossNodeDuplicateOccurrenceListResponse.
+type CrossNodeDuplicateOccurrenceListResponse struct {
+	Items      []CrossNodeDuplicateOccurrenceSummary `json:"items"`
+	NextCursor *string                               `json:"next_cursor,omitempty"`
+}
+
+// CrossNodeDuplicateOccurrenceObservationKind defines model for CrossNodeDuplicateOccurrenceObservationKind.
+type CrossNodeDuplicateOccurrenceObservationKind string
+
+// CrossNodeDuplicateOccurrenceStatus defines model for CrossNodeDuplicateOccurrenceStatus.
+type CrossNodeDuplicateOccurrenceStatus string
+
+// CrossNodeDuplicateOccurrenceSummary defines model for CrossNodeDuplicateOccurrenceSummary.
+type CrossNodeDuplicateOccurrenceSummary struct {
+	AccountKey          string                                      `json:"account_key"`
+	AffectedNodes       []openapi_types.UUID                        `json:"affected_nodes"`
+	ConflictType        string                                      `json:"conflict_type"`
+	EnvironmentId       string                                      `json:"environment_id"`
+	EvidenceState       CrossNodeDuplicateOccurrenceEvidenceState   `json:"evidence_state"`
+	FirstSeenAt         time.Time                                   `json:"first_seen_at"`
+	LastFullyVerifiedAt *time.Time                                  `json:"last_fully_verified_at,omitempty"`
+	LastSeenAt          time.Time                                   `json:"last_seen_at"`
+	LatestEvaluationId  *openapi_types.UUID                         `json:"latest_evaluation_id,omitempty"`
+	OccurrenceId        openapi_types.UUID                          `json:"occurrence_id"`
+	ResolvedAt          *time.Time                                  `json:"resolved_at,omitempty"`
+	Severity            CrossNodeDuplicateOccurrenceSummarySeverity `json:"severity"`
+	Status              CrossNodeDuplicateOccurrenceStatus          `json:"status"`
+}
+
+// CrossNodeDuplicateOccurrenceSummarySeverity defines model for CrossNodeDuplicateOccurrenceSummary.Severity.
+type CrossNodeDuplicateOccurrenceSummarySeverity string
+
 // CurrentProviderInventoryPolicyResponse defines model for CurrentProviderInventoryPolicyResponse.
 type CurrentProviderInventoryPolicyResponse struct {
 	DriverContractVersion DriverContractVersion                        `json:"driver_contract_version"`
@@ -1459,6 +1586,9 @@ type GatewayInstanceId = openapi_types.UUID
 // NodeInstanceId defines model for NodeInstanceId.
 type NodeInstanceId = openapi_types.UUID
 
+// OccurrenceId defines model for OccurrenceId.
+type OccurrenceId = openapi_types.UUID
+
 // OptionalCsrfToken defines model for OptionalCsrfToken.
 type OptionalCsrfToken = string
 
@@ -1563,6 +1693,21 @@ type ResetPendingBootstrapParams struct {
 type StartBootstrapParams struct {
 	// XBootstrapSecret Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
 	XBootstrapSecret BootstrapSecret `json:"X-Bootstrap-Secret"`
+}
+
+// ListCrossNodeDuplicateOccurrencesParams defines parameters for ListCrossNodeDuplicateOccurrences.
+type ListCrossNodeDuplicateOccurrencesParams struct {
+	Status     *CrossNodeDuplicateOccurrenceStatus `form:"status,omitempty" json:"status,omitempty"`
+	AccountKey *string                             `form:"account_key,omitempty" json:"account_key,omitempty"`
+	InstanceId *openapi_types.UUID                 `form:"instance_id,omitempty" json:"instance_id,omitempty"`
+	Cursor     *PageCursor                         `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit      *AssetPageLimit                     `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListCrossNodeDuplicateOccurrenceEvidenceParams defines parameters for ListCrossNodeDuplicateOccurrenceEvidence.
+type ListCrossNodeDuplicateOccurrenceEvidenceParams struct {
+	Cursor *PageCursor     `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *AssetPageLimit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListJobsParams defines parameters for ListJobs.
@@ -2015,6 +2160,15 @@ type ServerInterface interface {
 	// GetBootstrapStatus Read the one-time bootstrap state
 	// (GET /api/bootstrap/status)
 	GetBootstrapStatus(w http.ResponseWriter, r *http.Request)
+	// ListCrossNodeDuplicateOccurrences List Cross-node Duplicate Ownership occurrences
+	// (GET /api/cross-node-duplicate-occurrences)
+	ListCrossNodeDuplicateOccurrences(w http.ResponseWriter, r *http.Request, params ListCrossNodeDuplicateOccurrencesParams)
+	// GetCrossNodeDuplicateOccurrence Read one Cross-node Duplicate Ownership occurrence
+	// (GET /api/cross-node-duplicate-occurrences/{occurrence_id})
+	GetCrossNodeDuplicateOccurrence(w http.ResponseWriter, r *http.Request, occurrenceId OccurrenceId)
+	// ListCrossNodeDuplicateOccurrenceEvidence List evidence observations for one Cross-node Duplicate Ownership occurrence
+	// (GET /api/cross-node-duplicate-occurrences/{occurrence_id}/evidence)
+	ListCrossNodeDuplicateOccurrenceEvidence(w http.ResponseWriter, r *http.Request, occurrenceId OccurrenceId, params ListCrossNodeDuplicateOccurrenceEvidenceParams)
 	// GetEnvironment Read the bound Control environment
 	// (GET /api/environment)
 	GetEnvironment(w http.ResponseWriter, r *http.Request)
@@ -2186,6 +2340,24 @@ func (_ Unimplemented) StartBootstrap(w http.ResponseWriter, r *http.Request, pa
 // GetBootstrapStatus Read the one-time bootstrap state
 // (GET /api/bootstrap/status)
 func (_ Unimplemented) GetBootstrapStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListCrossNodeDuplicateOccurrences List Cross-node Duplicate Ownership occurrences
+// (GET /api/cross-node-duplicate-occurrences)
+func (_ Unimplemented) ListCrossNodeDuplicateOccurrences(w http.ResponseWriter, r *http.Request, params ListCrossNodeDuplicateOccurrencesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetCrossNodeDuplicateOccurrence Read one Cross-node Duplicate Ownership occurrence
+// (GET /api/cross-node-duplicate-occurrences/{occurrence_id})
+func (_ Unimplemented) GetCrossNodeDuplicateOccurrence(w http.ResponseWriter, r *http.Request, occurrenceId OccurrenceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListCrossNodeDuplicateOccurrenceEvidence List evidence observations for one Cross-node Duplicate Ownership occurrence
+// (GET /api/cross-node-duplicate-occurrences/{occurrence_id}/evidence)
+func (_ Unimplemented) ListCrossNodeDuplicateOccurrenceEvidence(w http.ResponseWriter, r *http.Request, occurrenceId OccurrenceId, params ListCrossNodeDuplicateOccurrenceEvidenceParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3135,6 +3307,172 @@ func (siw *ServerInterfaceWrapper) GetBootstrapStatus(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// ListCrossNodeDuplicateOccurrences operation middleware
+func (siw *ServerInterfaceWrapper) ListCrossNodeDuplicateOccurrences(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCrossNodeDuplicateOccurrencesParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "account_key" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "account_key", r.URL.Query(), &params.AccountKey, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "account_key"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_key", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "instance_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "instance_id", r.URL.Query(), &params.InstanceId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "instance_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCrossNodeDuplicateOccurrences(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCrossNodeDuplicateOccurrence operation middleware
+func (siw *ServerInterfaceWrapper) GetCrossNodeDuplicateOccurrence(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "occurrence_id" -------------
+	var occurrenceId OccurrenceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "occurrence_id", chi.URLParam(r, "occurrence_id"), &occurrenceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "occurrence_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCrossNodeDuplicateOccurrence(w, r, occurrenceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCrossNodeDuplicateOccurrenceEvidence operation middleware
+func (siw *ServerInterfaceWrapper) ListCrossNodeDuplicateOccurrenceEvidence(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "occurrence_id" -------------
+	var occurrenceId OccurrenceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "occurrence_id", chi.URLParam(r, "occurrence_id"), &occurrenceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "occurrence_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCrossNodeDuplicateOccurrenceEvidenceParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCrossNodeDuplicateOccurrenceEvidence(w, r, occurrenceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetEnvironment operation middleware
 func (siw *ServerInterfaceWrapper) GetEnvironment(w http.ResponseWriter, r *http.Request) {
 
@@ -3699,6 +4037,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/relay-bindings/unbind", wrapper.UnbindRelayNode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/cross-node-duplicate-occurrences", wrapper.ListCrossNodeDuplicateOccurrences)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/cross-node-duplicate-occurrences/{occurrence_id}", wrapper.GetCrossNodeDuplicateOccurrence)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/cross-node-duplicate-occurrences/{occurrence_id}/evidence", wrapper.ListCrossNodeDuplicateOccurrenceEvidence)
 	})
 
 	return r

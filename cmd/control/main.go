@@ -233,6 +233,11 @@ func main() {
 		logger.Error("relay binding repository initialization failed", "component", "relay_binding")
 		os.Exit(1)
 	}
+	crossNodeDuplicateOccurrences, err := assetstore.NewCrossNodeDuplicateOwnershipOccurrenceRepository(pool)
+	if err != nil {
+		logger.Error("cross-node duplicate occurrence repository initialization failed", "component", "cross_node_duplicate_ownership")
+		os.Exit(1)
+	}
 	jobKinds, err := jobRepository.JobKinds(context.Background())
 	if err != nil {
 		logger.Error("durable job catalog unavailable", "component", "jobs")
@@ -298,6 +303,7 @@ func main() {
 		os.Exit(1)
 	}
 	apiServer.SetRelayBindingRepository(relayBindingRepository)
+	apiServer.SetCrossNodeDuplicateOwnershipOccurrenceReader(crossNodeDuplicateOccurrences)
 	metricsRegistry.MustRegister(apiServer.AccountInventoryMetrics())
 	controlapi.HandlerWithOptions(apiServer, controlapi.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 		apiServer.PrepareGeneratedError(w, r, err)

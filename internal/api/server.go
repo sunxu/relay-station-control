@@ -17,18 +17,19 @@ import (
 const authenticationResponseFloor = 250 * time.Millisecond
 
 type Server struct {
-	version                 string
-	service                 *authn.Service
-	resolver                *authn.SourceResolver
-	assets                  assetstore.AssetReader
-	assetMetrics            *AssetMetrics
-	nodeCursor              *assetstore.NodeCursorCodec
-	jobs                    assetstore.JobReader
-	jobCursor               *assetstore.JobCursorCodec
-	accountInventory        assetstore.AccountInventoryReader
-	accountInventoryCursor  *assetstore.AccountInventoryCursorCodec
-	accountInventoryMetrics *AccountInventoryMetrics
-	relayBindings           *assetstore.RelayBindingRepository
+	version                       string
+	service                       *authn.Service
+	resolver                      *authn.SourceResolver
+	assets                        assetstore.AssetReader
+	assetMetrics                  *AssetMetrics
+	nodeCursor                    *assetstore.NodeCursorCodec
+	jobs                          assetstore.JobReader
+	jobCursor                     *assetstore.JobCursorCodec
+	accountInventory              assetstore.AccountInventoryReader
+	accountInventoryCursor        *assetstore.AccountInventoryCursorCodec
+	accountInventoryMetrics       *AccountInventoryMetrics
+	relayBindings                 *assetstore.RelayBindingRepository
+	crossNodeDuplicateOccurrences assetstore.CrossNodeDuplicateOwnershipOccurrenceReader
 }
 
 type requestIDContextKey struct{}
@@ -113,6 +114,13 @@ func (s *Server) AccountInventoryMetrics() *AccountInventoryMetrics {
 
 func (s *Server) SetRelayBindingRepository(repository *assetstore.RelayBindingRepository) {
 	s.relayBindings = repository
+}
+
+// SetCrossNodeDuplicateOwnershipOccurrenceReader wires the Phase 5 read-only
+// occurrence store. Additive/optional, like SetRelayBindingRepository: read
+// handlers return authn.ErrUnavailable until this is set.
+func (s *Server) SetCrossNodeDuplicateOwnershipOccurrenceReader(reader assetstore.CrossNodeDuplicateOwnershipOccurrenceReader) {
+	s.crossNodeDuplicateOccurrences = reader
 }
 
 func (s *Server) GetHealthz(w http.ResponseWriter, r *http.Request) {

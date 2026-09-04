@@ -154,9 +154,50 @@
 
 ## 6. Phase 5 — read model/API
 
-- [ ] 6.1 设计并实现只读 occurrence 查询（按 Node、按 account_key、按状态）
-- [ ] 6.2 实现只读查询返回账号识别信息（`account_key`/provider/normalized email），复用既有 `super_admin` 全量访问边界；不要求 masked/HMAC 处理
-- [ ] 6.3 设计 Node-centric Topology 后续接入方式（只读关联展示，不反向影响 Node/Binding/Inventory 状态）
+- [x] 6.1 设计并实现只读 occurrence 查询（按 Node、按 account_key、按状态）
+      实现 `CrossNodeDuplicateOwnershipOccurrenceRepository`
+      （`internal/store/cross_node_duplicate_ownership_read_model.go`）：
+      `ListOccurrences`（bounded keyset pagination，`last_seen_at DESC,
+      occurrence_id DESC`，过滤 status/account_key/instance_id）、
+      `GetOccurrence`（detail + affected nodes）、
+      `ListOccurrenceEvidence`（单独分页的 evidence history，keyset
+      `recorded_at DESC, observation_id DESC`）。`relay_control_runtime`
+      对 00013 三张 occurrence 表已有 `SELECT` 权限（见 00013 grants），
+      因此无需新增 Migration/SECURITY DEFINER 函数/权限扩大，纯 sqlc 查询
+      （`queries/cross_node_duplicate_ownership_occurrence_read_model.sql`）
+      即可。9 个 store 层子测试
+      （`TestCrossNodeDuplicateOwnershipOccurrenceReadModel`）覆盖按
+      status/account_key/instance_id 过滤、detail 命中/未命中、非法
+      limit/status、evidence 分页与 keyset 正确性，全部 PASS。
+- [x] 6.2 实现只读查询返回账号识别信息（`account_key`/provider/normalized email），复用既有 `super_admin` 全量访问边界；不要求 masked/HMAC 处理
+      API 层（`internal/api/cross_node_duplicate_occurrence_handlers.go`
+      + `api/openapi.yaml` 新增 `GET /api/cross-node-duplicate-occurrences`、
+      `GET /api/cross-node-duplicate-occurrences/{occurrence_id}`、
+      `GET /api/cross-node-duplicate-occurrences/{occurrence_id}/evidence`）
+      直接以明文返回 `account_key`（不做 mask/HMAC/fingerprint/rekey，
+      冻结需求）。鉴权复用既有只读边界：`GetNodeRelayBinding`/`ListJobs`/
+      `GetJob` 同款 `requireSession(w, r, false, "")`
+      （任意已认证 Control 管理会话，无 mutation，无新增匿名/公开访问，
+      与已经明文展示 account_key/email 的 Account Inventory 只读边界一致）。
+      List 采用非签名的 opaque base64(JSON) cursor（区别于
+      `JobCursorCodec`/`AccountInventoryCursorCodec` 的 HMAC 签名 cursor）——
+      因为服务端始终会在 SQL WHERE 里重新套用 filters，被篡改的 cursor
+      至多只能在调用方本就可见的数据范围内平移分页窗口，不能跨越权限/过滤
+      边界，因此不必复制一套 HMAC codec（Phase 5 review 记录的刻意简化）。
+      HTTP 层测试 `TestCrossNodeDuplicateOccurrenceHTTPReadOnly`
+      （`internal/api/cross_node_duplicate_occurrence_http_integration_test.go`）
+      9 子测试覆盖：未认证 401、明文 account_key/affected_nodes 返回、
+      status 过滤空结果、非法 query 参数 400（status 枚举/limit
+      越界/instance_id 非 UUID/cursor 非法/occurrence_id 非 UUID）、
+      detail 命中/404、evidence 子资源、写方法 405、依赖未注入时 503，
+      全部 PASS。
+- [x] 6.3 设计 Node-centric Topology 后续接入方式（只读关联展示，不反向影响 Node/Binding/Inventory 状态）
+      纯文档设计，见 `design.md`"Phase 5 — Topology Integration Note"：
+      未来 Node-centric Topology 可在同一 Node 详情页并列展示
+      Inventory/Binding/Binding Resolution/Duplicate Ownership（按
+      `instance_id`/`account_key` read-only join），Duplicate Ownership
+      不反向修改其它三者状态，也不影响其 detection/refresh 逻辑。本阶段
+      不实现任何 Topology UI/聚合 endpoint。
 
 ## 7. Phase 6 — alerts/metrics acceptance
 

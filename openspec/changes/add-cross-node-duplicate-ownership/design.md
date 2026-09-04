@@ -705,3 +705,16 @@ Binding Resolution         (unbound/resolved/unresolved/unknown, 已归档 chang
 - **stale evidence 误 resolve**：第 4 节明确"证据缺失不能触发 resolve"，必须在 Phase 3/4 验收中覆盖"部分 Node stale 时 occurrence 保持 ACTIVE"的场景。
 - **与 Binding 耦合**：第 7 节明确三者独立；必须在验收中证明 Binding 状态变化不触发 detection 重算，也不改变 severity。
 - **evidence 泄露**：第 6 节明确禁止保存 credential/API key/access token/refresh token/password/Secret 内容/raw payload；账号识别信息（account_key/email）允许持久化与展示，不属于此风险范围，但 Prometheus label 仍必须保持低基数，不得把账号信息塞进 metrics label。
+
+## Phase 5 — Topology Integration Note
+
+Phase 5 只交付一个独立的只读 occurrence read-model boundary（`CrossNodeDuplicateOwnershipOccurrenceReader`：list/detail/evidence，见 `internal/store/cross_node_duplicate_ownership_read_model.go`、`internal/api/cross_node_duplicate_occurrence_handlers.go`），不重做 Topology。
+
+未来若实现 Node-centric Topology 视图，可以在同一个 Node 详情页并列展示：
+
+- Inventory（现有 account_inventory 状态）
+- Binding（现有 Relay Node ↔ Gateway Account binding）
+- Binding Resolution（现有 resolution 状态）
+- Duplicate Ownership（本 capability 的 occurrence read model，按 `instance_id` 过滤即可获得该 Node 参与的 occurrence 列表）
+
+这只是并列展示（read-only join by `instance_id`/`account_key`），Duplicate Ownership 不反向修改 Inventory/Binding/Binding Resolution 的任何状态，也不影响其 detection/refresh 逻辑。Topology 页面的具体交互/布局留待未来单独的 Topology capability 提案设计。

@@ -1185,6 +1185,117 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/cross-node-duplicate-occurrences:
+    get:
+      operationId: listCrossNodeDuplicateOccurrences
+      summary: List Cross-node Duplicate Ownership occurrences
+      description: |
+        Returns a bounded, reverse-chronological (last_seen_at DESC) page of
+        Cross-node Duplicate Ownership occurrences. account_key is returned
+        as plaintext (frozen non-goal: no masked/HMAC/fingerprint handling
+        for this capability). Never returns evidence history inline -- use
+        the evidence sub-resource for that.
+      tags: [cross-node-duplicate-ownership]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceStatus"
+        - name: account_key
+          in: query
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 385
+        - name: instance_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/AssetPageLimit"
+      responses:
+        "200":
+          description: A bounded page of Cross-node Duplicate Ownership occurrences.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/cross-node-duplicate-occurrences/{occurrence_id}:
+    get:
+      operationId: getCrossNodeDuplicateOccurrence
+      summary: Read one Cross-node Duplicate Ownership occurrence
+      description: Returns the current lifecycle projection and affected-node set for one occurrence.
+      tags: [cross-node-duplicate-ownership]
+      parameters:
+        - $ref: "#/components/parameters/OccurrenceId"
+      responses:
+        "200":
+          description: The Cross-node Duplicate Ownership occurrence.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceSummary"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/cross-node-duplicate-occurrences/{occurrence_id}/evidence:
+    get:
+      operationId: listCrossNodeDuplicateOccurrenceEvidence
+      summary: List evidence observations for one Cross-node Duplicate Ownership occurrence
+      description: |
+        Returns a bounded, reverse-chronological (recorded_at DESC) page of
+        retention-safe evidence observations for one occurrence. Independently
+        paginated from the occurrence list/detail endpoints.
+      tags: [cross-node-duplicate-ownership]
+      parameters:
+        - $ref: "#/components/parameters/OccurrenceId"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/AssetPageLimit"
+      responses:
+        "200":
+          description: A bounded page of evidence observations.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceEvidenceListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     SessionCookie:
@@ -1266,6 +1377,13 @@ components:
         format: uuid
     GatewayInstanceId:
       name: instance_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OccurrenceId:
+      name: occurrence_id
       in: path
       required: true
       schema:
@@ -2676,3 +2794,138 @@ components:
         operation_at:
           type: string
           format: date-time
+
+    CrossNodeDuplicateOccurrenceStatus:
+      type: string
+      enum: [ACTIVE, RESOLVED]
+
+    CrossNodeDuplicateOccurrenceEvidenceState:
+      type: string
+      enum: [complete, degraded]
+
+    CrossNodeDuplicateOccurrenceObservationKind:
+      type: string
+      enum: [owner_confirmed, absence_confirmed, degraded]
+
+    CrossNodeDuplicateOccurrenceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - occurrence_id
+        - environment_id
+        - account_key
+        - conflict_type
+        - status
+        - severity
+        - first_seen_at
+        - last_seen_at
+        - evidence_state
+        - affected_nodes
+      properties:
+        occurrence_id:
+          type: string
+          format: uuid
+        environment_id:
+          type: string
+        account_key:
+          type: string
+        conflict_type:
+          type: string
+        status:
+          $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceStatus"
+        severity:
+          type: string
+          enum: [Critical]
+        first_seen_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, "null"]
+          format: date-time
+        evidence_state:
+          $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceEvidenceState"
+        last_fully_verified_at:
+          type: [string, "null"]
+          format: date-time
+        latest_evaluation_id:
+          type: [string, "null"]
+          format: uuid
+        affected_nodes:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    CrossNodeDuplicateOccurrenceListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceSummary"
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 512
+
+    CrossNodeDuplicateOccurrenceEvidenceItem:
+      type: object
+      additionalProperties: false
+      required:
+        - observation_id
+        - instance_id
+        - observation_kind
+        - source_provider
+        - source_scheduled_at
+        - source_completed_at
+        - evaluation_id
+        - evaluation_at
+        - recorded_at
+      properties:
+        observation_id:
+          type: string
+          format: uuid
+        instance_id:
+          type: string
+          format: uuid
+        observation_kind:
+          $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceObservationKind"
+        source_provider:
+          type: string
+        source_scheduled_at:
+          type: string
+          format: date-time
+        source_completed_at:
+          type: string
+          format: date-time
+        source_poll_run_id:
+          type: [string, "null"]
+          format: uuid
+        evaluation_id:
+          type: string
+          format: uuid
+        evaluation_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+
+    CrossNodeDuplicateOccurrenceEvidenceListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceEvidenceItem"
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 512
