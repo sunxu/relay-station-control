@@ -1012,6 +1012,91 @@ export interface RelayBindingMutationResponse {
   operation_at: string;
 }
 
+export type CrossNodeDuplicateOccurrenceStatus = typeof CrossNodeDuplicateOccurrenceStatus[keyof typeof CrossNodeDuplicateOccurrenceStatus];
+
+
+export const CrossNodeDuplicateOccurrenceStatus = {
+  ACTIVE: 'ACTIVE',
+  RESOLVED: 'RESOLVED',
+} as const;
+
+export type CrossNodeDuplicateOccurrenceEvidenceState = typeof CrossNodeDuplicateOccurrenceEvidenceState[keyof typeof CrossNodeDuplicateOccurrenceEvidenceState];
+
+
+export const CrossNodeDuplicateOccurrenceEvidenceState = {
+  complete: 'complete',
+  degraded: 'degraded',
+} as const;
+
+export type CrossNodeDuplicateOccurrenceObservationKind = typeof CrossNodeDuplicateOccurrenceObservationKind[keyof typeof CrossNodeDuplicateOccurrenceObservationKind];
+
+
+export const CrossNodeDuplicateOccurrenceObservationKind = {
+  owner_confirmed: 'owner_confirmed',
+  absence_confirmed: 'absence_confirmed',
+  degraded: 'degraded',
+} as const;
+
+export type CrossNodeDuplicateOccurrenceSummarySeverity = typeof CrossNodeDuplicateOccurrenceSummarySeverity[keyof typeof CrossNodeDuplicateOccurrenceSummarySeverity];
+
+
+export const CrossNodeDuplicateOccurrenceSummarySeverity = {
+  Critical: 'Critical',
+} as const;
+
+export interface CrossNodeDuplicateOccurrenceSummary {
+  occurrence_id: string;
+  environment_id: string;
+  account_key: string;
+  conflict_type: string;
+  status: CrossNodeDuplicateOccurrenceStatus;
+  severity: CrossNodeDuplicateOccurrenceSummarySeverity;
+  first_seen_at: string;
+  last_seen_at: string;
+  /** @nullable */
+  resolved_at?: string | null;
+  evidence_state: CrossNodeDuplicateOccurrenceEvidenceState;
+  /** @nullable */
+  last_fully_verified_at?: string | null;
+  /** @nullable */
+  latest_evaluation_id?: string | null;
+  affected_nodes: string[];
+}
+
+export interface CrossNodeDuplicateOccurrenceListResponse {
+  /** @maxItems 200 */
+  items: CrossNodeDuplicateOccurrenceSummary[];
+  /**
+     * @maxLength 512
+     * @nullable
+     */
+  next_cursor?: string | null;
+}
+
+export interface CrossNodeDuplicateOccurrenceEvidenceItem {
+  observation_id: string;
+  instance_id: string;
+  observation_kind: CrossNodeDuplicateOccurrenceObservationKind;
+  source_provider: string;
+  source_scheduled_at: string;
+  source_completed_at: string;
+  /** @nullable */
+  source_poll_run_id?: string | null;
+  evaluation_id: string;
+  evaluation_at: string;
+  recorded_at: string;
+}
+
+export interface CrossNodeDuplicateOccurrenceEvidenceListResponse {
+  /** @maxItems 200 */
+  items: CrossNodeDuplicateOccurrenceEvidenceItem[];
+  /**
+     * @maxLength 512
+     * @nullable
+     */
+  next_cursor?: string | null;
+}
+
 /**
  * Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
  */
@@ -1083,6 +1168,39 @@ cursor?: string;
  * @maximum 200
  */
 limit?: number;
+};
+
+export type ListCrossNodeDuplicateOccurrencesParams = {
+status?: CrossNodeDuplicateOccurrenceStatus;
+/**
+ * @minLength 3
+ * @maxLength 385
+ */
+account_key?: string;
+instance_id?: string;
+/**
+ * @minLength 1
+ * @maxLength 512
+ */
+cursor?: PageCursorParameter;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: AssetPageLimitParameter;
+};
+
+export type ListCrossNodeDuplicateOccurrenceEvidenceParams = {
+/**
+ * @minLength 1
+ * @maxLength 512
+ */
+cursor?: PageCursorParameter;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: AssetPageLimitParameter;
 };
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -5403,3 +5521,449 @@ export const useUnbindRelayNode = <TError = ErrorResponse,
       > => {
       return useMutation(getUnbindRelayNodeMutationOptions(options), queryClient);
     }
+
+export type listCrossNodeDuplicateOccurrencesResponse200 = {
+  data: CrossNodeDuplicateOccurrenceListResponse
+  status: 200
+}
+
+export type listCrossNodeDuplicateOccurrencesResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listCrossNodeDuplicateOccurrencesResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listCrossNodeDuplicateOccurrencesResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listCrossNodeDuplicateOccurrencesResponseSuccess = (listCrossNodeDuplicateOccurrencesResponse200) & {
+  headers: Headers;
+};
+export type listCrossNodeDuplicateOccurrencesResponseError = (listCrossNodeDuplicateOccurrencesResponse400 | listCrossNodeDuplicateOccurrencesResponse401 | listCrossNodeDuplicateOccurrencesResponse503) & {
+  headers: Headers;
+};
+
+export type listCrossNodeDuplicateOccurrencesResponse = (listCrossNodeDuplicateOccurrencesResponseSuccess | listCrossNodeDuplicateOccurrencesResponseError)
+
+export const getListCrossNodeDuplicateOccurrencesUrl = (params?: ListCrossNodeDuplicateOccurrencesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/cross-node-duplicate-occurrences?${stringifiedParams}` : `/api/cross-node-duplicate-occurrences`
+}
+
+/**
+ * Returns a bounded, reverse-chronological (last_seen_at DESC) page of
+ * Cross-node Duplicate Ownership occurrences. account_key is returned
+ * as plaintext (frozen non-goal: no masked/HMAC/fingerprint handling
+ * for this capability). Never returns evidence history inline -- use
+ * the evidence sub-resource for that.
+ * @summary List Cross-node Duplicate Ownership occurrences
+ */
+export const listCrossNodeDuplicateOccurrences = async (params?: ListCrossNodeDuplicateOccurrencesParams, options?: RequestInit): Promise<listCrossNodeDuplicateOccurrencesResponse> => {
+
+  const res = await fetch(getListCrossNodeDuplicateOccurrencesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listCrossNodeDuplicateOccurrencesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listCrossNodeDuplicateOccurrencesResponse
+}
+
+
+
+
+
+export const getListCrossNodeDuplicateOccurrencesQueryKey = (params?: ListCrossNodeDuplicateOccurrencesParams,) => {
+    return [
+    `/api/cross-node-duplicate-occurrences`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCrossNodeDuplicateOccurrencesQueryOptions = <TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError = ErrorResponse>(params?: ListCrossNodeDuplicateOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrossNodeDuplicateOccurrencesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>> = ({ signal }) => listCrossNodeDuplicateOccurrences(params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCrossNodeDuplicateOccurrencesQueryResult = NonNullable<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>>
+export type ListCrossNodeDuplicateOccurrencesQueryError = ErrorResponse
+
+
+export function useListCrossNodeDuplicateOccurrences<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError = ErrorResponse>(
+ params: undefined |  ListCrossNodeDuplicateOccurrencesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>,
+          TError,
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCrossNodeDuplicateOccurrences<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError = ErrorResponse>(
+ params?: ListCrossNodeDuplicateOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>,
+          TError,
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCrossNodeDuplicateOccurrences<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError = ErrorResponse>(
+ params?: ListCrossNodeDuplicateOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Cross-node Duplicate Ownership occurrences
+ */
+
+export function useListCrossNodeDuplicateOccurrences<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError = ErrorResponse>(
+ params?: ListCrossNodeDuplicateOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrences>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCrossNodeDuplicateOccurrencesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getCrossNodeDuplicateOccurrenceResponse200 = {
+  data: CrossNodeDuplicateOccurrenceSummary
+  status: 200
+}
+
+export type getCrossNodeDuplicateOccurrenceResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getCrossNodeDuplicateOccurrenceResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getCrossNodeDuplicateOccurrenceResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getCrossNodeDuplicateOccurrenceResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getCrossNodeDuplicateOccurrenceResponseSuccess = (getCrossNodeDuplicateOccurrenceResponse200) & {
+  headers: Headers;
+};
+export type getCrossNodeDuplicateOccurrenceResponseError = (getCrossNodeDuplicateOccurrenceResponse400 | getCrossNodeDuplicateOccurrenceResponse401 | getCrossNodeDuplicateOccurrenceResponse404 | getCrossNodeDuplicateOccurrenceResponse503) & {
+  headers: Headers;
+};
+
+export type getCrossNodeDuplicateOccurrenceResponse = (getCrossNodeDuplicateOccurrenceResponseSuccess | getCrossNodeDuplicateOccurrenceResponseError)
+
+export const getGetCrossNodeDuplicateOccurrenceUrl = (occurrenceId: string,) => {
+
+
+
+
+  return `/api/cross-node-duplicate-occurrences/${occurrenceId}`
+}
+
+/**
+ * Returns the current lifecycle projection and affected-node set for one occurrence.
+ * @summary Read one Cross-node Duplicate Ownership occurrence
+ */
+export const getCrossNodeDuplicateOccurrence = async (occurrenceId: string, options?: RequestInit): Promise<getCrossNodeDuplicateOccurrenceResponse> => {
+
+  const res = await fetch(getGetCrossNodeDuplicateOccurrenceUrl(occurrenceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getCrossNodeDuplicateOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getCrossNodeDuplicateOccurrenceResponse
+}
+
+
+
+
+
+export const getGetCrossNodeDuplicateOccurrenceQueryKey = (occurrenceId: string,) => {
+    return [
+    `/api/cross-node-duplicate-occurrences/${occurrenceId}`
+    ] as const;
+    }
+
+
+export const getGetCrossNodeDuplicateOccurrenceQueryOptions = <TData = Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError = ErrorResponse>(occurrenceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCrossNodeDuplicateOccurrenceQueryKey(occurrenceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>> = ({ signal }) => getCrossNodeDuplicateOccurrence(occurrenceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: occurrenceId !== null && occurrenceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCrossNodeDuplicateOccurrenceQueryResult = NonNullable<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>>
+export type GetCrossNodeDuplicateOccurrenceQueryError = ErrorResponse
+
+
+export function useGetCrossNodeDuplicateOccurrence<TData = Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError = ErrorResponse>(
+ occurrenceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>,
+          TError,
+          Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCrossNodeDuplicateOccurrence<TData = Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError = ErrorResponse>(
+ occurrenceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>,
+          TError,
+          Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCrossNodeDuplicateOccurrence<TData = Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError = ErrorResponse>(
+ occurrenceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one Cross-node Duplicate Ownership occurrence
+ */
+
+export function useGetCrossNodeDuplicateOccurrence<TData = Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError = ErrorResponse>(
+ occurrenceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCrossNodeDuplicateOccurrence>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCrossNodeDuplicateOccurrenceQueryOptions(occurrenceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponse200 = {
+  data: CrossNodeDuplicateOccurrenceEvidenceListResponse
+  status: 200
+}
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponseSuccess = (listCrossNodeDuplicateOccurrenceEvidenceResponse200) & {
+  headers: Headers;
+};
+export type listCrossNodeDuplicateOccurrenceEvidenceResponseError = (listCrossNodeDuplicateOccurrenceEvidenceResponse400 | listCrossNodeDuplicateOccurrenceEvidenceResponse401 | listCrossNodeDuplicateOccurrenceEvidenceResponse404 | listCrossNodeDuplicateOccurrenceEvidenceResponse503) & {
+  headers: Headers;
+};
+
+export type listCrossNodeDuplicateOccurrenceEvidenceResponse = (listCrossNodeDuplicateOccurrenceEvidenceResponseSuccess | listCrossNodeDuplicateOccurrenceEvidenceResponseError)
+
+export const getListCrossNodeDuplicateOccurrenceEvidenceUrl = (occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/cross-node-duplicate-occurrences/${occurrenceId}/evidence?${stringifiedParams}` : `/api/cross-node-duplicate-occurrences/${occurrenceId}/evidence`
+}
+
+/**
+ * Returns a bounded, reverse-chronological (recorded_at DESC) page of
+ * retention-safe evidence observations for one occurrence. Independently
+ * paginated from the occurrence list/detail endpoints.
+ * @summary List evidence observations for one Cross-node Duplicate Ownership occurrence
+ */
+export const listCrossNodeDuplicateOccurrenceEvidence = async (occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams, options?: RequestInit): Promise<listCrossNodeDuplicateOccurrenceEvidenceResponse> => {
+
+  const res = await fetch(getListCrossNodeDuplicateOccurrenceEvidenceUrl(occurrenceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listCrossNodeDuplicateOccurrenceEvidenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listCrossNodeDuplicateOccurrenceEvidenceResponse
+}
+
+
+
+
+
+export const getListCrossNodeDuplicateOccurrenceEvidenceQueryKey = (occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams,) => {
+    return [
+    `/api/cross-node-duplicate-occurrences/${occurrenceId}/evidence`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCrossNodeDuplicateOccurrenceEvidenceQueryOptions = <TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError = ErrorResponse>(occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrossNodeDuplicateOccurrenceEvidenceQueryKey(occurrenceId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>> = ({ signal }) => listCrossNodeDuplicateOccurrenceEvidence(occurrenceId,params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: occurrenceId !== null && occurrenceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCrossNodeDuplicateOccurrenceEvidenceQueryResult = NonNullable<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>>
+export type ListCrossNodeDuplicateOccurrenceEvidenceQueryError = ErrorResponse
+
+
+export function useListCrossNodeDuplicateOccurrenceEvidence<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError = ErrorResponse>(
+ occurrenceId: string,
+    params: undefined |  ListCrossNodeDuplicateOccurrenceEvidenceParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>,
+          TError,
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCrossNodeDuplicateOccurrenceEvidence<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError = ErrorResponse>(
+ occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>,
+          TError,
+          Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCrossNodeDuplicateOccurrenceEvidence<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError = ErrorResponse>(
+ occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List evidence observations for one Cross-node Duplicate Ownership occurrence
+ */
+
+export function useListCrossNodeDuplicateOccurrenceEvidence<TData = Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError = ErrorResponse>(
+ occurrenceId: string,
+    params?: ListCrossNodeDuplicateOccurrenceEvidenceParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCrossNodeDuplicateOccurrenceEvidence>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListCrossNodeDuplicateOccurrenceEvidenceQueryOptions(occurrenceId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

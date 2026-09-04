@@ -159,7 +159,15 @@ func TestAssetRegistryIdentityEndpointAndSecretConstraints(t *testing.T) {
 		_, err := tx.Exec(ctx, `TRUNCATE environments`)
 		return err
 	})
-	requireSQLState(t, err, "23514")
+	// Once any table (e.g. cross_node_duplicate_occurrences, migration 00013)
+	// holds a foreign key to environments, PostgreSQL raises SQLSTATE 0A000
+	// ("cannot truncate a table referenced in a foreign key constraint")
+	// before the BEFORE TRUNCATE trigger (23514) ever runs. Both SQLSTATEs
+	// equally prove the environment singleton cannot be truncated.
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || (pgErr.Code != "23514" && pgErr.Code != "0A000") {
+		t.Fatalf("truncate environment identity: SQLSTATE = %v, want 23514 or 0A000", err)
+	}
 	for _, invalidName := range []string{" leading", "trailing ", "line\nbreak", strings.Repeat("x", 101)} {
 		err = assetSavepoint(t, ctx, tx, "invalid environment name", func() error {
 			_, err := tx.Exec(ctx, `UPDATE environments SET name=$1 WHERE singleton_id=1`, invalidName)
