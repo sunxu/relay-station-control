@@ -1,6 +1,6 @@
 # Planning and acceptance evidence
 
-状态：Architecture Contract Re-review APPROVED（2026-09-07），P1=0、P2=0；实施与专项验收完成，27/27，等待 Implementation/Release Review。下文历史 planning/review 段落保留其当时状态；当前实现结果以 Implementation evidence、Local recovery acceptance 及 Final targeted evidence 为准。已在本地开发环境部署验收；未部署生产、归档或修改已归档 Topology change。
+状态：Architecture Contract Re-review APPROVED（2026-09-07）；Implementation/Release Final Review（2026-09-08）未发现P1/P2 blocker，27/27，本地已更新为干净commit构建镜像并通过发布冒烟，等待最终归档授权。下文历史 planning/review 段落保留其当时状态；当前结果以文末 Final review and local release 为准。未部署生产、归档或修改已归档 Topology change。
 
 ## Acceptance matrix
 
@@ -197,3 +197,34 @@ go test ./cmd/control -run '^TestGatewayDirectory(RuntimeErrorsUseFixedRedactedL
 仅新增测试和文档；生产实现保持 `bedcbd3` / `76b50c5`，复用已有最终 `make test build` 与PG验收结果，不重跑完整构建、Chrome或全量PG。OpenAPI/生成客户端、Node服务端、Control入站与数据面实现本轮均无diff。
 
 最终change strict PASS；`openspec validate --all --strict` **14 passed / 0 failed**；working-tree及提交前cached diff检查PASS。当前27/27；未push、archive或生产部署。Control/ops按仓库分别提交；Node仓库的既有 `AGENTS.md` 修改不属于本change，未修改或提交。
+
+### Final review and local release (2026-09-08 Asia/Shanghai)
+
+主Agent与三个独立只读审查方向完成Final Review：存储/SQL/ACL/预算与恢复、Gateway/Node管理transport和回滚文档、main专项/27项任务与实际证据。未发现P1/P2 blocker；未新增产品行为或重跑完整构建测试、Chrome、全量PG。`74438ad`保存最终main与日志专项；`c7c244b`保存27/27证据和文档。
+
+本地正式版本构建的source为干净Control commit `c7c244b03d3ddefc0e723b7f0dd21a8de329fa1f`，命令：
+
+```sh
+docker build --build-arg VERSION=c7c244b --label org.opencontainers.image.revision=c7c244b03d3ddefc0e723b7f0dd21a8de329fa1f -t relay-station/control:c7c244b .
+```
+
+构建PASS，前端层复用缓存；image ID为 `sha256:31758fb978eb878afdc2b232d5923c01ffe5e53081bc6c2cb4609ae1e1fc6e83`。后续本文件的发布记录提交仅为文档，不作为该镜像构建来源；正式版本表示commit可追溯的本地镜像，不表示生产发布。
+
+运行 `python3 /Volumes/DevRAM/tmp/relay-directory-release.py release-control relay-station/control:c7c244b`：harness先核对Control工作树干净与image revision=HEAD，将现有Compose override备份到仓库外受保护目录，再只更新Control image并执行 `docker compose ... up -d --no-deps --wait control`。失败会恢复原override并重建原Control；实际更新成功且healthy。Gateway、Node容器ID在更新前后完全相同；不运行migration、不改开关、不清空volume或账号。
+
+这是当前已运行栈的Control单服务更新，未执行整栈 `devctl up`，不声称整栈clean-HEAD preflight通过：Node有用户既有AGENTS.md未提交修改；Gateway镜像指向生产修复commit，后续HEAD为测试/证据提交。两者未被本轮修改或部署。既有Control入站TLS代理未改配置，实际HTTPS UI和管理员API冒烟成功。
+
+容器实际启动时间为 `2026-09-07T16:35:38.722267359Z`；`docker inspect`核对配置image、实际image ID和healthy；健康API返回 `{"status":"ok","version":"c7c244b"}`。新进程的正常采集成功观测时间为 `2026-09-07T16:39:03.933362Z`，严格晚于容器启动时间；16:40:33执行既有 `assert-recovered`，同一Binding与decimal-string Account身份精确不变，resolved/fresh/current。没有用部署前遗留fresh快照冒充新进程采集成功。
+
+发布后最小冒烟结果：
+
+| 命令/路径 | 结果 |
+| --- | --- |
+| `python3 /Volumes/DevRAM/tmp/relay-directory-http.py assert-recovered` | PASS；同一Binding、精确string identity、fresh/resolved，新进程成功观测 |
+| `python3 /Volumes/DevRAM/tmp/relay-directory-http.py data-plane` | HTTP200、choices存在、6.22s，不保存响应内容 |
+| `curl --noproxy '*' ... http://127.0.0.1:18080/api/healthz` | HTTP200、version=c7c244b |
+| 同类有界curl `/metrics`、Gateway `http://127.0.0.1:18082/`、Node `http://127.0.0.1:18319/healthz` | 全部HTTP200 |
+| `curl --noproxy '*' --max-time 10 --cacert <既有受保护Control CA路径> ... https://localhost:18443/` | HTTP200，既有入站证书验证保持 |
+| public `http://127.0.0.1:18082/internal/v1/api-account-directory` | HTTP403，公网拒绝保持 |
+
+最终change strict与all strict重新PASS（14/14），working-tree/cached diff检查PASS。Directory source/poller继续启用，既有Binding与6个Node账号保留。未push、未archive；后续归档仍须按design同步Node Purpose。
