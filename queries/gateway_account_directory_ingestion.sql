@@ -1,7 +1,12 @@
 -- name: GetGatewayDirectoryReadTarget :one
-SELECT instance_id, management_endpoint, reader_secret_ref
-FROM gateway_instances
-WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid;
+SELECT (to_jsonb(target)->>'instance_id')::uuid AS instance_id,
+       (to_jsonb(target)->>'management_endpoint')::text AS management_endpoint,
+       (to_jsonb(target)->>'reader_secret_ref')::text AS reader_secret_ref
+FROM control_query_gateway_directory_target_v1(
+    sqlc.arg(ingestion_run_id)::uuid,
+    sqlc.arg(gateway_instance_id)::uuid,
+    sqlc.arg(lease_fencing_token)::uuid
+) AS target;
 
 -- name: ListGatewayInstanceIDs :many
 SELECT instance_id
@@ -10,7 +15,7 @@ ORDER BY instance_id;
 
 -- name: CreateOrGetGatewayDirectoryIngestionRun :one
 WITH locked_gateway AS (
-    SELECT instance_id
+    SELECT instance_id, reader_secret_configured
     FROM gateway_instances
     WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid
     FOR UPDATE
@@ -34,7 +39,8 @@ WITH locked_gateway AS (
         current_slot.scheduled_at
     FROM locked_gateway
     CROSS JOIN current_slot
-    WHERE NOT EXISTS (SELECT 1 FROM active_gateway)
+    WHERE locked_gateway.reader_secret_configured
+      AND NOT EXISTS (SELECT 1 FROM active_gateway)
     ON CONFLICT (gateway_instance_id, scheduled_at) DO NOTHING
     RETURNING *, true AS created
 )

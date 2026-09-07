@@ -93,7 +93,7 @@ func (q *Queries) ClaimGatewayDirectoryIngestionRun(ctx context.Context, arg Cla
 
 const createOrGetGatewayDirectoryIngestionRun = `-- name: CreateOrGetGatewayDirectoryIngestionRun :one
 WITH locked_gateway AS (
-    SELECT instance_id
+    SELECT instance_id, reader_secret_configured
     FROM gateway_instances
     WHERE instance_id = $1::uuid
     FOR UPDATE
@@ -117,7 +117,8 @@ WITH locked_gateway AS (
         current_slot.scheduled_at
     FROM locked_gateway
     CROSS JOIN current_slot
-    WHERE NOT EXISTS (SELECT 1 FROM active_gateway)
+    WHERE locked_gateway.reader_secret_configured
+      AND NOT EXISTS (SELECT 1 FROM active_gateway)
     ON CONFLICT (gateway_instance_id, scheduled_at) DO NOTHING
     RETURNING ingestion_run_id, gateway_instance_id, scheduled_at, status, attempt_count, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, terminal_at, outcome, last_failure_class, source_generated_at, received_at, content_fingerprint, snapshot_id, account_count, true AS created
 )
@@ -489,19 +490,30 @@ func (q *Queries) GetGatewayDirectoryIngestionRunLease(ctx context.Context, arg 
 }
 
 const getGatewayDirectoryReadTarget = `-- name: GetGatewayDirectoryReadTarget :one
-SELECT instance_id, management_endpoint, reader_secret_ref
-FROM gateway_instances
-WHERE instance_id = $1::uuid
+SELECT (to_jsonb(target)->>'instance_id')::uuid AS instance_id,
+       (to_jsonb(target)->>'management_endpoint')::text AS management_endpoint,
+       (to_jsonb(target)->>'reader_secret_ref')::text AS reader_secret_ref
+FROM control_query_gateway_directory_target_v1(
+    $1::uuid,
+    $2::uuid,
+    $3::uuid
+) AS target
 `
+
+type GetGatewayDirectoryReadTargetParams struct {
+	IngestionRunID    pgtype.UUID `json:"ingestion_run_id"`
+	GatewayInstanceID pgtype.UUID `json:"gateway_instance_id"`
+	LeaseFencingToken pgtype.UUID `json:"lease_fencing_token"`
+}
 
 type GetGatewayDirectoryReadTargetRow struct {
 	InstanceID         pgtype.UUID `json:"instance_id"`
 	ManagementEndpoint string      `json:"management_endpoint"`
-	ReaderSecretRef    pgtype.Text `json:"reader_secret_ref"`
+	ReaderSecretRef    string      `json:"reader_secret_ref"`
 }
 
-func (q *Queries) GetGatewayDirectoryReadTarget(ctx context.Context, gatewayInstanceID pgtype.UUID) (GetGatewayDirectoryReadTargetRow, error) {
-	row := q.db.QueryRow(ctx, getGatewayDirectoryReadTarget, gatewayInstanceID)
+func (q *Queries) GetGatewayDirectoryReadTarget(ctx context.Context, arg GetGatewayDirectoryReadTargetParams) (GetGatewayDirectoryReadTargetRow, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryReadTarget, arg.IngestionRunID, arg.GatewayInstanceID, arg.LeaseFencingToken)
 	var i GetGatewayDirectoryReadTargetRow
 	err := row.Scan(&i.InstanceID, &i.ManagementEndpoint, &i.ReaderSecretRef)
 	return i, err

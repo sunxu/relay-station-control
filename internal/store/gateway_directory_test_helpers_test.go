@@ -51,6 +51,11 @@ func insertGatewayInstance(t *testing.T, ctx context.Context, pool *pgxpool.Pool
 }
 
 func writeGatewayDirectorySecretResolver(t *testing.T, reference, token string) drivers.SecretResolver {
+	resolver, _ := writeGatewayDirectorySecretResolverWithPath(t, reference, token)
+	return resolver
+}
+
+func writeGatewayDirectorySecretResolverWithPath(t *testing.T, reference, token string) (drivers.SecretResolver, string) {
 	t.Helper()
 	directory := t.TempDir()
 	secretPath := filepath.Join(directory, "reader-token")
@@ -75,7 +80,7 @@ func writeGatewayDirectorySecretResolver(t *testing.T, reference, token string) 
 	if err != nil {
 		t.Fatalf("construct secret resolver: %v", err)
 	}
-	return resolver
+	return resolver, secretPath
 }
 
 func trustServerCertificate(t *testing.T, server *httptest.Server) {

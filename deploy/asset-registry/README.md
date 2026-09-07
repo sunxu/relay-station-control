@@ -28,6 +28,10 @@ identical. Conflicting content fails without partial writes.
   table read permission beyond the environment singleton; reconciliation
   returns only fixed issue codes plus counts and never selects endpoint or
   Secret reference values.
+- `configure-gateway-directory-reader.sql` fills a previously NULL Directory
+  reader reference through the controlled registrar function. It requires an
+  enabled super-admin actor; identical replay is an audited no-op, while a
+  different reference or existing Directory/Binding history is rejected.
 
 Never pass credentials as `*_secret_ref`; those parameters accept only opaque
 secret-manager references. `register-assets.sql` reads the two references from

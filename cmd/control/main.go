@@ -152,6 +152,11 @@ func main() {
 		logger.Error("invalid control configuration", "component", "account_inventory_poll", "reason", "invalid_runtime_config")
 		os.Exit(1)
 	}
+	gatewayDirectoryConfig, err := loadGatewayDirectoryRuntimeConfig()
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "gateway_directory", "reason", "invalid_runtime_config")
+		os.Exit(1)
+	}
 	historyConfig, err := loadAccountInventoryHistoryRuntimeConfig()
 	if err != nil {
 		logger.Error("invalid control configuration", "component", "account_inventory_history", "reason", "invalid_runtime_config")
@@ -299,6 +304,11 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.Timeout(30 * time.Second))
 	metricsRegistry := prometheus.NewRegistry()
+	gatewayDirectoryRuntime, err := newGatewayDirectoryRuntime(metricsRegistry, pool, gatewayDirectoryConfig)
+	if err != nil {
+		logger.Error("gateway directory runtime initialization failed", "component", "gateway_directory", "reason", "initialization_failed")
+		os.Exit(1)
+	}
 	metricsRegistry.MustRegister(controlauth.NewPrometheusCollector(authService.Metrics()))
 	metricsRegistry.MustRegister(controlapi.NewAssetPrometheusCollector(assetMetrics))
 	metricsRegistry.MustRegister(nodeDrivers.metrics)
@@ -386,6 +396,13 @@ func main() {
 			if runErr := inventoryPollRuntime.service.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
 				logger.Error("account inventory poll stopped", "component", "account_inventory_poll", "reason", "runtime_stopped")
 			}
+		}()
+	}
+	if gatewayDirectoryRuntime.enabled {
+		controlLoops.Add(1)
+		go func() {
+			defer controlLoops.Done()
+			gatewayDirectoryRuntime.run(shutdownContext, logger)
 		}()
 	}
 

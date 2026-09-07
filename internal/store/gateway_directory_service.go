@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -67,7 +69,9 @@ func (service *GatewayDirectoryIngestionService) RunGatewayOnce(
 		return GatewayDirectoryWorkResult{GatewayInstanceID: gatewayInstanceID, Status: GatewayDirectoryWorkStatusNoWork}, nil
 	}
 
-	attempt, err := service.repository.ExecuteAttempt(ctx, GatewayDirectoryAttemptRequest{
+	attemptCtx, cancelAttempt := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelAttempt()
+	attempt, err := service.repository.executeAttempt(attemptCtx, ctx, GatewayDirectoryAttemptRequest{
 		IngestionRunID:    uuidFromPG(claimed.IngestionRunID),
 		GatewayInstanceID: uuidFromPG(claimed.GatewayInstanceID),
 		LeaseFencingToken: uuidFromPG(claimed.LeaseFencingToken),
@@ -82,7 +86,7 @@ func (service *GatewayDirectoryIngestionService) RunGatewayOnce(
 		return service.handleAttemptFailure(ctx, attempt.Failure)
 	}
 
-	finalize, err := service.repository.FinalizeSuccessfulAttempt(ctx, *attempt.Success)
+	finalize, err := service.repository.FinalizeSuccessfulAttempt(attemptCtx, *attempt.Success)
 	if err != nil {
 		return GatewayDirectoryWorkResult{}, err
 	}
@@ -108,7 +112,7 @@ func (service *GatewayDirectoryIngestionService) RunGatewayOnce(
 			Status:            GatewayDirectoryWorkStatusLostLease,
 		}, nil
 	case GatewayDirectoryFinalizeFailureSourceTimeInvalid:
-		transition, transitionErr := service.repository.recordAttemptFailure(ctx, attempt.Success.Request, GatewayDirectoryAttemptFailureInput{
+		transition, transitionErr := service.repository.finishAttemptFailure(ctx, attempt.Success.Request, GatewayDirectoryAttemptFailureInput{
 			Class:     string(gatewaydirectoryFailureClassSourceTimeInvalid),
 			Retryable: false,
 		})
@@ -205,18 +209,35 @@ func (service *GatewayDirectoryIngestionService) WorkOnce(ctx context.Context) (
 	if err != nil {
 		return nil, err
 	}
+	return workGatewayDirectoryInstances(ctx, ids, service.RunGatewayOnce)
+}
+
+// workGatewayDirectoryInstances keeps the ordered, per-Gateway continuation
+// policy independent from the database-backed service. A failed Gateway does
+// not prevent later registered Gateways from being attempted; cancellation
+// still stops the walk before the next Gateway.
+func workGatewayDirectoryInstances(
+	ctx context.Context,
+	ids []uuid.UUID,
+	runOnce func(context.Context, uuid.UUID) (GatewayDirectoryWorkResult, error),
+) ([]GatewayDirectoryWorkResult, error) {
+	if runOnce == nil {
+		return nil, ErrInvalidGatewayDirectoryIngestionQuery
+	}
 	results := make([]GatewayDirectoryWorkResult, 0, len(ids))
+	var workErrors []error
 	for _, id := range ids {
 		if ctx.Err() != nil {
 			return results, ctx.Err()
 		}
-		result, err := service.RunGatewayOnce(ctx, id)
+		result, err := runOnce(ctx, id)
 		if err != nil {
-			return results, err
+			workErrors = append(workErrors, err)
+			continue
 		}
 		results = append(results, result)
 	}
-	return results, nil
+	return results, errors.Join(workErrors...)
 }
 
 func (service *GatewayDirectoryIngestionService) ScheduleTick(ctx context.Context) error {

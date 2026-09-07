@@ -91,6 +91,15 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 	request GatewayDirectoryAttemptRequest,
 	secretResolver drivers.SecretResolver,
 ) (GatewayDirectoryAttemptResult, error) {
+	return repository.executeAttempt(ctx, ctx, request, secretResolver)
+}
+
+// executeAttempt keeps the attempt deadline separate from bounded failure bookkeeping.
+func (repository *GatewayDirectoryIngestionRepository) executeAttempt(
+	ctx, failureParent context.Context,
+	request GatewayDirectoryAttemptRequest,
+	secretResolver drivers.SecretResolver,
+) (GatewayDirectoryAttemptResult, error) {
 	if request.IngestionRunID == uuid.Nil || request.GatewayInstanceID == uuid.Nil ||
 		request.LeaseFencingToken == uuid.Nil || secretResolver == nil {
 		return GatewayDirectoryAttemptResult{}, ErrInvalidGatewayDirectoryIngestionQuery
@@ -101,7 +110,7 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 			GatewayInstanceID: nullableUUID(request.GatewayInstanceID),
 			LeaseFencingToken: nullableUUID(request.LeaseFencingToken),
 		})
-	if errors.Is(err, pgx.ErrNoRows) || !validGatewayDirectoryIngestionRun(lease) {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !validGatewayDirectoryIngestionRun(lease)) {
 		return GatewayDirectoryAttemptResult{
 			Failure: &GatewayDirectoryAttemptFailure{
 				Request:     request,
@@ -115,14 +124,16 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 		return GatewayDirectoryAttemptResult{}, err
 	}
 
-	target, err := repository.queries.GetGatewayDirectoryReadTarget(ctx, nullableUUID(request.GatewayInstanceID))
+	target, err := repository.queries.GetGatewayDirectoryReadTarget(ctx, generated.GetGatewayDirectoryReadTargetParams{
+		IngestionRunID: nullableUUID(request.IngestionRunID), GatewayInstanceID: nullableUUID(request.GatewayInstanceID), LeaseFencingToken: nullableUUID(request.LeaseFencingToken),
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return GatewayDirectoryAttemptResult{}, ErrGatewayDirectoryIngestionInconsistent
 	}
 	if err != nil {
 		return GatewayDirectoryAttemptResult{}, err
 	}
-	if !target.ReaderSecretRef.Valid || target.ManagementEndpoint == "" {
+	if target.ReaderSecretRef == "" || target.ManagementEndpoint == "" {
 		return GatewayDirectoryAttemptResult{}, ErrGatewayDirectoryIngestionInconsistent
 	}
 
@@ -130,13 +141,13 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 	if err != nil {
 		return GatewayDirectoryAttemptResult{}, err
 	}
-	directory, fingerprint, err := client.Fetch(ctx, drivers.NewSecretReference(target.ReaderSecretRef.String))
+	directory, fingerprint, err := client.Fetch(ctx, drivers.NewSecretReference(target.ReaderSecretRef))
 	if err != nil {
 		class, retryable, classifyErr := classifyGatewayDirectoryAttemptFailure(err)
 		if classifyErr != nil {
 			return GatewayDirectoryAttemptResult{}, classifyErr
 		}
-		transition, transitionErr := repository.recordAttemptFailure(ctx, request, GatewayDirectoryAttemptFailureInput{
+		transition, transitionErr := repository.finishAttemptFailure(failureParent, request, GatewayDirectoryAttemptFailureInput{
 			Class:     class,
 			Retryable: retryable,
 		})
@@ -165,7 +176,7 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 		return GatewayDirectoryAttemptResult{}, ErrGatewayDirectoryIngestionInconsistent
 	}
 	if err := gatewaydirectory.ValidateSourceTime(gatewaydirectory.DefaultSourceTimePolicy(), directory.GeneratedAt, dbNow.Time.UTC(), previousGeneratedAt); err != nil {
-		transition, transitionErr := repository.recordAttemptFailure(ctx, request, GatewayDirectoryAttemptFailureInput{
+		transition, transitionErr := repository.finishAttemptFailure(failureParent, request, GatewayDirectoryAttemptFailureInput{
 			Class:     string(gatewaydirectoryFailureClassSourceTimeInvalid),
 			Retryable: false,
 		})
@@ -195,6 +206,17 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 			AccountCount: accountCount,
 		},
 	}, nil
+}
+
+func (repository *GatewayDirectoryIngestionRepository) finishAttemptFailure(
+	parent context.Context, request GatewayDirectoryAttemptRequest, input GatewayDirectoryAttemptFailureInput,
+) (*GatewayDirectoryAttemptFailure, error) {
+	if err := parent.Err(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	return repository.recordAttemptFailure(ctx, request, input)
 }
 
 func (repository *GatewayDirectoryIngestionRepository) recordAttemptFailure(
