@@ -136,56 +136,94 @@ func TestCrossNodeDuplicateOwnershipOccurrenceReadModel(t *testing.T) {
 		// A retention-cleaned evidence row has a NULL source_poll_run_id but
 		// keeps occurrence_id/instance_id. It must remain discoverable by
 		// history without joining the poll tables.
-		retainedOccurrenceID := uuid.New()
+		targetOccurrenceID := uuid.New()
+		targetAccountKey := fixtureProviderName + ":retained@example.invalid"
 		retainedEvaluationID := uuid.New()
 		retainedAt := time.Now().UTC().Truncate(time.Microsecond)
 		if _, err := database.owner.Exec(ctx, `INSERT INTO cross_node_duplicate_occurrences(
 			occurrence_id, environment_id, account_key, conflict_type, status, severity,
 			first_seen_at, last_seen_at, evidence_state
 		) VALUES ($1,$2,$3,'cross_node_duplicate_ownership','ACTIVE','Critical',$4,$4,'complete')`,
-			retainedOccurrenceID, environmentID, fixtureProviderName+":retained@example.invalid", retainedAt); err != nil {
+			targetOccurrenceID, environmentID, targetAccountKey, retainedAt); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := database.owner.Exec(ctx, `INSERT INTO cross_node_duplicate_occurrence_evidence(
 			occurrence_id, instance_id, observation_kind, source_provider,
 			source_scheduled_at, source_completed_at, source_poll_run_id, evaluation_id, evaluation_at
 		) VALUES ($1,$2,'absence_confirmed','openai',$3,$3,NULL,$4,$3)`,
-			retainedOccurrenceID, group.nodes[0], retainedAt, retainedEvaluationID); err != nil {
+			targetOccurrenceID, group.nodes[0], retainedAt, retainedEvaluationID); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := database.owner.Exec(ctx, `INSERT INTO cross_node_duplicate_occurrence_evidence(
 			occurrence_id, instance_id, observation_kind, source_provider,
 			source_scheduled_at, source_completed_at, source_poll_run_id, evaluation_id, evaluation_at
 		) VALUES ($1,$2,'degraded','openai',$3,$3,NULL,$4,$3)`,
-			retainedOccurrenceID, group.nodes[1], retainedAt.Add(time.Second), uuid.New()); err != nil {
+			targetOccurrenceID, group.nodes[1], retainedAt.Add(time.Second), uuid.New()); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := database.owner.Exec(ctx, `UPDATE cross_node_duplicate_occurrences
 			SET status = 'RESOLVED', resolved_at = $2
-			WHERE occurrence_id = $1`, retainedOccurrenceID, retainedAt); err != nil {
+			WHERE occurrence_id = $1`, targetOccurrenceID, retainedAt); err != nil {
 			t.Fatal(err)
 		}
+		// Verify the persisted target, independently of the history projection.
+		var currentCount, retainedEvidenceCount int
+		if err := database.owner.QueryRow(ctx, `SELECT count(*)
+			FROM cross_node_duplicate_occurrence_nodes WHERE occurrence_id=$1`, targetOccurrenceID).Scan(&currentCount); err != nil {
+			t.Fatal(err)
+		}
+		if currentCount != 0 {
+			t.Fatalf("target %s current membership count=%d, want 0", targetOccurrenceID, currentCount)
+		}
+		if err := database.owner.QueryRow(ctx, `SELECT count(*)
+			FROM cross_node_duplicate_occurrence_evidence
+			WHERE occurrence_id=$1 AND source_poll_run_id IS NULL
+			AND ((instance_id=$2 AND observation_kind='absence_confirmed')
+			  OR (instance_id=$3 AND observation_kind='degraded'))`,
+			targetOccurrenceID, group.nodes[0], group.nodes[1]).Scan(&retainedEvidenceCount); err != nil {
+			t.Fatal(err)
+		}
+		if retainedEvidenceCount != 2 {
+			t.Fatalf("target %s retained evidence count=%d, want A absence and B degraded with NULL poll IDs", targetOccurrenceID, retainedEvidenceCount)
+		}
+		t.Logf("target_occurrence_id=%s account_key=%s environment_id=%s current_membership=0 retained_null_poll_evidence=2", targetOccurrenceID, targetAccountKey, environmentID)
 		freshReader := newCrossNodeDuplicateOwnershipOccurrenceRepository(t, database)
-		for _, nodeID := range []uuid.UUID{group.nodes[0], group.nodes[1]} {
+		for index, nodeID := range []uuid.UUID{group.nodes[0], group.nodes[1]} {
 			page, err := freshReader.ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode(ctx, nodeID, "RESOLVED", nil, 50)
 			if err != nil {
 				t.Fatal(err)
 			}
-			foundResolved := false
+			// This fixture has only three occurrences, within the bounded page.
+			if page.HasMore {
+				t.Fatal("fixture exceeded its bounded history page")
+			}
+			targetMatches, originalMatches := 0, 0
 			for _, item := range page.Items {
-				if item.OccurrenceID == resolved.OccurrenceID || item.OccurrenceID == retainedOccurrenceID {
-					foundResolved = true
-					if item.OccurrenceID == retainedOccurrenceID && len(item.AffectedNodes) != 0 {
-						t.Fatalf("node %s current affected set = %v, want empty after membership removal", nodeID, item.AffectedNodes)
-					}
+				if item.OccurrenceID == resolved.OccurrenceID {
+					originalMatches++
+				}
+				if item.OccurrenceID != targetOccurrenceID {
+					continue
+				}
+				targetMatches++
+				if item.Status != "RESOLVED" || item.AccountKey != targetAccountKey || item.EnvironmentID != environmentID {
+					t.Fatalf("node %s target %s metadata mismatch: %+v", nodeID, targetOccurrenceID, item)
+				}
+				if len(item.AffectedNodes) != 0 {
+					t.Fatalf("node %s target %s affected Nodes=%v, want empty", nodeID, targetOccurrenceID, item.AffectedNodes)
 				}
 			}
-			if !foundResolved {
-				t.Fatalf("node %s history = %+v, want retained history", nodeID, page.Items)
+			if targetMatches != 1 {
+				t.Fatalf("node %s target %s exact matches=%d, want 1", nodeID, targetOccurrenceID, targetMatches)
+			}
+			// The original occurrence cannot substitute for the retention target.
+			if originalMatches != 1 {
+				t.Fatalf("node %s original %s exact matches=%d, want 1", nodeID, resolved.OccurrenceID, originalMatches)
 			}
 			if page.ObservedAt == nil || page.ObservedAt.IsZero() {
 				t.Fatal("history page must include a DB observed_at")
 			}
+			t.Logf("node_%c=%s target_occurrence_id=%s exact_matches=1 status=RESOLVED affected_nodes=0", 'A'+index, nodeID, targetOccurrenceID)
 		}
 	})
 

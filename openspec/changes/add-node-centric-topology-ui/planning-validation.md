@@ -30,7 +30,7 @@ Release Gate收尾：用户明确所有相关项目位于当前父目录，并�
 | 契约 | 实际证据 |
 | --- | --- |
 | D1–D2 | `internal/store/cross_node_duplicate_ownership_read_model_test.go`：ACTIVE current与history、fresh absence后A/B RESOLVED history、B membership删除。 |
-| D3–D6 | 同一PG测试：current集合全空、多个evidence去重、absence/degraded历史涉及、source_poll_run_id清空后新Repository仍读历史；没有把historical involvement当confirmed owner。 |
+| D3–D6 | 历史专项已补强：DB直接确认target current membership=0；新Repository对A/B均精确匹配同一targetOccurrenceID一次，校验RESOLVED/account_key/environment_id及空affected set；保留A absence、B degraded两条NULL poll evidence。D4沿用独立去重/分页子测试；详见下方P2复验。 |
 | D7 | history SQL status/keyset/limit验证；`internal/api/topology_http_integration_test.go` Node/status绑定cursor；旧current HTTP回归；Chrome实际Current/History/Evidence分页和Resolved筛选。 |
 | P1–P3、P6、P-READ A/B/C/F/G/H | `account_inventory_provider_state_schema_integration_test.go`：零account、Expected缺state、Expected UNION Held、fresh/stale分别与normal/degraded组合、health时间保留。HTTP验证snapshot与health两个时间；UI双badge截图与组件测试。 |
 | P4、P-READ E | migration回滚后真实query失败；HTTP reader模拟DB错误/deadline返回503且无providers/secret；组件局部503不变empty，Chrome刷新恢复。 |
@@ -85,3 +85,34 @@ Implementation Final Review已APPROVED；复核四个实现提交没有阻塞性
 [release-compatibility.md](release-compatibility.md)包含实际目录/branch/status、全部breaking endpoint与JSON路径、A/B/C/D消费者分类、危险数字处理排查、source v1不变边界、逐项D/P/P-READ/I/R实现/fixture/assertion/原命令结果引用，以及尚未执行的推荐发布顺序。没有发现证据缺口；1.3与7.1均[x]，OpenSpec 27/27。
 
 本轮仅更新本change的tasks、planning-validation和release compatibility evidence；仅执行文档strict/diff检查，不修改API/Go/TS/migration、不改sibling、不访问远端、不部署、不archive。等待 **Node-centric Topology Final Release Gate Review**。
+
+
+## P2 retention evidence correction and revalidation
+
+Final Release Gate Review发现OR断言过宽后，7.1曾重新打开为[ ]，状态26/27；1.3始终[x]。本轮只改历史测试断言及三份证据/任务文档，生产SQL、API contract与history semantics均未改。
+
+`internal/store/cross_node_duplicate_ownership_read_model_test.go`的retention子测试保存唯一`targetOccurrenceID`。移除target/original任意命中即成功的OR判断，改为每个Node的targetMatches必须=1；originalMatches另行必须=1，绝不能替代target。target还必须满足status=RESOLVED、account_key=targetAccountKey、environment_id=read-model-env。直接查询持久化occurrence_nodes确认target count=0；repository read projection也要求AffectedNodes为空。
+
+原fixture保留：独立retained occurrence、A absence_confirmed和B degraded evidence、source_poll_run_id=NULL、新建Repository。额外查库确认这两条NULL poll evidence存在；每个Node都用limit50的有界页，fixture仅3个occurrence且明确断言HasMore=false，不能以无界查询或其他记录顶替。这个target是直接构造的retention后最终状态，**不声称运行了retention清理任务或对target执行membership删除过程**；原真实lifecycle/B membership删除场景继续保留，target本身的空current与history独立性由新增精确断言证明。
+
+2026-09-07实际专项结果（合成身份，每次运行UUID重新生成）：
+
+| 检查 | 本次实测 |
+| --- | --- |
+| target occurrence ID | 74a171ca-646e-4b4e-ac41-91096f4c5f83 |
+| target account / environment / status | openai:retained@example.invalid / read-model-env / RESOLVED |
+| Node A | 9afd327d-22ca-4e86-992b-9e3be876345d；目标精确匹配1次，元数据全部匹配 |
+| Node B | b73f7743-e49b-4395-84e5-a21e80024b49；同一目标精确匹配1次，元数据全部匹配 |
+| target occurrence_nodes | count=0；A/B返回的target affected_nodes也为空 |
+| retained evidence | 2条；A absence_confirmed、B degraded；均source_poll_run_id=NULL |
+| restart-style read | 新Repository，A/B分别查询，bounded page均未截断 |
+
+沿用此前独立PostgreSQL验收容器，重启后端口127.0.0.1:32769；分别设置CONTROL_DATABASE_TEST_URL（migrator fixture）与CONTROL_RUNTIME_DATABASE_TEST_URL（runtime查询）。未覆盖Go/TMP/cache环境变量。
+
+```sh
+go test ./internal/store -run 'TestCrossNodeDuplicateOwnershipOccurrenceReadModel' -count=1 -v
+```
+
+PASS，无skip；测试主体1.04s、retention子测试0.02s、package 1.631s。没有mock替代真实PG，没有重跑完整make/Chrome/前端或全量数据库验收。
+
+专项通过后7.1恢复[x]，27/27。文档验证：change strict通过；`openspec validate --all --strict`通过（13 passed，0 failed）；`git diff --check`通过。等待 **Final Release Gate Re-review**；不archive、push或deploy。

@@ -88,7 +88,7 @@ Compatible consumers：Control内置generated client、Topology read adapter/UI�
 | Matrix | implementation | fixture / assertion reference | command/result reference |
 | --- | --- | --- | --- |
 | D1/D2 | H | cross_node_duplicate_ownership_read_model_test.go:26,101，A/B ACTIVE与absence后RESOLVED/current移除 | planning Commands实际PG Store组，PASS |
-| D3/D4/D5/D6 | H | 同文件128/192，空current、absence/degraded evidence、去重、retention后新repo仍历史可见 | 同Store组PASS |
+| D3/D4/D5/D6 | H | retention子测试对固定targetOccurrenceID按A/B分别精确匹配1次，status/account/environment一致；DB count(target occurrence_nodes)=0，A absence/B degraded两条NULL poll evidence保留；新Repository读取。D4仍由独立去重/分页子测试验证 | 本次真实PG历史专项PASS（package 1.631s）；精确UUID/输出见planning-validation P2复验 |
 | D7 | H/W | 同文件225；topology_http_integration_test.go:132；e2e/topology.spec.ts:33,52，status/node绑定cursor和独立分页 | PG Store/API及Chrome既有PASS |
 | P1/P2/P3/P6；P-READ A/B/C/F/G/H | P/W | account_inventory_provider_state_schema_integration_test.go:146,195；topology_http_integration_test.go:112；TopologyView.test.tsx:62，零account、缺state、并集、fresh/stale与health组合、双时间 | PG Store/API与组件、Chrome既有PASS |
 | P4；P-READ E | P/W | provider rollback test:13；topology_http_integration_test.go:156；TopologyView.test.tsx:97，函数缺失/error/deadline→503、不返回空集、可重试 | PG Store/API、组件、Chrome既有PASS |
@@ -103,7 +103,7 @@ Compatible consumers：Control内置generated client、Topology read adapter/UI�
 | R1/R4 | W | e2e/topology.spec.ts五步骤；TopologyView.test.tsx:33,75,87,97,107,119，GET-only、UUID、乱序、401、503、四态、桌面/390px | 组件与Chrome既有PASS，截图已人工审查 |
 | R3/R5 | 全change | Final Review APPROVED；本地consumer清点及本文件，原make test build/strict/diff记录 | 原完整验收PASS；本轮仅文档strict/diff，未发布 |
 
-各行的具体go/npm命令、fixture类型、执行结果与耗时保留在planning-validation.md Commands and results。此次只补引用与消费者边界，没有把synthetic HTTP/浏览器fixture写成生产服务验收，没有以测试skip代替真实PG结果。没有发现需重新开发或补跑业务测试的证据缺口。
+各行的具体go/npm命令、fixture类型、执行结果与耗时保留在planning-validation.md Commands and results。此次只补引用与消费者边界，没有把synthetic HTTP/浏览器fixture写成生产服务验收，没有以测试skip代替真实PG结果。此前OR断言证据缺口已由本次精确target断言及真实PG专项复验补齐；没有修改生产SQL/API。
 
 ## Recommended release sequence (not executed)
 
@@ -121,3 +121,12 @@ Compatible consumers：Control内置generated client、Topology read adapter/UI�
 ## Documentation validation
 
 在Control仓库内执行`openspec validate add-node-centric-topology-ui --type change --strict --no-interactive`和`git diff --check`均PASS；提交前额外运行`git diff --cached --check`覆盖新增文件。未重复执行业务测试。
+
+
+## P2 re-review evidence
+
+7.1在Final Release Gate Review后曾重新打开为26/27；1.3保持[x]。本次不再接受“original或target任一个返回”：A history和B history必须各自包含同一个target `74a171ca-646e-4b4e-ac41-91096f4c5f83`恰好一次，并匹配`RESOLVED / openai:retained@example.invalid / read-model-env`。直接DB断言该target current membership count=0，返回affected_nodes也为空；A absence和B degraded的NULL source_poll_run_id evidence共2条，新Repository读取仍可见。original occurrence另行断言，不能替代target。
+
+保持原retention后状态fixture，没有改为owner-only或删除NULL条件；该fixture直接构造NULL poll reference与空current最终状态，不冒充执行retention清理任务或target membership删除流程。有界limit50且HasMore=false，未扩大成无界limit。
+
+`go test ./internal/store -run 'TestCrossNodeDuplicateOwnershipOccurrenceReadModel' -count=1 -v`在真实隔离PostgreSQL上PASS（package 1.631s，无skip）；A/B各exact_matches=1，current_membership=0，retained_null_poll_evidence=2。完整运行UUID、fixture和断言结果见planning-validation.md末尾P2复验记录。7.1恢复[x]，27/27；等待 **Final Release Gate Re-review**，不archive/push/deploy。

@@ -48,4 +48,4 @@
 
 本change保持0 persistence migration；P-READ 允许一个最小 additive readonly query-access migration。实施已获授权；验收结果见planning-validation.md，实现按用户授权分批提交，发布尚未执行。
 
-Release Gate本地检查依据见[release-compatibility.md](release-compatibility.md)：用户指定当前父目录覆盖相关项目，全部本地consumer枚举完成，无C/D类consumer；原验收证据已对账，27/27。等待Node-centric Topology Final Release Gate Review，不archive。
+Release Gate本地检查依据见[release-compatibility.md](release-compatibility.md)：用户指定当前父目录覆盖相关项目，全部本地consumer枚举完成，无C/D类consumer；历史retention精确断言专项通过，证据更新完成，恢复27/27。等待Final Release Gate Re-review，不archive。
