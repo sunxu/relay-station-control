@@ -16,7 +16,7 @@ Control SHALL 默认关闭 Directory runtime；显式启用后由产品进程运
 - **WHEN** Control 在 claim 后重启，或两个进程处理相同槽
 - **THEN** 复用既有唯一槽和 fencing 规则，仅合法持有者可 finalize，不创建并行状态机或重复成功观测
 
-#### Scenario: 单次调度遍历与多Gateway进度
+#### Scenario: 单次调度遍历与合成工作项进度
 - **WHEN** runtime先执行ReconcileTick再执行WorkOnce，列表前项缓慢或失败，后项合法
 - **THEN** 通过每项RunGatewayOnce中的共同ScheduleCurrent调度，不额外执行ScheduleTick；后项继续处理并使用轮到时的DB当前槽，同槽不重复、不回填历史，取消和既有预算保持不变
 
@@ -78,21 +78,33 @@ HTTP明文传输以及HTTPS不认证服务端的事实 MUST 记录在Runbook。T
 - **WHEN** 父context取消、失败收尾超过5s或lease已失效
 - **THEN** 有界返回且不启动脱离停机的后台任务；未确认状态由原lease/reconciler恢复
 
-### Requirement: 未配置Gateway SHALL 不创建Directory run且不阻断其他Gateway
+### Requirement: 未配置Gateway SHALL 不创建Directory run且不阻断有序工作项
 
 所有ScheduleCurrent入口 MUST 在与首次补填共用的Gateway行锁内检查reader_secret_ref；NULL SHALL 返回no-work且不创建run、不解析Secret、不发请求。非NULL引用的Secret或认证故障 MUST 走正常durable failure，不得归类为未配置。单Gateway失败不得终止其他Gateway遍历；父context取消或共享DB不可用可以结束本轮。历史NULL run MUST 保留并由既有reconciler处理，不绕过首次补填的零历史限制。
 
-#### Scenario: 未配置A与已配置B
-- **WHEN** A的UUID排在B之前，A reference为NULL，B已配置合法，runtime跨多个tick运行
-- **THEN** A的run数始终为0且无请求，B正常成功采集；A之后仍可首次补填并从当前槽开始，不回填历史
+#### Scenario: 合成未配置A与已配置B
+- **WHEN** 合成有序工作项中A排在B之前，A返回NULL对应no-work，B返回成功；真实单Gateway PG分别执行NULL及已配置fixture
+- **THEN** 合成遍历继续处理B；真实PG证明NULL零run/零请求且之后仍可首次补填，已配置正常成功并从当前槽开始、不回填历史；不要求或允许同库登记两个Gateway
 
 #### Scenario: 首次补填与调度竞争
 - **WHEN** NULL Gateway的调度和registrar补填并发，分别控制两个行锁获取顺序
 - **THEN** 调度先时无run且补填成功；补填先时调度正常建run；不存在NULL reference新run
 
 #### Scenario: 已配置但Secret失败
-- **WHEN** A引用非NULL但文件缺失或token错误，B合法
-- **THEN** A保留durable失败证据且不刷新freshness，B仍完成采集
+- **WHEN** 合成工作项A返回凭据失败，B合法；真实单Gateway PG另外执行文件缺失/token错误fixture
+- **THEN** 合成遍历继续处理B；真实PG证明非NULL故障保留durable失败证据且不刷新freshness
+
+### Requirement: Directory runtime SHALL 通过受限有效lease读取目标
+
+Control runtime MUST 通过SECURITY DEFINER只读函数获取instance_id、management_endpoint和opaque reader_secret_ref，且仅在run/Gateway/fencing匹配、running、lease未过期及reference非NULL时返回。函数 MUST STABLE、固定search_path、migrator owner，只有runtime可EXECUTE。runtime MUST NOT 获得reader_secret_ref直接SELECT；数据只供采集及Secret解析。共同调度 SHALL 使用已有reader_secret_configured列判断NULL等价条件。
+
+#### Scenario: 有效与无效lease
+- **WHEN** runtime分别以有效、错误Gateway/token、过期或terminal run调用目标函数
+- **THEN** 只有有效lease返回目标；其他调用零行，不能解析或发送Secret
+
+#### Scenario: 直接读取和越权调用
+- **WHEN** runtime直接SELECT reader_secret_ref，或PUBLIC/registrar角色调用函数
+- **THEN** permission denied；既有列级读取权限不扩大
 
 ## MODIFIED Requirements
 

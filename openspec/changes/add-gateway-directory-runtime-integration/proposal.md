@@ -35,3 +35,5 @@ OpenAPI、generated Go/TS、UI 与 Binding HTTP identity contract 无变更；Ac
 精简范围：仅enabled与secret mapping两项运行配置；不新增HTTP开关、origin白名单、自定义CA配置、endpoint编辑、通用transport factory或全表锁。权限、原子审计、恢复、精度和数据面隔离验收保留。
 
 实施精简：runtime仅ReconcileTick→WorkOnce，复用每项内已有调度；Node使用标准拨号和原专用transport；补填仅SQL模板；复用测试fixtures与统一Runbook交付。能力和验收范围不缩减。
+
+真实runtime验收补充：同一最小migration提供有效run/fencing限定的目标只读函数，补足opaque reader reference安全读取；不扩大直接SELECT权限。

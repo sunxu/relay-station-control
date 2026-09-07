@@ -101,7 +101,7 @@ Node旧配置`CONTROL_CLIPROXYAPI_MANAGEMENT_DNS`、`CONTROL_CLIPROXYAPI_MANAGEM
 
 ## Implementation simplification
 
-本次精简属于当前change，不新增能力或独立change。调度在每个Gateway实际轮到时使用DB当前槽，先reconcile再work；不预先创建整个列表的run，不回填等待期间错过的槽。180s槽、540s freshness、retry deadline与每个attempt预算不变；5s是循环唤醒频率，不保证整个列表每5s完成。保持串行处理和取消语义，不新增队列、并发池或第二套调度器。验收使用多个Gateway及慢/失败的前置Gateway，证明后续Gateway仍被处理、调度按各自DB当前槽、同槽不重复，不能用一次全局5s context截断后续Gateway。
+本次精简属于当前change，不新增能力或独立change。调度在每个Gateway实际轮到时使用DB当前槽，先reconcile再work；不预先创建整个列表的run，不回填等待期间错过的槽。180s槽、540s freshness、retry deadline与每个attempt预算不变；5s是循环唤醒频率，不保证整个列表每5s完成。保持串行处理和取消语义，不新增队列、并发池或第二套调度器。用户接受的验收组织：既有数据库继续只允许单Gateway。A/B及慢/失败前项的有序遍历采用调用产品遍历函数的合成fixture，证明后项继续及父取消生效；NULL no-work、失败持久化、补填竞争、当前DB槽、同槽去重、超时与恢复分别由真实单Gateway PostgreSQL/进程fixture证明。两层证据联合覆盖，不宣称同库支持多个Gateway；不为测试删除singleton约束或新增多Gateway数据模型。不能用一次全局5s context截断后续项。
 
 Node直接复用标准net.Dialer和现有专用http.Transport，删除已无用途的目标策略、DNS筛选/IP复核与CA加载实现；保留URL结构解析、固定路径及错误脱敏。仅保留现有测试实际需要的窄拨号注入点，不新增通用transport factory、共享客户端框架或空壳策略层。Directory与Node分别修改原transport即可。
 
@@ -110,3 +110,13 @@ Node直接复用标准net.Dialer和现有专用http.Transport，删除已无用�
 复用已有transport与Directory PostgreSQL fixtures；同一fixture/命令可支持多个验收ID，逐项保留独立断言及结果引用。HTTP/HTTPS可参数化共用测试流程，不重复搭建整套环境；不能省略两种协议、异常证书、超时、并发、恢复及精度验收。项目要求的make test build和相关真实PG/进程验收保留。
 
 部署配置、Node旧变量退役、补填步骤、回滚和运行限制统一在一次Control/ops Runbook更新中交付；各任务引用同一资料，不复制多份证据。
+
+## Runtime target read access correction
+
+真实runtime-role验收发现gateway_instances只授予reader_secret_configured等安全列的SELECT，并未授予reader_secret_ref；此前GetGatewayDirectoryReadTarget直接SELECT不能运行。用户批准在同一个最小additive migration中增加control_query_gateway_directory_target_v1(target_run_id uuid, target_gateway_id uuid, target_fencing_token uuid)。SECURITY DEFINER、STABLE、固定pg_catalog search_path、全限定表名、owner=migrator、撤销PUBLIC/registrar EXECUTE，仅runtime执行。仅匹配Gateway且run为running、fencing有效、lease在statement_timestamp时未过期、reference非NULL时返回instance_id/management_endpoint/opaque reader_secret_ref，否则零行。返回值仅进入SecretResolver，不进入API、日志或指标。
+
+不增加reader_secret_ref直接SELECT，不使用owner连接或原始SQL绕过。共同调度在Gateway行锁中使用已有可读generated reader_secret_configured作为NULL判断的等价条件。Down删除新增target read function；原补填函数及audit历史兼容回滚契约保持。新增真实PG断言：有效lease能读取；错误Gateway/token、过期/terminal run无结果；runtime直接SELECT reference、PUBLIC/registrar调用函数仍拒绝。
+
+## Accepted acceptance organization
+
+用户已接受保留单Gateway模型并将A/B遍历用合成测试验证。R5–R7中的A/B表示有序工作项的测试输入，不是同一数据库可登记两个Gateway的产品能力。真实PG继续验证NULL、非NULL凭据失败、当前槽/不回填、并发与恢复；调用产品私有遍历函数的合成测试验证前项no-work、durable failure、error或缓慢完成时后项继续，以及父取消时停止。只允许为复用该遍历添加私有函数接缝，不新增公开API、配置、调度器或持久状态。
