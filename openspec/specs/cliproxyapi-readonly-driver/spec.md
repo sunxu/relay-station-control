@@ -1,7 +1,7 @@
 # cliproxyapi-readonly-driver Specification
 
 ## Purpose
-为 Control 提供只读、固定路径、运行时 Secret 隔离且抵抗 SSRF/DNS 重绑定的 CLIProxyAPI Node Driver，并将官方 auth-files 响应转换为有界、脱敏、可供后续持久采集使用的内存观察结果。
+为 Control 提供只读、固定路径、运行时 Secret 隔离的 CLIProxyAPI Node Driver，管理出站直接支持 HTTP/HTTPS 且不执行目标许可或 HTTPS 证书验证，并将官方 auth-files 响应转换为有界、脱敏、可供持久采集使用的内存观察结果。
 
 ## Requirements
 
@@ -39,27 +39,31 @@ CLIProxyAPI Driver MUST 只把数据库中的 opaque Secret 引用交给受控 r
 
 ### Requirement: 每次连接都执行目标 allowlist 与 SSRF 防护
 
-CLIProxyAPI Driver SHALL 在每次连接前重新验证 endpoint scheme/host、DNS allowlist、全部解析 IP 和实际拨号 IP。Driver MUST 拒绝 loopback、link-local、unspecified、multicast、云元数据和任何未授权网段；`http` MUST 只允许显式隔离 management CIDR，`https` MUST 使用原 hostname 完成证书验证。
-
-#### Scenario: 授权 HTTPS hostname
-- **WHEN** hostname 匹配 allowlist，全部 DNS 结果属于授权 CIDR，且证书对原 hostname 有效
-- **THEN** Driver 只拨号本次已验证的 IP，并使用原 hostname 作为 TLS ServerName
-
-#### Scenario: DNS 结果混合或发生重绑定
-- **WHEN** 任一解析结果越出授权 CIDR，或连接时目标变化为未授权 IP
-- **THEN** 整个调用 fail closed，Management Key 不发送，Driver 不选择其余某个地址绕过失败
-
-#### Scenario: 环回、链路本地或云元数据目标
-- **WHEN** endpoint 或 DNS 结果指向被禁止的特殊地址，即使宽 CIDR 配置包含该地址
-- **THEN** Driver 在拨号前拒绝调用且不记录目标地址
+原目标allowlist与SSRF防护要求 SHALL 被统一管理出站契约替代：CLIProxyAPI Driver直接允许HTTP/HTTPS，不检查DNS/IP/CIDR许可、特殊地址类别或DNS重绑定。HTTPS MUST 不验证证书链、有效期或主机名。仍解析请求URL并使用普通DNS/拨号；固定方法、路径、Secret和响应契约不变。
 
 #### Scenario: HTTP 不在隔离管理网
-- **WHEN** `http` endpoint 的解析 IP 不属于显式 plain-HTTP management CIDR
-- **THEN** Driver 拒绝明文发送 Management Key，不自动升级、降级或回退到其他协议
+- **WHEN** 合法HTTP endpoint未出现在任何列表且返回合法响应
+- **THEN** Driver正常执行对应观察，不因目标许可拒绝
+
+#### Scenario: DNS 结果混合或发生重绑定
+- **WHEN** 合成本地fixture使目标为loopback/link-local类别或DNS结果变化
+- **THEN** Driver不因地址类别、混合DNS结果或重绑定检查拒绝，按普通连接结果处理；测试不得访问真实元数据服务
+
+#### Scenario: 授权 HTTPS hostname
+- **WHEN** 已登记HTTPS hostname可连接并返回合法响应，无论是否匹配旧allowlist
+- **THEN** Driver正常完成观察，不检查目标许可或服务端证书
+
+#### Scenario: 环回、链路本地或云元数据目标
+- **WHEN** endpoint或DNS结果在合成fixture中属于上述地址类别
+- **THEN** Driver不按地址类别阻止连接，按普通网络结果处理，不在验收中访问真实云元数据服务
+
+#### Scenario: 不可信HTTPS证书
+- **WHEN** 目标使用自签名、未知CA、过期或hostname不匹配证书且TLS握手和响应合法
+- **THEN** Driver观察成功，不因证书校验拒绝
 
 #### Scenario: 网络或证书恢复
-- **WHEN** 前一次调用因 DNS、网络或 TLS 失败，随后配置外部状态恢复
-- **THEN** 下一次显式调用重新执行全套校验并可成功，不依赖永久缓存或进程重启
+- **WHEN** DNS、连接或TLS握手失败后外部服务恢复
+- **THEN** 后续调用可恢复，失败期间不产生成功观察，不自动改用HTTP
 
 ### Requirement: Driver 只允许两个固定 GET 且不使用代理或重定向
 
@@ -67,7 +71,7 @@ CLIProxyAPI Driver MUST 只生成对已登记 base endpoint 下 `/healthz` 和 `
 
 #### Scenario: 环境配置了本地代理
 - **WHEN** Control 进程存在 uppercase 或 lowercase HTTP(S)/ALL proxy 环境变量
-- **THEN** Driver 仍直接连接已验证 management IP，Management Key 和响应不经过代理
+- **THEN** Driver 仍直接连接management endpoint解析出的IP，Management Key 和响应不经过代理
 
 #### Scenario: Node 返回重定向
 - **WHEN** 任一固定路径返回 3xx 和不同或相同目标 Location
@@ -166,7 +170,7 @@ CLIProxyAPI Driver SHALL 使用调用时提供的不可变 Provider 策略快照
 Control SHALL 只以固定 node type、operation、result/reason 记录 Driver 聚合指标和结构化日志。instance ID、endpoint、hostname/IP、provider、email、版本/提交、Secret 引用、Management Key、请求/响应 header、原始错误和 body MUST NOT 成为指标标签、日志字段、Trace 属性、审计详情或测试证据。
 
 #### Scenario: 成功和失败观测
-- **WHEN** Probe 或 inventory 调用成功、超时、DNS 拒绝、TLS 失败、HTTP 失败或契约无效
+- **WHEN** Probe 或 inventory 调用成功、超时、DNS 失败、TLS 失败、HTTP 失败或契约无效
 - **THEN** 指标和日志只包含注册的固定枚举，不产生逐 Node、逐 Provider 或逐账号序列
 
 #### Scenario: 注入敏感 canary
@@ -175,7 +179,7 @@ Control SHALL 只以固定 node type、operation、result/reason 记录 Driver �
 
 #### Scenario: 观测后端失败
 - **WHEN** 日志或指标输出失败
-- **THEN** Driver 的方法/路径、Secret、SSRF、TLS、响应限制和契约判定保持 fail closed，不以观测失败为由放宽安全边界
+- **THEN** Driver 的方法/路径、Secret、固定方法/路径、响应限制和契约判定保持原有约束，传输采用统一管理出站策略，不以观测失败为由放宽安全边界
 
 ### Requirement: Driver 不持久化、不自动调度且不影响数据面
 
@@ -195,4 +199,4 @@ Control SHALL 只以固定 node type、operation、result/reason 记录 Driver �
 
 #### Scenario: 应用回滚与恢复
 - **WHEN** Control 回滚到不包含 Driver 的版本后再升级
-- **THEN** 数据库和 Node 无需迁移或修复；恢复相同安全配置后下一次显式调用重新验证 Secret、DNS、IP 和 TLS
+- **THEN** 数据库和 Node 无需迁移或修复；恢复对应版本配置后下一次显式调用重新解析Secret并发起请求；新版本不恢复旧DNS/IP许可或证书检查
