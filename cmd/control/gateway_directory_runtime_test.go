@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,6 +85,51 @@ func TestGatewayDirectoryRuntimeUsesIndependentSecretMappingAndMetrics(t *testin
 		value := description.String()
 		if strings.Contains(value, "instance_id") || strings.Contains(value, "endpoint") || strings.Contains(value, "secret") {
 			t.Fatalf("directory metric has sensitive or identity label: %s", value)
+		}
+	}
+}
+
+type gatewayDirectoryRuntimeErrorService struct {
+	reconcileErr error
+	workErr      error
+}
+
+func (service gatewayDirectoryRuntimeErrorService) ReconcileTick(context.Context) ([]controlstore.GatewayDirectoryReconcileResult, error) {
+	return nil, service.reconcileErr
+}
+
+func (service gatewayDirectoryRuntimeErrorService) WorkOnce(context.Context) ([]controlstore.GatewayDirectoryWorkResult, error) {
+	return nil, service.workErr
+}
+
+func TestGatewayDirectoryRuntimeErrorsUseFixedRedactedLogFields(t *testing.T) {
+	const (
+		endpointCanary  = "https://endpoint-canary.invalid/private"
+		referenceCanary = "file://reference-canary/reader"
+		tokenCanary     = "token-canary-value"
+		rawErrorCanary  = "raw-error-canary"
+	)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	runtime := gatewayDirectoryRuntime{
+		enabled: true,
+		service: gatewayDirectoryRuntimeErrorService{
+			reconcileErr: errors.New("reconcile failed " + endpointCanary + " " + referenceCanary + " " + tokenCanary + " " + rawErrorCanary),
+			workErr:      errors.New("work failed " + endpointCanary + " " + referenceCanary + " " + tokenCanary + " " + rawErrorCanary),
+		},
+	}
+
+	runtime.tick(context.Background(), logger)
+	output := logs.String()
+	if !strings.Contains(output, `"reason":"reconcile_failed"`) || !strings.Contains(output, `"reason":"work_failed"`) {
+		t.Fatalf("missing fixed runtime failure classifications: %s", output)
+	}
+	if !strings.Contains(output, `"component":"gateway_directory"`) {
+		t.Fatalf("missing fixed component classification: %s", output)
+	}
+	for _, canary := range []string{endpointCanary, referenceCanary, tokenCanary, rawErrorCanary} {
+		if strings.Contains(output, canary) {
+			t.Fatalf("runtime log leaked sensitive canary %q: %s", canary, output)
 		}
 	}
 }
