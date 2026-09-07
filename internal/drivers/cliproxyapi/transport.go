@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -56,11 +54,6 @@ func (e *RequestError) Error() string {
 	return "cliproxyapi request failed: " + string(e.Operation) + ": " + string(e.Reason)
 }
 
-// Resolver is intentionally the narrow subset used by the secure dialer.
-type Resolver interface {
-	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
-}
-
 // ContextDialer is the narrow net.Dialer-compatible interface used after DNS
 // and CIDR authorization. Implementations used in production must not resolve
 // the supplied address again; safeTransport always supplies an IP literal.
@@ -68,11 +61,7 @@ type ContextDialer interface {
 	DialContext(context.Context, string, string) (net.Conn, error)
 }
 
-type transportOptions struct {
-	RootCAs  *x509.CertPool
-	Resolver Resolver
-	Dialer   ContextDialer
-}
+type transportOptions struct{ Dialer ContextDialer }
 
 // httpResponse is the minimal response projection required by the bounded
 // parsers. Request metadata, arbitrary response headers, cookies, and the URL
@@ -88,8 +77,6 @@ type httpResponse struct {
 type safeTransport struct {
 	endpointRaw    string
 	endpoint       validatedEndpoint
-	policy         targetPolicy
-	resolver       Resolver
 	dialer         ContextDialer
 	connectTimeout time.Duration
 	healthLimit    int64
@@ -97,31 +84,17 @@ type safeTransport struct {
 	client         *http.Client
 }
 
-type defaultResolver struct{}
-
-func (defaultResolver) LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error) {
-	return net.DefaultResolver.LookupNetIP(ctx, network, host)
-}
-
 // newSecureTransport performs startup validation and constructs an isolated HTTP
 // stack. It never consults proxy environment variables and never shares a
 // cookie jar or the process-wide default transport.
 func newSecureTransport(endpoint string, config rootdrivers.ValidatedManagementConfig, options transportOptions) (*safeTransport, error) {
-	policy, err := targetPolicyFromConfig(config)
-	if err != nil {
-		return nil, err
-	}
-	validated, err := validateEndpoint(endpoint, policy)
+	validated, err := validateEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}
 	connectTimeout, requestTimeout, err := validatedTimeouts(config.ConnectTimeout, config.RequestTimeout)
 	if err != nil {
 		return nil, err
-	}
-	resolver := options.Resolver
-	if resolver == nil {
-		resolver = defaultResolver{}
 	}
 	dialer := options.Dialer
 	if dialer == nil {
@@ -130,8 +103,6 @@ func newSecureTransport(endpoint string, config rootdrivers.ValidatedManagementC
 	result := &safeTransport{
 		endpointRaw:    endpoint,
 		endpoint:       validated,
-		policy:         policy,
-		resolver:       resolver,
 		dialer:         dialer,
 		connectTimeout: connectTimeout,
 		healthLimit:    config.MaxHealthResponseBytes,
@@ -144,9 +115,8 @@ func newSecureTransport(endpoint string, config rootdrivers.ValidatedManagementC
 		result.inventoryLimit = rootdrivers.DefaultInventoryResponseBytes
 	}
 	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		RootCAs:    options.RootCAs,
-		ServerName: validated.hostname,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, // management transport intentionally does not authenticate the peer
 	}
 	transport := &http.Transport{
 		Proxy:                  nil,
@@ -208,7 +178,7 @@ func (t *safeTransport) get(ctx context.Context, operation Operation, management
 	// The value is immutable inside safeTransport, but doing this again keeps the
 	// security check adjacent to request construction and prevents future config
 	// reload work from accidentally bypassing it.
-	endpoint, err := validateEndpoint(t.endpointRaw, t.policy)
+	endpoint, err := validateEndpoint(t.endpointRaw)
 	if err != nil || endpoint != t.endpoint {
 		return nil, &RequestError{Operation: operation, Reason: FailureTargetRejected}
 	}
@@ -300,14 +270,6 @@ func classifyRequestError(operation Operation, ctx context.Context, err error) e
 	if errors.As(err, &failure) {
 		return &RequestError{Operation: operation, Reason: failure.reason}
 	}
-	var certificateVerification *tls.CertificateVerificationError
-	var unknownAuthority x509.UnknownAuthorityError
-	var hostnameError x509.HostnameError
-	var certificateInvalid x509.CertificateInvalidError
-	if errors.As(err, &certificateVerification) || errors.As(err, &unknownAuthority) ||
-		errors.As(err, &hostnameError) || errors.As(err, &certificateInvalid) {
-		return &RequestError{Operation: operation, Reason: FailureTLSRejected}
-	}
 	return &RequestError{Operation: operation, Reason: FailureNetworkUnavailable}
 }
 
@@ -318,40 +280,25 @@ type dialFailure struct {
 func (e *dialFailure) Error() string { return "secure dial failed: " + string(e.reason) }
 
 func (t *safeTransport) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	endpoint, err := validateEndpoint(t.endpointRaw, t.policy)
-	if err != nil || endpoint != t.endpoint || (network != "tcp" && network != "tcp4" && network != "tcp6") {
+	endpoint, err := validateEndpoint(t.endpointRaw)
+	if err != nil || endpoint != t.endpoint || network != "tcp" {
 		return nil, &dialFailure{reason: FailureTargetRejected}
 	}
 	host, port, err := net.SplitHostPort(address)
-	if err != nil || port != endpoint.port || !sameEndpointHost(host, endpoint) {
+	if err != nil || port != endpoint.port || !strings.EqualFold(host, endpoint.hostname) {
 		return nil, &dialFailure{reason: FailureTargetRejected}
 	}
 	connectContext, cancel := context.WithTimeout(ctx, t.connectTimeout)
 	defer cancel()
-	addresses, failure := t.resolveAndAuthorize(connectContext, endpoint)
-	if failure != nil {
-		return nil, failure
-	}
-	for _, allowed := range addresses {
-		connection, dialErr := t.dialer.DialContext(connectContext, "tcp", net.JoinHostPort(allowed.String(), port))
-		if dialErr != nil {
-			if connectContext.Err() != nil {
-				return nil, &dialFailure{reason: timeoutOrCancelled(connectContext)}
-			}
-			if isTimeoutError(dialErr) {
-				return nil, &dialFailure{reason: FailureTimeout}
-			}
-			continue
-		}
-		remote, ok := remoteAddress(connection.RemoteAddr())
-		if !ok || remote.Unmap() != allowed.Unmap() || !endpointAddressAllowed(endpoint, t.policy, remote) {
-			_ = connection.Close()
-			return nil, &dialFailure{reason: FailureTargetRejected}
-		}
+	connection, dialErr := t.dialer.DialContext(connectContext, "tcp", net.JoinHostPort(host, port))
+	if dialErr == nil {
 		return connection, nil
 	}
 	if connectContext.Err() != nil {
 		return nil, &dialFailure{reason: timeoutOrCancelled(connectContext)}
+	}
+	if isTimeoutError(dialErr) {
+		return nil, &dialFailure{reason: FailureTimeout}
 	}
 	return nil, &dialFailure{reason: FailureNetworkUnavailable}
 }
@@ -363,73 +310,7 @@ func timeoutOrCancelled(ctx context.Context) FailureReason {
 	return FailureTimeout
 }
 
-func sameEndpointHost(host string, endpoint validatedEndpoint) bool {
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return endpoint.ip.IsValid() && addr.Unmap() == endpoint.ip
-	}
-	normalized, ok := normalizeDNSName(host)
-	return ok && !endpoint.ip.IsValid() && normalized == endpoint.hostname
-}
-
-func (t *safeTransport) resolveAndAuthorize(ctx context.Context, endpoint validatedEndpoint) ([]netip.Addr, *dialFailure) {
-	var addresses []netip.Addr
-	if endpoint.ip.IsValid() {
-		addresses = []netip.Addr{endpoint.ip}
-	} else {
-		resolved, err := t.resolver.LookupNetIP(ctx, "ip", endpoint.hostname)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, &dialFailure{reason: timeoutOrCancelled(ctx)}
-			}
-			if isTimeoutError(err) {
-				return nil, &dialFailure{reason: FailureTimeout}
-			}
-			return nil, &dialFailure{reason: FailureDNSRejected}
-		}
-		addresses = resolved
-	}
-	if len(addresses) == 0 {
-		return nil, &dialFailure{reason: FailureDNSRejected}
-	}
-	unique := make([]netip.Addr, 0, len(addresses))
-	seen := make(map[netip.Addr]struct{}, len(addresses))
-	for _, addr := range addresses {
-		if addr.Is4In6() || addr.Zone() != "" {
-			return nil, &dialFailure{reason: FailureDNSRejected}
-		}
-		addr = addr.Unmap()
-		if !endpointAddressAllowed(endpoint, t.policy, addr) {
-			return nil, &dialFailure{reason: FailureTargetRejected}
-		}
-		if _, exists := seen[addr]; !exists {
-			seen[addr] = struct{}{}
-			unique = append(unique, addr)
-		}
-	}
-	return unique, nil
-}
-
 func isTimeoutError(err error) bool {
 	var networkError net.Error
 	return errors.As(err, &networkError) && networkError.Timeout()
-}
-
-func endpointAddressAllowed(endpoint validatedEndpoint, policy targetPolicy, addr netip.Addr) bool {
-	return policy.addressAllowed(addr, endpoint.scheme == "http")
-}
-
-func remoteAddress(address net.Addr) (netip.Addr, bool) {
-	if address == nil {
-		return netip.Addr{}, false
-	}
-	if tcp, ok := address.(*net.TCPAddr); ok {
-		addr, ok := netip.AddrFromSlice(tcp.IP)
-		return addr.Unmap(), ok
-	}
-	host, _, err := net.SplitHostPort(address.String())
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	addr, err := netip.ParseAddr(strings.Trim(host, "[]"))
-	return addr.Unmap(), err == nil
 }

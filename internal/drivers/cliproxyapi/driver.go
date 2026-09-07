@@ -2,7 +2,6 @@ package cliproxyapi
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"time"
@@ -17,7 +16,6 @@ import (
 type DriverConfig struct {
 	Management     drivers.ManagementConfig
 	SecretResolver drivers.SecretResolver
-	RootCAs        *x509.CertPool
 	Observer       *Observer
 	Now            func() time.Time
 }
@@ -26,8 +24,6 @@ type DriverConfig struct {
 type Driver struct {
 	management      drivers.ValidatedManagementConfig
 	secretResolver  drivers.SecretResolver
-	rootCAs         *x509.CertPool
-	resolver        Resolver
 	dialer          ContextDialer
 	healthBodyLimit int64
 	inventoryLimits InventoryLimits
@@ -54,31 +50,23 @@ func (*DriverError) Format(state fmt.State, _ rune) {
 }
 
 func NewDriver(configuration DriverConfig) (*Driver, error) {
-	return newDriver(configuration, nil, nil)
+	return newDriver(configuration, nil)
 }
 
-// newDriver is package-private so only same-package security tests can replace
-// DNS or dialing. Production callers cannot inject a dialer that lies about the
-// connected remote address.
-func newDriver(configuration DriverConfig, resolver Resolver, dialer ContextDialer) (*Driver, error) {
+// newDriver keeps synthetic dialing fixtures package-private. Production callers
+// use the standard network dialer.
+func newDriver(configuration DriverConfig, dialer ContextDialer) (*Driver, error) {
 	validated, err := configuration.Management.Validate()
 	if err != nil || configuration.SecretResolver == nil {
 		return nil, drivers.ErrInvalidManagementConfig
-	}
-	if _, err = targetPolicyFromConfig(validated); err != nil {
-		return nil, err
-	}
-	rootCAs := configuration.RootCAs
-	if rootCAs != nil {
-		rootCAs = rootCAs.Clone()
 	}
 	now := configuration.Now
 	if now == nil {
 		now = time.Now
 	}
 	return &Driver{
-		management: validated, secretResolver: configuration.SecretResolver, rootCAs: rootCAs,
-		resolver: resolver, dialer: dialer,
+		management: validated, secretResolver: configuration.SecretResolver,
+		dialer:          dialer,
 		healthBodyLimit: validated.MaxHealthResponseBytes,
 		inventoryLimits: InventoryLimits{
 			MaxBodyBytes: validated.MaxInventoryResponseBytes,
@@ -194,9 +182,7 @@ func (driver *Driver) ListAccountInventory(ctx context.Context, request drivers.
 
 func (driver *Driver) transport(endpoint string) (*safeTransport, error) {
 	return newSecureTransport(endpoint, driver.management, transportOptions{
-		RootCAs:  driver.rootCAs,
-		Resolver: driver.resolver,
-		Dialer:   driver.dialer,
+		Dialer: driver.dialer,
 	})
 }
 

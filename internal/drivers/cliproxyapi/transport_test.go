@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -162,8 +163,8 @@ func TestSecureTransportFixedGETNoProxyNoCookiesAndDNSPerConnection(t *testing.T
 	if requests.Load() != 2 || proxyRequests.Load() != 0 {
 		t.Fatalf("request counts: server=%d proxy=%d", requests.Load(), proxyRequests.Load())
 	}
-	if resolver.callCount() != 2 || dialer.callCount() != 2 {
-		t.Fatalf("each connection must re-resolve: dns=%d dial=%d", resolver.callCount(), dialer.callCount())
+	if resolver.callCount() != 0 || dialer.callCount() != 2 {
+		t.Fatalf("standard dial path counts: dns=%d dial=%d", resolver.callCount(), dialer.callCount())
 	}
 }
 
@@ -199,129 +200,29 @@ func TestSecureTransportRejectsEveryRedirectWithoutSecondRequest(t *testing.T) {
 	}
 }
 
-func TestSecureTransportDNSAuthorizationAndRebinding(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(response, `{"status":"ok"}`)
-	}))
-	defer server.Close()
-
-	t.Run("mixed result rejects before dialing", func(t *testing.T) {
-		resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{
-			authorizedTestIP, netip.MustParseAddr("203.0.113.99"),
-		}}}}
-		dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
-		transport := newHTTPTestTransport(t, server.Listener.Addr().String(), "", resolver, dialer)
-		_, err := transport.getHealth(context.Background())
-		assertRequestReason(t, err, FailureTargetRejected)
-		if dialer.callCount() != 0 {
-			t.Fatalf("mixed DNS result dialed %d times", dialer.callCount())
-		}
-	})
-
-	t.Run("empty result", func(t *testing.T) {
-		resolver := &sequenceResolver{results: []resolverResult{{}}}
-		dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
-		transport := newHTTPTestTransport(t, server.Listener.Addr().String(), "", resolver, dialer)
-		_, err := transport.getHealth(context.Background())
-		assertRequestReason(t, err, FailureDNSRejected)
-		if dialer.callCount() != 0 {
-			t.Fatal("empty DNS result reached dialer")
-		}
-	})
-
-	t.Run("next connection sees rebinding", func(t *testing.T) {
-		resolver := &sequenceResolver{results: []resolverResult{
-			{addresses: []netip.Addr{authorizedTestIP}},
-			{addresses: []netip.Addr{netip.MustParseAddr("169.254.169.254")}},
-		}}
-		dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
-		transport := newHTTPTestTransport(t, server.Listener.Addr().String(), "", resolver, dialer)
-		response, err := transport.getHealth(context.Background())
-		if err != nil {
-			t.Fatalf("first request: %v", err)
-		}
-		_ = response.Body.Close()
-		_, err = transport.getHealth(context.Background())
-		assertRequestReason(t, err, FailureTargetRejected)
-		if resolver.callCount() != 2 || dialer.callCount() != 1 {
-			t.Fatalf("rebind counts: dns=%d dial=%d", resolver.callCount(), dialer.callCount())
-		}
-	})
-
-	t.Run("actual dial address mismatch", func(t *testing.T) {
-		resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{authorizedTestIP}}}}
-		dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: netip.MustParseAddr("10.43.0.8")}
-		transport := newHTTPTestTransport(t, server.Listener.Addr().String(), "", resolver, dialer)
-		_, err := transport.getHealth(context.Background())
-		assertRequestReason(t, err, FailureTargetRejected)
-	})
-}
-
-func TestSecureTransportTLSHostnameCAExpiryAndRecovery(t *testing.T) {
-	validCertificate, roots := makeServerCertificate(t, "node.example.invalid", time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
-	var serverName string
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		serverName = request.TLS.ServerName
-		_, _ = io.WriteString(response, `{"status":"ok"}`)
-	}))
-	server.TLS = &tls.Config{Certificates: []tls.Certificate{validCertificate}, MinVersion: tls.VersionTLS12}
-	server.StartTLS()
-	defer server.Close()
-
-	config := mustManagementConfig(t, []string{"node.example.invalid", "wrong.example.invalid"}, []string{"10.42.0.0/16"}, nil)
-	newTLS := func(endpointHost string, pool *x509.CertPool, resolver *sequenceResolver) *safeTransport {
-		dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
-		transport, err := newSecureTransport("https://"+endpointHost+listenerPort(t, server.Listener.Addr().String()), config,
-			transportOptions{RootCAs: pool, Resolver: resolver, Dialer: dialer})
-		if err != nil {
-			t.Fatalf("new TLS transport: %v", err)
-		}
-		return transport
+func TestManagementTransportUnverifiedTLS(t *testing.T) {
+	for _, expired := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expired=%t", expired), func(t *testing.T) {
+			until := time.Now().Add(time.Hour)
+			if expired {
+				until = time.Now().Add(-time.Hour)
+			}
+			cert, _ := makeServerCertificate(t, "unrelated.invalid", time.Now().Add(-2*time.Hour), until)
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, `{"status":"ok"}`) }))
+			server.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+			server.StartTLS()
+			defer server.Close()
+			transport, err := newSecureTransport(server.URL, mustManagementConfig(t, nil, nil, nil), transportOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := transport.getHealth(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = response.Body.Close()
+		})
 	}
-
-	resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{authorizedTestIP}}}}
-	response, err := newTLS("node.example.invalid", roots, resolver).getHealth(context.Background())
-	if err != nil {
-		t.Fatalf("valid TLS: %v", err)
-	}
-	_ = response.Body.Close()
-	if serverName != "node.example.invalid" {
-		t.Fatalf("SNI=%q", serverName)
-	}
-
-	_, err = newTLS("wrong.example.invalid", roots, resolver).getHealth(context.Background())
-	assertRequestReason(t, err, FailureTLSRejected)
-	_, err = newTLS("node.example.invalid", x509.NewCertPool(), resolver).getHealth(context.Background())
-	assertRequestReason(t, err, FailureTLSRejected)
-
-	expiredCertificate, expiredRoots := makeServerCertificate(t, "node.example.invalid", time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
-	expired := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	expired.TLS = &tls.Config{Certificates: []tls.Certificate{expiredCertificate}, MinVersion: tls.VersionTLS12}
-	expired.StartTLS()
-	defer expired.Close()
-	expiredDialer := &mappedDialer{actual: expired.Listener.Addr().String(), advertised: authorizedTestIP}
-	expiredTransport, err := newSecureTransport("https://node.example.invalid"+listenerPort(t, expired.Listener.Addr().String()), config,
-		transportOptions{RootCAs: expiredRoots, Resolver: resolver, Dialer: expiredDialer})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = expiredTransport.getHealth(context.Background())
-	assertRequestReason(t, err, FailureTLSRejected)
-
-	// A prior DNS rejection creates no permanent deny cache. The next explicit
-	// request performs a fresh lookup and can recover.
-	recoveringResolver := &sequenceResolver{results: []resolverResult{
-		{addresses: []netip.Addr{netip.MustParseAddr("169.254.169.254")}},
-		{addresses: []netip.Addr{authorizedTestIP}},
-	}}
-	recovering := newTLS("node.example.invalid", roots, recoveringResolver)
-	_, err = recovering.getHealth(context.Background())
-	assertRequestReason(t, err, FailureTargetRejected)
-	response, err = recovering.getHealth(context.Background())
-	if err != nil {
-		t.Fatalf("recovered request: %v", err)
-	}
-	_ = response.Body.Close()
 }
 
 func TestSecureTransportTimeoutCancellationAndNoRetry(t *testing.T) {
@@ -329,41 +230,16 @@ func TestSecureTransportTimeoutCancellationAndNoRetry(t *testing.T) {
 		err := classifyRequestError(OperationHealth, context.Background(), timeoutTestError{})
 		assertRequestReason(t, err, FailureTimeout)
 	})
-	t.Run("resolver early network timeout", func(t *testing.T) {
-		resolver := &sequenceResolver{results: []resolverResult{{err: timeoutTestError{}}}}
-		dialer := &mappedDialer{advertised: authorizedTestIP}
-		transport := newCustomTimeoutTransport(t, resolver, dialer, time.Second, 2*time.Second)
-		_, err := transport.getHealth(context.Background())
-		assertRequestReason(t, err, FailureTimeout)
-		if resolver.callCount() != 1 || dialer.callCount() != 0 {
-			t.Fatalf("early DNS timeout counts: dns=%d dial=%d", resolver.callCount(), dialer.callCount())
-		}
-	})
 	t.Run("dialer early network timeout", func(t *testing.T) {
 		resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{authorizedTestIP}}}}
 		dialer := &immediateErrorDialer{err: timeoutTestError{}}
 		transport := newCustomTimeoutTransport(t, resolver, dialer, time.Second, 2*time.Second)
 		_, err := transport.getHealth(context.Background())
 		assertRequestReason(t, err, FailureTimeout)
-		if resolver.callCount() != 1 || dialer.calls.Load() != 1 {
+		if resolver.callCount() != 0 || dialer.calls.Load() != 1 {
 			t.Fatalf("early dial timeout counts: dns=%d dial=%d", resolver.callCount(), dialer.calls.Load())
 		}
 	})
-	t.Run("slow DNS", func(t *testing.T) {
-		resolver := blockingResolver{}
-		dialer := &mappedDialer{advertised: authorizedTestIP}
-		transport := newCustomTimeoutTransport(t, resolver, dialer, 100*time.Millisecond, time.Second)
-		started := time.Now()
-		_, err := transport.getHealth(context.Background())
-		assertRequestReason(t, err, FailureTimeout)
-		if elapsed := time.Since(started); elapsed > 750*time.Millisecond {
-			t.Fatalf("DNS timeout was not bounded: %v", elapsed)
-		}
-		if dialer.callCount() != 0 {
-			t.Fatal("slow DNS reached dialer")
-		}
-	})
-
 	t.Run("slow connect", func(t *testing.T) {
 		resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{authorizedTestIP}}}}
 		dialer := &mappedDialer{advertised: authorizedTestIP, wait: true}
@@ -441,23 +317,18 @@ func TestSecureTransportTimeoutCancellationAndNoRetry(t *testing.T) {
 
 func TestSecureTransportFixedFailureDoesNotLeakInputs(t *testing.T) {
 	const canary = "sensitive-canary-do-not-project"
-	resolver := &sequenceResolver{results: []resolverResult{{err: errors.New(canary)}}}
-	dialer := &mappedDialer{advertised: authorizedTestIP}
-	transport := newCustomTimeoutTransport(t, resolver, dialer, time.Second, 2*time.Second)
+	dialer := &immediateErrorDialer{err: errors.New(canary)}
+	transport := newCustomTimeoutTransport(t, nil, dialer, time.Second, 2*time.Second)
 	_, err := transport.getAccountInventory(context.Background(), canary)
-	assertRequestReason(t, err, FailureDNSRejected)
-	for _, forbidden := range []string{canary, "node.example.invalid", "10.42.0.8"} {
-		if strings.Contains(err.Error(), forbidden) {
-			t.Fatalf("error leaked %q: %v", forbidden, err)
+	assertRequestReason(t, err, FailureNetworkUnavailable)
+	for _, value := range []string{canary, "node.example.invalid"} {
+		if strings.Contains(err.Error(), value) {
+			t.Fatal("network error leaked sensitive data")
 		}
 	}
-	if dialer.callCount() != 0 {
-		t.Fatal("DNS failure reached dialer")
-	}
-
 	_, err = transport.get(context.Background(), Operation("delete"), canary)
 	assertRequestReason(t, err, FailureRequestRejected)
-	if dialer.callCount() != 0 {
+	if dialer.calls.Load() != 1 {
 		t.Fatal("invalid operation reached network")
 	}
 }
@@ -505,7 +376,7 @@ func newCustomTimeoutTransportWithServer(t *testing.T, actualAddress string, res
 	config.ConnectTimeout = connect
 	config.RequestTimeout = request
 	transport, err := newSecureTransport("http://node.example.invalid"+listenerPort(t, actualAddress)+basePath, config,
-		transportOptions{Resolver: resolver, Dialer: dialer})
+		transportOptions{Dialer: dialer})
 	if err != nil {
 		t.Fatalf("new transport: %v", err)
 	}
@@ -619,3 +490,7 @@ type stringAddress string
 
 func (a stringAddress) Network() string { return "tcp" }
 func (a stringAddress) String() string  { return string(a) }
+
+type Resolver interface {
+	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
+}

@@ -64,7 +64,7 @@ func NewClient(managementOrigin string, secretResolver rootdrivers.SecretResolve
 		DisableKeepAlives:  true,
 		DisableCompression: true,
 		MaxConnsPerHost:    1,
-		TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}, // Management outbound contract: deployment owns target trust.
 	}
 	return &Client{
 		baseURL: baseURL,
@@ -116,6 +116,9 @@ func (c *Client) Fetch(ctx context.Context, reference rootdrivers.SecretReferenc
 		case httpResponse.StatusCode == http.StatusOK:
 			parsed, fingerprintValue, parseErr := parseDirectoryResponse(httpResponse.Body, DefaultBodyLimitBytes)
 			if parseErr != nil {
+				if ctx.Err() != nil {
+					return classifyRequestError(ctx, ctx.Err())
+				}
 				return parseErr
 			}
 			response = parsed
@@ -152,7 +155,7 @@ func validateManagementOrigin(raw string) (*url.URL, error) {
 		parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
 	}
-	if strings.ToLower(parsed.Scheme) != "https" {
+	if scheme := strings.ToLower(parsed.Scheme); scheme != "https" && scheme != "http" {
 		return nil, &FetchError{Reason: rootdrivers.ReasonTLSRejected, Retryable: false}
 	}
 	if parsed.Path != "" && parsed.Path != "/" {
@@ -162,6 +165,7 @@ func validateManagementOrigin(raw string) (*url.URL, error) {
 		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
 	}
 	normalized := *parsed
+	normalized.Scheme = strings.ToLower(parsed.Scheme)
 	normalized.Path = ""
 	normalized.RawPath = ""
 	return &normalized, nil

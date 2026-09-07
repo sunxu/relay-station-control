@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -211,7 +210,6 @@ func syntheticWorkerDriver(t *testing.T, body string) (*Driver, drivers.NodeTarg
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{authorizedTestIP}}}}
 	dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
 	driver, err := newDriver(DriverConfig{
 		Management: drivers.ManagementConfig{
@@ -220,7 +218,7 @@ func syntheticWorkerDriver(t *testing.T, body string) (*Driver, drivers.NodeTarg
 		},
 		SecretResolver: secretResolver,
 		Now:            func() time.Time { return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC) },
-	}, resolver, dialer)
+	}, dialer)
 	if err != nil {
 		t.Fatal(err)
 	}

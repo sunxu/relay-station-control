@@ -43,23 +43,15 @@ func main() {
 }
 
 func run() error {
-	management := drivers.ManagementConfig{
-		AllowedDNSNames:        splitCSV(os.Getenv("CONTROL_DRIVER_SMOKE_MANAGEMENT_DNS")),
-		AllowedManagementCIDRs: splitCSV(os.Getenv("CONTROL_DRIVER_SMOKE_MANAGEMENT_CIDRS")),
-		AllowedPlainHTTPCIDRs:  splitCSV(os.Getenv("CONTROL_DRIVER_SMOKE_PLAIN_HTTP_CIDRS")),
-	}
+	management := drivers.ManagementConfig{}
 	secretResolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{
 		MappingFile: os.Getenv("CONTROL_DRIVER_SMOKE_SECRET_MAPPING_FILE"),
 	})
 	if err != nil {
 		return errors.New("configuration_invalid")
 	}
-	rootCAs, err := cliproxyapi.LoadRootCAs(os.Getenv("CONTROL_DRIVER_SMOKE_CA_FILE"))
-	if err != nil {
-		return errors.New("configuration_invalid")
-	}
 	driver, err := cliproxyapi.NewDriver(cliproxyapi.DriverConfig{
-		Management: management, SecretResolver: secretResolver, RootCAs: rootCAs,
+		Management: management, SecretResolver: secretResolver,
 	})
 	if err != nil {
 		return errors.New("configuration_invalid")

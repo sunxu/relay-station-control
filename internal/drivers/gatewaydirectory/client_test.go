@@ -95,8 +95,8 @@ func (reader *partialReadCloser) Read(buffer []byte) (int, error) {
 func (reader *partialReadCloser) Close() error { return nil }
 
 func TestClientFetchAndTransportGuards(t *testing.T) {
-	t.Run("https only", func(t *testing.T) {
-		_, err := NewClient("http://gateway.example.invalid", nil)
+	t.Run("unsupported scheme", func(t *testing.T) {
+		_, err := NewClient("ftp://gateway.example.invalid", nil)
 		requireFetchReason(t, err, rootdrivers.ReasonTLSRejected)
 	})
 

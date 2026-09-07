@@ -42,11 +42,13 @@ func TestNodeDriverRuntimeEnabledConstructsWithoutSecretOrNetworkAccess(t *testi
 		t.Fatal(err)
 	}
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "true")
-	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", "node.example.invalid")
-	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS", "10.42.0.0/16")
-	t.Setenv("CONTROL_CLIPROXYAPI_PLAIN_HTTP_CIDRS", "")
+	// Retired target and CA policy must be ignored, including malformed values
+	// and a path that does not exist.
+	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", "not a hostname")
+	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS", "not-a-cidr")
+	t.Setenv("CONTROL_CLIPROXYAPI_PLAIN_HTTP_CIDRS", "not-a-cidr")
 	t.Setenv("CONTROL_CLIPROXYAPI_SECRET_MAPPING_FILE", mappingPath)
-	t.Setenv("CONTROL_CLIPROXYAPI_CA_FILE", "")
+	t.Setenv("CONTROL_CLIPROXYAPI_CA_FILE", filepath.Join(directory, "missing-ca.pem"))
 
 	runtime, err := loadNodeDriverRuntime(nil)
 	if err != nil {

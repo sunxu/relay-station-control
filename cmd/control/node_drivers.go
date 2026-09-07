@@ -97,10 +97,8 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 		return nodeDriverRuntime{}, errors.New("node driver configuration is invalid")
 	}
 
+	// Legacy target allowlists and CA configuration are intentionally ignored.
 	management := controlnodes.ManagementConfig{
-		AllowedDNSNames:           splitCSV(os.Getenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS")),
-		AllowedManagementCIDRs:    splitCSV(os.Getenv("CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS")),
-		AllowedPlainHTTPCIDRs:     splitCSV(os.Getenv("CONTROL_CLIPROXYAPI_PLAIN_HTTP_CIDRS")),
 		ConnectTimeout:            connectTimeout,
 		RequestTimeout:            requestTimeout,
 		MaxHealthResponseBytes:    int64(healthBytes),
@@ -121,15 +119,10 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 	if err != nil {
 		return nodeDriverRuntime{}, errors.New("node driver secret configuration is invalid")
 	}
-	rootCAs, err := controlcliproxy.LoadRootCAs(os.Getenv("CONTROL_CLIPROXYAPI_CA_FILE"))
-	if err != nil {
-		return nodeDriverRuntime{}, errors.New("node driver CA configuration is invalid")
-	}
 	observer := controlcliproxy.NewObserver(metrics, logger)
 	driver, err := controlcliproxy.NewDriver(controlcliproxy.DriverConfig{
 		Management:     management,
 		SecretResolver: secretResolver,
-		RootCAs:        rootCAs,
 		Observer:       observer,
 	})
 	if err != nil {

@@ -100,7 +100,6 @@ func TestAccountInventoryLifecycleCanariesTraverseDriverWorkerArtifacts(t *testi
 	if err != nil {
 		t.Fatal("synthetic Driver port invalid")
 	}
-	resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{advertised}}}}
 	dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: advertised}
 	driver, err := newDriver(DriverConfig{
 		Management: drivers.ManagementConfig{
@@ -110,7 +109,7 @@ func TestAccountInventoryLifecycleCanariesTraverseDriverWorkerArtifacts(t *testi
 		},
 		SecretResolver: secretResolver, Observer: observer,
 		Now: func() time.Time { return time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC) },
-	}, resolver, dialer)
+	}, dialer)
 	if err != nil {
 		t.Fatal("canary Driver construction failed")
 	}
@@ -168,7 +167,7 @@ func TestAccountInventoryLifecycleCanariesTraverseDriverWorkerArtifacts(t *testi
 		},
 		SecretResolver: secretResolver,
 		Observer:       NewObserver(failureMetrics, slog.New(slog.NewJSONHandler(&failureLogs, nil))),
-	}, &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{advertised}}}},
+	},
 		lifecycleCanaryDialer{errorText: canary["RAW_ERROR"]})
 	if err != nil {
 		t.Fatal("failure Driver construction failed")

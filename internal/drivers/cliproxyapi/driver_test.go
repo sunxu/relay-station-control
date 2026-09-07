@@ -91,7 +91,7 @@ func TestDriverProbeAndInventoryProjectFixedContract(t *testing.T) {
 		SecretResolver: secretResolver,
 		Observer:       NewObserver(metrics, slog.New(slog.NewJSONHandler(&logs, nil))),
 		Now:            func() time.Time { return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC) },
-	}, resolver, dialer)
+	}, dialer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestDriverProbeAndInventoryProjectFixedContract(t *testing.T) {
 		inventory.Providers[0].Accounts[0].State != drivers.AccountStateActive {
 		t.Fatalf("account projection = %#v", inventory)
 	}
-	if requests.Load() != 2 || resolver.callCount() != 2 || dialer.callCount() != 2 {
+	if requests.Load() != 2 || resolver.callCount() != 0 || dialer.callCount() != 2 {
 		t.Fatalf("request boundary = requests=%d dns=%d dial=%d", requests.Load(), resolver.callCount(), dialer.callCount())
 	}
 	for _, forbidden := range []string{secretCanary, emailCanary, secretPath, "status_message", "token"} {
@@ -173,7 +173,7 @@ func TestDriverFailsBeforeSecretDNSOrNetworkAndConstructorIsDormant(t *testing.T
 			AllowedManagementCIDRs: []string{"10.42.0.0/16"},
 		},
 		SecretResolver: secretResolver,
-	}, dnsResolver, dialer)
+	}, dialer)
 	if err != nil {
 		t.Fatal(err)
 	}

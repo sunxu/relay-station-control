@@ -25,9 +25,22 @@ func TestManagementConfigDefaults(t *testing.T) {
 		validated.MaxInventoryRecords != DefaultInventoryRecords || validated.MaxSecretBytes != DefaultSecretBytes {
 		t.Fatalf("defaults = %#v", validated)
 	}
-	validated.AllowedDNSNames[0] = "mutated"
-	if original.AllowedDNSNames[0] != "node.management.example.invalid" {
-		t.Fatal("validated configuration aliases caller data")
+	if len(validated.AllowedDNSNames) != 0 || len(validated.AllowedManagementPrefixes) != 0 || len(validated.AllowedPlainHTTPPrefixes) != 0 {
+		t.Fatal("legacy target policy was retained")
+	}
+}
+
+func TestManagementConfigIgnoresRetiredTargetPolicy(t *testing.T) {
+	validated, err := (ManagementConfig{
+		AllowedDNSNames:        []string{"not a hostname"},
+		AllowedManagementCIDRs: []string{"127.0.0.0/8"},
+		AllowedPlainHTTPCIDRs:  []string{"0.0.0.0/0"},
+	}).Validate()
+	if err != nil {
+		t.Fatalf("retired target policy must be ignored: %v", err)
+	}
+	if len(validated.AllowedDNSNames) != 0 || len(validated.AllowedManagementPrefixes) != 0 || len(validated.AllowedPlainHTTPPrefixes) != 0 {
+		t.Fatal("retired target policy was retained")
 	}
 }
 
@@ -36,18 +49,6 @@ func TestManagementConfigFailsClosed(t *testing.T) {
 		name   string
 		mutate func(*ManagementConfig)
 	}{
-		{"missing DNS", func(value *ManagementConfig) { value.AllowedDNSNames = nil }},
-		{"missing management CIDR", func(value *ManagementConfig) { value.AllowedManagementCIDRs = nil }},
-		{"wildcard DNS", func(value *ManagementConfig) { value.AllowedDNSNames = []string{"*.example.invalid"} }},
-		{"uppercase DNS", func(value *ManagementConfig) { value.AllowedDNSNames = []string{"NODE.example.invalid"} }},
-		{"localhost", func(value *ManagementConfig) { value.AllowedDNSNames = []string{"localhost"} }},
-		{"noncanonical CIDR", func(value *ManagementConfig) { value.AllowedManagementCIDRs = []string{"10.24.1.2/16"} }},
-		{"loopback included", func(value *ManagementConfig) { value.AllowedManagementCIDRs = []string{"127.0.0.0/8"} }},
-		{"link local included", func(value *ManagementConfig) { value.AllowedManagementCIDRs = []string{"169.254.0.0/16"} }},
-		{"metadata included", func(value *ManagementConfig) { value.AllowedManagementCIDRs = []string{"100.64.0.0/10"} }},
-		{"multicast included", func(value *ManagementConfig) { value.AllowedManagementCIDRs = []string{"224.0.0.0/4"} }},
-		{"IPv6 special included", func(value *ManagementConfig) { value.AllowedManagementCIDRs = []string{"::/0"} }},
-		{"plain HTTP outside management", func(value *ManagementConfig) { value.AllowedPlainHTTPCIDRs = []string{"10.30.0.0/16"} }},
 		{"request shorter than connection", func(value *ManagementConfig) {
 			value.ConnectTimeout = 4 * time.Second
 			value.RequestTimeout = 3 * time.Second
