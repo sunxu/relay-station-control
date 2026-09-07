@@ -11,14 +11,15 @@ import type {
 import { AuthApiError, generatedAuthApi } from "../api/auth-api";
 import type { AuthApi } from "../api/auth-api";
 
-export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "management" | "assets" | "jobs" | "account-inventory" | "one-time" | "unavailable";
+export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "management" | "assets" | "jobs" | "account-inventory" | "topology" | "one-time" | "unavailable";
 
-type AuthenticatedRoute = Extract<AuthRoute, "management" | "assets" | "jobs" | "account-inventory">;
+type AuthenticatedRoute = Extract<AuthRoute, "management" | "assets" | "jobs" | "account-inventory" | "topology">;
 
 function authenticatedRouteFromLocation(): AuthenticatedRoute {
   if (window.location.pathname === "/assets") return "assets";
   if (window.location.pathname === "/jobs") return "jobs";
   if (window.location.pathname === "/account-inventory") return "account-inventory";
+  if (window.location.pathname === "/topology") return "topology";
   return "management";
 }
 
@@ -116,7 +117,7 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
 
   const navigate = useCallback((next: AuthRoute) => {
     wipeOneTime();
-    if (next === "assets" || next === "jobs" || next === "account-inventory" || next === "management") {
+    if (next === "assets" || next === "jobs" || next === "account-inventory" || next === "topology" || next === "management") {
       authenticatedRouteRef.current = next;
       window.history.pushState(null, "", next === "management" ? "/" : `/${next}`);
     }

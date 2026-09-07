@@ -109,6 +109,7 @@ export function AccountInventoryView({
   ], []);
 
   const currentNode = nodes.data?.items.find((node) => node.instanceId === instanceId);
+  const openTopology = () => { if (!instanceId) return; window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(instanceId)}`); window.dispatchEvent(new PopStateEvent("popstate")); };
   const failure = query.error instanceof AccountInventoryApiError ? query.error : null;
 
   return (
@@ -134,7 +135,8 @@ export function AccountInventoryView({
               <Select aria-label="最后报告基础状态" allowClear placeholder="全部基础状态" value={basicStatus} disabled={query.isPending} options={accountInventoryBasicStatuses.map((value) => ({ value, label: value }))} onChange={(value) => { setBasicStatus(value); resetResult(); }} style={{ width: 210 }} />
               <Input aria-label="邮箱精确筛选" placeholder="邮箱（精确匹配）" value={email} disabled={query.isPending} maxLength={320} autoComplete="off" onChange={(event) => { setEmail(event.target.value); resetResult(); }} style={{ width: 260 }} />
               <Select<PageSize> aria-label="每页账号数" value={pageSize} disabled={query.isPending} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: `${value} / 页` }))} onChange={(value) => { setPageSize(value); resetResult(); }} style={{ width: 120 }} />
-              <Button type="primary" disabled={!instanceId} loading={query.isPending} onClick={applyFilters}>查询</Button>
+            <Button type="primary" disabled={!instanceId} loading={query.isPending} onClick={applyFilters}>查询</Button>
+            <Button disabled={!instanceId} onClick={openTopology}>查看 Node Topology</Button>
             </Space>
             <Text type="secondary">完整邮箱仅供实名管理员定位；每次查询（包括空结果和翻页）都会写入查看审计。</Text>
           </Flex>

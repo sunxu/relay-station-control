@@ -171,6 +171,7 @@ export default function ManagementPage() {
             <Button onClick={() => auth.navigate("account-inventory")}>账号清单</Button>
             <Button onClick={() => auth.navigate("jobs")}>持久任务</Button>
             <Button onClick={() => auth.navigate("assets")}>资产注册表</Button>
+            <Button onClick={() => auth.navigate("topology")}>Node Topology</Button>
           </Space>
           <Button danger loading={busy} onClick={() => void logout()}>注销</Button>
         </Space>

@@ -1,0 +1,196 @@
+import { Alert, Button, Card, Empty, Flex, Grid, Select, Spin, Table, Tag, Typography } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useNodeAsset, useNodeAssets } from "../api/asset-hooks";
+import { AssetApiError } from "../api/asset-types";
+import type { AssetApi } from "../api/asset-types";
+import { useTopologyBinding, useTopologyCurrentDuplicates, useTopologyEvidence, useTopologyHistory, useTopologyProviders } from "../api/topology-hooks";
+import { TopologyApiError } from "../api/topology-types";
+import type { TopologyApi, TopologyOccurrence, TopologyProviderState } from "../api/topology-types";
+
+const { Text } = Typography;
+function utc(value?: string | null) {
+  return value ? `${new Date(value).toISOString().replace("T", " ").replace(".000Z", "")} UTC` : "—";
+}
+function unauthorized(error: unknown) {
+  return (error instanceof TopologyApiError || error instanceof AssetApiError) && error.status === 401;
+}
+function ReadError({ retry, message = "读取不可用（unavailable）" }: { retry: () => void; message?: string }) {
+  return <Alert type="error" title={message} action={<Button onClick={retry}>重试</Button>} />;
+}
+function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occurrenceId: string; onUnauthorized: () => void }) {
+  const [cursor, setCursor] = useState<string>();
+  const query = useTopologyEvidence(api, occurrenceId, cursor);
+  useEffect(() => { if (unauthorized(query.error)) onUnauthorized(); }, [query.error, onUnauthorized]);
+  if (query.isPending) return <Spin size="small" />;
+  if (query.error) return <ReadError retry={() => void query.refetch()} />;
+  return <Flex vertical gap={8}>
+    <Text>Evidence 记录 authoritative evaluation 涉及关系，不等于历史 confirmed owner。</Text>
+    <Table size="small" scroll={{ x: 1050 }} pagination={false} rowKey="observation_id" dataSource={query.data.items} columns={[
+      { title: "Node", dataIndex: "instance_id" },
+      { title: "类型", dataIndex: "observation_kind" },
+      { title: "Provider", dataIndex: "source_provider" },
+      { title: "来源时间", dataIndex: "source_scheduled_at", render: utc },
+      { title: "评估时间", dataIndex: "evaluation_at", render: utc },
+      { title: "记录时间", dataIndex: "recorded_at", render: utc },
+    ]} />
+    <Flex gap={8} justify="end">
+      <Button disabled={!cursor} onClick={() => setCursor(undefined)}>Evidence 首页</Button>
+      <Button disabled={!query.data.next_cursor || query.isFetching} onClick={() => setCursor(query.data.next_cursor ?? undefined)}>Evidence 下一页</Button>
+    </Flex>
+  </Flex>;
+}
+
+export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized }: {
+  api: TopologyApi; assetApi: AssetApi; initialInstanceId?: string; onUnauthorized: () => void;
+}) {
+  const cache = useQueryClient();
+  const screens = Grid.useBreakpoint();
+  const [instanceId, setInstanceId] = useState(initialInstanceId);
+  const [nodeCursor, setNodeCursor] = useState<string>();
+  const [historyStatus, setHistoryStatus] = useState<"ACTIVE" | "RESOLVED">();
+  const [historyCursor, setHistoryCursor] = useState<string>();
+  const [currentCursor, setCurrentCursor] = useState<string>();
+  const nodes = useNodeAssets(assetApi, { limit: 200, cursor: nodeCursor });
+  const selected = useNodeAsset(assetApi, instanceId);
+  const providers = useTopologyProviders(api, instanceId);
+  const binding = useTopologyBinding(api, instanceId);
+  const current = useTopologyCurrentDuplicates(api, instanceId, currentCursor);
+  const history = useTopologyHistory(api, instanceId, historyStatus, historyCursor);
+  const node = selected.error ? undefined : selected.data;
+
+  const expireSession = () => {
+    // Cancel in-flight reads before clearing so a late response cannot repopulate
+    // administrator evidence after a 401. The authenticated page then unmounts.
+    void cache.cancelQueries();
+    cache.clear();
+    onUnauthorized();
+  };
+  useEffect(() => {
+    if ([providers.error, binding.error, current.error, history.error, nodes.error, selected.error].some(unauthorized)) expireSession();
+  }, [providers.error, binding.error, current.error, history.error, nodes.error, selected.error]);
+  useEffect(() => {
+    const onPop = () => {
+      setInstanceId(new URLSearchParams(window.location.search).get("instance_id") ?? undefined);
+      setHistoryCursor(undefined);
+      setCurrentCursor(undefined);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const select = (id: string) => {
+    setInstanceId(id);
+    setHistoryCursor(undefined);
+    setCurrentCursor(undefined);
+    window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(id)}`);
+  };
+  const providerColumns: ColumnsType<TopologyProviderState> = [
+    { title: "Provider", dataIndex: "provider", width: 120 },
+    { title: "监控范围", dataIndex: "monitoring_status", width: 130, render: (v) => <Tag>{v}</Tag> },
+    { title: "Snapshot freshness", dataIndex: "snapshot_freshness", width: 180, render: (v, row) => <Tag color={v === "fresh" ? "green" : v === "stale" ? "orange" : "default"}>{v === "unknown" && row.state === null ? "not-yet-observed" : v}</Tag> },
+    { title: "最近完整快照", dataIndex: "last_complete_at", width: 225, render: utc },
+    { title: "Latest health", width: 220, render: (_, row) => <Flex vertical gap={4}><Tag color={row.health_degraded === true ? "orange" : row.health_degraded === false ? "green" : "default"}>{row.health_degraded === true ? "degraded" : row.health_degraded === false ? "normal" : "unknown"}</Tag><Text type="secondary">{row.health_reason ?? "—"}</Text></Flex> },
+    { title: "健康观测", dataIndex: "health_scheduled_at", width: 225, render: utc },
+  ];
+  const occurrenceColumns: ColumnsType<TopologyOccurrence> = [
+    { title: "账号", dataIndex: "account_key", width: 260, render: (v) => <Text style={{ overflowWrap: "anywhere" }}>{v}</Text> },
+    { title: "状态 / 严重度", width: 150, render: (_, row) => <Flex vertical><Tag color={row.status === "ACTIVE" ? "red" : "default"}>{row.status}</Tag><Text>{row.severity}</Text></Flex> },
+    { title: "Evidence health", dataIndex: "evidence_state", width: 140, render: (v) => <Tag>{v}</Tag> },
+    { title: "最近完整验证", dataIndex: "last_fully_verified_at", width: 225, render: utc },
+    { title: "最近观察 / 恢复", width: 225, render: (_, row) => <Flex vertical><Text>{utc(row.last_seen_at)}</Text><Text>{utc(row.resolved_at)}</Text></Flex> },
+    { title: "当前 affected Nodes", dataIndex: "affected_nodes", width: 320, render: (ids: string[]) => <Flex vertical><Tag color="blue">current</Tag>{ids.map((id) => <Text key={id} code style={{ overflowWrap: "anywhere" }}>{id}</Text>)}{ids.length === 0 && <Text>当前集合为空</Text>}</Flex> },
+  ];
+  const nodeOptions = (nodes.error ? [] : nodes.data?.items ?? []).map((item) => ({ value: item.instanceId, label: `${item.displayName} · ${item.instanceId}` }));
+  if (node && !nodeOptions.some((option) => option.value === node.instanceId)) nodeOptions.unshift({ value: node.instanceId, label: `${node.displayName} · ${node.instanceId}` });
+  const occurrenceTable = (items: TopologyOccurrence[]) => <Table
+    key={instanceId} rowKey="occurrence_id" size="small" scroll={{ x: 1320 }} pagination={false}
+    dataSource={items} columns={occurrenceColumns}
+    expandable={{ expandedRowRender: (row) => <Evidence api={api} occurrenceId={row.occurrence_id} onUnauthorized={expireSession} /> }}
+    locale={{ emptyText: "没有符合条件的 occurrence" }}
+  />;
+  return <Flex vertical gap={16} data-testid="topology-view" className="topology-view" style={{ minWidth: 0 }}>
+    <Card title="Node">
+      {nodes.isPending && <Spin />}
+      {nodes.error && <ReadError message="Node 清单读取不可用" retry={() => void nodes.refetch()} />}
+      <Select aria-label="Relay Node" placeholder="选择 Relay Node" value={instanceId} onChange={select} options={nodeOptions} style={{ width: "100%", maxWidth: 560 }} />
+      {!nodes.error && nodes.data?.items.length === 0 && <Empty description="当前没有登记 Node" />}
+      <Flex justify="end" gap={8} style={{ marginTop: 8 }}>
+        <Button disabled={!nodeCursor} onClick={() => setNodeCursor(undefined)}>Node 首页</Button>
+        <Button disabled={!nodes.data?.nextCursor || nodes.isFetching || nodes.isError} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>下一页 Node</Button>
+      </Flex>
+    </Card>
+    {!instanceId && <Empty description="请选择 Node 查看只读拓扑" />}
+    {instanceId && <>
+      <Card title="Inventory evidence">
+        {selected.isPending && <Spin />}
+        {selected.error && <ReadError message={selected.error instanceof AssetApiError && selected.error.status === 404 ? "Node 不存在" : "Node 读取不可用"} retry={() => void selected.refetch()} />}
+        <Flex vertical>
+          <Text>Node：{node?.displayName ?? instanceId}</Text>
+          <Text style={{ overflowWrap: "anywhere" }}>Instance ID：{instanceId}</Text>
+          <Text>监控：{node ? node.monitoringActive ? "active" : "inactive" : "unknown"}</Text>
+          {node && <Text>账号清单：<Button type="link" size="small" href={`/account-inventory?instance_id=${encodeURIComponent(instanceId)}`}>打开</Button></Text>}
+        </Flex>
+      </Card>
+      <Card title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
+        {providers.isPending && <Spin />}
+        {providers.error && <ReadError retry={() => void providers.refetch()} />}
+        {providers.data && !providers.error && <>
+          <Text type="secondary">来源时间：{utc(providers.data.observed_at)}</Text>
+          {screens.xs ? <Flex vertical gap={12} style={{ marginTop: 12 }}>
+            {providers.data.providers.length === 0 && <Empty description="没有应监控或已持有 state 的 Provider" />}
+            {providers.data.providers.map((row) => <Card key={row.provider} size="small" title={row.provider}>
+              <Flex vertical gap={8}>
+                <Text>监控范围：{row.monitoring_status}</Text>
+                <Flex wrap gap={8}>
+                  <Text>Snapshot <Tag color={row.snapshot_freshness === "fresh" ? "green" : row.snapshot_freshness === "stale" ? "orange" : "default"}>{row.state === null ? "not-yet-observed" : row.snapshot_freshness}</Tag></Text>
+                  <Text>Health <Tag color={row.health_degraded === true ? "orange" : row.health_degraded === false ? "green" : "default"}>{row.health_degraded === true ? "degraded" : row.health_degraded === false ? "normal" : "unknown"}</Tag></Text>
+                </Flex>
+                <Text>最近完整快照：{utc(row.last_complete_at)}</Text>
+                <Text>健康观测：{utc(row.health_scheduled_at)}</Text>
+                <Text style={{ overflowWrap: "anywhere" }}>原因：{row.health_reason ?? "—"}</Text>
+              </Flex>
+            </Card>)}
+          </Flex> : <Table rowKey="provider" size="small" scroll={{ x: 1100 }} pagination={false} dataSource={providers.data.providers} columns={providerColumns} locale={{ emptyText: "没有应监控或已持有 state 的 Provider" }} />}
+        </>}
+      </Card>
+      <Card title="Gateway Usage Context" extra={<Button onClick={() => void binding.refetch()} loading={binding.isFetching}>刷新 Binding</Button>}>
+        {binding.isPending && <Spin />}
+        {binding.error && <ReadError retry={() => void binding.refetch()} />}
+        {binding.data && !binding.error && <Flex vertical gap={6} style={{ overflowWrap: "anywhere" }}>
+          <Text>Binding truth：<Tag>{binding.data.current_binding ? "BOUND" : "UNBOUND"}</Tag></Text>
+          <Text>Binding resolution：<Tag>{binding.data.resolution}</Tag></Text>
+          <Text>Directory freshness：<Tag>{binding.data.directory_freshness}</Tag></Text>
+          <Text>Context source：{binding.data.context_source}</Text>
+          <Text>Gateway：{binding.data.gateway_instance_id ?? binding.data.current_binding?.gateway_instance_id ?? "—"}</Text>
+          <Text>Account ID：{binding.data.gateway_account_id ?? binding.data.current_binding?.gateway_account_id ?? "—"}</Text>
+          {binding.data.account_context && <Text>Account context（{binding.data.context_source}）：{binding.data.account_context.name} · {binding.data.account_context.platform} · {binding.data.account_context.status}</Text>}
+          <Text>绑定时间：{utc(binding.data.current_binding?.bound_at)}</Text>
+          <Text>最近成功观测：{utc(binding.data.last_success_observation_at)}</Text>
+          <Text>观察时间：{utc(binding.data.observed_at)}</Text>
+        </Flex>}
+      </Card>
+      <Card title="Ownership Fact · 当前 duplicate" extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>刷新 Current</Button>}>
+        {current.isPending && <Spin />}
+        {current.error && <ReadError retry={() => void current.refetch()} />}
+        {current.data && !current.error && <>
+          {occurrenceTable(current.data.items)}
+          <Flex justify="end" gap={8}><Button disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>Current 首页</Button><Button disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>Current 下一页</Button></Flex>
+        </>}
+      </Card>
+      <Card title="Ownership Fact · 历史评估涉及">
+        <Flex gap={8} wrap>
+          <Select allowClear aria-label="历史状态" placeholder="History 全部状态" value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: "ACTIVE" }, { value: "RESOLVED", label: "Resolved" }]} style={{ minWidth: 170 }} />
+          <Button onClick={() => void history.refetch()} loading={history.isFetching}>刷新 History</Button>
+        </Flex>
+        {history.isPending && <Spin />}
+        {history.error && <ReadError retry={() => void history.refetch()} />}
+        {history.data && !history.error && <>
+          <Text type="secondary">historical involvement · {utc(history.data.observed_at)}</Text>
+          {occurrenceTable(history.data.items)}
+          <Flex justify="end" gap={8}><Button disabled={!historyCursor} onClick={() => setHistoryCursor(undefined)}>History 首页</Button><Button disabled={!history.data.next_cursor || history.isFetching} onClick={() => setHistoryCursor(history.data?.next_cursor ?? undefined)}>History 下一页</Button></Flex>
+        </>}
+      </Card>
+    </>}
+  </Flex>;
+}
