@@ -154,7 +154,7 @@ Provider Summary SHALL仅使用新Provider-state read model；Account Table SHAL
 
 ### Requirement: P-READ SHALL 仅允许最小query-access migration
 
-本change SHALL保持“0 persistence migration；P-READ 允许一个最小 additive readonly query-access migration。”未来实施阶段才可新增一个migration，编号按当时序列确定，`00017_*provider_state_readonly_query*.sql`仅为示例。本轮MUST NOT创建或执行migration。
+本change SHALL保持“0 persistence migration；P-READ 允许一个最小 additive readonly query-access migration。”未来实施阶段才可新增一个migration，编号按当时序列确定，`00017_*provider_state_readonly_query*.sql`仅为示例。架构评审轮不创建或执行migration；当前实施已获用户授权，SHALL仅在隔离验收数据库验证，不在生产执行。
 
 Up SHALL仅CREATE该readonly function、设置owner、REVOKE PUBLIC、GRANT runtime EXECUTE。Down SHALL仅DROP该函数的uuid签名，使用默认RESTRICT，MUST NOT CASCADE。MUST NOT新建table/column/index/materialized view、topology/provider summary persistence，修改account_inventory/provider_states、旧account query、已有ACL或历史数据。应用回滚优先保留additive function；单独执行Down后新caller只能报告unavailable，不得降级为越权读取。
 

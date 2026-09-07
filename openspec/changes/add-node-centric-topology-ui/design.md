@@ -1,8 +1,8 @@
 ## Context
 
-状态：**Architecture Contract（含P-READ及原三项契约）已Final APPROVED；本轮仅提交契约，生产实现继续暂停。** 本轮只修改规划文档，不编辑 OpenAPI 源文件、生成物、Go/TS/SQL、migration，不运行实现测试或提交实现。
+状态：**Architecture Contract（含P-READ及原三项契约）已Final APPROVED；用户已授权实施及分批提交，已完成本地实现验收。** 实施遵循下列冻结契约；本轮按授权保存实现提交；生产发布不在执行范围。
 
-本文件替代上一版候选选择、绑定表单、`expected_binding_id`、单一Provider observation状态和全域摘要方案；未来实施仅允许P-READ专用query-access migration，本轮只定义契约。依据 [proposal](proposal.md)、[系统设计](../../../../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md) §15/§24、[ADR-0001](../../../../ops/docs/adr/0001-control-technology-stack.md) 与 [ADR-0002](../../../../ops/docs/adr/0002-use-sub2api-native-downstream-scheduling.md)。最新用户的P-READ Architecture Contract Final Review决定优先，原三项批准契约保持不变。
+本文件替代上一版候选选择、绑定表单、`expected_binding_id`、单一Provider observation状态和全域摘要方案；实施仅允许P-READ专用query-access migration。依据 [proposal](proposal.md)、[系统设计](../../../../ops/docs/RELAY_STATION_SYSTEM_DESIGN_CN.md) §15/§24、[ADR-0001](../../../../ops/docs/adr/0001-control-technology-stack.md) 与 [ADR-0002](../../../../ops/docs/adr/0002-use-sub2api-native-downstream-scheduling.md)。最新用户的P-READ Architecture Contract Final Review决定优先，原三项批准契约保持不变。
 
 事实索引：
 
@@ -71,7 +71,7 @@ EXISTS (
 
 #### P-READ final readonly function contract
 
-按现有 `control_query_*_v1` 命名惯例冻结：`public.control_query_account_inventory_provider_states_v1(target_instance_id uuid)`。这是未来实施的函数契约，不是本轮SQL实现。单次调用读取一个Node的完整Provider集合，按provider字典顺序返回，每个provider至多一行，不分页、不截断、不从account rows聚合。最小返回字段如下：
+按现有 `control_query_*_v1` 命名惯例冻结：`public.control_query_account_inventory_provider_states_v1(target_instance_id uuid)`。这是已批准的函数契约。单次调用读取一个Node的完整Provider集合，按provider字典顺序返回，每个provider至多一行，不分页、不截断、不从account rows聚合。最小返回字段如下：
 
 | 字段 | 类型/空值 | 来源与语义 |
 | --- | --- | --- |
@@ -118,7 +118,7 @@ target_instance_id为null/零UUID时以既有invalid-query SQLSTATE 22023拒绝�
 
 #### Independent HTTP read and composition
 
-未来独立只读端点：`GET /api/account-inventory/nodes/{instance_id}/providers`，operationId=`getNodeInventoryProviderStates`。使用既有启用的super_admin会话、no-store、request ID；响应为 `{instance_id, observed_at, providers}`，每行只有上述字段。成功200代表完整查询；合法空集合与not-yet-observed行不同。非法UUID400、未知Node404、认证失败401/403、函数缺失/权限不足/数据库或query失败503，复用既有错误envelope；timeout为query2s/HTTP5s，不在错误体返回providers=[]或raw error。
+独立只读端点：`GET /api/account-inventory/nodes/{instance_id}/providers`，operationId=`getNodeInventoryProviderStates`。使用既有启用的super_admin会话、no-store、request ID；响应为 `{instance_id, observed_at, providers}`，每行只有上述字段。成功200代表完整查询；合法空集合与not-yet-observed行不同。非法UUID400、未知Node404、认证失败401/403、函数缺失/权限不足/数据库或query失败503，复用既有错误envelope；timeout为query2s/HTTP5s，不在错误体返回providers=[]或raw error。
 
 UI将503/网络错误映射为read unavailable，绝不转成empty/stale或正常health。freshness的SQL行枚举不含unavailable，因为不可用是整个读取失败；UI双维度view model可以呈现unavailable，但不伪造返回行。
 
@@ -129,7 +129,7 @@ Binding          ← existing binding read model
 Duplicate        ← current/history duplicate read models
 ```
 
-P-READ不再留给未来另选方案：以上完整契约已获Final Approval。只有另获实施授权后才创建query-access migration和接口，当前不存在函数实现或运行验收通过的主张。
+P-READ不再留给未来另选方案：以上完整契约已获Final Approval及实施授权，实际验收证据记录在planning-validation.md。
 
 ### 4. Lossless Gateway Account identity
 
@@ -153,28 +153,28 @@ TypeScript Account ID、React state、form/option value、adapter、request DTO�
 
 ### 5. Affected API surfaces
 
-以下均为**调查到的现状和未来统一修正面**，本轮未改源代码。
+以下为已统一修正的Control/Web HTTP surfaces；实际验收见planning-validation.md。
 
 | 层/路径 | 字段或职责 | 修订契约 |
 | --- | --- | --- |
-| OpenAPI `GatewayAccountContext` | `account_id`（openapi.yaml:2529） | GatewayAccountId string |
-| `RelayNodeGatewayAccountBindingDetail` | `gateway_account_id`（2567） | string；适用于current/previous/history引用 |
-| `NodeRelayBindingResponse` | nullable `gateway_account_id`（2613） | string或null |
-| `GatewayAccountCentricBindingItem` | `gateway_account_id`（2643）及嵌套context/binding | 全部string |
-| `BindRelayNodeRequest` | `gateway_account_id`（2742） | 请求string |
-| `RebindRelayNodeRequest` | `new_gateway_account_id`（2761） | 请求string |
+| OpenAPI `GatewayAccountContext` | `account_id` | GatewayAccountId string |
+| `RelayNodeGatewayAccountBindingDetail` | `gateway_account_id` | string；适用于current/previous/history引用 |
+| `NodeRelayBindingResponse` | nullable `gateway_account_id` | string或null |
+| `GatewayAccountCentricBindingItem` | `gateway_account_id`及嵌套context/binding | 全部string |
+| `BindRelayNodeRequest` | `gateway_account_id` | 请求string |
+| `RebindRelayNodeRequest` | `new_gateway_account_id` | 请求string |
 | GET `/api/relay-bindings/nodes/{instance_id}` | ID和所有嵌套对象 | 统一string；path Node UUID不变 |
 | GET `/api/relay-bindings/gateways/{instance_id}` | current Directory/candidate read、绑定目标 | 统一string；不新增候选提交UI |
 | GET `/api/relay-bindings/unresolved` | current_binding/last-known context | 统一string |
 | POST `/api/relay-bindings/bind`、`/rebind` | request + `binding/previous_binding` response | read/write同表示，action语义不变 |
 | POST `/api/relay-bindings/unbind` | 请求只有Node UUID；response previous_binding内Account ID | 请求结构不变，response ID统一string |
-| 未来Topology只读投影 | 所有Gateway Account ID及嵌套binding/context | 使用同一schema，不能自建number/string双轨 |
+| Topology只读投影 | 所有Gateway Account ID及嵌套binding/context | 使用同一schema，不能自建number/string双轨 |
 | `internal/api/api.gen.go` | 六个schema及嵌套response | 从OpenAPI重生，不手改 |
 | `internal/api/relay_binding_handlers.go` | request解码、account/binding response mapping | 严格parse/format；store仍int64 |
 | `web/src/api/generated/control.ts`、`web/orval.config.ts` | generated types、JSON.parse/JSON.stringify | 类型为string且wire已加引号；不靠reviver补救已舍入数字 |
 | `internal/api/relay_binding_http_integration_test.go` | numeric fixtures、read/write/error断言 | 全面string fixtures+大ID往返+拒绝numeric |
 | `internal/store/relay_node_gateway_account_binding_repository_integration_test.go` | domain及audit numeric JSONB断言 | domain/audit保持既有形式；精度fixture不得以float64中转 |
-| `web/src` consumers/components | 当前无Binding表单；generated client是已找到消费者 | future只读Topology使用string，已有数字生成物列为待修前置项 |
+| `web/src` consumers/components | 当前无Binding表单；generated client是已找到消费者 | 只读Topology使用string，生成客户端已统一string |
 | Control Binding Runbook/OpenSpec examples | ID格式、现有API调用示例 | 明确breaking及string请求/响应 |
 
 范围检索覆盖control生成链、handlers/store/tests/web及gateway/node/ops对Control `/api/relay-bindings`/Gateway Account字段的引用。仓库内未发现稳定external SDK/其他服务消费者；这不证明仓库外不存在消费者。
@@ -209,7 +209,7 @@ freshness/health、Binding resolution、duplicate lifecycle分别保持来源时
 
 ## Acceptance Matrix
 
-以下是**未来实现的验收契约，不是本轮已运行结果**。最终批准与未来实现验证之前不得将矩阵标通过。
+以下是冻结的验收契约；实现验证结果、证据与未完成门禁单独记录在planning-validation.md，不以契约条目代替测试结果。
 
 ### Duplicate historical involvement
 
@@ -268,7 +268,7 @@ freshness/health、Binding resolution、duplicate lifecycle分别保持来源时
 
 ### Readonly, compatibility and release gates
 
-R1：Topology网络测试断言无bind/rebind/unbind/其他业务mutation、无采集或数据面调用；不存在候选submit或无效管理链接。R2：已有Binding transport测试验证身份纠正不改原事务/权限/CSRF/审计；不是Topology操作。R3：P-READ按本轮冻结的query-access边界取得Final Approval，external消费者清点按既有兼容契约执行；未获实施授权不得动代码。R4：桌面/390px/键盘、独立资源失败/401/乱序/重启、UTC时间和账号隐私回归。R5：所有实现验收留待后续授权，本轮只执行strict与diff检查。
+R1：Topology网络测试断言无bind/rebind/unbind/其他业务mutation、无采集或数据面调用；不存在候选submit或无效管理链接。R2：已有Binding transport测试验证身份纠正不改原事务/权限/CSRF/审计；不是Topology操作。R3：P-READ按本轮冻结的query-access边界取得Final Approval，external消费者清点按既有兼容契约执行；未获实施授权不得动代码。R4：桌面/390px/键盘、独立资源失败/401/乱序/重启、UTC时间和账号隐私回归。R5：实施已获授权，必须完成专项验收、make test build、strict和diff检查；发布、提交与归档需另按授权执行。
 
 ## Risks / Trade-offs
 
@@ -280,12 +280,12 @@ R1：Topology网络测试断言无bind/rebind/unbind/其他业务mutation、无�
 
 ## Migration Plan
 
-**0 persistence migration；P-READ 允许一个最小 additive readonly query-access migration。** 实施时按最新Goose序列选取未使用编号，例如 `00017_*provider_state_readonly_query*.sql` 仅是示意，不能预占编号。本轮不创建或提交该SQL文件。
+**0 persistence migration；P-READ 允许一个最小 additive readonly query-access migration。** 核对最新Goose序列后，本轮按授权创建`00017_account_inventory_provider_state_query_access.sql`，仅在隔离验收数据库执行，不在生产执行迁移。
 
-未来Up只执行：CREATE `public.control_query_account_inventory_provider_states_v1(uuid)` readonly function、设owner为relay_control_migrator、REVOKE PUBLIC EXECUTE、GRANT EXECUTE给relay_control_runtime。函数读取现有state/policy/monitoring资产，不新增或ALTER任何表/列，不建materialized view/index/topology/provider summary persistence，不修改既有account query signature/body，不增加runtime direct SELECT。
+Up只执行：CREATE `public.control_query_account_inventory_provider_states_v1(uuid)` readonly function、设owner为relay_control_migrator、REVOKE PUBLIC EXECUTE、GRANT EXECUTE给relay_control_runtime。函数读取现有state/policy/monitoring资产，不新增或ALTER任何表/列，不建materialized view/index/topology/provider summary persistence，不修改既有account query signature/body，不增加runtime direct SELECT。
 
-未来Down只 `DROP FUNCTION public.control_query_account_inventory_provider_states_v1(uuid)`，使用默认RESTRICT，不用CASCADE；随函数删除其EXECUTE授权，不单独修改表ACL，不触碰account_inventory/provider_states、existing v1 account query或历史数据。有意外依赖应失败而非级联删除。
+Down只 `DROP FUNCTION public.control_query_account_inventory_provider_states_v1(uuid)`，使用默认RESTRICT，不用CASCADE；随函数删除其EXECUTE授权，不单独修改表ACL，不触碰account_inventory/provider_states、existing v1 account query或历史数据。有意外依赖应失败而非级联删除。
 
 生产应用回滚优先恢复兼容API/Web并保留只读函数，不自动执行migration down；如在明确批准的隔离回滚验收中执行Down，只移除本函数，调用者应得到unavailable而非空Provider集合。history与身份修正均不新增persistence migration，source-v2/schema约束仍不在本change范围。
 
-原三项契约与P-READ均已获 **Architecture Contract Final Approval**；只有另获生产实施授权才执行tasks。此轮仅运行OpenSpec strict与git diff --check，不执行generate、业务测试、数据库操作、容器或部署；仅提交本change的Architecture Contract文档。
+原三项契约与P-READ均已获 **Architecture Contract Final Approval**；用户已另行授权进入实施。本轮执行生成、业务测试、隔离数据库/容器和构建验收；用户随后授权按实际diff分批提交；不生产部署。

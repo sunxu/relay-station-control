@@ -13,6 +13,14 @@ Gateway Account identity 唯一使用 Directory 中的 `accounts.id`；`name`、
 - identity 由 `relay_node_id` + `gateway_instance_id` + `gateway_account_id` 三元组组成，全部使用稳定 ID，不使用可变展示字段。
 - 数据库使用双向 partial unique index `(relay_node_id) WHERE ended_at IS NULL` 与 `(gateway_instance_id, gateway_account_id) WHERE ended_at IS NULL` 强制上述唯一性。
 
+### Control/Web identity transport（breaking correction）
+
+所有Control HTTP read/candidate/detail及bind/rebind请求、mutation响应中的Gateway Account ID均为规范正int64十进制字符串，例如`"9007199254740993"`。内部Go、数据库及audit JSONB保留int64/numeric；Gateway Directory source v1继续numeric JSON→Go int64，不经过JavaScript。
+
+服务端拒绝numeric JSON、非规范表示和超过`9223372036854775807`的字符串，返回400 `validation_failed`，不执行Binding事务。TypeScript/React/form/state全部string，禁止Number/parseInt/parseFloat中转。
+
+这是breaking forward contract correction：统一升级API和内置Web，旧numeric客户端必须更新；发布前清点仓库外消费者和兼容承诺，无法确认不能默认不存在。若发现稳定兼容要求，停止发布并重新评审。回滚API/Web匹配版本，保留forward schema及审计历史。Topology保持只读，不提供Binding管理表单。
+
 ## 3. Bind
 
 `POST /api/relay-bindings/bind`，请求体只接受 `relay_node_id`、`gateway_instance_id`、`gateway_account_id`（`additionalProperties: false`，不接受 name/url/platform/type/status 作为输入）。
