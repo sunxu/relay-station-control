@@ -24,13 +24,13 @@
 - [x] 4.1 Directory client直接接受HTTP/HTTPS，移除目标许可检查并在Gateway/Node管理专用transport关闭证书验证；验证自签名/未知CA/过期/主机名不匹配可用、Node同策略、范围外客户端不变、双协议redirect拒绝与握手失败不降级。
 - [x] 4.2 验证独立reader token解析、缺失/错误/轮换和失败不刷新观测，执行敏感canary扫描。
 - [x] 4.3 随7.2统一交付ops本地HTTP私网origin、独立token和public拒绝流程；不新增自定义CA或证书部署流程；不改Gateway source和Node服务端代码。
-- [ ] 4.4 在隔离部署验证HTTP及不验证证书的HTTPS成功、公网拒绝、Control enable/disable/restart与现有服务健康。
+- [x] 4.4 在隔离部署验证HTTP及不验证证书的HTTPS成功、公网拒绝、Control enable/disable/restart与现有服务健康。
 
 ## 5. End-to-end acceptance
 
 - [x] 5.1 真实HTTP与HTTPS source v1执行首次采集、changed/unchanged、失败和恢复，核对DB current与观测时间。
 - [x] 5.2 通过既有candidate/bind/read验证decimal string精确身份与BOUND/resolved；无action时不得自动绑定。
-- [ ] 5.3 验证Directory故障/stale不清除Binding，恢复后resolved；Gateway→Node调用独立可用。
+- [x] 5.3 验证Directory故障/stale不清除Binding，恢复后resolved；Gateway→Node调用独立可用。
 - [x] 5.4 复用已有transport/PG fixtures并参数化HTTP/HTTPS，允许多验收ID引用同一测试但保留逐项断言；运行必要生成及项目make test build，按变更范围运行PG、TLS、进程验收；只做相关页面smoke，不扩大为Topology重新开发。
 
 ## 6. Unified Gateway and Node management transport
@@ -38,10 +38,10 @@
 - [x] 6.1 评审统一出站契约、Node既有SSRF/证书保证移除及配置退役和回滚影响。
 - [x] 6.2 修改Node专用transport及配置，移除目标许可/特殊IP/DNS重绑定检查和证书验证，复用普通拨号；不改固定接口或Secret契约。
 - [x] 6.3 使用合成fixture验证HTTP、各类不可信HTTPS、DNS变化/特殊地址、旧变量退役及无代理/redirect/预算/响应/Secret回归，不访问真实元数据服务。
-- [ ] 6.4 随7.2统一更新Control/ops部署资料，并在规范同步时修正Node Purpose保证，核对范围外入站和数据面配置无变更，记录版本回滚条件；纳入最终evidence reconciliation后才关闭change。
+- [x] 6.4 随7.2统一更新Control/ops部署资料，并在规范同步时修正Node Purpose保证，核对范围外入站和数据面配置无变更，记录版本回滚条件；纳入最终evidence reconciliation后才关闭change。
 
 ## 7. Evidence and closure
 
-- [ ] 7.1 将验收矩阵逐项关联fixture、命令、断言和实际结果，不把planning validation当实现证据。
+- [x] 7.1 将验收矩阵逐项关联fixture、命令、断言和实际结果，不把planning validation当实现证据。
 - [x] 7.2 一次更新Control/ops Runbook及部署模板，合并4.3/6.4的HTTP、旧变量退役、补填、默认关闭、部署顺序、回滚和限制说明；各任务引用同一交付物。
-- [ ] 7.3 执行OpenSpec strict与diff检查，复核生成物、工作树和独立提交范围，等待Implementation/Release Review后另行归档。
+- [x] 7.3 执行OpenSpec strict与diff检查，复核生成物、工作树和独立提交范围，等待Implementation/Release Review后另行归档。

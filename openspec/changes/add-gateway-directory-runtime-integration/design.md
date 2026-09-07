@@ -99,6 +99,12 @@ Node旧配置`CONTROL_CLIPROXYAPI_MANAGEMENT_DNS`、`CONTROL_CLIPROXYAPI_MANAGEM
 
 这是现有Node传输安全行为的不兼容变更，不提供双轨开关。回滚旧Control前恢复旧DNS/CIDR/CA配置及符合旧证书策略的目标，否则停止受影响采集；不能假称旧二进制兼容新部署。只修改Control客户端和相关ops文档/模板，不改Node/Gateway服务端、入站TLS或数据面。同步canonical时更新Node Purpose中原SSRF保证的陈述，不能保留已取消的保证；本轮不直接修改canonical或archive。
 
+归档时 `openspec/specs/cliproxyapi-readonly-driver/spec.md` 的 Purpose 应同步为：
+
+> 为 Control 提供只读、固定路径、运行时 Secret 隔离的 CLIProxyAPI Node Driver，管理出站直接支持 HTTP/HTTPS 且不执行目标许可或 HTTPS 证书验证，并将官方 auth-files 响应转换为有界、脱敏、可供持久采集使用的内存观察结果。
+
+该措辞与本 change 的 MODIFIED Requirements、Control Driver/runtime Runbook 和 ops System Design 一致。Implementation/Release Review 阶段只准备同步内容；后续获准归档时检查 CLI 同步结果，不能把尚未更新的 canonical Purpose 报为已同步。
+
 ## Implementation simplification
 
 本次精简属于当前change，不新增能力或独立change。调度在每个Gateway实际轮到时使用DB当前槽，先reconcile再work；不预先创建整个列表的run，不回填等待期间错过的槽。180s槽、540s freshness、retry deadline与每个attempt预算不变；5s是循环唤醒频率，不保证整个列表每5s完成。保持串行处理和取消语义，不新增队列、并发池或第二套调度器。用户接受的验收组织：既有数据库继续只允许单Gateway。A/B及慢/失败前项的有序遍历采用调用产品遍历函数的合成fixture，证明后项继续及父取消生效；NULL no-work、失败持久化、补填竞争、当前DB槽、同槽去重、超时与恢复分别由真实单Gateway PostgreSQL/进程fixture证明。两层证据联合覆盖，不宣称同库支持多个Gateway；不为测试删除singleton约束或新增多Gateway数据模型。不能用一次全局5s context截断后续项。

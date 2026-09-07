@@ -1,6 +1,6 @@
 # Planning and acceptance evidence
 
-状态：Architecture Contract Re-review APPROVED（2026-09-07），P1=0、P2=0；实施与专项验收进行中。下文历史 planning/review 段落保留其当时状态；当前实现结果以 Implementation evidence 为准。尚未部署、归档或修改已归档 Topology change。
+状态：Architecture Contract Re-review APPROVED（2026-09-07），P1=0、P2=0；实施与专项验收完成，27/27，等待 Implementation/Release Review。下文历史 planning/review 段落保留其当时状态；当前实现结果以 Implementation evidence、Local recovery acceptance 及 Final targeted evidence 为准。已在本地开发环境部署验收；未部署生产、归档或修改已归档 Topology change。
 
 ## Acceptance matrix
 
@@ -8,11 +8,11 @@
 | --- | --- | --- | --- |
 | R1 | runtime配置与fake HTTP/HTTPS计数 | disabled零请求/零run；invalid enabled配置fail closed | PASS，见实际专项与范围说明 |
 | R2 | 真实PG+进程启动/退出 | 固定cadence/budgets、受限pool、停止领取与bounded shutdown | 专项 PASS，见最新精确断言；发布范围另列 |
-| R7 | 多Gateway慢/失败前项、跨槽及取消fixture | runtime无重复ScheduleTick；后项继续、按当前DB槽调度、同槽去重、不回填 | 部分 PASS；剩余断言未闭合 |
+| R7 | 多Gateway慢/失败前项、跨槽及取消fixture | runtime无重复ScheduleTick；后项继续、按当前DB槽调度、同槽去重、不回填 | PASS；Accepted traversal acceptance、FrozenBudgets 与进程竞争共同覆盖，A/B为已批准合成工作项 |
 | R3 | 多进程/lease/unknown commit | 单槽唯一、旧fence不得finalize、restart可恢复 | 专项 PASS，见最新精确断言；发布范围另列 |
 | R4 | 真实PG+慢header/body/finalize、timeout收尾 | 独立5s attempt；失败写入另有最多5s且不延长成功/lease；取消/unknown commit恢复 | 专项 PASS，见最新精确断言；发布范围另列 |
-| R5 | A NULL/B正常、多tick、补填与调度双顺序 | A零run/零请求且仍可补填；B成功；无NULL新run | 部分 PASS；剩余断言未闭合 |
-| R6 | A非NULL但凭据失败/B正常、历史NULL run | A正常durable failure，B成功；历史保留且reconcile，不绕过补填条件 | 部分 PASS；剩余断言未闭合 |
+| R5 | A NULL/B正常、多tick、补填与调度双顺序 | A零run/零请求且仍可补填；B成功；无NULL新run | PASS；合成遍历、真实PG UnconfiguredNoWork 与 InitialConcurrency 双顺序 |
+| R6 | A非NULL但凭据失败/B正常、历史NULL run | A正常durable failure，B成功；历史保留且reconcile，不绕过补填条件 | PASS；合成遍历、真实PG SourceLifecycle 与 HistoricalNullRun 专项 |
 | T1 | HTTP与自签名/未知CA/过期/错误主机名HTTPS | 无许可列表均可采集；Node同策略、范围外客户端不变；public Directory拒绝 | PASS，见实际专项与范围说明 |
 | T2 | 无效URL/非HTTP协议、TLS握手失败、双协议redirect | 正常失败、不降级、不转发token、不刷新freshness | PASS，见实际专项与范围说明 |
 | T3 | reader token缺失/错误/轮换 | 失败不刷新freshness；同引用恢复后成功 | 专项 PASS，见最新精确断言；发布范围另列 |
@@ -23,8 +23,8 @@
 | A5 | migration Up/Down/应用rollback | 不删除资产/审计/采集数据，保留forward兼容 | PASS，见实际专项与范围说明 |
 | E1 | 真实source v1 changed/unchanged/失败/恢复 | int64无损、去重、last_success_received_at只随成功更新 | PASS，见实际专项与范围说明 |
 | E2 | 已有HTTP候选/bind/read | decimal string精确ID、BOUND/resolved/current，未action不自动绑定 | PASS，见实际专项与范围说明 |
-| E3 | Directory暂停/故障与数据面请求 | Binding保留、stale→unknown、恢复resolved，数据面独立 | 待验收 |
-| O1 | metrics/logs/配置dump canary | 无token/reference/账号身份/原始响应输出 | 部分 PASS；剩余断言未闭合 |
+| E3 | Directory暂停/故障与数据面请求 | Binding保留、stale→unknown、恢复resolved，数据面独立 | PASS；Local recovery acceptance，真实540秒自然过期和正常180秒槽恢复 |
+| O1 | metrics/logs/配置dump canary | 无token/reference/账号身份/原始响应输出 | PASS；既有metrics专项与最终真实main stdout/stderr、HTTP metrics、runtime错误日志canary；无产品config dump surface |
 | N1 | Node HTTP/各类不可信HTTPS合成fixture | 无许可及证书检查；健康/账号/版本观察遵守固定接口 | PASS，见实际专项与范围说明 |
 | N2 | 普通DNS变化、混合结果、特殊地址fixture | 不按地址类别或DNS重绑定拒绝；不访问真实元数据 | PASS，见实际专项与范围说明 |
 | N3 | 旧DNS/CIDR/CA变量缺失/非法/残留 | 不阻止启动、不读取CA、不影响新策略；rollback前恢复旧条件 | PASS，见实际专项与范围说明 |
@@ -140,7 +140,7 @@ URL解析、既有资产登记契约、专用token、响应schema/identity验证
 
 处置：暂停本地Control Directory runtime并恢复Gateway source关闭；最终aggregate为Inventory=6、current=0、Binding=0、asset补填audit=1、contract_invalid failed run=5。保留00018、首次补填审计、真实失败run及账号数据，不清除失败记录来伪造验收成功。不创建Binding；现有数据面/服务健康独立检查。需要Gateway独立修复：让`/internal/`绕过SPA middleware，并覆盖embed模式下正确token/错误token/关闭状态及public proxy拒绝；不修改source v1或Control API契约。
 
-### Remaining gates and review scope
+### Historical remaining gates and review scope (before Gateway fix)
 
 当前22/27。4.4、5.3因上述Gateway服务端路由缺陷阻塞，不能声称真实Directory采集、Binding/resolved/stale→恢复联合验收通过。6.4、7.1、7.3待联合验收闭合后完成最终证据与发布review。当前change明确不改Gateway/Node服务端；Gateway修复需独立change，不在本change中绕过边界。
 
@@ -149,3 +149,51 @@ URL解析、既有资产登记契约、专用token、响应schema/identity验证
 收尾只读检查：Control `/api/healthz`、Gateway `/`、Node `/healthz`均HTTP200；public `/internal/v1/api-account-directory`仍403。两端Directory开关实际为false，Gateway仓库在独立路由修复change创建前工作树干净；Control/ops已按上述边界提交。
 
 历史NULL专项：`go test ./internal/store -run '^TestGatewayDirectoryHistoricalNullRunIsReconciledWithoutNewSchedule$' -count=1 -v`真实PG PASS，16.301s；正常Schedule/Claim后模拟历史reference变NULL，后续调度不新增run，真实lease到期后reconcile同一runID，From=running、FailureClass=lease_lost，run count仍1。fixture先等待真实claim window，不skip、不删除历史。最终遍历专项保留原有测试原文后再次PASS，0.528s。
+
+### Local recovery acceptance (2026-09-08 Asia/Shanghai)
+
+Gateway 独立 `fix-gateway-directory-embedded-ui-routing` 已完成13/13，生产修复 commit `dfe4419233ef62bf7f9a4c9a4b5a7bff9802165d`；本地部署镜像 `relay-station/gateway:dfe441923`，image ID `sha256:57b03961e744fe2b4c7d39dd9e9fe4c639eaf910cdfde52ba1bd972da20d4198`。其余后续提交仅测试/证据；修复和验收不并入 Control 产品代码。上述 SPA 阻塞记录保留为历史，当前入口返回 source v1 JSON。Control 仍使用前述工作树验收镜像，不声称 clean-revision 正式发布。
+
+受保护本地 harness `/Volumes/DevRAM/tmp/relay-directory-http.py` 通过真实管理员会话调用既有 candidate/bind/read API；精确 Account ID 只从已有受保护配置取得，Binding ID 与 Account ID 保存于仓库外0600 baseline文件，不记录真实值。source numeric JSON→Go int64 和 Control HTTP decimal string 契约不变。以下时间统一为 UTC：
+
+| 时间 / 操作 | 命令 | 实际断言与结果 |
+| --- | --- | --- |
+| 16:05:49，显式 bind | `python3 /Volumes/DevRAM/tmp/relay-directory-http.py bind` | candidate `accounts` 精确命中已知ID；既有 action 后 bound=true、resolved/fresh/current、string身份精确；非自动关联。 |
+| source关闭后 16:09:35 baseline | `python3 /Volumes/DevRAM/tmp/relay-directory-http.py fault-baseline` | 最后成功观测固定为 `2026-09-07T16:06:03.684839Z`，保存同一Binding基线。 |
+| 16:14:21，仍在窗口内 | `python3 /Volumes/DevRAM/tmp/relay-directory-http.py read` | bound=true、binding_same=true、resolved/fresh，last_success未推进。 |
+| 16:15:07，自然超过540秒 | `python3 /Volumes/DevRAM/tmp/relay-directory-http.py assert-stale` | 同一Binding、同一string身份；unknown/stale/last_known，last_success逐字等于基线；无SQL回写时间或手动finalize。 |
+| stale期间真实AI调用 | `python3 /Volumes/DevRAM/tmp/relay-directory-http.py data-plane` | Gateway→Node `POST /v1/chat/completions` HTTP200，choices存在，7.78s；不保存响应内容。 |
+| 恢复source | `python3 /Volumes/DevRAM/tmp/relay-gateway-routing-release.py source true` | Compose保留volume、Gateway healthy；Control保持启用，等待真实调度，不手动触发run。 |
+| 16:18:32，正常槽恢复 | `python3 /Volumes/DevRAM/tmp/relay-directory-http.py assert-recovered` | 同一Binding、同一string身份恢复resolved/fresh/current；last_success严格推进至 `2026-09-07T16:18:03.675169Z`。 |
+
+故障期间只读DB聚合证明 `http_non_retryable` failed run 增加，旧 `contract_invalid` failed run=5继续保留，current=1且失败不推进成功时间。未删除run、snapshot、Binding或6个Node账号。真实精度边界由前述合成source/Binding HTTP专项覆盖，本地真实账号不冒充大整数fixture。
+
+恢复后运行 `python3 /Volumes/DevRAM/tmp/relay-gateway-routing-release.py check true`：正确token200/source JSON/no-store/account_count=1；缺失/错误token401；POST405；未知internal路由404；public Directory403；Gateway UI与health200；reader访问admin accounts401。该管理HTTPS探测验证既有CA，Control实际采集仍为登记的内部HTTP；不能将该探测作为Control不验证证书的HTTPS证明。
+
+Control disable/restart：恢复成功后运行 `python3 /Volumes/DevRAM/tmp/relay-directory-release.py control false`，Compose healthy。停用基线为run=12、current=1、last_success=`2026-09-07T16:18:03.675169Z`；跨过16:21正常调度槽后，三项逐字不变，Control `/api/healthz` HTTP200。随后运行同一harness `control true`，16:24:40既有 `assert-recovered` PASS；新成功观测为 `2026-09-07T16:24:00.037031Z`，同一Binding/Account身份保持resolved/fresh。最终本地source和Control poller均为true，保留现有显式Binding与6条Inventory；产品默认false不变。没有修改Node配置、清空数据或正式生产发布。
+
+### Documentation reconciliation
+
+Control `docs/runbooks/cliproxyapi-readonly-driver.md` 与 `gateway-directory-runtime.md`、ops `docs/RELAY_STATION_SYSTEM_DESIGN_CN.md` 已统一直接HTTP/HTTPS、移除目标许可与证书验证、Secret/固定路径/预算保留、旧变量退役及回退旧版本必须恢复旧DNS/CIDR/CA与目标证书的条件。ops文档独立提交 `2c983c5`，不夹带Control代码。
+
+Node canonical Purpose 的待同步准确文本保存在本change `design.md`，对应MODIFIED Requirements已准备；只有后续获得归档授权才同步canonical，当前没有手工修改canonical或任何archived change。6.4在本阶段的文档交付与归档同步准备完成，不宣称canonical已同步。
+
+### Final targeted evidence
+
+新增 `cmd/control/gateway_directory_main_deployment_test.go` 的 `TestGatewayDirectoryMainDeploymentHTTPS`：子进程直接调用产品 `main()`，仅传runtime数据库连接及合成启动配置，不继承owner/test连接变量。owner仅在父进程创建隔离DB、执行已有Goose migrations、准备合法environment/Gateway和读取断言。合成TLS source使用自签名证书，且明确断言证书 `VerifyHostname("localhost")` 失败；产品main通过该HTTPS源成功持久化source numeric ID `9007199254740993`。不替换产品transport、scheduler或SQL。
+
+disabled main健康200且零请求/零run；enabled main等待真实current持久化，健康及`/metrics`均200。真实SIGTERM有界退出后重启main，运行超过完整5秒tick；同槽run=1、source request=1，重启后的current snapshot ID、last_success_received_at与重启前完全一致，重新join读取account_id精确为 `9007199254740993`。为避免测试跨过claim window，fixture按真实DB时钟等待剩余窗口足够，不改写时间、不skip。该完整main部署专项与本地HTTP Compose验收共同关闭4.4。
+
+O1：同一main测试捕获disabled/enabled/restarted stdout/stderr及实际HTTP `/metrics`输出，断言不含合成reader token、reference、mapping路径、source endpoint或账号ID；`TestGatewayDirectoryRuntimeErrorsUseFixedRedactedLogFields` 经真实JSON slog handler和runtime.tick同时触发reconcile/work错误，输出固定component/reason，不含endpoint/reference/token/raw-error canary。既有 `TestGatewayDirectoryMetricsSnapshotAndCollector` 保留固定metric/label和canary验证。只读检查 `cmd/`、`internal/api/`、OpenAPI无config dump surface，本次检查可见启动日志与metrics；不虚构不存在的配置导出接口验收。
+
+最终精确命令（使用README隔离测试PG的owner/runtime两个环境变量，不覆盖GOCACHE/GOTMPDIR）：
+
+```sh
+go test ./cmd/control -run '^TestGatewayDirectory(RuntimeErrorsUseFixedRedactedLogFields|MainDeploymentHTTPS)$' -count=1 -v
+```
+
+真实PG运行PASS：MainDeploymentHTTPS **64.36s**（包含真实claim window等待）、RuntimeErrorsUseFixedRedactedLogFields **0.00s**，package **65.026s**。先前草稿因过短等待窗口失败，不计为产品失败或PASS；修正窗口后首次PASS，再经独立review补强重启后精确持久值断言，以上为最终复跑结果。
+
+仅新增测试和文档；生产实现保持 `bedcbd3` / `76b50c5`，复用已有最终 `make test build` 与PG验收结果，不重跑完整构建、Chrome或全量PG。OpenAPI/生成客户端、Node服务端、Control入站与数据面实现本轮均无diff。
+
+最终change strict PASS；`openspec validate --all --strict` **14 passed / 0 failed**；working-tree及提交前cached diff检查PASS。当前27/27；未push、archive或生产部署。Control/ops按仓库分别提交；Node仓库的既有 `AGENTS.md` 修改不属于本change，未修改或提交。
