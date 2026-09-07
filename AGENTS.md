@@ -22,11 +22,14 @@ Relay Station Control 是单环境管理与可观测服务，采用 Go 1.27、Re
 
 ## 验证
 
+纯文档或规则变更检查内容、引用和 diff；涉及可执行命令时核对命令。局部开发先运行受影响模块的检查；行为或契约变更交付前完成完整验证：
+
 ```bash
-make generate
-make test
-make build
+make test build
 ```
+
+同一次 make 调用会共享 generate 依赖，无需先单独运行 make generate。不要为纯文档变更强制生成客户端或编译整个项目。
+前端 npm run build 自带 generate:api；共享 Make 依赖不代表前端生成只执行一次。
 
 数据库或状态机变更还需运行对应的 `deploy/acceptance/` 验收。使用 README 中的隔离开发数据库和受限 runtime role；产品进程不得持有 migration owner 凭据。
 

@@ -97,12 +97,12 @@ Implement tasks from an OpenSpec change.
    - Mark task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task
 
-   **Pause if:**
-   - Task is unclear → ask for clarification
-   - Implementation reveals a design issue → suggest updating artifacts
+   **Continue or pause based on scope:**
+   - Resolve routine implementation details from the approved artifacts and context; ask only when a missing decision materially affects scope, behavior, or safety
+   - Resolve design issues within approved behavior; update artifacts when needed without silently changing approved requirements
    - A task needs work beyond what the spec and tasks describe, or you are tempted to drop, narrow, defer, or accept exceptions to specified behavior to make it fit → surface the added scope and ask; do not absorb it silently
-   - Error or blocker encountered → report and wait for guidance
-   - User interrupts
+   - Diagnose and repair recoverable errors within the authorized task, then rerun affected checks; pause when progress requires new authority, an unresolved user decision, or an unavailable external prerequisite
+   - Treat user messages as steering: answer progress questions and continue, incorporate corrections, and stop only when the user cancels or replaces the task
 
 7. **On completion or pause, show status**
 
@@ -166,11 +166,11 @@ What would you like to do?
 **Guardrails**
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
-- If task is ambiguous, pause and ask before implementing
-- If implementation reveals issues, pause and suggest artifact updates
+- Ask when ambiguity materially affects scope, behavior, or safety; resolve routine details from the approved context
+- Resolve implementation issues within approved scope and reconcile artifacts as needed
 - Keep code changes minimal and scoped to each task
 - Update task checkbox immediately after completing each task
-- Pause on errors, blockers, or unclear requirements - don't guess
+- Recover from errors within the authorized scope; do not invent missing requirements or bypass CLI-controlled blockers
 - When a task needs work beyond what the spec describes, surface the added scope and pause - never silently narrow, defer, or simplify away specified behavior
 - Only mark a task `- [x]` when its specified behavior is fully implemented, not when it is partially done or deferred
 - Use contextFiles from CLI output, don't assume specific file names

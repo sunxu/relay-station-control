@@ -54,7 +54,7 @@ operations:
     guidance:
       - Read the relevant System Design v1.8 / R4.7 and ADR-0001/ADR-0002 sections before changing code.
       - Implement only approved tasks; record newly discovered scope as an OpenSpec update.
-      - Run make generate and make test, then the change-specific PostgreSQL and container checks.
+      - For behavior or contract changes, run make test build in one invocation (it includes generation), then the change-specific PostgreSQL and container checks. During development, use focused checks; documentation-only changes need content, reference, and relevant command checks.
       - Never commit Secret values, real account data, local runtime data, or unsanitized external responses.
   archive:
     guidance:
