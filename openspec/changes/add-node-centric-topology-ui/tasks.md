@@ -2,7 +2,7 @@
 
 - [x] 1.1 proposal/design/specs与acceptance matrix已获Architecture Contract Final Approval；原三项契约批准保持有效。
 - [x] 1.2 P-READ已获Architecture Contract Final Approval：design第3节函数、Provider并集、缺state投影、ACL及Up/Down范围已冻结；已另获实施授权，不以架构批准代替实现验收。
-- [ ] 1.3 清点实际Control Binding HTTP消费者并记录breaking forward correction发布约束；验证内置Web之外是否有稳定兼容承诺，发现时停止并回到架构评审。
+- [x] 1.3 清点实际Control Binding HTTP消费者并记录breaking forward correction发布约束；验证内置Web之外是否有稳定兼容承诺，发现时停止并回到架构评审。
 
 ## 2. Existing Binding transport correctness prerequisite
 
@@ -42,8 +42,10 @@
 
 ## 7. Evidence and reconciliation
 
-- [ ] 7.1 将D1–D7/P1–P8/P-READ A–H/J–L/I1–I9/R1–R5逐项关联命令、fixture、响应与截图，区分契约要求和实际通过证据；P-READ未获批准或未实现验收、或外部兼容依赖未解决不得标功能完成。
+- [x] 7.1 将D1–D7/P1–P8/P-READ A–H/J–L/I1–I9/R1–R5逐项关联命令、fixture、响应与截图，区分契约要求和实际通过证据；P-READ未获批准或未实现验收、或外部兼容依赖未解决不得标功能完成。
 - [x] 7.2 更新Control Runbook与本change compatibility说明：read-only、current/history、双维度、Web string/source numeric边界、breaking升级回滚和无效入口禁用；不跨仓擅改source架构。
 - [x] 7.3 最终运行OpenSpec strict与git diff --check，检查文档/代码一致；保留既有规范文件改动，记录git status及本change范围，禁止混入Secret/运行数据/未经授权实现，全部验收完成后才另行归档。
 
 本change保持0 persistence migration；P-READ 允许一个最小 additive readonly query-access migration。实施已获授权；验收结果见planning-validation.md，实现按用户授权分批提交，发布尚未执行。
+
+Release Gate本地检查依据见[release-compatibility.md](release-compatibility.md)：用户指定当前父目录覆盖相关项目，全部本地consumer枚举完成，无C/D类consumer；原验收证据已对账，27/27。等待Node-centric Topology Final Release Gate Review，不archive。

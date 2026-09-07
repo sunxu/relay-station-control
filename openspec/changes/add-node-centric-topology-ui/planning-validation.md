@@ -2,7 +2,7 @@
 
 2026-09-07：Architecture Contract（含原三项与P-READ）已Final APPROVED，用户随后明确授权实施。本轮已实现安全读取、HTTP身份修正及只读Topology，完成下列隔离验证。用户随后授权分批保存已验证实现；未生产部署或归档。
 
-仓库外实际 Binding HTTP 消费者尚未确认；1.3 与相关最终发布门禁保持未勾选，不把仓库内检索当成外部消费者确认。源码内已统一HTTP读写为string；存在稳定外部兼容承诺时，必须停止发布并回到版本化兼容契约评审。
+Release Gate收尾：用户明确所有相关项目位于当前父目录，并指定本地树为source of truth；已完整扫描Control及所有sibling/辅助目录，无不兼容或来源不明的Binding consumer。详见[release-compatibility.md](release-compatibility.md)。1.3和7.1已关闭，27/27；该结论限本次明确的本地体系，未部署、未归档，等待Node-centric Topology Final Release Gate Review。
 
 ## Self review
 
@@ -44,7 +44,7 @@
 | I7–I8、R2 | numeric请求明确400；既有Binding认证/CSRF/并发/事务/审计/目录不可变回归；store/domain/audit和source实现无变更。Runbook明确API/Web成对升级回滚；未执行生产发布。 |
 | R1 | `web/e2e/topology.spec.ts`拒绝任何非GET/未知API，捕获URL不含account_key；页面无mutation/管理入口；账号清单仅Node UUID导航。 |
 | R4 | Topology组件10项含四态Binding、last_known、大ID、未知Node、A→B迟到响应和AbortSignal取消、401清cache、503；Chrome实际分页/键盘/前进后退/reload/evidence401，390px和1280px无页面溢出；UTC和双badge截图人工检查。 |
-| R3、R5 | P-READ与实施授权已取得；完整make test build及strict/diff检查通过。外部HTTP消费者清点仍是未解决发布门禁。 |
+| R3、R5 | P-READ与实施授权已取得；完整make test build及strict/diff检查通过。本地跨项目HTTP消费者清点已完成，见release-compatibility.md；部署仍待Final Release Gate Review。 |
 
 ## Commands and results
 
@@ -63,7 +63,7 @@
 
 已按用户授权拆分本地提交，未push。仅Control仓库内本change相关OpenAPI/生成物、Go handlers/store/query、一条query-access migration、Web与测试/Runbook/OpenSpec；Gateway source、DB persistence schema与其他仓库未改。此前批准契约及三个规范文件的提交不回写。
 
-不得把实现已验证等同发布完成或全change门禁关闭。仍需确认实际外部Binding HTTP消费者，随后按授权安排最终review及发布。没有以Topology便利为由引入任何mutation或source v2。
+不得把实现已验证等同发布完成或全change门禁关闭。实际本地跨项目Binding HTTP消费者已按用户指定范围确认；后续等待Final Release Gate Review及发布授权。没有以Topology便利为由引入任何mutation或source v2。
 
 
 ## Implementation checkpoint commits
@@ -75,4 +75,13 @@
 - `39b6ab3 feat(web): add node-centric topology ui`：只读route/page/adapters/hooks及组件/Chrome验收。
 - `docs(topology): add validation and runbook`：本验收记录、Runbook及OpenSpec状态同步。
 
-每个commit前执行`git diff --cached --check`。本次只拆分提交和同步文档状态，没有改变已验证业务实现，不重复运行业务测试；文档重新执行OpenSpec strict及diff检查。外部消费者门禁继续保留，进度25/27，未归档。
+每个commit前执行`git diff --cached --check`。本次只拆分提交和同步文档状态，没有改变已验证业务实现，不重复运行业务测试；文档重新执行OpenSpec strict及diff检查。提交该实现checkpoint时消费者门禁尚未关闭，进度为25/27；本轮Release Gate完成后已更新至27/27，仍未归档。
+
+
+## Final review and release gate reconciliation
+
+Implementation Final Review已APPROVED；复核四个实现提交没有阻塞性缺陷。此前review另复跑`go test ./internal/api -run '^TestGatewaySourceV1ToHTTPIdentityPrecision$' -count=1`及`npm --prefix web test -- --run src/pages/TopologyView.test.tsx src/api/gateway-account-identity.test.tsx`（11项通过），strict与提交diff检查通过。以上是已执行的review证据，本轮不重复测试。
+
+[release-compatibility.md](release-compatibility.md)包含实际目录/branch/status、全部breaking endpoint与JSON路径、A/B/C/D消费者分类、危险数字处理排查、source v1不变边界、逐项D/P/P-READ/I/R实现/fixture/assertion/原命令结果引用，以及尚未执行的推荐发布顺序。没有发现证据缺口；1.3与7.1均[x]，OpenSpec 27/27。
+
+本轮仅更新本change的tasks、planning-validation和release compatibility evidence；仅执行文档strict/diff检查，不修改API/Go/TS/migration、不改sibling、不访问远端、不部署、不archive。等待 **Node-centric Topology Final Release Gate Review**。
