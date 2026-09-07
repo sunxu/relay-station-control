@@ -75,8 +75,9 @@ type CrossNodeDuplicateOccurrenceSummary struct {
 
 // CrossNodeDuplicateOccurrencePage is one bounded page of ListOccurrences.
 type CrossNodeDuplicateOccurrencePage struct {
-	Items   []CrossNodeDuplicateOccurrenceSummary
-	HasMore bool
+	Items      []CrossNodeDuplicateOccurrenceSummary
+	HasMore    bool
+	ObservedAt *time.Time
 }
 
 // CrossNodeDuplicateOccurrenceEvidenceItem is one retention-safe evidence
@@ -112,6 +113,13 @@ type CrossNodeDuplicateOwnershipOccurrenceReader interface {
 	ListOccurrenceEvidence(ctx context.Context, occurrenceID uuid.UUID, cursor *time.Time, cursorObservationID uuid.UUID, limit int) (CrossNodeDuplicateOccurrenceEvidencePage, error)
 }
 
+// CrossNodeDuplicateOwnershipHistoryReader is kept separate from the current
+// occurrence reader so existing current-membership fakes do not gain a new
+// obligation. Historical involvement is proven by append-only evidence.
+type CrossNodeDuplicateOwnershipHistoryReader interface {
+	ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode(ctx context.Context, nodeID uuid.UUID, status string, cursor *CrossNodeDuplicateOccurrenceCursor, limit int) (CrossNodeDuplicateOccurrencePage, error)
+}
+
 // CrossNodeDuplicateOwnershipOccurrenceRepository implements
 // CrossNodeDuplicateOwnershipOccurrenceReader against the Phase 1B
 // persistence tables. It only SELECTs -- relay_control_runtime already
@@ -123,12 +131,71 @@ type CrossNodeDuplicateOwnershipOccurrenceRepository struct {
 }
 
 var _ CrossNodeDuplicateOwnershipOccurrenceReader = (*CrossNodeDuplicateOwnershipOccurrenceRepository)(nil)
+var _ CrossNodeDuplicateOwnershipHistoryReader = (*CrossNodeDuplicateOwnershipOccurrenceRepository)(nil)
 
 func NewCrossNodeDuplicateOwnershipOccurrenceRepository(pool *pgxpool.Pool) (*CrossNodeDuplicateOwnershipOccurrenceRepository, error) {
 	if pool == nil {
 		return nil, errors.New("store: cross-node duplicate occurrence database is unavailable")
 	}
 	return &CrossNodeDuplicateOwnershipOccurrenceRepository{queries: generated.New(pool)}, nil
+}
+
+// ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode returns each
+// occurrence once when its immutable evidence contains the target Node. The
+// status filter is optional (empty means both ACTIVE and RESOLVED), and the
+// cursor is bound by the caller to this target/status query.
+func (repository *CrossNodeDuplicateOwnershipOccurrenceRepository) ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode(
+	ctx context.Context, nodeID uuid.UUID, status string, cursor *CrossNodeDuplicateOccurrenceCursor, limit int,
+) (CrossNodeDuplicateOccurrencePage, error) {
+	if repository == nil || repository.queries == nil || nodeID == uuid.Nil ||
+		limit < 1 || limit > maximumCrossNodeDuplicateOccurrencePageSize ||
+		(status != "" && status != "ACTIVE" && status != "RESOLVED") ||
+		(cursor != nil && (cursor.LastSeenAt.IsZero() || cursor.OccurrenceID == uuid.Nil)) {
+		return CrossNodeDuplicateOccurrencePage{}, ErrCrossNodeDuplicateOccurrenceQuery
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if _, err := repository.queries.GetNodeAsset(queryCtx, nullableUUID(nodeID)); errors.Is(err, pgx.ErrNoRows) {
+		return CrossNodeDuplicateOccurrencePage{}, ErrAssetNotFound
+	} else if err != nil {
+		return CrossNodeDuplicateOccurrencePage{}, err
+	}
+
+	var afterTime *time.Time
+	var afterID *uuid.UUID
+	if cursor != nil {
+		afterTime = &cursor.LastSeenAt
+		afterID = &cursor.OccurrenceID
+	}
+	observedAt, err := repository.queries.GetRelayBindingDBTime(queryCtx)
+	if err != nil {
+		return CrossNodeDuplicateOccurrencePage{}, err
+	}
+	params := generated.ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeParams{
+		TargetNodeID:      nullableUUID(nodeID),
+		Status:            nullableText(status),
+		AfterLastSeenAt:   nullableTimeValue(afterTime),
+		AfterOccurrenceID: nullableUUID(uuid.Nil),
+		PageSize:          int32(limit + 1),
+	}
+	if afterID != nil {
+		params.AfterOccurrenceID = nullableUUID(*afterID)
+	}
+	rows, err := repository.queries.ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode(queryCtx, params)
+	if err != nil {
+		return CrossNodeDuplicateOccurrencePage{}, err
+	}
+	items := make([]CrossNodeDuplicateOccurrenceSummary, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, crossNodeDuplicateOccurrenceSummaryFromHistoryRow(row))
+	}
+	observedAtValue := observedAt.Time.UTC()
+	page := CrossNodeDuplicateOccurrencePage{Items: items, ObservedAt: &observedAtValue}
+	if len(page.Items) > limit {
+		page.HasMore = true
+		page.Items = page.Items[:limit]
+	}
+	return page, nil
 }
 
 func (repository *CrossNodeDuplicateOwnershipOccurrenceRepository) ListOccurrences(
@@ -217,6 +284,17 @@ func (repository *CrossNodeDuplicateOwnershipOccurrenceRepository) ListOccurrenc
 }
 
 func crossNodeDuplicateOccurrenceSummaryFromListRow(row generated.ListCrossNodeDuplicateOccurrencesRow) CrossNodeDuplicateOccurrenceSummary {
+	return CrossNodeDuplicateOccurrenceSummary{
+		OccurrenceID: uuidFromPG(row.OccurrenceID), EnvironmentID: row.EnvironmentID, AccountKey: row.AccountKey,
+		ConflictType: row.ConflictType, Status: row.Status, Severity: row.Severity,
+		FirstSeenAt: row.FirstSeenAt.Time.UTC(), LastSeenAt: row.LastSeenAt.Time.UTC(),
+		ResolvedAt: nullableTime(row.ResolvedAt), EvidenceState: row.EvidenceState,
+		LastFullyVerifiedAt: nullableTime(row.LastFullyVerifiedAt), LatestEvaluationID: nullableUUIDPointer(row.LatestEvaluationID),
+		AffectedNodes: uuidSliceFromPG(row.AffectedNodeIds),
+	}
+}
+
+func crossNodeDuplicateOccurrenceSummaryFromHistoryRow(row generated.ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeRow) CrossNodeDuplicateOccurrenceSummary {
 	return CrossNodeDuplicateOccurrenceSummary{
 		OccurrenceID: uuidFromPG(row.OccurrenceID), EnvironmentID: row.EnvironmentID, AccountKey: row.AccountKey,
 		ConflictType: row.ConflictType, Status: row.Status, Severity: row.Severity,

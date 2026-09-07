@@ -7,6 +7,48 @@
 -- account_key is returned as plaintext by design (frozen non-goal: no
 -- masked/HMAC/fingerprint handling for this capability).
 
+-- Historical involvement is intentionally separate from the current
+-- instance_id filter below. EXISTS over immutable evidence preserves a
+-- Node's history after absence removes its current membership; the lateral
+-- affected-node projection remains the current set.
+-- name: ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode :many
+SELECT
+    occurrence.occurrence_id,
+    occurrence.environment_id,
+    occurrence.account_key,
+    occurrence.conflict_type,
+    occurrence.status,
+    occurrence.severity,
+    occurrence.first_seen_at,
+    occurrence.last_seen_at,
+    occurrence.resolved_at,
+    occurrence.evidence_state,
+    occurrence.last_fully_verified_at,
+    occurrence.latest_evaluation_id,
+    COALESCE(affected.instance_ids, ARRAY[]::uuid[])::uuid[] AS affected_node_ids
+FROM cross_node_duplicate_occurrences AS occurrence
+LEFT JOIN LATERAL (
+    SELECT array_agg(node.instance_id ORDER BY node.instance_id) AS instance_ids
+    FROM cross_node_duplicate_occurrence_nodes AS node
+    WHERE node.occurrence_id = occurrence.occurrence_id
+) AS affected ON true
+WHERE occurrence.status = COALESCE(sqlc.narg(status)::text, occurrence.status)
+  AND EXISTS (
+      SELECT 1
+      FROM cross_node_duplicate_occurrence_evidence AS evidence
+      WHERE evidence.occurrence_id = occurrence.occurrence_id
+        AND evidence.instance_id = sqlc.arg(target_node_id)::uuid
+  )
+  AND (
+      sqlc.narg(after_last_seen_at)::timestamptz IS NULL
+      OR (occurrence.last_seen_at, occurrence.occurrence_id) < (
+          sqlc.narg(after_last_seen_at)::timestamptz,
+          sqlc.narg(after_occurrence_id)::uuid
+      )
+  )
+ORDER BY occurrence.last_seen_at DESC, occurrence.occurrence_id DESC
+LIMIT sqlc.arg(page_size);
+
 -- name: ListCrossNodeDuplicateOccurrences :many
 -- Bounded, keyset-paginated list ordered by (last_seen_at DESC,
 -- occurrence_id DESC) -- most recently active first. affected_nodes is

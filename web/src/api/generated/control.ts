@@ -875,9 +875,16 @@ export const RelayBindingContextSource = {
   none: 'none',
 } as const;
 
+/**
+ * Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+ * @minLength 1
+ * @maxLength 19
+ * @pattern ^[1-9][0-9]{0,18}$
+ */
+export type GatewayAccountId = string;
+
 export interface GatewayAccountContext {
-  /** @minimum 1 */
-  account_id: number;
+  account_id: GatewayAccountId;
   name: string;
   platform: string;
   type: string;
@@ -909,8 +916,7 @@ export interface RelayNodeGatewayAccountBindingDetail {
   binding_id: string;
   relay_node_id: string;
   gateway_instance_id: string;
-  /** @minimum 1 */
-  gateway_account_id: number;
+  gateway_account_id: GatewayAccountId;
   evidence_snapshot_id: string;
   bound_at: string;
   bound_by: string;
@@ -929,10 +935,13 @@ export interface NodeRelayBindingResponse {
   /** @nullable */
   gateway_instance_id?: string | null;
   /**
-     * @minimum 1
+     * Nullable GatewayAccountId; positive decimal int64, never a JSON number.
+     * @minLength 1
+     * @maxLength 19
      * @nullable
+     * @pattern ^[1-9][0-9]{0,18}$
      */
-  gateway_account_id?: number | null;
+  gateway_account_id?: string | null;
   resolution: RelayBindingResolution;
   directory_freshness: RelayBindingFreshness;
   /** @nullable */
@@ -943,8 +952,7 @@ export interface NodeRelayBindingResponse {
 }
 
 export interface GatewayAccountCentricBindingItem {
-  /** @minimum 1 */
-  gateway_account_id: number;
+  gateway_account_id: GatewayAccountId;
   account_context: GatewayAccountContext;
   /** @nullable */
   bound_relay_node_id?: string | null;
@@ -982,15 +990,13 @@ export interface UnresolvedRelayBindingsResponse {
 export interface BindRelayNodeRequest {
   relay_node_id: string;
   gateway_instance_id: string;
-  /** @minimum 1 */
-  gateway_account_id: number;
+  gateway_account_id: GatewayAccountId;
 }
 
 export interface RebindRelayNodeRequest {
   relay_node_id: string;
   new_gateway_instance_id: string;
-  /** @minimum 1 */
-  new_gateway_account_id: number;
+  new_gateway_account_id: GatewayAccountId;
 }
 
 export interface UnbindRelayNodeRequest {
@@ -1095,6 +1101,70 @@ export interface CrossNodeDuplicateOccurrenceEvidenceListResponse {
      * @nullable
      */
   next_cursor?: string | null;
+}
+
+export type NodeInventoryProviderStateMonitoringStatus = typeof NodeInventoryProviderStateMonitoringStatus[keyof typeof NodeInventoryProviderStateMonitoringStatus];
+
+
+export const NodeInventoryProviderStateMonitoringStatus = {
+  active: 'active',
+  out_of_scope: 'out_of_scope',
+} as const;
+
+export type NodeInventoryProviderStateSnapshotFreshness = typeof NodeInventoryProviderStateSnapshotFreshness[keyof typeof NodeInventoryProviderStateSnapshotFreshness];
+
+
+export const NodeInventoryProviderStateSnapshotFreshness = {
+  fresh: 'fresh',
+  stale: 'stale',
+  unknown: 'unknown',
+  out_of_scope: 'out_of_scope',
+} as const;
+
+export interface NodeInventoryProviderState {
+  provider: string;
+  monitoring_status: NodeInventoryProviderStateMonitoringStatus;
+  /**
+     * @nullable
+     * @pattern ^current$
+     */
+  state: string | null;
+  /** @nullable */
+  current_scheduled_at: string | null;
+  /** @nullable */
+  last_complete_at: string | null;
+  snapshot_freshness: NodeInventoryProviderStateSnapshotFreshness;
+  /** @nullable */
+  health_scheduled_at: string | null;
+  /** @nullable */
+  health_degraded: boolean | null;
+  /**
+     * @nullable
+     * @pattern ^(none|transport_failed|contract_invalid|disk_fallback|node_identity_incomplete|identity_incomplete)$
+     */
+  health_reason: string | null;
+}
+
+export interface NodeInventoryProviderStatesResponse {
+  instance_id: string;
+  observed_at: string;
+  providers: NodeInventoryProviderState[];
+}
+
+export type NodeDuplicateHistoryResponseInvolvement = typeof NodeDuplicateHistoryResponseInvolvement[keyof typeof NodeDuplicateHistoryResponseInvolvement];
+
+
+export const NodeDuplicateHistoryResponseInvolvement = {
+  historical: 'historical',
+} as const;
+
+export interface NodeDuplicateHistoryResponse {
+  involvement: NodeDuplicateHistoryResponseInvolvement;
+  instance_id: string;
+  observed_at: string;
+  items: CrossNodeDuplicateOccurrenceSummary[];
+  /** @nullable */
+  next_cursor: string | null;
 }
 
 /**
@@ -1202,6 +1272,27 @@ cursor?: PageCursorParameter;
  */
 limit?: AssetPageLimitParameter;
 };
+
+export type ListNodeDuplicateHistoryParams = {
+status?: ListNodeDuplicateHistoryStatus;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * @maxLength 512
+ */
+cursor?: string;
+};
+
+export type ListNodeDuplicateHistoryStatus = typeof ListNodeDuplicateHistoryStatus[keyof typeof ListNodeDuplicateHistoryStatus];
+
+
+export const ListNodeDuplicateHistoryStatus = {
+  ACTIVE: 'ACTIVE',
+  RESOLVED: 'RESOLVED',
+} as const;
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -5962,6 +6053,317 @@ export function useListCrossNodeDuplicateOccurrenceEvidence<TData = Awaited<Retu
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListCrossNodeDuplicateOccurrenceEvidenceQueryOptions(occurrenceId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getNodeInventoryProviderStatesResponse200 = {
+  data: NodeInventoryProviderStatesResponse
+  status: 200
+}
+
+export type getNodeInventoryProviderStatesResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getNodeInventoryProviderStatesResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getNodeInventoryProviderStatesResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getNodeInventoryProviderStatesResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getNodeInventoryProviderStatesResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getNodeInventoryProviderStatesResponseSuccess = (getNodeInventoryProviderStatesResponse200) & {
+  headers: Headers;
+};
+export type getNodeInventoryProviderStatesResponseError = (getNodeInventoryProviderStatesResponse400 | getNodeInventoryProviderStatesResponse401 | getNodeInventoryProviderStatesResponse403 | getNodeInventoryProviderStatesResponse404 | getNodeInventoryProviderStatesResponse503) & {
+  headers: Headers;
+};
+
+export type getNodeInventoryProviderStatesResponse = (getNodeInventoryProviderStatesResponseSuccess | getNodeInventoryProviderStatesResponseError)
+
+export const getGetNodeInventoryProviderStatesUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/account-inventory/nodes/${instanceId}/providers`
+}
+
+/**
+ * Requires an enabled super_admin session. Readonly, query budget 2 seconds and HTTP budget 5 seconds. Query failure is unavailable, never an empty success.
+ * @summary Read complete Provider snapshot and latest health evidence
+ */
+export const getNodeInventoryProviderStates = async (instanceId: string, options?: RequestInit): Promise<getNodeInventoryProviderStatesResponse> => {
+
+  const res = await fetch(getGetNodeInventoryProviderStatesUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNodeInventoryProviderStatesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNodeInventoryProviderStatesResponse
+}
+
+
+
+
+
+export const getGetNodeInventoryProviderStatesQueryKey = (instanceId: string,) => {
+    return [
+    `/api/account-inventory/nodes/${instanceId}/providers`
+    ] as const;
+    }
+
+
+export const getGetNodeInventoryProviderStatesQueryOptions = <TData = Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeInventoryProviderStatesQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>> = ({ signal }) => getNodeInventoryProviderStates(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNodeInventoryProviderStatesQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>>
+export type GetNodeInventoryProviderStatesQueryError = ErrorResponse
+
+
+export function useGetNodeInventoryProviderStates<TData = Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeInventoryProviderStates>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeInventoryProviderStates>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeInventoryProviderStates<TData = Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeInventoryProviderStates>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeInventoryProviderStates>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeInventoryProviderStates<TData = Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read complete Provider snapshot and latest health evidence
+ */
+
+export function useGetNodeInventoryProviderStates<TData = Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeInventoryProviderStates>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNodeInventoryProviderStatesQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listNodeDuplicateHistoryResponse200 = {
+  data: NodeDuplicateHistoryResponse
+  status: 200
+}
+
+export type listNodeDuplicateHistoryResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listNodeDuplicateHistoryResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listNodeDuplicateHistoryResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listNodeDuplicateHistoryResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listNodeDuplicateHistoryResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listNodeDuplicateHistoryResponseSuccess = (listNodeDuplicateHistoryResponse200) & {
+  headers: Headers;
+};
+export type listNodeDuplicateHistoryResponseError = (listNodeDuplicateHistoryResponse400 | listNodeDuplicateHistoryResponse401 | listNodeDuplicateHistoryResponse403 | listNodeDuplicateHistoryResponse404 | listNodeDuplicateHistoryResponse503) & {
+  headers: Headers;
+};
+
+export type listNodeDuplicateHistoryResponse = (listNodeDuplicateHistoryResponseSuccess | listNodeDuplicateHistoryResponseError)
+
+export const getListNodeDuplicateHistoryUrl = (instanceId: string,
+    params?: ListNodeDuplicateHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/topology/nodes/${instanceId}/duplicate-history?${stringifiedParams}` : `/api/topology/nodes/${instanceId}/duplicate-history`
+}
+
+/**
+ * Requires an enabled super_admin session. Readonly, query budget 2 seconds and HTTP budget 5 seconds. Query failure is unavailable, never an empty success.
+ * @summary Read occurrences historically involving this Node
+ */
+export const listNodeDuplicateHistory = async (instanceId: string,
+    params?: ListNodeDuplicateHistoryParams, options?: RequestInit): Promise<listNodeDuplicateHistoryResponse> => {
+
+  const res = await fetch(getListNodeDuplicateHistoryUrl(instanceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listNodeDuplicateHistoryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listNodeDuplicateHistoryResponse
+}
+
+
+
+
+
+export const getListNodeDuplicateHistoryQueryKey = (instanceId: string,
+    params?: ListNodeDuplicateHistoryParams,) => {
+    return [
+    `/api/topology/nodes/${instanceId}/duplicate-history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListNodeDuplicateHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError = ErrorResponse>(instanceId: string,
+    params?: ListNodeDuplicateHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodeDuplicateHistoryQueryKey(instanceId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodeDuplicateHistory>>> = ({ signal }) => listNodeDuplicateHistory(instanceId,params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNodeDuplicateHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listNodeDuplicateHistory>>>
+export type ListNodeDuplicateHistoryQueryError = ErrorResponse
+
+
+export function useListNodeDuplicateHistory<TData = Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: undefined |  ListNodeDuplicateHistoryParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeDuplicateHistory>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeDuplicateHistory>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeDuplicateHistory<TData = Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeDuplicateHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeDuplicateHistory>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeDuplicateHistory>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeDuplicateHistory<TData = Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeDuplicateHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read occurrences historically involving this Node
+ */
+
+export function useListNodeDuplicateHistory<TData = Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeDuplicateHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeDuplicateHistory>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNodeDuplicateHistoryQueryOptions(instanceId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

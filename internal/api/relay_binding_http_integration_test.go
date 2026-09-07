@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -82,19 +83,23 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		fingerprint[i] = byte(i + 1)
 	}
 	if _, err = owner.Exec(ctx, `INSERT INTO gateway_directory_snapshots(snapshot_id,gateway_instance_id,fingerprint,fingerprint_encoding_version,schema_version,account_count,created_at)
-		VALUES($1,$2,$3,1,1,2,$4)`, snap1ID, gatewayID, fingerprint, dbNow); err != nil {
+		VALUES($1,$2,$3,1,1,6,$4)`, snap1ID, gatewayID, fingerprint, dbNow); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = owner.Exec(ctx, `INSERT INTO gateway_directory_snapshot_items(snapshot_id,account_id,name,platform,type,url,status)
 		VALUES($1,1001,'Account 1','openai','apikey','https://gw.example.com/acc/1','active'),
-		      ($1,1002,'Account 2','anthropic','apikey',NULL,'active')`, snap1ID); err != nil {
+		      ($1,1002,'Account 2','anthropic','apikey',NULL,'active'),
+ ($1,9007199254740991,'Precision 1','openai','apikey',NULL,'active'),
+ ($1,9007199254740992,'Precision 2','openai','apikey',NULL,'active'),
+ ($1,9007199254740993,'Precision 3','openai','apikey',NULL,'active'),
+ ($1,9223372036854775807,'Precision 4','openai','apikey',NULL,'active')`, snap1ID); err != nil {
 		t.Fatal(err)
 	}
 	runID := uuid.New()
 	if _, err = owner.Exec(ctx, `INSERT INTO gateway_directory_ingestion_runs(
 		ingestion_run_id,gateway_instance_id,scheduled_at,status,attempt_count,created_at,first_started_at,last_started_at,
 		outcome,source_generated_at,terminal_at,received_at,content_fingerprint,snapshot_id,account_count
-	) VALUES ($1,$2,$3,'succeeded',1,$3,$3,$3,'changed',$4,$4,$4,$5,$6,2)`,
+	) VALUES ($1,$2,$3,'succeeded',1,$3,$3,$3,'changed',$4,$4,$4,$5,$6,6)`,
 		runID, gatewayID, slotNow, dbNow, fingerprint, snap1ID); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +254,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		bindBody := BindRelayNodeRequest{
 			RelayNodeId:       node1ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		}
 
 		// 1. Unauthenticated -> 401
@@ -287,7 +292,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		}
 
 		// 6. Unknown fields in body rejected with 400
-		rawWithExtra := fmt.Sprintf(`{"relay_node_id":"%s","gateway_instance_id":"%s","gateway_account_id":1001,"extra_field":"malicious"}`, node1ID, gatewayID)
+		rawWithExtra := fmt.Sprintf(`{"relay_node_id":"%s","gateway_instance_id":"%s","gateway_account_id":"1001","extra_field":"malicious"}`, node1ID, gatewayID)
 		r5 := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, rawWithExtra)
 		if r5.Code != http.StatusBadRequest {
 			t.Fatalf("bind extra field code=%d want 400, body=%s", r5.Code, r5.Body.String())
@@ -312,7 +317,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		bindBody := BindRelayNodeRequest{
 			RelayNodeId:       node1ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		}
 		bindResp := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, bindBody)
 		if bindResp.Code != http.StatusOK {
@@ -325,7 +330,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		if mutResp.Outcome != RelayBindingMutationResponseOutcomeSuccess || mutResp.Binding == nil {
 			t.Fatalf("unexpected mutation response: %+v", mutResp)
 		}
-		if mutResp.Binding.GatewayAccountId != 1001 || mutResp.Binding.RelayNodeId != node1ID {
+		if mutResp.Binding.GatewayAccountId != "1001" || mutResp.Binding.RelayNodeId != node1ID {
 			t.Fatalf("unexpected binding details: %+v", mutResp.Binding)
 		}
 		if bindResp.Header().Get("Cache-Control") != "no-store" {
@@ -340,7 +345,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		if err := json.Unmarshal(nodeResp2.Body.Bytes(), &nodeView); err != nil {
 			t.Fatal(err)
 		}
-		if nodeView.Resolution != RelayBindingResolutionResolved || nodeView.ContextSource != Current || nodeView.AccountContext == nil || nodeView.AccountContext.AccountId != 1001 {
+		if nodeView.Resolution != RelayBindingResolutionResolved || nodeView.ContextSource != "current" || nodeView.AccountContext == nil || nodeView.AccountContext.AccountId != "1001" {
 			t.Fatalf("expected resolved with current context, got: %+v", nodeView)
 		}
 
@@ -348,7 +353,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		dupNodeBind := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node1ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1002,
+			GatewayAccountId:  "1002",
 		})
 		if dupNodeBind.Code != http.StatusConflict {
 			t.Fatalf("dup node bind code=%d want 409, body=%s", dupNodeBind.Code, dupNodeBind.Body.String())
@@ -363,7 +368,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		dupAccountBind := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node2ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		})
 		if dupAccountBind.Code != http.StatusConflict {
 			t.Fatalf("dup account bind code=%d want 409, body=%s", dupAccountBind.Code, dupAccountBind.Body.String())
@@ -377,7 +382,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rebindBody := RebindRelayNodeRequest{
 			RelayNodeId:          node1ID,
 			NewGatewayInstanceId: gatewayID,
-			NewGatewayAccountId:  1002,
+			NewGatewayAccountId:  "1002",
 		}
 		rebindResp := do(http.MethodPost, "/api/relay-bindings/rebind", superToken, superCSRF, rebindBody)
 		if rebindResp.Code != http.StatusOK {
@@ -390,8 +395,8 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		if rebindMutResp.Outcome != RelayBindingMutationResponseOutcomeSuccess || rebindMutResp.Binding == nil || rebindMutResp.PreviousBinding == nil {
 			t.Fatalf("rebind response incomplete: %+v", rebindMutResp)
 		}
-		if rebindMutResp.PreviousBinding.GatewayAccountId != 1001 || rebindMutResp.Binding.GatewayAccountId != 1002 {
-			t.Fatalf("rebind accounts mismatch: prev=%d new=%d", rebindMutResp.PreviousBinding.GatewayAccountId, rebindMutResp.Binding.GatewayAccountId)
+		if rebindMutResp.PreviousBinding.GatewayAccountId != "1001" || rebindMutResp.Binding.GatewayAccountId != "1002" {
+			t.Fatalf("rebind accounts mismatch: prev=%s new=%s", rebindMutResp.PreviousBinding.GatewayAccountId, rebindMutResp.Binding.GatewayAccountId)
 		}
 		// Confirm exact timestamp match
 		if *rebindMutResp.PreviousBinding.EndedAt != rebindMutResp.Binding.BoundAt {
@@ -407,15 +412,15 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		if err := json.Unmarshal(gwResp.Body.Bytes(), &gwView); err != nil {
 			t.Fatal(err)
 		}
-		if len(gwView.Accounts) != 2 {
-			t.Fatalf("gateway view accounts count=%d want 2", len(gwView.Accounts))
+		if len(gwView.Accounts) != 6 {
+			t.Fatalf("gateway view accounts count=%d want 6", len(gwView.Accounts))
 		}
 		// Account 1001 should now be unbound, Account 1002 should be bound to Node 1
 		for _, acc := range gwView.Accounts {
-			if acc.GatewayAccountId == 1001 && acc.Resolution != RelayBindingResolutionUnbound {
+			if acc.GatewayAccountId == "1001" && acc.Resolution != RelayBindingResolutionUnbound {
 				t.Fatalf("account 1001 resolution=%s want unbound", acc.Resolution)
 			}
-			if acc.GatewayAccountId == 1002 {
+			if acc.GatewayAccountId == "1002" {
 				if acc.Resolution != RelayBindingResolutionResolved || acc.BoundRelayNodeId == nil || *acc.BoundRelayNodeId != node1ID {
 					t.Fatalf("account 1002 resolution=%s boundNode=%v want resolved to node1", acc.Resolution, acc.BoundRelayNodeId)
 				}
@@ -470,7 +475,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rNotFoundAcc := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node2ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  999999,
+			GatewayAccountId:  "999999",
 		})
 		if rNotFoundAcc.Code != http.StatusNotFound {
 			t.Fatalf("account not found code=%d want 404, body=%s", rNotFoundAcc.Code, rNotFoundAcc.Body.String())
@@ -484,7 +489,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rNotFoundNode := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       uuid.New(),
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		})
 		if rNotFoundNode.Code != http.StatusNotFound {
 			t.Fatalf("node not found code=%d want 404, body=%s", rNotFoundNode.Code, rNotFoundNode.Body.String())
@@ -498,7 +503,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rNotFoundGw := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node2ID,
 			GatewayInstanceId: uuid.New(),
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		})
 		if rNotFoundGw.Code != http.StatusNotFound {
 			t.Fatalf("gateway not found code=%d want 404, body=%s", rNotFoundGw.Code, rNotFoundGw.Body.String())
@@ -516,7 +521,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rStale := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node2ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		})
 		if rStale.Code != http.StatusConflict {
 			t.Fatalf("stale dir bind code=%d want 409, body=%s", rStale.Code, rStale.Body.String())
@@ -552,7 +557,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 				resp := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 					RelayNodeId:       node2ID,
 					GatewayInstanceId: gatewayID,
-					GatewayAccountId:  1001,
+					GatewayAccountId:  "1001",
 				})
 				if resp.Code == http.StatusOK {
 					countMu.Lock()
@@ -577,7 +582,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rNonExistentID := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node2ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  9999,
+			GatewayAccountId:  "9999",
 		})
 		if rNonExistentID.Code != http.StatusNotFound {
 			t.Fatalf("identity non-existent id code=%d want 404, body=%s", rNonExistentID.Code, rNonExistentID.Body.String())
@@ -589,7 +594,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rawMetadataPayload := fmt.Sprintf(`{
 			"relay_node_id": "%s",
 			"gateway_instance_id": "%s",
-			"gateway_account_id": 9999,
+			"gateway_account_id": "9999",
 			"name": "Account 1",
 			"platform": "openai",
 			"type": "apikey",
@@ -698,7 +703,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		bResp := do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{
 			RelayNodeId:       node2ID,
 			GatewayInstanceId: gatewayID,
-			GatewayAccountId:  1001,
+			GatewayAccountId:  "1001",
 		})
 		if bResp.Code != http.StatusOK {
 			t.Fatalf("bind mutation failed: %d, body=%s", bResp.Code, bResp.Body.String())
@@ -707,7 +712,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 		rebResp := do(http.MethodPost, "/api/relay-bindings/rebind", superToken, superCSRF, RebindRelayNodeRequest{
 			RelayNodeId:          node2ID,
 			NewGatewayInstanceId: gatewayID,
-			NewGatewayAccountId:  1002,
+			NewGatewayAccountId:  "1002",
 		})
 		if rebResp.Code != http.StatusOK {
 			t.Fatalf("rebind mutation failed: %d, body=%s", rebResp.Code, rebResp.Body.String())
@@ -788,4 +793,75 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 			t.Fatalf("relay_node_assets mutated: node1Before=%+v node1After=%+v node2Before=%+v node2After=%+v", node1Before, node1After, node2Before, node2After)
 		}
 	})
+	t.Run("Lossless decimal int64 HTTP lifecycle", func(t *testing.T) {
+		values := []string{"9007199254740991", "9007199254740992", "9007199254740993", "9223372036854775807"}
+		_ = do(http.MethodPost, "/api/relay-bindings/unbind", superToken, superCSRF, UnbindRelayNodeRequest{RelayNodeId: node2ID})
+		for i, id := range values {
+			var response *httptest.ResponseRecorder
+			if i == 0 {
+				response = do(http.MethodPost, "/api/relay-bindings/bind", superToken, superCSRF, BindRelayNodeRequest{RelayNodeId: node2ID, GatewayInstanceId: gatewayID, GatewayAccountId: id})
+			} else {
+				response = do(http.MethodPost, "/api/relay-bindings/rebind", superToken, superCSRF, RebindRelayNodeRequest{RelayNodeId: node2ID, NewGatewayInstanceId: gatewayID, NewGatewayAccountId: id})
+			}
+			if response.Code != 200 {
+				t.Fatalf("id=%s status=%d body=%s", id, response.Code, response.Body)
+			}
+			var mutation RelayBindingMutationResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &mutation); err != nil || mutation.Binding == nil || mutation.Binding.GatewayAccountId != id {
+				t.Fatalf("lossy mutation: %s", response.Body)
+			}
+			if i > 0 && (mutation.PreviousBinding == nil || mutation.PreviousBinding.GatewayAccountId != values[i-1]) {
+				t.Fatalf("lossy previous binding: %s", response.Body)
+			}
+			var persisted int64
+			if err := owner.QueryRow(ctx, `SELECT gateway_account_id FROM relay_node_gateway_account_bindings WHERE relay_node_id=$1 AND ended_at IS NULL`, node2ID).Scan(&persisted); err != nil {
+				t.Fatal(err)
+			}
+			if strconv.FormatInt(persisted, 10) != id {
+				t.Fatalf("persisted identity differs for %s", id)
+			}
+			read := do(http.MethodGet, "/api/relay-bindings/nodes/"+node2ID.String(), superToken, "", nil)
+			var view NodeRelayBindingResponse
+			if err := json.Unmarshal(read.Body.Bytes(), &view); err != nil || read.Code != 200 || view.GatewayAccountId == nil || *view.GatewayAccountId != id || view.AccountContext == nil || view.AccountContext.AccountId != id || view.CurrentBinding.GatewayAccountId != id {
+				t.Fatalf("lossy read: %s", read.Body)
+			}
+			if !strings.Contains(read.Body.String(), `"gateway_account_id":"`+id+`"`) {
+				t.Fatalf("numeric wire identity: %s", read.Body)
+			}
+		}
+		candidates := do(http.MethodGet, "/api/relay-bindings/gateways/"+gatewayID.String(), superToken, "", nil)
+		for _, id := range values {
+			if !strings.Contains(candidates.Body.String(), `"account_id":"`+id+`"`) {
+				t.Fatalf("candidate identity missing: %s", id)
+			}
+		}
+		var before, after int
+		if err := owner.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE category='relay_binding'`).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		for _, raw := range []string{`"9223372036854775808"`, `9007199254740993`, `null`, `""`, `"0"`, `"-1"`, `"01"`, `"+1"`, `" 1"`, `"1.0"`, `"1e3"`} {
+			for _, operation := range []string{"bind", "rebind"} {
+				gatewayKey, accountKey := "gateway_instance_id", "gateway_account_id"
+				if operation == "rebind" {
+					gatewayKey, accountKey = "new_gateway_instance_id", "new_gateway_account_id"
+				}
+				body := fmt.Sprintf(`{"relay_node_id":"%s","%s":"%s","%s":%s}`, node2ID, gatewayKey, gatewayID, accountKey, raw)
+				response := do(http.MethodPost, "/api/relay-bindings/"+operation, superToken, superCSRF, body)
+				if response.Code != 400 || !strings.Contains(response.Body.String(), `"code":"validation_failed"`) {
+					t.Fatalf("invalid %s: status=%d body=%s", raw, response.Code, response.Body)
+				}
+			}
+		}
+		if err := owner.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE category='relay_binding'`).Scan(&after); err != nil {
+			t.Fatal(err)
+		}
+		if before != after {
+			t.Fatal("invalid IDs reached binding action/audit")
+		}
+		response := do(http.MethodPost, "/api/relay-bindings/unbind", superToken, superCSRF, UnbindRelayNodeRequest{RelayNodeId: node2ID})
+		if response.Code != 200 || !strings.Contains(response.Body.String(), `"gateway_account_id":"9223372036854775807"`) {
+			t.Fatalf("lossy unbind: %s", response.Body)
+		}
+	})
+
 }

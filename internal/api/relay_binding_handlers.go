@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 
@@ -78,7 +79,8 @@ func (s *Server) GetNodeRelayBinding(w http.ResponseWriter, r *http.Request, ins
 		resp.GatewayInstanceId = view.GatewayInstanceID
 	}
 	if view.GatewayAccountID != nil {
-		resp.GatewayAccountId = view.GatewayAccountID
+		id := strconv.FormatInt(*view.GatewayAccountID, 10)
+		resp.GatewayAccountId = &id
 	}
 	if view.LastSuccessObservationAt != nil {
 		resp.LastSuccessObservationAt = view.LastSuccessObservationAt
@@ -127,7 +129,7 @@ func (s *Server) GetGatewayAccountRelayBindings(w http.ResponseWriter, r *http.R
 	accounts := make([]GatewayAccountCentricBindingItem, 0, len(view.Accounts))
 	for _, item := range view.Accounts {
 		acctItem := GatewayAccountCentricBindingItem{
-			GatewayAccountId: item.GatewayAccountID,
+			GatewayAccountId: strconv.FormatInt(item.GatewayAccountID, 10),
 			AccountContext:   accountContextResponse(item.AccountContext),
 			Resolution:       RelayBindingResolution(item.Resolution),
 			ContextSource:    RelayBindingContextSource(item.ContextSource),
@@ -226,8 +228,8 @@ func (s *Server) BindRelayNode(w http.ResponseWriter, r *http.Request, params Bi
 
 	nodeID := uuid.UUID(body.RelayNodeId)
 	gatewayID := uuid.UUID(body.GatewayInstanceId)
-	accountID := body.GatewayAccountId
-	if nodeID == uuid.Nil || gatewayID == uuid.Nil || accountID <= 0 {
+	accountID, valid := parseGatewayAccountID(body.GatewayAccountId)
+	if nodeID == uuid.Nil || gatewayID == uuid.Nil || !valid {
 		s.writeError(w, r, authn.ErrInvalid)
 		return
 	}
@@ -265,8 +267,8 @@ func (s *Server) RebindRelayNode(w http.ResponseWriter, r *http.Request, params 
 
 	nodeID := uuid.UUID(body.RelayNodeId)
 	newGatewayID := uuid.UUID(body.NewGatewayInstanceId)
-	newAccountID := body.NewGatewayAccountId
-	if nodeID == uuid.Nil || newGatewayID == uuid.Nil || newAccountID <= 0 {
+	newAccountID, valid := parseGatewayAccountID(body.NewGatewayAccountId)
+	if nodeID == uuid.Nil || newGatewayID == uuid.Nil || !valid {
 		s.writeError(w, r, authn.ErrInvalid)
 		return
 	}
@@ -416,7 +418,7 @@ func bindingDetailResponse(b assetstore.RelayNodeGatewayAccountBinding) RelayNod
 		BindingId:          b.BindingID,
 		RelayNodeId:        b.RelayNodeID,
 		GatewayInstanceId:  b.GatewayInstanceID,
-		GatewayAccountId:   b.GatewayAccountID,
+		GatewayAccountId:   strconv.FormatInt(b.GatewayAccountID, 10),
 		EvidenceSnapshotId: b.EvidenceSnapshotID,
 		BoundAt:            b.BoundAt,
 		BoundBy:            b.BoundBy,
@@ -437,11 +439,26 @@ func bindingDetailResponse(b assetstore.RelayNodeGatewayAccountBinding) RelayNod
 
 func accountContextResponse(c assetstore.GatewayAccountContext) GatewayAccountContext {
 	return GatewayAccountContext{
-		AccountId: c.AccountID,
+		AccountId: strconv.FormatInt(c.AccountID, 10),
 		Name:      c.Name,
 		Platform:  c.Platform,
 		Type:      c.Type,
 		Url:       c.URL,
 		Status:    c.Status,
 	}
+}
+
+// parseGatewayAccountID accepts only canonical positive decimal int64 strings.
+// Lexical validation precedes ParseInt, which rejects overflow without rounding.
+func parseGatewayAccountID(value string) (int64, bool) {
+	if len(value) == 0 || len(value) > 19 || value[0] < '1' || value[0] > '9' {
+		return 0, false
+	}
+	for _, c := range value {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	return id, err == nil && id > 0
 }

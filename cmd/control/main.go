@@ -332,6 +332,13 @@ func main() {
 	}
 	apiServer.SetRelayBindingRepository(relayBindingRepository)
 	apiServer.SetCrossNodeDuplicateOwnershipOccurrenceReader(crossNodeDuplicateOccurrences)
+	apiServer.SetNodeDuplicateHistoryReader(crossNodeDuplicateOccurrences)
+	providerStates, err := assetstore.NewAccountInventoryProviderStateRepository(pool)
+	if err != nil {
+		logger.Error("provider state reader initialization failed", "component", "account_inventory")
+		os.Exit(1)
+	}
+	apiServer.SetAccountInventoryProviderStateReader(providerStates)
 	metricsRegistry.MustRegister(apiServer.AccountInventoryMetrics())
 	controlapi.HandlerWithOptions(apiServer, controlapi.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 		apiServer.PrepareGeneratedError(w, r, err)

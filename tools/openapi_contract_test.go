@@ -104,39 +104,44 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 	operations := allOperations(document)
 
 	expected := map[operationKey]string{
-		{http.MethodGet, "/api/healthz"}:                          "getHealthz",
-		{http.MethodGet, "/api/bootstrap/status"}:                 "getBootstrapStatus",
-		{http.MethodPost, "/api/bootstrap/start"}:                 "startBootstrap",
-		{http.MethodPost, "/api/bootstrap/complete"}:              "completeBootstrap",
-		{http.MethodPost, "/api/bootstrap/reset-pending"}:         "resetPendingBootstrap",
-		{http.MethodPost, "/api/auth/login"}:                      "login",
-		{http.MethodPost, "/api/auth/mfa"}:                        "completeLoginMfa",
-		{http.MethodPost, "/api/auth/logout"}:                     "logout",
-		{http.MethodGet, "/api/auth/session"}:                     "getSession",
-		{http.MethodPost, "/api/auth/reauthenticate"}:             "reauthenticate",
-		{http.MethodPost, "/api/auth/password"}:                   "changePassword",
-		{http.MethodPost, "/api/auth/recovery-codes/regenerate"}:  "regenerateRecoveryCodes",
-		{http.MethodPost, "/api/admin-activations/complete"}:      "completeAdministratorActivation",
-		{http.MethodGet, "/api/admins"}:                           "listAdministrators",
-		{http.MethodPost, "/api/admins"}:                          "createAdministrator",
-		{http.MethodPost, "/api/admins/{id}/disable"}:             "disableAdministrator",
-		{http.MethodPost, "/api/admins/{id}/activation-token"}:    "regenerateAdministratorActivationToken",
-		{http.MethodPost, "/api/admins/{id}/mfa-reset"}:           "resetAdministratorMfa",
-		{http.MethodGet, "/api/environment"}:                      "getEnvironment",
-		{http.MethodGet, "/api/assets/gateway"}:                   "getGatewayAsset",
-		{http.MethodGet, "/api/assets/nodes"}:                     "listNodeAssets",
-		{http.MethodGet, "/api/assets/nodes/{instance_id}"}:       "getNodeAsset",
-		{http.MethodGet, "/api/assets/drivers"}:                   "listNodeDrivers",
-		{http.MethodGet, "/api/assets/provider-policies/current"}: "getCurrentProviderInventoryPolicy",
-		{http.MethodGet, "/api/jobs"}:                                 "listJobs",
-		{http.MethodGet, "/api/jobs/{job_id}"}:                        "getJob",
-		{http.MethodPost, "/api/account-inventory/query"}:             "queryAccountInventory",
-		{http.MethodGet, "/api/relay-bindings/nodes/{instance_id}"}:   "getNodeRelayBinding",
-		{http.MethodGet, "/api/relay-bindings/gateways/{instance_id}"}: "getGatewayAccountRelayBindings",
-		{http.MethodGet, "/api/relay-bindings/unresolved"}:            "listUnresolvedRelayBindings",
-		{http.MethodPost, "/api/relay-bindings/bind"}:                 "bindRelayNode",
-		{http.MethodPost, "/api/relay-bindings/rebind"}:               "rebindRelayNode",
-		{http.MethodPost, "/api/relay-bindings/unbind"}:               "unbindRelayNode",
+		{http.MethodGet, "/api/healthz"}:                                                   "getHealthz",
+		{http.MethodGet, "/api/bootstrap/status"}:                                          "getBootstrapStatus",
+		{http.MethodPost, "/api/bootstrap/start"}:                                          "startBootstrap",
+		{http.MethodPost, "/api/bootstrap/complete"}:                                       "completeBootstrap",
+		{http.MethodPost, "/api/bootstrap/reset-pending"}:                                  "resetPendingBootstrap",
+		{http.MethodPost, "/api/auth/login"}:                                               "login",
+		{http.MethodPost, "/api/auth/mfa"}:                                                 "completeLoginMfa",
+		{http.MethodPost, "/api/auth/logout"}:                                              "logout",
+		{http.MethodGet, "/api/auth/session"}:                                              "getSession",
+		{http.MethodPost, "/api/auth/reauthenticate"}:                                      "reauthenticate",
+		{http.MethodPost, "/api/auth/password"}:                                            "changePassword",
+		{http.MethodPost, "/api/auth/recovery-codes/regenerate"}:                           "regenerateRecoveryCodes",
+		{http.MethodPost, "/api/admin-activations/complete"}:                               "completeAdministratorActivation",
+		{http.MethodGet, "/api/admins"}:                                                    "listAdministrators",
+		{http.MethodPost, "/api/admins"}:                                                   "createAdministrator",
+		{http.MethodPost, "/api/admins/{id}/disable"}:                                      "disableAdministrator",
+		{http.MethodPost, "/api/admins/{id}/activation-token"}:                             "regenerateAdministratorActivationToken",
+		{http.MethodPost, "/api/admins/{id}/mfa-reset"}:                                    "resetAdministratorMfa",
+		{http.MethodGet, "/api/environment"}:                                               "getEnvironment",
+		{http.MethodGet, "/api/assets/gateway"}:                                            "getGatewayAsset",
+		{http.MethodGet, "/api/assets/nodes"}:                                              "listNodeAssets",
+		{http.MethodGet, "/api/assets/nodes/{instance_id}"}:                                "getNodeAsset",
+		{http.MethodGet, "/api/assets/drivers"}:                                            "listNodeDrivers",
+		{http.MethodGet, "/api/assets/provider-policies/current"}:                          "getCurrentProviderInventoryPolicy",
+		{http.MethodGet, "/api/jobs"}:                                                      "listJobs",
+		{http.MethodGet, "/api/jobs/{job_id}"}:                                             "getJob",
+		{http.MethodPost, "/api/account-inventory/query"}:                                  "queryAccountInventory",
+		{http.MethodGet, "/api/relay-bindings/nodes/{instance_id}"}:                        "getNodeRelayBinding",
+		{http.MethodGet, "/api/relay-bindings/gateways/{instance_id}"}:                     "getGatewayAccountRelayBindings",
+		{http.MethodGet, "/api/relay-bindings/unresolved"}:                                 "listUnresolvedRelayBindings",
+		{http.MethodPost, "/api/relay-bindings/bind"}:                                      "bindRelayNode",
+		{http.MethodPost, "/api/relay-bindings/rebind"}:                                    "rebindRelayNode",
+		{http.MethodPost, "/api/relay-bindings/unbind"}:                                    "unbindRelayNode",
+		{http.MethodGet, "/api/cross-node-duplicate-occurrences"}:                          "listCrossNodeDuplicateOccurrences",
+		{http.MethodGet, "/api/cross-node-duplicate-occurrences/{occurrence_id}"}:          "getCrossNodeDuplicateOccurrence",
+		{http.MethodGet, "/api/cross-node-duplicate-occurrences/{occurrence_id}/evidence"}: "listCrossNodeDuplicateOccurrenceEvidence",
+		{http.MethodGet, "/api/topology/nodes/{instance_id}/duplicate-history"}:            "listNodeDuplicateHistory",
+		{http.MethodGet, "/api/account-inventory/nodes/{instance_id}/providers"}:           "getNodeInventoryProviderStates",
 	}
 
 	if len(operations) != len(expected) {
@@ -455,4 +460,51 @@ func sortedOperationKeys(operations map[operationKey]*openapi3.Operation) []stri
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func TestTopologyReadAndGatewayIdentityContracts(t *testing.T) {
+	doc := loadDocument(t)
+	for _, path := range []string{"/api/topology/nodes/{instance_id}/duplicate-history", "/api/account-inventory/nodes/{instance_id}/providers"} {
+		item := doc.Paths.Find(path)
+		if item == nil || item.Get == nil || len(item.Operations()) != 1 {
+			t.Fatalf("not a GET-only surface: %s", path)
+		}
+		if item.Get.Security != nil {
+			t.Fatalf("must inherit session security: %s", path)
+		}
+		for _, code := range []int{400, 401, 403, 404, 503} {
+			if item.Get.Responses.Status(code) == nil {
+				t.Fatalf("missing %d: %s", code, path)
+			}
+		}
+	}
+	fields := map[string]string{"GatewayAccountContext": "account_id", "RelayNodeGatewayAccountBindingDetail": "gateway_account_id", "NodeRelayBindingResponse": "gateway_account_id", "GatewayAccountCentricBindingItem": "gateway_account_id", "BindRelayNodeRequest": "gateway_account_id", "RebindRelayNodeRequest": "new_gateway_account_id"}
+	for name, field := range fields {
+		schema := doc.Components.Schemas[name].Value.Properties[field].Value
+		for _, value := range []string{"9007199254740991", "9007199254740992", "9007199254740993", "9223372036854775807"} {
+			if err := schema.VisitJSON(value); err != nil {
+				t.Fatalf("%s rejected string: %v", name, err)
+			}
+		}
+		if err := schema.VisitJSON(float64(42)); err == nil {
+			t.Fatalf("%s accepted numeric identity", name)
+		}
+		for _, value := range []string{"0", "-1", "01", "+1", "1.0", "1e3", " 1", ""} {
+			if err := schema.VisitJSON(value); err == nil {
+				t.Fatalf("%s accepted %q", name, value)
+			}
+		}
+	}
+	provider := doc.Components.Schemas["NodeInventoryProviderState"].Value
+	for _, field := range []string{"state", "health_reason"} {
+		if err := provider.Properties[field].Value.VisitJSON(nil); err != nil {
+			t.Fatalf("%s must permit not-yet-observed null: %v", field, err)
+		}
+		if err := provider.Properties[field].Value.VisitJSON("raw unsafe error"); err == nil {
+			t.Fatalf("%s accepted unsafe value", field)
+		}
+	}
+	if len(provider.Properties) != 9 || len(provider.Required) != 9 {
+		t.Fatal("provider projection must contain exactly nine required fields")
+	}
 }

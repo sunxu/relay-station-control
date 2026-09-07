@@ -1296,6 +1296,85 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/account-inventory/nodes/{instance_id}/providers:
+    get:
+      operationId: getNodeInventoryProviderStates
+      summary: Read complete Provider snapshot and latest health evidence
+      description: Requires an enabled super_admin session. Readonly, query budget 2 seconds and HTTP budget 5 seconds. Query failure is unavailable, never an empty success.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+      responses:
+        "200":
+          description: Complete successful read at observed_at.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeInventoryProviderStatesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/topology/nodes/{instance_id}/duplicate-history:
+    get:
+      operationId: listNodeDuplicateHistory
+      summary: Read occurrences historically involving this Node
+      description: Requires an enabled super_admin session. Readonly, query budget 2 seconds and HTTP budget 5 seconds. Query failure is unavailable, never an empty success.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, RESOLVED]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 25
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: Complete successful read at observed_at.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeDuplicateHistoryResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     SessionCookie:
@@ -2521,15 +2600,21 @@ components:
       type: string
       enum: [current, last_known, none]
 
+    GatewayAccountId:
+      type: string
+      minLength: 1
+      maxLength: 19
+      pattern: "^[1-9][0-9]{0,18}$"
+      description: Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+      example: "9007199254740993"
+
     GatewayAccountContext:
       type: object
       additionalProperties: false
       required: [account_id, name, platform, type, status]
       properties:
         account_id:
-          type: integer
-          format: int64
-          minimum: 1
+          $ref: "#/components/schemas/GatewayAccountId"
         name:
           type: string
         platform:
@@ -2565,9 +2650,7 @@ components:
           type: string
           format: uuid
         gateway_account_id:
-          type: integer
-          format: int64
-          minimum: 1
+          $ref: "#/components/schemas/GatewayAccountId"
         evidence_snapshot_id:
           type: string
           format: uuid
@@ -2611,9 +2694,11 @@ components:
           type: [string, "null"]
           format: uuid
         gateway_account_id:
-          type: [integer, "null"]
-          format: int64
-          minimum: 1
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 19
+          pattern: "^[1-9][0-9]{0,18}$"
+          description: Nullable GatewayAccountId; positive decimal int64, never a JSON number.
         resolution:
           $ref: "#/components/schemas/RelayBindingResolution"
         directory_freshness:
@@ -2641,9 +2726,7 @@ components:
         - context_source
       properties:
         gateway_account_id:
-          type: integer
-          format: int64
-          minimum: 1
+          $ref: "#/components/schemas/GatewayAccountId"
         account_context:
           $ref: "#/components/schemas/GatewayAccountContext"
         bound_relay_node_id:
@@ -2740,9 +2823,7 @@ components:
           type: string
           format: uuid
         gateway_account_id:
-          type: integer
-          format: int64
-          minimum: 1
+          $ref: "#/components/schemas/GatewayAccountId"
 
     RebindRelayNodeRequest:
       type: object
@@ -2759,9 +2840,7 @@ components:
           type: string
           format: uuid
         new_gateway_account_id:
-          type: integer
-          format: int64
-          minimum: 1
+          $ref: "#/components/schemas/GatewayAccountId"
 
     UnbindRelayNodeRequest:
       type: object
@@ -2929,3 +3008,71 @@ components:
         next_cursor:
           type: [string, "null"]
           maxLength: 512
+
+    NodeInventoryProviderState:
+      type: object
+      additionalProperties: false
+      required: [provider, monitoring_status, state, current_scheduled_at, last_complete_at, snapshot_freshness, health_scheduled_at, health_degraded, health_reason]
+      properties:
+        provider:
+          type: string
+        monitoring_status:
+          type: string
+          enum: [active, out_of_scope]
+        state:
+          type: [string, "null"]
+          pattern: "^current$"
+        current_scheduled_at:
+          type: [string, "null"]
+          format: date-time
+        last_complete_at:
+          type: [string, "null"]
+          format: date-time
+        snapshot_freshness:
+          type: string
+          enum: [fresh, stale, unknown, out_of_scope]
+        health_scheduled_at:
+          type: [string, "null"]
+          format: date-time
+        health_degraded:
+          type: [boolean, "null"]
+        health_reason:
+          type: [string, "null"]
+          pattern: "^(none|transport_failed|contract_invalid|disk_fallback|node_identity_incomplete|identity_incomplete)$"
+
+    NodeInventoryProviderStatesResponse:
+      type: object
+      additionalProperties: false
+      required: [instance_id, observed_at, providers]
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+        observed_at:
+          type: string
+          format: date-time
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeInventoryProviderState"
+
+    NodeDuplicateHistoryResponse:
+      type: object
+      additionalProperties: false
+      required: [involvement, instance_id, observed_at, items, next_cursor]
+      properties:
+        involvement:
+          type: string
+          enum: [historical]
+        instance_id:
+          type: string
+          format: uuid
+        observed_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CrossNodeDuplicateOccurrenceSummary"
+        next_cursor:
+          type: [string, "null"]

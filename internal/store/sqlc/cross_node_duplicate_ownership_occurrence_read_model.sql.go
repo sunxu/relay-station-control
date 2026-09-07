@@ -158,7 +158,6 @@ func (q *Queries) ListCrossNodeDuplicateOccurrenceEvidence(ctx context.Context, 
 }
 
 const listCrossNodeDuplicateOccurrences = `-- name: ListCrossNodeDuplicateOccurrences :many
-
 SELECT
     occurrence.occurrence_id,
     occurrence.environment_id,
@@ -225,14 +224,6 @@ type ListCrossNodeDuplicateOccurrencesRow struct {
 	AffectedNodeIds     []pgtype.UUID      `json:"affected_node_ids"`
 }
 
-// Phase 5 (add-cross-node-duplicate-ownership) read-only occurrence read
-// model. These queries only SELECT from the Phase 1B tables
-// (cross_node_duplicate_occurrences / _nodes / _evidence,
-// migrations/00013_cross_node_duplicate_ownership_foundation.sql) which
-// relay_control_runtime already holds SELECT on -- no new migration/grant is
-// needed here (unlike Phase 2's Account Inventory query-access boundary).
-// account_key is returned as plaintext by design (frozen non-goal: no
-// masked/HMAC/fingerprint handling for this capability).
 // Bounded, keyset-paginated list ordered by (last_seen_at DESC,
 // occurrence_id DESC) -- most recently active first. affected_nodes is
 // aggregated via a LATERAL subquery so the list response never needs a
@@ -255,6 +246,122 @@ func (q *Queries) ListCrossNodeDuplicateOccurrences(ctx context.Context, arg Lis
 	items := []ListCrossNodeDuplicateOccurrencesRow{}
 	for rows.Next() {
 		var i ListCrossNodeDuplicateOccurrencesRow
+		if err := rows.Scan(
+			&i.OccurrenceID,
+			&i.EnvironmentID,
+			&i.AccountKey,
+			&i.ConflictType,
+			&i.Status,
+			&i.Severity,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.ResolvedAt,
+			&i.EvidenceState,
+			&i.LastFullyVerifiedAt,
+			&i.LatestEvaluationID,
+			&i.AffectedNodeIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode = `-- name: ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode :many
+
+SELECT
+    occurrence.occurrence_id,
+    occurrence.environment_id,
+    occurrence.account_key,
+    occurrence.conflict_type,
+    occurrence.status,
+    occurrence.severity,
+    occurrence.first_seen_at,
+    occurrence.last_seen_at,
+    occurrence.resolved_at,
+    occurrence.evidence_state,
+    occurrence.last_fully_verified_at,
+    occurrence.latest_evaluation_id,
+    COALESCE(affected.instance_ids, ARRAY[]::uuid[])::uuid[] AS affected_node_ids
+FROM cross_node_duplicate_occurrences AS occurrence
+LEFT JOIN LATERAL (
+    SELECT array_agg(node.instance_id ORDER BY node.instance_id) AS instance_ids
+    FROM cross_node_duplicate_occurrence_nodes AS node
+    WHERE node.occurrence_id = occurrence.occurrence_id
+) AS affected ON true
+WHERE occurrence.status = COALESCE($1::text, occurrence.status)
+  AND EXISTS (
+      SELECT 1
+      FROM cross_node_duplicate_occurrence_evidence AS evidence
+      WHERE evidence.occurrence_id = occurrence.occurrence_id
+        AND evidence.instance_id = $2::uuid
+  )
+  AND (
+      $3::timestamptz IS NULL
+      OR (occurrence.last_seen_at, occurrence.occurrence_id) < (
+          $3::timestamptz,
+          $4::uuid
+      )
+  )
+ORDER BY occurrence.last_seen_at DESC, occurrence.occurrence_id DESC
+LIMIT $5
+`
+
+type ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeParams struct {
+	Status            pgtype.Text        `json:"status"`
+	TargetNodeID      pgtype.UUID        `json:"target_node_id"`
+	AfterLastSeenAt   pgtype.Timestamptz `json:"after_last_seen_at"`
+	AfterOccurrenceID pgtype.UUID        `json:"after_occurrence_id"`
+	PageSize          int32              `json:"page_size"`
+}
+
+type ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeRow struct {
+	OccurrenceID        pgtype.UUID        `json:"occurrence_id"`
+	EnvironmentID       string             `json:"environment_id"`
+	AccountKey          string             `json:"account_key"`
+	ConflictType        string             `json:"conflict_type"`
+	Status              string             `json:"status"`
+	Severity            string             `json:"severity"`
+	FirstSeenAt         pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt          pgtype.Timestamptz `json:"last_seen_at"`
+	ResolvedAt          pgtype.Timestamptz `json:"resolved_at"`
+	EvidenceState       string             `json:"evidence_state"`
+	LastFullyVerifiedAt pgtype.Timestamptz `json:"last_fully_verified_at"`
+	LatestEvaluationID  pgtype.UUID        `json:"latest_evaluation_id"`
+	AffectedNodeIds     []pgtype.UUID      `json:"affected_node_ids"`
+}
+
+// Phase 5 (add-cross-node-duplicate-ownership) read-only occurrence read
+// model. These queries only SELECT from the Phase 1B tables
+// (cross_node_duplicate_occurrences / _nodes / _evidence,
+// migrations/00013_cross_node_duplicate_ownership_foundation.sql) which
+// relay_control_runtime already holds SELECT on -- no new migration/grant is
+// needed here (unlike Phase 2's Account Inventory query-access boundary).
+// account_key is returned as plaintext by design (frozen non-goal: no
+// masked/HMAC/fingerprint handling for this capability).
+// Historical involvement is intentionally separate from the current
+// instance_id filter below. EXISTS over immutable evidence preserves a
+// Node's history after absence removes its current membership; the lateral
+// affected-node projection remains the current set.
+func (q *Queries) ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode(ctx context.Context, arg ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeParams) ([]ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeRow, error) {
+	rows, err := q.db.Query(ctx, listCrossNodeDuplicateOccurrencesHistoricallyInvolvingNode,
+		arg.Status,
+		arg.TargetNodeID,
+		arg.AfterLastSeenAt,
+		arg.AfterOccurrenceID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeRow{}
+	for rows.Next() {
+		var i ListCrossNodeDuplicateOccurrencesHistoricallyInvolvingNodeRow
 		if err := rows.Scan(
 			&i.OccurrenceID,
 			&i.EnvironmentID,

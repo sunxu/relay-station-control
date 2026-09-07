@@ -290,16 +290,16 @@ func (e CrossNodeDuplicateOccurrenceObservationKind) Valid() bool {
 
 // Defines values for CrossNodeDuplicateOccurrenceStatus.
 const (
-	ACTIVE   CrossNodeDuplicateOccurrenceStatus = "ACTIVE"
-	RESOLVED CrossNodeDuplicateOccurrenceStatus = "RESOLVED"
+	CrossNodeDuplicateOccurrenceStatusACTIVE   CrossNodeDuplicateOccurrenceStatus = "ACTIVE"
+	CrossNodeDuplicateOccurrenceStatusRESOLVED CrossNodeDuplicateOccurrenceStatus = "RESOLVED"
 )
 
 // Valid indicates whether the value is a known member of the CrossNodeDuplicateOccurrenceStatus enum.
 func (e CrossNodeDuplicateOccurrenceStatus) Valid() bool {
 	switch e {
-	case ACTIVE:
+	case CrossNodeDuplicateOccurrenceStatusACTIVE:
 		return true
-	case RESOLVED:
+	case CrossNodeDuplicateOccurrenceStatusRESOLVED:
 		return true
 	default:
 		return false
@@ -662,19 +662,76 @@ func (e NodeCapability) Valid() bool {
 
 // Defines values for NodeDriverLifecycleStatus.
 const (
-	Active     NodeDriverLifecycleStatus = "active"
-	Deprecated NodeDriverLifecycleStatus = "deprecated"
-	Retired    NodeDriverLifecycleStatus = "retired"
+	NodeDriverLifecycleStatusActive     NodeDriverLifecycleStatus = "active"
+	NodeDriverLifecycleStatusDeprecated NodeDriverLifecycleStatus = "deprecated"
+	NodeDriverLifecycleStatusRetired    NodeDriverLifecycleStatus = "retired"
 )
 
 // Valid indicates whether the value is a known member of the NodeDriverLifecycleStatus enum.
 func (e NodeDriverLifecycleStatus) Valid() bool {
 	switch e {
-	case Active:
+	case NodeDriverLifecycleStatusActive:
 		return true
-	case Deprecated:
+	case NodeDriverLifecycleStatusDeprecated:
 		return true
-	case Retired:
+	case NodeDriverLifecycleStatusRetired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeDuplicateHistoryResponseInvolvement.
+const (
+	Historical NodeDuplicateHistoryResponseInvolvement = "historical"
+)
+
+// Valid indicates whether the value is a known member of the NodeDuplicateHistoryResponseInvolvement enum.
+func (e NodeDuplicateHistoryResponseInvolvement) Valid() bool {
+	switch e {
+	case Historical:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeInventoryProviderStateMonitoringStatus.
+const (
+	NodeInventoryProviderStateMonitoringStatusActive     NodeInventoryProviderStateMonitoringStatus = "active"
+	NodeInventoryProviderStateMonitoringStatusOutOfScope NodeInventoryProviderStateMonitoringStatus = "out_of_scope"
+)
+
+// Valid indicates whether the value is a known member of the NodeInventoryProviderStateMonitoringStatus enum.
+func (e NodeInventoryProviderStateMonitoringStatus) Valid() bool {
+	switch e {
+	case NodeInventoryProviderStateMonitoringStatusActive:
+		return true
+	case NodeInventoryProviderStateMonitoringStatusOutOfScope:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeInventoryProviderStateSnapshotFreshness.
+const (
+	NodeInventoryProviderStateSnapshotFreshnessFresh      NodeInventoryProviderStateSnapshotFreshness = "fresh"
+	NodeInventoryProviderStateSnapshotFreshnessOutOfScope NodeInventoryProviderStateSnapshotFreshness = "out_of_scope"
+	NodeInventoryProviderStateSnapshotFreshnessStale      NodeInventoryProviderStateSnapshotFreshness = "stale"
+	NodeInventoryProviderStateSnapshotFreshnessUnknown    NodeInventoryProviderStateSnapshotFreshness = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NodeInventoryProviderStateSnapshotFreshness enum.
+func (e NodeInventoryProviderStateSnapshotFreshness) Valid() bool {
+	switch e {
+	case NodeInventoryProviderStateSnapshotFreshnessFresh:
+		return true
+	case NodeInventoryProviderStateSnapshotFreshnessOutOfScope:
+		return true
+	case NodeInventoryProviderStateSnapshotFreshnessStale:
+		return true
+	case NodeInventoryProviderStateSnapshotFreshnessUnknown:
 		return true
 	default:
 		return false
@@ -876,6 +933,24 @@ func (e TotpEnrollmentPeriodSeconds) Valid() bool {
 	}
 }
 
+// Defines values for ListNodeDuplicateHistoryParamsStatus.
+const (
+	ListNodeDuplicateHistoryParamsStatusACTIVE   ListNodeDuplicateHistoryParamsStatus = "ACTIVE"
+	ListNodeDuplicateHistoryParamsStatusRESOLVED ListNodeDuplicateHistoryParamsStatus = "RESOLVED"
+)
+
+// Valid indicates whether the value is a known member of the ListNodeDuplicateHistoryParamsStatus enum.
+func (e ListNodeDuplicateHistoryParamsStatus) Valid() bool {
+	switch e {
+	case ListNodeDuplicateHistoryParamsStatusACTIVE:
+		return true
+	case ListNodeDuplicateHistoryParamsStatusRESOLVED:
+		return true
+	default:
+		return false
+	}
+}
+
 // AccountInventoryBasicStatus Last status reported by the Relay Node, not current schedulability.
 type AccountInventoryBasicStatus string
 
@@ -1021,7 +1096,8 @@ type AdministratorStatus string
 
 // BindRelayNodeRequest defines model for BindRelayNodeRequest.
 type BindRelayNodeRequest struct {
-	GatewayAccountId  int64              `json:"gateway_account_id"`
+	// GatewayAccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+	GatewayAccountId  GatewayAccountId   `json:"gateway_account_id"`
 	GatewayInstanceId openapi_types.UUID `json:"gateway_instance_id"`
 	RelayNodeId       openapi_types.UUID `json:"relay_node_id"`
 }
@@ -1174,19 +1250,25 @@ type GatewayAccountCentricBindingItem struct {
 	BoundRelayNodeId *openapi_types.UUID                   `json:"bound_relay_node_id,omitempty"`
 	ContextSource    RelayBindingContextSource             `json:"context_source"`
 	CurrentBinding   *RelayNodeGatewayAccountBindingDetail `json:"current_binding,omitempty"`
-	GatewayAccountId int64                                 `json:"gateway_account_id"`
-	Resolution       RelayBindingResolution                `json:"resolution"`
+
+	// GatewayAccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+	GatewayAccountId GatewayAccountId       `json:"gateway_account_id"`
+	Resolution       RelayBindingResolution `json:"resolution"`
 }
 
 // GatewayAccountContext defines model for GatewayAccountContext.
 type GatewayAccountContext struct {
-	AccountId int64   `json:"account_id"`
-	Name      string  `json:"name"`
-	Platform  string  `json:"platform"`
-	Status    string  `json:"status"`
-	Type      string  `json:"type"`
-	Url       *string `json:"url,omitempty"`
+	// AccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+	AccountId GatewayAccountId `json:"account_id"`
+	Name      string           `json:"name"`
+	Platform  string           `json:"platform"`
+	Status    string           `json:"status"`
+	Type      string           `json:"type"`
+	Url       *string          `json:"url,omitempty"`
 }
+
+// GatewayAccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+type GatewayAccountId = string
 
 // GatewayAccountRelayBindingsResponse defines model for GatewayAccountRelayBindingsResponse.
 type GatewayAccountRelayBindingsResponse struct {
@@ -1383,6 +1465,44 @@ type NodeDriverListResponse struct {
 	Items []NodeDriver `json:"items"`
 }
 
+// NodeDuplicateHistoryResponse defines model for NodeDuplicateHistoryResponse.
+type NodeDuplicateHistoryResponse struct {
+	InstanceId  openapi_types.UUID                      `json:"instance_id"`
+	Involvement NodeDuplicateHistoryResponseInvolvement `json:"involvement"`
+	Items       []CrossNodeDuplicateOccurrenceSummary   `json:"items"`
+	NextCursor  *string                                 `json:"next_cursor"`
+	ObservedAt  time.Time                               `json:"observed_at"`
+}
+
+// NodeDuplicateHistoryResponseInvolvement defines model for NodeDuplicateHistoryResponse.Involvement.
+type NodeDuplicateHistoryResponseInvolvement string
+
+// NodeInventoryProviderState defines model for NodeInventoryProviderState.
+type NodeInventoryProviderState struct {
+	CurrentScheduledAt *time.Time                                  `json:"current_scheduled_at"`
+	HealthDegraded     *bool                                       `json:"health_degraded"`
+	HealthReason       *string                                     `json:"health_reason"`
+	HealthScheduledAt  *time.Time                                  `json:"health_scheduled_at"`
+	LastCompleteAt     *time.Time                                  `json:"last_complete_at"`
+	MonitoringStatus   NodeInventoryProviderStateMonitoringStatus  `json:"monitoring_status"`
+	Provider           string                                      `json:"provider"`
+	SnapshotFreshness  NodeInventoryProviderStateSnapshotFreshness `json:"snapshot_freshness"`
+	State              *string                                     `json:"state"`
+}
+
+// NodeInventoryProviderStateMonitoringStatus defines model for NodeInventoryProviderState.MonitoringStatus.
+type NodeInventoryProviderStateMonitoringStatus string
+
+// NodeInventoryProviderStateSnapshotFreshness defines model for NodeInventoryProviderState.SnapshotFreshness.
+type NodeInventoryProviderStateSnapshotFreshness string
+
+// NodeInventoryProviderStatesResponse defines model for NodeInventoryProviderStatesResponse.
+type NodeInventoryProviderStatesResponse struct {
+	InstanceId openapi_types.UUID           `json:"instance_id"`
+	ObservedAt time.Time                    `json:"observed_at"`
+	Providers  []NodeInventoryProviderState `json:"providers"`
+}
+
 // NodeMonitoringStatus defines model for NodeMonitoringStatus.
 type NodeMonitoringStatus struct {
 	Active        bool       `json:"active"`
@@ -1392,16 +1512,18 @@ type NodeMonitoringStatus struct {
 
 // NodeRelayBindingResponse defines model for NodeRelayBindingResponse.
 type NodeRelayBindingResponse struct {
-	AccountContext           *GatewayAccountContext                `json:"account_context,omitempty"`
-	ContextSource            RelayBindingContextSource             `json:"context_source"`
-	CurrentBinding           *RelayNodeGatewayAccountBindingDetail `json:"current_binding,omitempty"`
-	DirectoryFreshness       RelayBindingFreshness                 `json:"directory_freshness"`
-	GatewayAccountId         *int64                                `json:"gateway_account_id,omitempty"`
-	GatewayInstanceId        *openapi_types.UUID                   `json:"gateway_instance_id,omitempty"`
-	LastSuccessObservationAt *time.Time                            `json:"last_success_observation_at,omitempty"`
-	ObservedAt               time.Time                             `json:"observed_at"`
-	RelayNodeId              openapi_types.UUID                    `json:"relay_node_id"`
-	Resolution               RelayBindingResolution                `json:"resolution"`
+	AccountContext     *GatewayAccountContext                `json:"account_context,omitempty"`
+	ContextSource      RelayBindingContextSource             `json:"context_source"`
+	CurrentBinding     *RelayNodeGatewayAccountBindingDetail `json:"current_binding,omitempty"`
+	DirectoryFreshness RelayBindingFreshness                 `json:"directory_freshness"`
+
+	// GatewayAccountId Nullable GatewayAccountId; positive decimal int64, never a JSON number.
+	GatewayAccountId         *string                `json:"gateway_account_id,omitempty"`
+	GatewayInstanceId        *openapi_types.UUID    `json:"gateway_instance_id,omitempty"`
+	LastSuccessObservationAt *time.Time             `json:"last_success_observation_at,omitempty"`
+	ObservedAt               time.Time              `json:"observed_at"`
+	RelayNodeId              openapi_types.UUID     `json:"relay_node_id"`
+	Resolution               RelayBindingResolution `json:"resolution"`
 }
 
 // NodeType defines model for NodeType.
@@ -1440,7 +1562,8 @@ type ReauthenticateRequest struct {
 
 // RebindRelayNodeRequest defines model for RebindRelayNodeRequest.
 type RebindRelayNodeRequest struct {
-	NewGatewayAccountId  int64              `json:"new_gateway_account_id"`
+	// NewGatewayAccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+	NewGatewayAccountId  GatewayAccountId   `json:"new_gateway_account_id"`
 	NewGatewayInstanceId openapi_types.UUID `json:"new_gateway_instance_id"`
 	RelayNodeId          openapi_types.UUID `json:"relay_node_id"`
 }
@@ -1487,9 +1610,11 @@ type RelayNodeGatewayAccountBindingDetail struct {
 	EndedAt            *time.Time                                     `json:"ended_at,omitempty"`
 	EndedBy            *openapi_types.UUID                            `json:"ended_by,omitempty"`
 	EvidenceSnapshotId openapi_types.UUID                             `json:"evidence_snapshot_id"`
-	GatewayAccountId   int64                                          `json:"gateway_account_id"`
-	GatewayInstanceId  openapi_types.UUID                             `json:"gateway_instance_id"`
-	RelayNodeId        openapi_types.UUID                             `json:"relay_node_id"`
+
+	// GatewayAccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
+	GatewayAccountId  GatewayAccountId   `json:"gateway_account_id"`
+	GatewayInstanceId openapi_types.UUID `json:"gateway_instance_id"`
+	RelayNodeId       openapi_types.UUID `json:"relay_node_id"`
 }
 
 // RelayNodeGatewayAccountBindingDetailBindReason defines model for RelayNodeGatewayAccountBindingDetail.BindReason.
@@ -1737,6 +1862,16 @@ type UnbindRelayNodeParams struct {
 	// XCSRFToken Random proof bound to the current administrator session.
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
 }
+
+// ListNodeDuplicateHistoryParams defines parameters for ListNodeDuplicateHistory.
+type ListNodeDuplicateHistoryParams struct {
+	Status *ListNodeDuplicateHistoryParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit  *int                                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string                               `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListNodeDuplicateHistoryParamsStatus defines parameters for ListNodeDuplicateHistory.
+type ListNodeDuplicateHistoryParamsStatus string
 
 // QueryAccountInventoryJSONRequestBody defines body for QueryAccountInventory for application/json ContentType.
 type QueryAccountInventoryJSONRequestBody = AccountInventoryQueryRequest
@@ -2091,6 +2226,9 @@ func (t *LoginResponse) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetNodeInventoryProviderStates Read complete Provider snapshot and latest health evidence
+	// (GET /api/account-inventory/nodes/{instance_id}/providers)
+	GetNodeInventoryProviderStates(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId)
 	// QueryAccountInventory Query one Relay Node current account inventory
 	// (POST /api/account-inventory/query)
 	QueryAccountInventory(w http.ResponseWriter, r *http.Request, params QueryAccountInventoryParams)
@@ -2199,11 +2337,20 @@ type ServerInterface interface {
 	// ListUnresolvedRelayBindings List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
 	// (GET /api/relay-bindings/unresolved)
 	ListUnresolvedRelayBindings(w http.ResponseWriter, r *http.Request)
+	// ListNodeDuplicateHistory Read occurrences historically involving this Node
+	// (GET /api/topology/nodes/{instance_id}/duplicate-history)
+	ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// GetNodeInventoryProviderStates Read complete Provider snapshot and latest health evidence
+// (GET /api/account-inventory/nodes/{instance_id}/providers)
+func (_ Unimplemented) GetNodeInventoryProviderStates(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // QueryAccountInventory Query one Relay Node current account inventory
 // (POST /api/account-inventory/query)
@@ -2421,6 +2568,12 @@ func (_ Unimplemented) ListUnresolvedRelayBindings(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListNodeDuplicateHistory Read occurrences historically involving this Node
+// (GET /api/topology/nodes/{instance_id}/duplicate-history)
+func (_ Unimplemented) ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ServerInterfaceWrapper converts contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler            ServerInterface
@@ -2429,6 +2582,32 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetNodeInventoryProviderStates operation middleware
+func (siw *ServerInterfaceWrapper) GetNodeInventoryProviderStates(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetNodeInventoryProviderStates(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // QueryAccountInventory operation middleware
 func (siw *ServerInterfaceWrapper) QueryAccountInventory(w http.ResponseWriter, r *http.Request) {
@@ -3826,6 +4005,74 @@ func (siw *ServerInterfaceWrapper) ListUnresolvedRelayBindings(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// ListNodeDuplicateHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListNodeDuplicateHistoryParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeDuplicateHistory(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -4046,6 +4293,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/cross-node-duplicate-occurrences/{occurrence_id}/evidence", wrapper.ListCrossNodeDuplicateOccurrenceEvidence)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/account-inventory/nodes/{instance_id}/providers", wrapper.GetNodeInventoryProviderStates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/duplicate-history", wrapper.ListNodeDuplicateHistory)
 	})
 
 	return r

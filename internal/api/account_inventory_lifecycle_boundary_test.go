@@ -10,7 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func TestAccountInventoryProductAPIRemainsLimitedToAuditedQuery(t *testing.T) {
+func TestAccountInventoryProductAPIRemainsLimitedToAuditedAccountsAndReadonlyProviders(t *testing.T) {
 	router := chi.NewRouter()
 	HandlerWithOptions(NewServer("test"), ChiServerOptions{BaseRouter: router})
 	var routes []string
@@ -23,7 +23,7 @@ func TestAccountInventoryProductAPIRemainsLimitedToAuditedQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	sort.Strings(routes)
-	want := []string{http.MethodPost + " /api/account-inventory/query"}
+	want := []string{http.MethodGet + " /api/account-inventory/nodes/{instance_id}/providers", http.MethodPost + " /api/account-inventory/query"}
 	if !slices.Equal(routes, want) {
 		t.Fatalf("account inventory product routes = %v, want %v", routes, want)
 	}

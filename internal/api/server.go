@@ -30,6 +30,8 @@ type Server struct {
 	accountInventoryMetrics       *AccountInventoryMetrics
 	relayBindings                 *assetstore.RelayBindingRepository
 	crossNodeDuplicateOccurrences assetstore.CrossNodeDuplicateOwnershipOccurrenceReader
+	nodeDuplicateHistory          assetstore.CrossNodeDuplicateOwnershipHistoryReader
+	providerStates                assetstore.AccountInventoryProviderStateReader
 }
 
 type requestIDContextKey struct{}
@@ -381,4 +383,11 @@ func sessionResponse(value authn.Session) SessionResponse {
 	}
 	admin := authn.Admin{ID: value.AdminID, LoginName: value.LoginName, DisplayName: value.DisplayName, AuthSource: "local", Role: value.Role, Status: value.Status, CreatedAt: value.CreatedAt, UpdatedAt: value.CreatedAt}
 	return SessionResponse{State: Authenticated, Administrator: administrator(admin), Mfa: SessionMfaAssurance{Required: value.MFARequired, Completed: value.MFAMethod != authn.MFAMethodNone, Method: method}, CreatedAt: value.CreatedAt, LastActivityAt: value.LastActivityAt, IdleExpiresAt: value.LastActivityAt.Add(30 * time.Minute), AbsoluteExpiresAt: value.AbsoluteExpiresAt, ReauthenticatedUntil: reauth, RecoveryCodesRemaining: int(value.RecoveryCodesRemaining), CsrfToken: csrf}
+}
+
+func (s *Server) SetNodeDuplicateHistoryReader(reader assetstore.CrossNodeDuplicateOwnershipHistoryReader) {
+	s.nodeDuplicateHistory = reader
+}
+func (s *Server) SetAccountInventoryProviderStateReader(reader assetstore.AccountInventoryProviderStateReader) {
+	s.providerStates = reader
 }
