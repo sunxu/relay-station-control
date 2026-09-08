@@ -3,7 +3,7 @@
 ## Implementation evidence — 2026-09-08
 
 用户已授权实施及当前本地环境更新。当前实现不修改产品 API、schema、generated client、
-UI 或 migration；不修改既有归档。任务状态以 tasks.md 为准，尚未宣告 Final Review。
+UI 或 migration；不修改既有归档。任务完成 15/15，等待 Final Review；不自动 archive 或 push。
 
 ### Commands and results
 
@@ -21,7 +21,8 @@ UI 或 migration；不修改既有归档。任务状态以 tasks.md 为准，尚
   `pg_restore --list` PASS；这只证明归档可读，不等同完整恢复演练。
 - 正式 `devctl directory drill --acceptance-config <private-config>` → PASS：
   baseline、自然 stale/unknown、恢复 source、同一 Binding fresh/resolved 且观测推进；
-  最终 HTTP 工具真实 PG/main 专项仍在运行，本地受控更新与单次 AI 冒烟尚未完成。
+  最终 HTTP 工具真实 PG/main 专项 PASS（714.33s，Go package 715.057s）；
+  本地受控更新及单次 AI 冒烟 PASS，详见下方发布证据。
 
 ### Acceptance matrix
 
@@ -36,7 +37,7 @@ UI 或 migration；不修改既有归档。任务状态以 tasks.md 为准，尚
 | L7 | `test_local_operations.py`、backup failure、real Docker | 私有 backup、dump 可读才写 metadata、失败不更新、未知字段保持；PASS |
 | L8 | `test_operation_state.py`、`test_devctl_lock.py`、directory signal tests | 继承锁/并发/legacy pending guard；真实 INT/TERM 恢复原开关；存活/PID复用/未知 owner 拒绝；PASS |
 | L9 | real bad image / runtime failure tests | 启动失败恢复旧 digest/config，固定代理刷新；peer/proxy 冲突保留 pending 并明确失败；PASS |
-| L10 | `TestLocalDirectoryToolingNaturalRecovery`、正式本地 drill | 正式本地 drill PASS；最终隔离 PG/main 专项运行中 |
+| L10 | `TestLocalDirectoryToolingNaturalRecovery`、正式本地 drill | 正式本地 drill 与最终隔离 PG/main 专项均 PASS；同一 Binding、Account decimal string、观测失败不推进/恢复推进 |
 | L11 | `DIRECTORY_HTTP.md`、ops `OPERATIONS.md` / protected config tests | 正式仓库入口及 mode 映射；拒绝临时部署配置；未删除旧临时文件；归档哈希复核一致 |
 | L12 | `schema_gate.py`、9 schema tests / admission tests | 迁移新增/删除/改旧SQL/启动路径差异拒绝；Goose 最新记录精确集合、Gateway checksum/Atlas；启动后 drift 禁止回滚；PASS |
 | L13 | state SIGKILL / directory recovery tests | prepared/applying/verified SIGKILL 保留记录；逐文件 old/new、恢复再失败可重试、verified 只清理不回滚；路径穿越/symlink/外部冲突写前拒绝；PASS |
@@ -44,6 +45,65 @@ UI 或 migration；不修改既有归档。任务状态以 tasks.md 为准，尚
 
 公开证据不保存真实身份、Secret 或响应正文。运行输入、会话、baseline、backup 和
 六个账号/volume 保留校验仅放在已存在的仓库外私有 runtime。
+
+
+### Real PG / HTTP command
+
+先按现有隔离 PostgreSQL 测试说明设置 `CONTROL_DATABASE_TEST_URL` 与
+`CONTROL_RUNTIME_DATABASE_TEST_URL`；使用本地 55432 测试服务的 migrator/runtime
+连接，测试创建自己的隔离 schema。真实凭据不写入公开证据。
+
+```bash
+RELAY_DIRECTORY_TOOLING_E2E=1 go test ./cmd/control -run '^TestLocalDirectoryToolingNaturalRecovery$' -count=1 -timeout=25m -v
+```
+
+最终运行 PASS：正常密码 HTTP 登录和 CSRF bind，目标 Account
+`9007199254740993`；source 失败后等待自然 540s，断言相同 Binding 的 stale/unknown
+且 last_success 不变；恢复后等待正常 180s 采集槽，同一目标 fresh/resolved 且时间
+严格推进。没有通过修改时间、写入 snapshot/run 或预置 session 制造通过；
+Go 进程和 HTTP CLI 输出同时检查合成凭据/身份 canary 不泄露。
+
+### Local deployment evidence
+
+正式配置位于既有仓库外私有 runtime 的 `acceptance/directory.json`。
+下列 `<runtime>` 代表该持久私有目录，不依赖旧临时脚本；实际账号、UUID、token、
+Cookie 和 URL 凭据不记录在公开文档。
+
+```bash
+# 在 ops 仓库
+RELAY_DEV_RUNTIME_DIR=<runtime> ./dev/devctl directory drill --acceptance-config <runtime>/acceptance/directory.json
+RELAY_DEV_RUNTIME_DIR=<runtime> ./dev/devctl backup gateway
+RELAY_DEV_RUNTIME_DIR=<runtime> ./dev/devctl update control relay-station/control:172704f
+
+# 在 control 仓库
+python3 deploy/acceptance/directory_http.py --config <runtime>/acceptance/directory.json read
+python3 deploy/acceptance/directory_http.py --config <runtime>/acceptance/directory.json directory-check
+python3 deploy/acceptance/directory_http.py --config <runtime>/acceptance/directory.json data-plane
+```
+
+以上均 PASS。一次模型请求通过已有 Gateway → Node 路径，结果仅保留结构断言。
+更新前由正式入口完成 Control custom dump 与匹配配置备份，包含镜像/revision metadata；
+独立 Gateway backup 最终版本也 PASS。Control 与 TLS 代理最终健康，迁移/DB baseline
+无变化，其余服务 container ID/image/config 保持；同镜像第二次 update PASS，额外核对
+全部 container IDs 不变且 backup 目录集合不增加。
+
+- Control 实现 commit：`172704ffa30ed5de118c264cf35801da545a9a84`。
+- Ops 实现 commit：`69c4832`。
+- 构建命令：`docker build --pull=false --label org.opencontainers.image.revision=172704ffa30ed5de118c264cf35801da545a9a84 --build-arg VERSION=172704ffa30ed5de118c264cf35801da545a9a84 -t relay-station/control:172704f .` → PASS。
+- 实际 Control image：`sha256:40967ea1bb9e8bf97fc479ff95f1075e9640ab50faafadc18166cbb5c7c33870`。
+- 私有 before/after 校验：6 个账号文件集合与内容 SHA-256 全部一致；7 个 volume
+  名称集合一致；Node container ID 不变；source/poller 均恢复原 true；pending 不存在。
+- Gateway 和 Node 产品镜像未更新；未删除数据，未执行 migration/down 或 DB 还原。
+
+### Final validation
+
+- Change strict 与 `openspec validate --all --strict` → PASS（15 passed / 0 failed）。
+- Control/Ops `git diff --check`、每次 commit 前 `git diff --cached --check` → PASS。
+- API/schema/generated/UI 均未修改，generate 不适用。已运行直接相关真实 PG/HTTP、
+  Docker 和 Python/bash 专项；本地 Control 镜像构建 PASS，Web 层命中缓存。
+  按本 change 4.4 的工具范围不重复 make 全量业务测试、全量 PG 或 Chrome。
+- 暂存清单仅仓库脚本、合成测试和文档；私有账号、Secret、session、baseline、backup
+  未暂存。没有改写历史归档或任何 canonical spec。
 
 ## Planning baseline (historical)
 

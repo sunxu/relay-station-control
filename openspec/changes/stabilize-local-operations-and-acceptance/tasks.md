@@ -19,8 +19,8 @@
 
 ## 4. Integrated verification and documentation
 
-- [ ] 4.1 串联显式故障演练与devctl，验证成功/失败/中断均恢复原开关、保留Binding且不自动解绑；真实隔离PG/HTTP等待自然540秒stale并在180秒槽恢复，录制实际命令与精确断言。
-- [ ] 4.2 取得本地执行授权后完成一次受控更新与Directory/Binding/AI最小冒烟，保留既有账号、volume与开关；不能用mock结果或旧归档PASS代替本次运行证据。
+- [x] 4.1 串联显式故障演练与devctl，验证成功/失败/中断均恢复原开关、保留Binding且不自动解绑；真实隔离PG/HTTP等待自然540秒stale并在180秒槽恢复，录制实际命令与精确断言。
+- [x] 4.2 取得本地执行授权后完成一次受控更新与Directory/Binding/AI最小冒烟，保留既有账号、volume与开关；不能用mock结果或旧归档PASS代替本次运行证据。
 - [x] 4.3 交付正式Runbook、配置样例和旧脚本mode映射，验证清空临时脚本依赖后仍可从仓库入口复现；只做路径隔离验证，不实际删除用户临时文件，既有归档哈希保持不变。
-- [ ] 4.4 运行bash语法、Python标准库测试及新增工具专项；按实际实施范围执行项目要求的生成/构建检查，若无生成/API/schema/Web变化则记录不适用，不为本工具重复全量PG/Chrome验收。
-- [ ] 4.5 将evidence矩阵关联实现、fixture、命令、断言及实际结果；运行change/all strict、diff检查，检查敏感文件未暂存，按Control/ops独立提交并等待Final Review，不自动归档。
+- [x] 4.4 运行bash语法、Python标准库测试及新增工具专项；按实际实施范围执行项目要求的生成/构建检查，若无生成/API/schema/Web变化则记录不适用，不为本工具重复全量PG/Chrome验收。
+- [x] 4.5 将evidence矩阵关联实现、fixture、命令、断言及实际结果；运行change/all strict、diff检查，检查敏感文件未暂存，按Control/ops独立提交并等待Final Review，不自动归档。
