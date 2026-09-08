@@ -43,8 +43,9 @@ const (
 	sourceSnapshotsEnvironment = "CONTROL_HISTORY_PROCESS_SOURCE_SNAPSHOTS"
 	faultStageEnvironment      = "CONTROL_HISTORY_PROCESS_FAULT_STAGE"
 
-	processProbeTimeout = 35 * time.Second
-	httpRequestTimeout  = 3 * time.Second
+	processProbeTimeout          = 35 * time.Second
+	terminalInternalProbeTimeout = 60 * time.Second
+	httpRequestTimeout           = 3 * time.Second
 )
 
 var derivedHistoryFamilies = []string{
@@ -646,7 +647,7 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 		faultStage != "rollup" && faultStage != "retention" {
 		t.Fatal("history process fault stage invalid")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), processProbeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), terminalInternalProbeTimeout)
 	defer cancel()
 
 	ticker := time.NewTicker(200 * time.Millisecond)

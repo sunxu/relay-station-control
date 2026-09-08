@@ -89,12 +89,20 @@ migrate_database() {
 
 run_focused_store_gate() {
   local store_log="$runtime_directory/store.log"
+  if ! compose exec -T postgres psql --username relay_control_migrator \
+    --dbname relay_station_control --set ON_ERROR_STOP=1 --command \
+    'ALTER ROLE relay_control_app_dev CONNECTION LIMIT -1' \
+    >"$runtime_directory/store-role-reset.log" 2>&1; then
+    cat "$runtime_directory/store-role-reset.log" >&2
+    fixed_failure 'focused_store_role_reset_failed'
+  fi
   if ! CONTROL_DATABASE_TEST_URL="$CONTROL_SNAPSHOT_RECOVERY_OWNER_URL" \
     CONTROL_RUNTIME_DATABASE_TEST_URL="$CONTROL_SNAPSHOT_RECOVERY_RUNTIME_URL" \
     go test ./internal/store \
       -run '^(TestAccountInventorySnapshot|TestInventorySnapshot)' -count=1 \
       >"$store_log" 2>&1
   then
+    cat "$store_log" >&2
     fixed_failure 'focused_store_gate_failed'
   fi
 }
