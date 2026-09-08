@@ -36,6 +36,9 @@ type Server struct {
 	crossNodeDuplicateOccurrences assetstore.CrossNodeDuplicateOwnershipOccurrenceReader
 	nodeDuplicateHistory          assetstore.CrossNodeDuplicateOwnershipHistoryReader
 	providerStates                assetstore.AccountInventoryProviderStateReader
+	accountQuality                interface {
+		ListAccountQuality(context.Context, assetstore.AccountQualityQuery) (assetstore.AccountQualityPage, error)
+	}
 }
 
 type requestIDContextKey struct{}
@@ -394,4 +397,10 @@ func (s *Server) SetNodeDuplicateHistoryReader(reader assetstore.CrossNodeDuplic
 }
 func (s *Server) SetAccountInventoryProviderStateReader(reader assetstore.AccountInventoryProviderStateReader) {
 	s.providerStates = reader
+}
+
+func (s *Server) SetAccountQualityReader(reader interface {
+	ListAccountQuality(context.Context, assetstore.AccountQualityQuery) (assetstore.AccountQualityPage, error)
+}) {
+	s.accountQuality = reader
 }

@@ -355,6 +355,12 @@ func main() {
 		os.Exit(1)
 	}
 	apiServer.SetAccountInventoryProviderStateReader(providerStates)
+	accountQuality, err := assetstore.NewAccountRequestQualityRepository(pool)
+	if err != nil {
+		logger.Error("account request quality reader initialization failed", "component", "account_request_quality")
+		os.Exit(1)
+	}
+	apiServer.SetAccountQualityReader(accountQuality)
 	pollCapacity, err := assetstore.NewInventoryPollCapacityRepository(pool)
 	if err != nil {
 		logger.Error("poll capacity reader initialization failed", "component", "account_inventory")

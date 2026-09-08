@@ -1164,6 +1164,80 @@ export interface CrossNodeDuplicateOccurrenceEvidenceListResponse {
   next_cursor?: string | null;
 }
 
+export type NodeAccountQualityItemQuality = typeof NodeAccountQualityItemQuality[keyof typeof NodeAccountQualityItemQuality];
+
+
+export const NodeAccountQualityItemQuality = {
+  good: 'good',
+  degraded: 'degraded',
+  bad: 'bad',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * @nullable
+ */
+export type NodeAccountQualityItemLastFailureClass = typeof NodeAccountQualityItemLastFailureClass[keyof typeof NodeAccountQualityItemLastFailureClass] | null;
+
+
+export const NodeAccountQualityItemLastFailureClass = {
+  auth: 'auth',
+  quota: 'quota',
+  rate_limit: 'rate_limit',
+  upstream: 'upstream',
+  unknown: 'unknown',
+} as const;
+
+export interface NodeAccountQualityItem {
+  account_key: string;
+  email: string;
+  provider: string;
+  quality: NodeAccountQualityItemQuality;
+  /** @minimum 0 */
+  request_count: number;
+  /** @minimum 0 */
+  success_count: number;
+  /** @minimum 0 */
+  failure_count: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  success_rate: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  p95_latency_ms: number | null;
+  /** @nullable */
+  last_success_at: string | null;
+  /** @nullable */
+  last_failure_at: string | null;
+  /** @nullable */
+  last_failure_class: NodeAccountQualityItemLastFailureClass;
+}
+
+export type NodeAccountQualityResponseWindow = typeof NodeAccountQualityResponseWindow[keyof typeof NodeAccountQualityResponseWindow];
+
+
+export const NodeAccountQualityResponseWindow = {
+  '15m': '15m',
+  '1h': '1h',
+} as const;
+
+export interface NodeAccountQualityResponse {
+  instance_id: string;
+  window: NodeAccountQualityResponseWindow;
+  /** @maxItems 100 */
+  items: NodeAccountQualityItem[];
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  next_cursor: string | null;
+}
+
 export type NodeInventoryProviderStateMonitoringStatus = typeof NodeInventoryProviderStateMonitoringStatus[keyof typeof NodeInventoryProviderStateMonitoringStatus];
 
 
@@ -1353,6 +1427,43 @@ export type ListNodeDuplicateHistoryStatus = typeof ListNodeDuplicateHistoryStat
 export const ListNodeDuplicateHistoryStatus = {
   ACTIVE: 'ACTIVE',
   RESOLVED: 'RESOLVED',
+} as const;
+
+export type GetNodeAccountQualityParams = {
+window?: GetNodeAccountQualityWindow;
+/**
+ * @maxLength 64
+ * @pattern ^[a-z0-9][a-z0-9._-]*$
+ */
+provider?: string;
+quality?: GetNodeAccountQualityQuality;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @maxLength 2048
+ */
+cursor?: string;
+};
+
+export type GetNodeAccountQualityWindow = typeof GetNodeAccountQualityWindow[keyof typeof GetNodeAccountQualityWindow];
+
+
+export const GetNodeAccountQualityWindow = {
+  '15m': '15m',
+  '1h': '1h',
+} as const;
+
+export type GetNodeAccountQualityQuality = typeof GetNodeAccountQualityQuality[keyof typeof GetNodeAccountQualityQuality];
+
+
+export const GetNodeAccountQualityQuality = {
+  good: 'good',
+  degraded: 'degraded',
+  bad: 'bad',
+  unknown: 'unknown',
 } as const;
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -6558,6 +6669,169 @@ export function useListNodeDuplicateHistory<TData = Awaited<ReturnType<typeof li
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListNodeDuplicateHistoryQueryOptions(instanceId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getNodeAccountQualityResponse200 = {
+  data: NodeAccountQualityResponse
+  status: 200
+}
+
+export type getNodeAccountQualityResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getNodeAccountQualityResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getNodeAccountQualityResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getNodeAccountQualityResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getNodeAccountQualityResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getNodeAccountQualityResponseSuccess = (getNodeAccountQualityResponse200) & {
+  headers: Headers;
+};
+export type getNodeAccountQualityResponseError = (getNodeAccountQualityResponse400 | getNodeAccountQualityResponse401 | getNodeAccountQualityResponse403 | getNodeAccountQualityResponse404 | getNodeAccountQualityResponse503) & {
+  headers: Headers;
+};
+
+export type getNodeAccountQualityResponse = (getNodeAccountQualityResponseSuccess | getNodeAccountQualityResponseError)
+
+export const getGetNodeAccountQualityUrl = (instanceId: string,
+    params?: GetNodeAccountQualityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/topology/nodes/${instanceId}/account-quality?${stringifiedParams}` : `/api/topology/nodes/${instanceId}/account-quality`
+}
+
+/**
+ * Requires an enabled super_admin session. Readonly, with a 5 second HTTP budget. Query failure is unavailable, never an empty success.
+ * @summary Read account request quality for one Node
+ */
+export const getNodeAccountQuality = async (instanceId: string,
+    params?: GetNodeAccountQualityParams, options?: RequestInit): Promise<getNodeAccountQualityResponse> => {
+
+  const res = await fetch(getGetNodeAccountQualityUrl(instanceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNodeAccountQualityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNodeAccountQualityResponse
+}
+
+
+
+
+
+export const getGetNodeAccountQualityQueryKey = (instanceId: string,
+    params?: GetNodeAccountQualityParams,) => {
+    return [
+    `/api/topology/nodes/${instanceId}/account-quality`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetNodeAccountQualityQueryOptions = <TData = Awaited<ReturnType<typeof getNodeAccountQuality>>, TError = ErrorResponse>(instanceId: string,
+    params?: GetNodeAccountQualityParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAccountQuality>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeAccountQualityQueryKey(instanceId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeAccountQuality>>> = ({ signal }) => getNodeAccountQuality(instanceId,params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeAccountQuality>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNodeAccountQualityQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeAccountQuality>>>
+export type GetNodeAccountQualityQueryError = ErrorResponse
+
+
+export function useGetNodeAccountQuality<TData = Awaited<ReturnType<typeof getNodeAccountQuality>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: undefined |  GetNodeAccountQualityParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAccountQuality>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeAccountQuality>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeAccountQuality>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeAccountQuality<TData = Awaited<ReturnType<typeof getNodeAccountQuality>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: GetNodeAccountQualityParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAccountQuality>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeAccountQuality>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeAccountQuality>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeAccountQuality<TData = Awaited<ReturnType<typeof getNodeAccountQuality>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: GetNodeAccountQualityParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAccountQuality>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read account request quality for one Node
+ */
+
+export function useGetNodeAccountQuality<TData = Awaited<ReturnType<typeof getNodeAccountQuality>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: GetNodeAccountQualityParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeAccountQuality>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNodeAccountQualityQueryOptions(instanceId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

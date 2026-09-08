@@ -138,9 +138,9 @@ func (s *Server) GetNodeInventoryProviderStates(w http.ResponseWriter, r *http.R
 
 func (s *Server) topologyReadError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, assetstore.ErrAssetNotFound), errors.Is(err, assetstore.ErrAccountInventoryProviderStateNotFound):
+	case errors.Is(err, assetstore.ErrAssetNotFound), errors.Is(err, assetstore.ErrAccountInventoryProviderStateNotFound), errors.Is(err, assetstore.ErrAccountInventoryInstanceNotFound):
 		writeJSON(w, http.StatusNotFound, ErrorResponse{Code: ErrorCodeNotFound, Message: "The Relay Node was not found.", RequestId: s.requestID(r)})
-	case errors.Is(err, assetstore.ErrInvalidAccountInventoryProviderStateQuery), errors.Is(err, assetstore.ErrInvalidAssetQuery), errors.Is(err, assetstore.ErrCrossNodeDuplicateOccurrenceQuery):
+	case errors.Is(err, assetstore.ErrInvalidAccountInventoryProviderStateQuery), errors.Is(err, assetstore.ErrInvalidAssetQuery), errors.Is(err, assetstore.ErrCrossNodeDuplicateOccurrenceQuery), errors.Is(err, assetstore.ErrInvalidAccountInventoryQuery):
 		s.writeError(w, r, authn.ErrInvalid)
 	default:
 		s.writeError(w, r, authn.ErrUnavailable)
