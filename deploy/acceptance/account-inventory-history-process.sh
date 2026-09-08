@@ -177,9 +177,13 @@ write_secrets() {
 }
 
 migrate_up() {
-  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
-    make --silent migrate-up >"$runtime_directory/migration.log" 2>&1; then
+  if ! (
+    cd "$repository_root/tools"
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      GOOSE_DRIVER=postgres \
+      GOOSE_DBSTRING="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" GOOSE_MIGRATION_DIR=../migrations \
+      go tool goose up-to 9
+  ) >"$runtime_directory/migration.log" 2>&1; then
     fixed_failure 'migration_up_failed'
   fi
 }

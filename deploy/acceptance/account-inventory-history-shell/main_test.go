@@ -214,7 +214,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	for _, required := range []string{
 		"docker compose --project-name", "down --volumes --remove-orphans",
 		"docker ps --all", "docker volume ls", "docker network ls",
-		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose \"$direction\"",
+		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose up-to 9", "go tool goose down",
 		"assert_version 9", "assert_version 8", "migrate down", "migrate up",
 		"TestAccountInventoryHistoryPostgresSchemaSmoke", "core_sha256=covered",
 		"TestAccountInventoryHistoryPostgresPlannerCatalogGate",

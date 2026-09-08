@@ -84,12 +84,23 @@ require_test() {
 
 migrate() {
   local direction="$1" log_name="$2"
+  case "$direction" in
+    up|down) ;;
+    *) fixed_failure 'migration_direction_invalid' ;;
+  esac
   if ! (
     cd "$repository_root/tools"
-    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOOSE_DRIVER=postgres \
-      GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
-      go tool goose "$direction"
+    if [ "$direction" = up ]; then
+      env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+        GOOSE_DRIVER=postgres \
+        GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
+        go tool goose up-to 9
+    else
+      env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+        GOOSE_DRIVER=postgres \
+        GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
+        go tool goose down
+    fi
   ) >"$runtime_directory/$log_name" 2>&1; then
     fixed_failure "migration_${direction}_failed"
   fi

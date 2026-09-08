@@ -284,7 +284,7 @@ migrate_database() {
     cd "$repository_root/tools"
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       GOOSE_DRIVER=postgres GOOSE_DBSTRING="$CONTROL_READONLY_QUERY_RECOVERY_OWNER_URL" GOOSE_MIGRATION_DIR=../migrations \
-      go tool goose up
+      go tool goose up-to 9
   ) >"$runtime_directory/migration.log" 2>&1; then
     fixed_failure 'migration_failed'
   fi
