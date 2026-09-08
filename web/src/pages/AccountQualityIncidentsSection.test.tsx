@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
@@ -18,8 +19,8 @@ it("renders active incidents and opens account history", async () => {
   const a = { incidents: vi.fn().mockResolvedValue({ instance_id: NODE, items: [row], next_cursor: null }) };
   const x = renderSection(a);
   expect(await screen.findByText("Active")).toBeInTheDocument();
-  expect(screen.getByText(/2026-09-08 01:00:00 UTC/)).toBeInTheDocument();
-  expect(screen.getByText(/2026-09-08 01:05:00 UTC/)).toBeInTheDocument();
+  expect(screen.getByText(formatDateTime(row.first_seen))).toBeInTheDocument();
+  expect(screen.getByText(formatDateTime(row.last_seen))).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: ACCOUNT }));
   expect(x.onSelect).toHaveBeenCalledWith(ACCOUNT);
 });

@@ -50,7 +50,7 @@ Loading是请求进行中；Empty仅表示成功返回无账号/无匹配；Unkn
 
 ## Account Request History
 
-在 Account Quality 行选择“查看 History”，使用该行的 canonical `account_key` 在当前 Node detail 读取最近七天具体请求。History 只解释窗口质量，不改变分类或任何账号状态。六列为 Time（UTC）、Model、Result、Failure、Latency、Request ID；空 latency/request ID 与成功事件的 Failure 显示 —。没有请求详情、raw body、导出或账号操作。
+在 Account Quality 行选择“查看 History”，使用该行的 canonical `account_key` 在当前 Node detail 读取最近七天具体请求。History 只解释窗口质量，不改变分类或任何账号状态。六列为 Time（浏览器系统时区，`YYYY-MM-DD HH:mm:ss`）、Model、Result、Failure、Latency、Request ID；空 latency/request ID 与成功事件的 Failure 显示 —。没有请求详情、raw body、导出或账号操作。
 
 只读接口为 `GET /api/topology/nodes/{instance_id}/request-history?account_key=...`；账号参数应由 generated client 编码，保持 opaque string。只支持 limit（默认25，最大100）与 opaque cursor。使用现有 super_admin 会话、no-store 和5秒预算；cursor绑定 Node/account/time/hash，错配400。account_key仅在该认证API请求内传递，不加入浏览器导航URL或持久化前端状态。
 
@@ -85,3 +85,7 @@ First Seen/Last Seen/Hits 是当前15分钟该类别失败的最早/最晚时间
 新`POST /api/topology/nodes/{instance_id}/account-quality/query`将筛选及cursor放入body；不得将email或cursor放进列表URL、storage或日志。使用super_admin、CSRF、16KiB body限制、no-store、AEAD actor/filter绑定cursor（15分钟）及逐页审计。原质量GET和Inventory POST保留兼容。每页一次组合数据查询，另有固定审计写入；数据库内部逐账号复用quality函数并读取最多10条事件，计算成本不声称常数。
 
 发布需先应用00025只读query-access migration，再成对更新Control backend/Web；旧v1/v2保留，runtime不增加direct SELECT，没有新表/index/事件schema/retention改动。回滚旧应用保留forward schema，Down只用于隔离测试。此变更尚未部署，证据见[统一账号视图验收](../../openspec/changes/archive/2026-09-09-unify-account-list-and-request-outcomes/planning-validation.md)。
+
+## 页面时间显示
+
+Control Web 的时间统一按浏览器所在系统的时区显示为 `YYYY-MM-DD HH:mm:ss`，例如 `2026-09-08 18:40:40`；不固定 UTC 或 Asia/Shanghai，不追加时区后缀。账号、Provider、请求历史、Incident、Evidence 和容量评估槽位使用同一格式，缺失或无效值显示 `—`。服务端 `TZ` 不控制浏览器显示；数据库/API 的原始 instant、UTC 调度槽、窗口、cursor 和 freshness 计算保持不变。

@@ -1,0 +1,49 @@
+## Planning validation
+
+### Scope
+
+- [x] 仅修改 Control Web 的用户可见时间格式，不修改 API、数据库、migration、generated code、collector 或 CLIProxy
+- [x] 浏览器系统时区是显示时区；服务端、PostgreSQL、HTTP 和计算仍使用既有 UTC/ISO instant
+- [x] 目标格式为 `YYYY-MM-DD HH:mm:ss`，缺失或非法值为 `—`
+
+### Evidence plan
+
+- [x] 记录所有实际显示调用点和共享 formatter 替换结果
+- [x] 使用至少两个运行时系统时区验证同一 instant 的本地显示和零填充格式
+- [x] 验证 API/DB 请求字符串、排序、窗口、cursor 和 freshness 计算未改变
+- [x] 验证登录/会话、资产、任务、Topology、Inventory、Provider、Quality、History、Incidents、详情和容量的用户可见时间
+- [x] 完成前端测试、typecheck、build、OpenSpec strict 与 `git diff --check`
+
+### Release and rollback
+
+本 change 无 migration、无外部数据变更、无 deploy 或 archive；实现完成后等待 Final Review。失败时回滚 Web bundle/commit，保留现有 API 与数据库数据。
+
+## Implementation evidence — 2026-09-09
+
+基于本地 main `8cbc0d6` 完成；实现验证完成；用户随后授权本地提交与部署。验证时尚未部署，部署结果以本地发布记录为准；未 push、未 archive。
+
+- 共享实现：[time.ts](../../../../web/src/time.ts)，以 Date 本地字段格式化，零填充至秒；无时区配置和缓存。空值/非法值为 `—`。
+- 登录、会话和一次性材料：LoginPage、ManagementPage、OneTimeMaterialPage。
+- 资产/任务：AssetRegistryView、JobRegistryView（请求筛选的 `requestTime().toISOString()` 保持原样）。
+- Topology：TopologyView 中 Provider、Binding、Duplicate 当前/历史与 Evidence 时间；AccountList 最近请求 tooltip/最近失败；AccountDetailsDrawer 采集信息；AccountRequestHistorySection、AccountQualityIncidentsSection；AccountInventoryCapacity 的评估槽和评估时间。
+- [runbook](../../../../docs/runbooks/node-centric-topology-ui.md) 明确浏览器系统时区和服务端 UTC instant 的边界。
+
+### Validation
+
+| 命令 / 检查 | 结果 |
+| --- | --- |
+| `TZ=UTC npm test -- src/time.test.ts --reporter=dot`（web） | PASS，3/3 |
+| `TZ=Asia/Shanghai npm test -- src/time.test.ts --reporter=dot`（web） | PASS，3/3 |
+| `TZ=America/New_York npm test -- src/time.test.ts --reporter=dot`（web） | PASS，3/3 |
+| `make test build` | PASS，Go tests/build、前端 21 files / 128 tests、typecheck、build |
+| change strict | PASS |
+| `openspec validate --all --strict` | PASS，18/18 |
+| `git diff --check` | PASS |
+
+formatter 测试用本地构造的 `2026-09-08 18:40:40.987` 对应 instant 断言逐字 `2026-09-08 18:40:40`；纽约夏季/冬季 UTC 午夜分别断言上一日 20:00:00/19:00:00，上海分别为当日 08:00:00。独立进程 TZ 运行证明不固定 UTC 或 Asia/Shanghai，且普通测试不限制开发者的系统时区。
+
+首次完整验证因 Incident 测试的宽泛日期选择器同时匹配 first_seen/last_seen 失败；已分别按两个字段的格式化值精确断言，重新执行完整验证通过。最终日志：`/Volumes/DevRAM/tmp/control-system-time-make-final.log`。Go 输出 module stat-cache 写权限提示，但 `make` 退出码为 0；未修改 GOCACHE/GOTMPDIR 默认配置。
+
+### Final scope review
+
+独立只读复核未发现 blocker。扫描确认产品展示代码无 `utc()`、`toLocale*()`、固定 `timeZone` 或 UTC 后缀残留；唯一 `toISOString()` 是任务查询的既有请求转换。API、generated files、Go、数据库、collector、CLIProxy、时间窗口与数据面均无 diff；没有持久化变更或新的配置。最终工作树仅包含本 change 的 Web、测试、OpenSpec 和 runbook 修改。此处记录实现自查，不代替用户 Final Review。

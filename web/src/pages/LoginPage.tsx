@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Flex, Form, Input, Segmented, Typography } from "antd";
 import type { LoginRequest, MfaMethod } from "../api/generated/control";
@@ -94,7 +95,7 @@ export default function LoginPage() {
           </Form>
         ) : (
           <Flex vertical gap={16}>
-            <Alert type="info" showIcon message="需要第二步验证" description={`挑战有效至 ${new Date(auth.challenge.expires_at).toLocaleTimeString()}`} />
+            <Alert type="info" showIcon message="需要第二步验证" description={`挑战有效至 ${formatDateTime(auth.challenge.expires_at)}`} />
             {auth.challenge.methods.length > 1 && (
               <Segmented
                 value={method}

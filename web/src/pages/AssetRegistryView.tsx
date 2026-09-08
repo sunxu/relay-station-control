@@ -23,20 +23,10 @@ import {
   useGatewayAsset,
   useNodeAssets,
 } from "../api/asset-hooks";
+import { formatDateTime } from "../time";
 
 const { Text } = Typography;
 const pageSize = 50;
-
-function utc(value?: string | null): string {
-  if (!value) return "—";
-  const instant = new Date(value);
-  if (Number.isNaN(instant.getTime())) return "—";
-  return `${new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "medium",
-    timeStyle: "medium",
-    timeZone: "UTC",
-  }).format(instant)} UTC`;
-}
 
 function ResourceFrame({
   loading,
@@ -126,7 +116,7 @@ export function AssetRegistryView({ api, onUnauthorized }: { api: AssetApi; onUn
       render: (active: boolean, node: NodeAsset) => (
         <Flex vertical gap={4}>
           <Tag color={active ? "green" : "default"}>{active ? "已激活" : "未激活"}</Tag>
-          {active && <Text type="secondary">{utc(node.monitoringEffectiveFrom)} – {utc(node.monitoringEffectiveTo)}</Text>}
+          {active && <Text type="secondary">{formatDateTime(node.monitoringEffectiveFrom)} – {formatDateTime(node.monitoringEffectiveTo)}</Text>}
         </Flex>
       ),
     },
@@ -162,7 +152,7 @@ export function AssetRegistryView({ api, onUnauthorized }: { api: AssetApi; onUn
                 <Descriptions.Item label="Instance ID"><Text code>{gateway.data.gateway.instanceId}</Text></Descriptions.Item>
                 <Descriptions.Item label="Endpoint"><Text code className="asset-endpoint">{gateway.data.gateway.managementEndpoint}</Text></Descriptions.Item>
                 <Descriptions.Item label="Reader Secret">{gateway.data.gateway.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
-                <Descriptions.Item label="更新时间">{utc(gateway.data.gateway.updatedAt)}</Descriptions.Item>
+                <Descriptions.Item label="更新时间">{formatDateTime(gateway.data.gateway.updatedAt)}</Descriptions.Item>
               </Descriptions>
             ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未登记 Gateway" />}
           </ResourceFrame>
@@ -188,7 +178,7 @@ export function AssetRegistryView({ api, onUnauthorized }: { api: AssetApi; onUn
                   <Descriptions.Item label="作用域">{policy.data.policy.nodeType} / {policy.data.policy.driverContractVersion}</Descriptions.Item>
                   <Descriptions.Item label="Active">{capabilities(policy.data.policy.activeProviders)}</Descriptions.Item>
                   <Descriptions.Item label="Out of scope">{capabilities(policy.data.policy.outOfScopeProviders)}</Descriptions.Item>
-                  <Descriptions.Item label="激活区间">{utc(policy.data.policy.effectiveFrom)} – {utc(policy.data.policy.effectiveTo)}</Descriptions.Item>
+                  <Descriptions.Item label="激活区间">{formatDateTime(policy.data.policy.effectiveFrom)} – {formatDateTime(policy.data.policy.effectiveTo)}</Descriptions.Item>
                 </Descriptions>
               ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置当前 Provider 策略" />}
             </ResourceFrame>

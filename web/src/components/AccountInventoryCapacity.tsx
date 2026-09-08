@@ -3,18 +3,9 @@ import { Alert, Button, Card, Flex, Space, Spin, Tag, Typography } from "antd";
 import { useAccountInventoryPollCapacity } from "../api/account-inventory-hooks";
 import { AccountInventoryApiError } from "../api/account-inventory-types";
 import type { AccountInventoryApi, AccountInventoryPollCapacity } from "../api/account-inventory-types";
+import { formatDateTime } from "../time";
 
 const { Text } = Typography;
-
-function utc(value: string | null): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return `${new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-  }).format(parsed)} UTC`;
-}
 
 function capacityStatusLabel(value: AccountInventoryPollCapacity["status"]): string {
   if (value === "ready") return "可用";
@@ -59,6 +50,6 @@ function CapacitySummary({ value }: { value: AccountInventoryPollCapacity }) {
       <Text type="secondary">调度余量 {value.dispatchMarginMs}ms</Text>
       <Text type="secondary">启动宽限 {value.pollStartGraceMs}ms</Text>
     </Space>
-    <Text type="secondary">评估槽位：{value.evaluatedSlot}；时间：{utc(value.evaluatedAt)}</Text>
+    <Text type="secondary">评估槽位：{formatDateTime(value.evaluatedSlot)}；时间：{formatDateTime(value.evaluatedAt)}</Text>
   </Flex>;
 }

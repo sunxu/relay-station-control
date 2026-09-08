@@ -5,10 +5,10 @@ import { useAccountQualityIncidents } from "../api/account-quality-incidents-hoo
 import type { AccountQualityIncidentItem, AccountQualityIncidentsApi, IncidentFailureClass } from "../api/account-quality-incidents-types";
 import type { TopologyProviderState } from "../api/topology-types";
 import { TopologyApiError } from "../api/topology-types";
+import { formatDateTime } from "../time";
 
 const { Text } = Typography;
 const failureOptions = [{ value: "auth", label: "auth" }, { value: "quota", label: "quota" }, { value: "rate_limit", label: "rate_limit" }, { value: "upstream", label: "upstream" }];
-function utc(value?: string | null) { return value ? `${new Date(value).toISOString().replace("T", " ").replace(".000Z", "")} UTC` : "—"; }
 
 export function AccountQualityIncidentsSection({ api, instanceId, providers, providerError, onSelectAccount, onUnauthorized }: {
   api: AccountQualityIncidentsApi; instanceId: string; providers: TopologyProviderState[]; providerError: boolean;
@@ -24,8 +24,8 @@ export function AccountQualityIncidentsSection({ api, instanceId, providers, pro
     { title: "Reason", dataIndex: "failure_class" },
     { title: "Status", dataIndex: "status", render: () => <Tag color="red">Active</Tag> },
     { title: "Hits", dataIndex: "hit_count" },
-    { title: "First Seen", dataIndex: "first_seen", render: utc },
-    { title: "Last Seen", dataIndex: "last_seen", render: utc },
+    { title: "First Seen", dataIndex: "first_seen", render: formatDateTime },
+    { title: "Last Seen", dataIndex: "last_seen", render: formatDateTime },
   ];
   useEffect(() => { if (query.error instanceof TopologyApiError && query.error.status === 401) onUnauthorized(); }, [query.error, onUnauthorized]);
   return <Card title="Account Quality Incidents" role="region" aria-label="Account Quality Incidents">

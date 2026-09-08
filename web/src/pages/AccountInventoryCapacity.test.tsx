@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -42,7 +43,7 @@ describe("account inventory poll capacity", () => {
     for (const text of ["请求 1000ms", "落库预算 2000ms", "生命周期 3000ms", "任务认领预算 400ms", "调度余量 100ms", "启动宽限 500ms"]) {
       expect(screen.getByText(text)).toBeInTheDocument();
     }
-    expect(screen.getByText(/评估槽位：2026-09-08T01:00:00Z/)).toHaveTextContent("UTC");
+    expect(screen.getByText(`评估槽位：${formatDateTime(capacity.evaluatedSlot)}；时间：${formatDateTime(capacity.evaluatedAt)}`)).toBeInTheDocument();
   });
 
   it("renders ready and disabled independently from Node selection", async () => {

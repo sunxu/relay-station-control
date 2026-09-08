@@ -17,11 +17,9 @@ import type { AccountInventoryApi, AccountInventoryBasicStatus } from "../api/ac
 import { accountInventoryBasicStatuses, accountInventoryLifecycles } from "../api/account-inventory-types";
 import type { AccountListFilters } from "../api/account-quality-types";
 import { AccountInventoryCapacity } from "../components/AccountInventoryCapacity";
+import { formatDateTime } from "../time";
 
 const { Text } = Typography;
-function utc(value?: string | null) {
-  return value ? `${new Date(value).toISOString().replace("T", " ").replace(".000Z", "")} UTC` : "—";
-}
 function unauthorized(error: unknown) {
   return (error instanceof TopologyApiError || error instanceof AssetApiError) && error.status === 401;
 }
@@ -50,9 +48,9 @@ function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occ
       { title: "Node", dataIndex: "instance_id" },
       { title: "类型", dataIndex: "observation_kind" },
       { title: "Provider", dataIndex: "source_provider" },
-      { title: "来源时间", dataIndex: "source_scheduled_at", render: utc },
-      { title: "评估时间", dataIndex: "evaluation_at", render: utc },
-      { title: "记录时间", dataIndex: "recorded_at", render: utc },
+      { title: "来源时间", dataIndex: "source_scheduled_at", render: formatDateTime },
+      { title: "评估时间", dataIndex: "evaluation_at", render: formatDateTime },
+      { title: "记录时间", dataIndex: "recorded_at", render: formatDateTime },
     ]} />
     <Flex gap={8} justify="end">
       <Button disabled={!cursor} onClick={() => setCursor(undefined)}>Evidence 首页</Button>
@@ -146,16 +144,16 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
     { title: "Provider", dataIndex: "provider", width: 120 },
     { title: "监控范围", dataIndex: "monitoring_status", width: 130, render: (v) => <Tag>{v}</Tag> },
     { title: "Snapshot freshness", dataIndex: "snapshot_freshness", width: 180, render: (v, row) => <Tag color={v === "fresh" ? "green" : v === "stale" ? "orange" : "default"}>{v === "unknown" && row.state === null ? "not-yet-observed" : v}</Tag> },
-    { title: "最近完整快照", dataIndex: "last_complete_at", width: 225, render: utc },
+    { title: "最近完整快照", dataIndex: "last_complete_at", width: 225, render: formatDateTime },
     { title: "Latest health", width: 220, render: (_, row) => <Flex vertical gap={4}><Tag color={row.health_degraded === true ? "orange" : row.health_degraded === false ? "green" : "default"}>{row.health_degraded === true ? "degraded" : row.health_degraded === false ? "normal" : "unknown"}</Tag><Text type="secondary">{row.health_reason ?? "—"}</Text></Flex> },
-    { title: "健康观测", dataIndex: "health_scheduled_at", width: 225, render: utc },
+    { title: "健康观测", dataIndex: "health_scheduled_at", width: 225, render: formatDateTime },
   ];
   const occurrenceColumns: ColumnsType<TopologyOccurrence> = [
     { title: "账号", dataIndex: "account_key", width: 260, render: (v) => <Text style={{ overflowWrap: "anywhere" }}>{v}</Text> },
     { title: "状态 / 严重度", width: 150, render: (_, row) => <Flex vertical><Tag color={row.status === "ACTIVE" ? "red" : "default"}>{row.status}</Tag><Text>{row.severity}</Text></Flex> },
     { title: "Evidence health", dataIndex: "evidence_state", width: 140, render: (v) => <Tag>{v}</Tag> },
-    { title: "最近完整验证", dataIndex: "last_fully_verified_at", width: 225, render: utc },
-    { title: "最近观察 / 恢复", width: 225, render: (_, row) => <Flex vertical><Text>{utc(row.last_seen_at)}</Text><Text>{utc(row.resolved_at)}</Text></Flex> },
+    { title: "最近完整验证", dataIndex: "last_fully_verified_at", width: 225, render: formatDateTime },
+    { title: "最近观察 / 恢复", width: 225, render: (_, row) => <Flex vertical><Text>{formatDateTime(row.last_seen_at)}</Text><Text>{formatDateTime(row.resolved_at)}</Text></Flex> },
     { title: "当前 affected Nodes", dataIndex: "affected_nodes", width: 320, render: (ids: string[]) => <Flex vertical><Tag color="blue">current</Tag>{ids.map((id) => <Text key={id} code style={{ overflowWrap: "anywhere" }}>{id}</Text>)}{ids.length === 0 && <Text>当前集合为空</Text>}</Flex> },
   ];
   const nodeOptions = (nodes.error ? [] : nodes.data?.items ?? []).map((item) => ({ value: item.instanceId, label: `${item.displayName} · ${item.instanceId}` }));
@@ -236,7 +234,7 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
         {providers.isPending && <Spin />}
         {providers.error && <ReadError retry={() => void providers.refetch()} />}
         {providers.data && !providers.error && <>
-          <Text type="secondary">来源时间：{utc(providers.data.observed_at)}</Text>
+          <Text type="secondary">来源时间：{formatDateTime(providers.data.observed_at)}</Text>
           {screens.xs ? <Flex vertical gap={12} style={{ marginTop: 12 }}>
             {providers.data.providers.length === 0 && <Empty description="没有应监控或已持有 state 的 Provider" />}
             {providers.data.providers.map((row) => <Card key={row.provider} size="small" title={row.provider}>
@@ -246,8 +244,8 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
                   <Text>Snapshot <Tag color={row.snapshot_freshness === "fresh" ? "green" : row.snapshot_freshness === "stale" ? "orange" : "default"}>{row.state === null ? "not-yet-observed" : row.snapshot_freshness}</Tag></Text>
                   <Text>Health <Tag color={row.health_degraded === true ? "orange" : row.health_degraded === false ? "green" : "default"}>{row.health_degraded === true ? "degraded" : row.health_degraded === false ? "normal" : "unknown"}</Tag></Text>
                 </Flex>
-                <Text>最近完整快照：{utc(row.last_complete_at)}</Text>
-                <Text>健康观测：{utc(row.health_scheduled_at)}</Text>
+                <Text>最近完整快照：{formatDateTime(row.last_complete_at)}</Text>
+                <Text>健康观测：{formatDateTime(row.health_scheduled_at)}</Text>
                 <Text style={{ overflowWrap: "anywhere" }}>原因：{row.health_reason ?? "—"}</Text>
               </Flex>
             </Card>)}
@@ -265,9 +263,9 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
           <Text>Gateway：{binding.data.gateway_instance_id ?? binding.data.current_binding?.gateway_instance_id ?? "—"}</Text>
           <Text>Account ID：{binding.data.gateway_account_id ?? binding.data.current_binding?.gateway_account_id ?? "—"}</Text>
           {binding.data.account_context && <Text>Account context（{binding.data.context_source}）：{binding.data.account_context.name} · {binding.data.account_context.platform} · {binding.data.account_context.status}</Text>}
-          <Text>绑定时间：{utc(binding.data.current_binding?.bound_at)}</Text>
-          <Text>最近成功观测：{utc(binding.data.last_success_observation_at)}</Text>
-          <Text>观察时间：{utc(binding.data.observed_at)}</Text>
+          <Text>绑定时间：{formatDateTime(binding.data.current_binding?.bound_at)}</Text>
+          <Text>最近成功观测：{formatDateTime(binding.data.last_success_observation_at)}</Text>
+          <Text>观察时间：{formatDateTime(binding.data.observed_at)}</Text>
         </Flex>}
       </Card>
       <Card title="Ownership Fact · 当前 duplicate" extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>刷新 Current</Button>}>
@@ -286,7 +284,7 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
         {history.isPending && <Spin />}
         {history.error && <ReadError retry={() => void history.refetch()} />}
         {history.data && !history.error && <>
-          <Text type="secondary">historical involvement · {utc(history.data.observed_at)}</Text>
+          <Text type="secondary">historical involvement · {formatDateTime(history.data.observed_at)}</Text>
           {occurrenceTable(history.data.items)}
           <Flex justify="end" gap={8}><Button disabled={!historyCursor} onClick={() => setHistoryCursor(undefined)}>History 首页</Button><Button disabled={!history.data.next_cursor || history.isFetching} onClick={() => setHistoryCursor(history.data?.next_cursor ?? undefined)}>History 下一页</Button></Flex>
         </>}

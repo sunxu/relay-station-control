@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -59,7 +60,7 @@ describe("durable job read-only view", () => {
     expect(screen.queryByRole("button", { name: /创建任务|重试任务|取消任务|删除任务/ })).not.toBeInTheDocument();
   });
 
-  it("filters, pages, renders UTC values and opens a redacted event timeline", async () => {
+  it("filters, pages, renders local values and opens a redacted event timeline", async () => {
     const api = makeApi();
     vi.mocked(api.jobs).mockImplementation(async (filters) => ({
       items: [{ ...summary, jobId: filters.cursor ? "00000000-0000-4000-8000-000000000102" : summary.jobId }],
@@ -79,7 +80,7 @@ describe("durable job read-only view", () => {
 
     expect(await screen.findByText(summary.jobKind)).toBeInTheDocument();
     expect(document.querySelector(`tr[data-row-key="${summary.jobId}"]`)).not.toBeNull();
-    expect(screen.getAllByText(/2026.*10:00:00.*UTC/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatDateTime("2026-08-25T10:00:00Z")).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: "synthetic.noop" } });
     fireEvent.mouseDown(screen.getByLabelText("任务状态"));
     fireEvent.click(await screen.findByText("running", { selector: ".ant-select-item-option-content" }));

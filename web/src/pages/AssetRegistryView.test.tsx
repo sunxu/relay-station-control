@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -93,7 +94,7 @@ describe("asset registry read-only view", () => {
     expect(api.currentProviderPolicy).toHaveBeenCalledWith({ nodeType: "cliproxyapi", driverContractVersion: "v1" });
   });
 
-  it("renders normalized cards, UTC times and non-clickable endpoints without secret references", async () => {
+  it("renders normalized cards, local times and non-clickable endpoints without secret references", async () => {
     const api = makeApi();
     vi.mocked(api.gateway).mockResolvedValue({
       ...gateway,
@@ -109,7 +110,7 @@ describe("asset registry read-only view", () => {
     expect(await screen.findByText("Primary Gateway")).toBeInTheDocument();
     expect(screen.getByText("Singapore Node")).toBeInTheDocument();
     expect(screen.getByText("CLIProxyAPI Driver")).toBeInTheDocument();
-    expect(screen.getAllByText(/2026.*UTC/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatDateTime("2026-08-25T09:00:00Z")).length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toContain("CANARY-GATEWAY-SECRET");
     expect(document.body.textContent).not.toContain("CANARY-NODE-SECRET");
     expect(document.querySelector('a[href^="https://gateway.invalid"]')).toBeNull();

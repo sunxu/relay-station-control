@@ -1,5 +1,6 @@
 import { Button, Empty, Flex, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { formatDateTime } from "../time";
 
 const { Text } = Typography;
 
@@ -47,12 +48,6 @@ export interface AccountListProps {
   emptyDescription?: string;
 }
 
-function utc(value?: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : `${date.toISOString().replace("T", " ").replace(".000Z", "")} UTC`;
-}
-
 function qualityColor(value: AccountListRow["quality"]): string {
   return value === "good" ? "green" : value === "degraded" ? "orange" : value === "bad" ? "red" : "default";
 }
@@ -65,9 +60,9 @@ function RecentRequestStrip({ requests }: { requests: AccountListRecentRequest[]
   const ordered = requests.slice(0, 10).reverse();
   if (ordered.length === 0) return <Text type="secondary">无请求</Text>;
   return <Flex gap={3} align="center" aria-label="最近 7 天最近 10 次请求" data-testid="recent-request-strip">
-    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${utc(request.occurred_at)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
+    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
       color={request.success ? "green" : "red"}
-      title={`${utc(request.occurred_at)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
+      title={`${formatDateTime(request.occurred_at)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
       aria-label={`${request.success ? "Success" : "Failed"}${request.failure_class ? ` ${request.failure_class}` : ""}`}
       style={{ width: 9, height: 18, padding: 0, margin: 0, borderRadius: 2 }}
       tabIndex={0}
@@ -81,11 +76,11 @@ export function AccountList({ rows, loading = false, unavailable = false, onSele
     { title: "Provider", dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
     { title: "状态", key: "status", render: (_, row) => <Flex vertical gap={2}><Tag>{row.lifecycle}</Tag><Text type="secondary">{row.basic_status}</Text></Flex> },
     { title: "质量", dataIndex: "quality", render: (value: AccountListRow["quality"]) => <Tag color={qualityColor(value)}>{qualityLabel(value)}</Tag> },
-    { title: "最近请求", key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} />{row.recent_requests[0] && <Text type="secondary">{utc(row.recent_requests[0].occurred_at)}</Text>}</Flex> },
+    { title: "最近请求", key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at)}</Text>}</Flex> },
     { title: "成功率", dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
     { title: "Requests", dataIndex: "request_count" },
     { title: "P95", dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
-    { title: "最近失败", key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{utc(row.last_failure_at)}</Text></Flex> },
+    { title: "最近失败", key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at)}</Text></Flex> },
     ...(onSelectAccount ? [{ title: "详情", key: "details", render: (_: unknown, row: AccountListRow) => <Button type="link" onClick={() => onSelectAccount(row)}>查看详情</Button> }] : []),
   ];
 

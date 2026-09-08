@@ -4,12 +4,9 @@ import { useEffect, useState } from "react";
 import { useAccountRequestHistory } from "../api/account-request-history-hooks";
 import type { AccountRequestHistoryApi, AccountRequestHistoryItem } from "../api/account-request-history-types";
 import { TopologyApiError } from "../api/topology-types";
+import { formatDateTime } from "../time";
 
 const { Text } = Typography;
-
-function utc(value?: string | null) {
-  return value ? `${new Date(value).toISOString().replace("T", " ").replace(".000Z", "")} UTC` : "—";
-}
 
 export function AccountRequestHistorySection({ api, instanceId, accountKey, onUnauthorized }: {
   api: AccountRequestHistoryApi;
@@ -22,7 +19,7 @@ export function AccountRequestHistorySection({ api, instanceId, accountKey, onUn
   useEffect(() => { setCursor(undefined); }, [accountKey, instanceId]);
   useEffect(() => { if (query.error instanceof TopologyApiError && query.error.status === 401) onUnauthorized(); }, [query.error, onUnauthorized]);
   const columns: ColumnsType<AccountRequestHistoryItem> = [
-    { title: "Time", dataIndex: "occurred_at", render: utc },
+    { title: "Time", dataIndex: "occurred_at", render: formatDateTime },
     { title: "Model", dataIndex: "model", render: (value: string) => value || "—" },
     { title: "Result", dataIndex: "success", render: (value: boolean) => <Tag color={value ? "green" : "red"}>{value ? "Success" : "Failed"}</Tag> },
     { title: "Failure", dataIndex: "failure_class", render: (value: string | null, row) => row.success ? "—" : value ?? "—" },

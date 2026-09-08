@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Flex, List, Typography } from "antd";
 import { useAuth } from "../auth/AuthContext";
@@ -43,7 +44,7 @@ export default function OneTimeMaterialPage() {
         ) : (
           <div className="secret-panel">
             <Text code copyable={{ text: material.values[0] }}>{material.values[0]}</Text>
-            {material.expiresAt && <Text type="secondary">有效至 {new Date(material.expiresAt).toLocaleString()}</Text>}
+            {material.expiresAt && <Text type="secondary">有效至 {formatDateTime(material.expiresAt)}</Text>}
           </div>
         )}
         <Flex vertical gap={12}>

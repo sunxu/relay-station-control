@@ -1,3 +1,4 @@
+import { formatDateTime } from "../time";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -146,7 +147,7 @@ export default function ManagementPage() {
     { title: "实名", dataIndex: "display_name", key: "display_name" },
     { title: "角色", dataIndex: "role", key: "role", render: () => <Tag>super_admin</Tag> },
     { title: "状态", dataIndex: "status", key: "status", render: (status: Administrator["status"]) => <Tag color={status === "enabled" ? "green" : status === "pending" ? "gold" : "default"}>{status}</Tag> },
-    { title: "最近登录", dataIndex: "last_login_at", key: "last_login_at", render: (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—" },
+    { title: "最近登录", dataIndex: "last_login_at", key: "last_login_at", render: formatDateTime },
   ], []);
 
   if (!session) return null;
@@ -155,7 +156,7 @@ export default function ManagementPage() {
     <Alert
       type={isFreshReauthentication(session.reauthenticated_until) ? "success" : "warning"}
       showIcon
-      message={isFreshReauthentication(session.reauthenticated_until) ? `重新认证有效至 ${new Date(session.reauthenticated_until!).toLocaleTimeString()}` : "高风险操作当前锁定"}
+      message={isFreshReauthentication(session.reauthenticated_until) ? `重新认证有效至 ${formatDateTime(session.reauthenticated_until)}` : "高风险操作当前锁定"}
     />
   );
 
@@ -187,8 +188,8 @@ export default function ManagementPage() {
               children: (
                 <Flex vertical gap={16}>
                   <Title level={4}>当前会话</Title>
-                  <Text>空闲到期：{new Date(session.idle_expires_at).toLocaleString()}</Text>
-                  <Text>绝对到期：{new Date(session.absolute_expires_at).toLocaleString()}</Text>
+                  <Text>空闲到期：{formatDateTime(session.idle_expires_at)}</Text>
+                  <Text>绝对到期：{formatDateTime(session.absolute_expires_at)}</Text>
                   <Text>MFA：{session.mfa.completed ? session.mfa.method ?? "已完成" : "未完成"}</Text>
                   <Text>剩余恢复码：{session.recovery_codes_remaining}</Text>
                   <Button onClick={() => void auth.refreshSession()}>刷新会话与 CSRF</Button>
