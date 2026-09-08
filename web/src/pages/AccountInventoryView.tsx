@@ -71,7 +71,7 @@ export function AccountInventoryView({
     new URLSearchParams(window.location.search).get("instance_id") || undefined,
   );
   const [provider, setProvider] = useState("");
-  const [lifecycle, setLifecycle] = useState<AccountInventoryLifecycle>();
+  const [lifecycle, setLifecycle] = useState<AccountInventoryLifecycle>("present");
   const [basicStatus, setBasicStatus] = useState<AccountInventoryBasicStatus>();
   const [email, setEmail] = useState("");
   const [pageSize, setPageSize] = useState<PageSize>(50);

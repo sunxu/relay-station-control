@@ -21,6 +21,7 @@ type nodeAccountQualityCursor struct {
 	Window          string    `json:"window"`
 	Provider        string    `json:"provider"`
 	Quality         string    `json:"quality"`
+	Lifecycle       string    `json:"lifecycle,omitempty"`
 	AfterAccountKey string    `json:"after_account_key"`
 }
 
@@ -46,6 +47,14 @@ func (s *Server) GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 	if params.Quality != nil {
 		quality = string(*params.Quality)
 	}
+	lifecycle := ""
+	if params.Lifecycle != nil {
+		lifecycle = string(*params.Lifecycle)
+	}
+	if params.Lifecycle != nil && lifecycle != "present" && lifecycle != "suspected_missing" && lifecycle != "missing" && lifecycle != "out_of_scope" {
+		s.writeError(w, r, authn.ErrInvalid)
+		return
+	}
 	limit := 25
 	if params.Limit != nil {
 		limit = *params.Limit
@@ -62,7 +71,7 @@ func (s *Server) GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 		}
 		raw, err := base64.RawURLEncoding.DecodeString(*params.Cursor)
 		var cursor nodeAccountQualityCursor
-		if err != nil || json.Unmarshal(raw, &cursor) != nil || cursor.InstanceID != nodeID || cursor.Window != window || cursor.Provider != provider || cursor.Quality != quality || cursor.AfterAccountKey == "" || len(cursor.AfterAccountKey) > 385 || !strings.Contains(cursor.AfterAccountKey, ":") {
+		if err != nil || json.Unmarshal(raw, &cursor) != nil || cursor.InstanceID != nodeID || cursor.Window != window || cursor.Provider != provider || cursor.Quality != quality || cursor.Lifecycle != lifecycle || cursor.AfterAccountKey == "" || len(cursor.AfterAccountKey) > 385 || !strings.Contains(cursor.AfterAccountKey, ":") {
 			s.writeError(w, r, authn.ErrInvalid)
 			return
 		}
@@ -74,7 +83,7 @@ func (s *Server) GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	page, err := s.accountQuality.ListAccountQuality(ctx, assetstore.AccountQualityQuery{InstanceID: nodeID, Window: windowDuration, Provider: provider, Quality: quality, AfterAccountKey: after, Limit: limit})
+	page, err := s.accountQuality.ListAccountQuality(ctx, assetstore.AccountQualityQuery{InstanceID: nodeID, Window: windowDuration, Provider: provider, Quality: quality, Lifecycle: lifecycle, AfterAccountKey: after, Limit: limit})
 	if err != nil {
 		s.topologyReadError(w, r, err)
 		return
@@ -92,7 +101,7 @@ func (s *Server) GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 	var next *string
 	if page.HasMore && len(page.Items) > 0 {
 		last := page.Items[len(page.Items)-1]
-		raw, err := json.Marshal(nodeAccountQualityCursor{InstanceID: nodeID, Window: window, Provider: provider, Quality: quality, AfterAccountKey: last.AccountKey})
+		raw, err := json.Marshal(nodeAccountQualityCursor{InstanceID: nodeID, Window: window, Provider: provider, Quality: quality, Lifecycle: lifecycle, AfterAccountKey: last.AccountKey})
 		if err != nil {
 			s.writeError(w, r, authn.ErrUnavailable)
 			return

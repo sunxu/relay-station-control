@@ -73,7 +73,7 @@ describe("account inventory read-only view", () => {
     render(<StrictMode><AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} /></StrictMode>, { wrapper: Wrapper });
 
     expect(await screen.findByText(`Inventory Node · ${instanceId}`)).toBeInTheDocument();
-    await waitFor(() => expect(api.query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, cursor: undefined })));
+    await waitFor(() => expect(api.query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, lifecycle: "present", cursor: undefined })));
     expect(await screen.findByText("operator@example.invalid")).toBeInTheDocument();
     expect(api.query).toHaveBeenCalledTimes(1);
     fireEvent.change(screen.getByLabelText("Provider 精确筛选"), { target: { value: "openai" } });
@@ -87,6 +87,43 @@ describe("account inventory read-only view", () => {
     await screen.findByLabelText("Relay Node");
     expect(api.query).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /查\s*询/ })).toBeDisabled();
+  });
+
+  it("manually queries a selected Node with the default present lifecycle", async () => {
+    const query = vi.fn().mockResolvedValue({ items: [account], nextCursor: null });
+    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    await selectNode();
+    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
+    await waitFor(() => expect(query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, lifecycle: "present", cursor: undefined })));
+  });
+
+  it("keeps lifecycle edits explicit and clears the paging cursor", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ items: [account], nextCursor: "opaque-next" })
+      .mockResolvedValueOnce({ items: [{ ...account, lifecycle: "missing" as const }], nextCursor: null })
+      .mockResolvedValueOnce({ items: [{ ...account, lifecycle: "missing" as const }], nextCursor: null })
+      .mockResolvedValueOnce({ items: [account], nextCursor: null });
+    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    await selectNode();
+    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
+    await screen.findByText("operator@example.invalid");
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await waitFor(() => expect(query).toHaveBeenLastCalledWith("csrf-proof", expect.objectContaining({ cursor: "opaque-next" })));
+    const callsBeforeEdit = query.mock.calls.length;
+    fireEvent.mouseDown(screen.getByLabelText("生命周期"));
+    fireEvent.click(await screen.findByText("missing", { selector: ".ant-select-item-option-content" }));
+    expect(query).toHaveBeenCalledTimes(callsBeforeEdit);
+    expect(screen.getByText("设置筛选后点击查询")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
+    await waitFor(() => expect(query).toHaveBeenLastCalledWith("csrf-proof", expect.objectContaining({ lifecycle: "missing", cursor: undefined })));
+    const callsAfterMissing = query.mock.calls.length;
+    const lifecycleInput = screen.getByLabelText("生命周期");
+    const clear = lifecycleInput.closest(".ant-select")?.querySelector(".ant-select-clear")!;
+    fireEvent.mouseDown(clear);
+    fireEvent.click(clear);
+    expect(query).toHaveBeenCalledTimes(callsAfterMissing);
+    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
+    await waitFor(() => expect(query).toHaveBeenLastCalledWith("csrf-proof", expect.objectContaining({ lifecycle: undefined, cursor: undefined })));
   });
 
   it("shows a linked query failure and recovers only on explicit retry", async () => {

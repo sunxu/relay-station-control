@@ -1413,6 +1413,10 @@ paths:
         - name: quality
           in: query
           schema: {type: string, enum: [good, degraded, bad, unknown]}
+        - name: lifecycle
+          in: query
+          description: Inventory lifecycle filter. Omit to include all lifecycle states.
+          schema: {type: string, enum: [present, suspected_missing, missing, out_of_scope]}
         - name: limit
           in: query
           schema: {type: integer, minimum: 1, maximum: 100, default: 25}

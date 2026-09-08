@@ -36,7 +36,7 @@ Gateway Directory source v1 继续 numeric JSON → Go int64 → 原 persistence
 
 ## Account Quality 只读投影
 
-选择 Node 后，Account Quality 默认显示15m窗口，可切换1h、Provider和Quality过滤并分页。Provider选项复用该Node的Provider Summary。API为 `GET /api/topology/nodes/{instance_id}/account-quality`，使用现有super_admin会话，无账号操作。默认limit25、最大100，cursor绑定Node和filters；窗口/筛选/Node变更后从首页读取。
+选择 Node 后，Account Quality 默认显示15m窗口和 `present` 生命周期，可切换1h、Provider、Quality及生命周期过滤并分页。选择 `missing` 查看缺失记录，清空生命周期查看全部；这不改变 Inventory lifecycle。Provider选项复用该Node的Provider Summary。API为 `GET /api/topology/nodes/{instance_id}/account-quality`，使用现有super_admin会话，无账号操作。API省略lifecycle保持全部账号兼容语义；页面显式发送present。默认limit25、最大100，cursor绑定Node和filters（含lifecycle）；窗口/筛选/Node变更后从首页读取。
 
 账号集合来自现有current Inventory安全函数，沿用其lifecycle集合和一致性检查，绝不从request events枚举。Inventory账号没有请求时仍显示Unknown；unresolved和只有event没有Inventory的账号不制造行。分类只表示窗口内真实请求：95%及以上Good，80%及以上且低于95% Degraded，低于80% Bad；0请求Unknown。Latency不参与分类。Inventory active与Quality Bad可同时成立，查看此表不改变Inventory、Binding、Duplicate或Node运行时状态。
 
@@ -71,3 +71,5 @@ First Seen/Last Seen/Hits 是当前15分钟该类别失败的最早/最晚时间
 页面七列表为Account/Provider/Reason/Status/Hits/First Seen/Last Seen；Provider/Reason过滤可回到首页。点击Account用canonical key打开已有Request History。Node切换取消旧读取并清除History选择；没有resolve、disable、请求retry、ack或其它账号操作。Empty仅表示当前筛选下没有达标Incident，采集未启用或destructive-pop/no-ACK丢失也会影响证据，不能将Empty当作健康证明。
 
 `00023_account_quality_incidents_query_access.sql`只新增受控readonly function/ACL，产品使用runtime EXECUTE，不能direct SELECT。Inventory按既有安全函数完整分块读取，事件集合聚合与分页在单次数据库往返中完成；不新增表/index/worker/materialized view/cache/rollup，也不接入Durable Jobs。未来发布先应用query-access migration再更新API/Web；生产回滚保留forward schema，Down仅在隔离测试删除该function。Incidents实现已进入remote main，Architecture与Implementation Final Review均APPROVED；已archive、尚未deploy，交付时间线见[Incidents validation](../../openspec/changes/archive/2026-09-08-add-account-quality-incidents/planning-validation.md)。
+
+当前 `default-account-inventory-to-present` 扩展尚未部署。发布需先应用 migration 00024 的只读 v2 查询函数，再更新 Control/Web；旧 v1 函数保留，回滚应用不执行数据库 Down。

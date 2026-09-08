@@ -9,7 +9,7 @@ import { useTopologyAccountQuality } from "../api/account-quality-hooks";
 import { useTopologyBinding, useTopologyCurrentDuplicates, useTopologyEvidence, useTopologyHistory, useTopologyProviders } from "../api/topology-hooks";
 import { TopologyApiError } from "../api/topology-types";
 import type { TopologyApi, TopologyOccurrence, TopologyProviderState } from "../api/topology-types";
-import type { AccountQualityFilter, AccountQualityItem, AccountQualityWindow } from "../api/account-quality-types";
+import type { AccountQualityFilter, AccountQualityItem, AccountQualityLifecycle, AccountQualityWindow } from "../api/account-quality-types";
 import { AccountRequestHistorySection } from "./AccountRequestHistorySection";
 import { AccountQualityIncidentsSection } from "./AccountQualityIncidentsSection";
 
@@ -59,6 +59,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
   const [qualityWindow, setQualityWindow] = useState<AccountQualityWindow>("15m");
   const [qualityProvider, setQualityProvider] = useState<string>();
   const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
+  const [qualityLifecycle, setQualityLifecycle] = useState<AccountQualityLifecycle>("present");
   const [qualityCursor, setQualityCursor] = useState<string>();
   const [historyAccountKey, setHistoryAccountKey] = useState<string>();
   const nodes = useNodeAssets(assetApi, { limit: 200, cursor: nodeCursor });
@@ -67,7 +68,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
   const binding = useTopologyBinding(api, instanceId);
   const current = useTopologyCurrentDuplicates(api, instanceId, currentCursor);
   const history = useTopologyHistory(api, instanceId, historyStatus, historyCursor);
-  const accountQuality = useTopologyAccountQuality(api, instanceId, qualityWindow, qualityProvider, qualityFilter, qualityCursor);
+  const accountQuality = useTopologyAccountQuality(api, instanceId, qualityWindow, qualityProvider, qualityFilter, qualityCursor, qualityLifecycle);
   const node = selected.error ? undefined : selected.data;
 
   const expireSession = () => {
@@ -86,7 +87,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
       setHistoryCursor(undefined);
       setCurrentCursor(undefined);
       setQualityCursor(undefined);
-      setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined);
+      setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
       setHistoryAccountKey(undefined);
     };
     window.addEventListener("popstate", onPop);
@@ -97,7 +98,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
     setHistoryCursor(undefined);
     setCurrentCursor(undefined);
     setQualityCursor(undefined);
-    setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined);
+    setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
     setHistoryAccountKey(undefined);
     window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(id)}`);
   };
@@ -153,6 +154,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
           <Select aria-label="质量窗口" value={qualityWindow} onChange={(value) => { setQualityWindow(value); setQualityCursor(undefined); }} options={[{ value: "15m", label: "最近 15 分钟" }, { value: "1h", label: "最近 1 小时" }]} />
           <Select allowClear aria-label="质量 Provider" placeholder="全部 Provider" value={qualityProvider} onChange={(value) => { setQualityProvider(value); setQualityCursor(undefined); }} options={(providers.data?.providers ?? []).map((row) => ({ value: row.provider, label: row.provider }))} disabled={providers.isError || providers.isPending} />
           <Select allowClear aria-label="质量分类" placeholder="全部质量" value={qualityFilter} onChange={(value) => { setQualityFilter(value); setQualityCursor(undefined); }} options={[{ value: "good", label: "Good" }, { value: "degraded", label: "Degraded" }, { value: "bad", label: "Bad" }, { value: "unknown", label: "Unknown" }]} />
+          <Select allowClear aria-label="质量生命周期" placeholder="全部生命周期" value={qualityLifecycle} onChange={(value) => { setQualityLifecycle(value); setQualityCursor(undefined); }} options={["present", "missing", "suspected_missing", "out_of_scope"].map((value) => ({ value, label: value }))} />
           <Button onClick={() => void accountQuality.refetch()} loading={accountQuality.isFetching}>刷新质量</Button>
         </Flex>
         {providers.isError && <Alert style={{ marginTop: 12 }} type="warning" showIcon message="Provider 筛选来源不可用" description="无法安全加载 Provider 过滤项。" />}

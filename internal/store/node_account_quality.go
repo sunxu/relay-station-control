@@ -12,6 +12,7 @@ type AccountQualityQuery struct {
 	InstanceID      uuid.UUID
 	Window          time.Duration
 	Provider        string
+	Lifecycle       string
 	Quality         string
 	AfterAccountKey string
 	Limit           int
@@ -40,7 +41,10 @@ func (r *AccountRequestQualityRepository) ListAccountQuality(ctx context.Context
 	if query.Quality != "" && query.Quality != "good" && query.Quality != "degraded" && query.Quality != "bad" && query.Quality != "unknown" {
 		return AccountQualityPage{}, ErrInvalidAccountInventoryQuery
 	}
-	rows, err := r.pool.Query(ctx, `SELECT account_key, normalized_email, provider, quality, request_count, success_count, failure_count, success_rate, p95_latency_ms, last_success_at, last_failure_at, last_failure_class FROM public.control_query_node_account_quality_v1($1,$2,$3,$4,$5::interval,$6) ORDER BY account_key`, query.InstanceID, query.Provider, query.Quality, query.AfterAccountKey, windowInterval(query.Window), query.Limit)
+	if query.Lifecycle != "" && query.Lifecycle != "present" && query.Lifecycle != "suspected_missing" && query.Lifecycle != "missing" && query.Lifecycle != "out_of_scope" {
+		return AccountQualityPage{}, ErrInvalidAccountInventoryQuery
+	}
+	rows, err := r.pool.Query(ctx, `SELECT account_key, normalized_email, provider, quality, request_count, success_count, failure_count, success_rate, p95_latency_ms, last_success_at, last_failure_at, last_failure_class FROM public.control_query_node_account_quality_v2($1,$2,$3,$4,$5,$6::interval,$7) ORDER BY account_key`, query.InstanceID, query.Provider, query.Lifecycle, query.Quality, query.AfterAccountKey, windowInterval(query.Window), query.Limit)
 	if err != nil {
 		return AccountQualityPage{}, accountInventoryDatabaseError(err)
 	}

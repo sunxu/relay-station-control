@@ -53,6 +53,7 @@ it("keeps a late A response from replacing the selected B Node", async () => {
   fireEvent.click(await screen.findByText(`Node B · ${B}`));
   expect(await screen.findByText("Node：Node B")).toBeInTheDocument();
   expect(await screen.findByText("provider-b")).toBeInTheDocument();
+  expect(api.accountQuality).toHaveBeenCalledWith(B, "15m", undefined, undefined, undefined, expect.any(AbortSignal), "present");
   expect(signalA.aborted).toBe(true);
   resolveA(a);
   resolveProvidersA(providersA);
@@ -148,7 +149,28 @@ it("renders account quality metrics and an unknown zero-request row", async () =
   const unknownRow = screen.getByText("b@example.invalid").closest("tr")!;
   expect(within(unknownRow).getByText("0")).toBeInTheDocument();
   expect(within(unknownRow).getAllByText("—")).toHaveLength(4);
+  expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), "present");
   expect(within(screen.getByRole("region", { name: "Account Quality" })).queryByRole("button", { name: /bind|disable|delete|quota|inspect/i })).not.toBeInTheDocument();
+});
+
+it("filters Account Quality by lifecycle and resets to all", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn()
+    .mockResolvedValueOnce({ instance_id: A, window: "15m", next_cursor: "quality-next", items: [] })
+    .mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
+  renderView(api, assetApi);
+  await screen.findByText("没有 Inventory 账号或匹配账号");
+  fireEvent.click(screen.getByRole("button", { name: "质量下一页" }));
+  await waitFor(() => expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, "quality-next", expect.any(AbortSignal), "present"));
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "质量生命周期" }));
+  fireEvent.click(await screen.findByText("missing", { selector: ".ant-select-item-option-content" }));
+  await waitFor(() => expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), "missing"));
+  const input = screen.getByLabelText("质量生命周期");
+  const clear = input.closest(".ant-select")?.querySelector(".ant-select-clear")!;
+  fireEvent.mouseDown(clear); fireEvent.click(clear);
+  await waitFor(() => expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), undefined));
 });
 
 it("passes window/provider/quality filters and keeps quality pagination bounded", async () => {
@@ -165,7 +187,7 @@ it("passes window/provider/quality filters and keeps quality pagination bounded"
   expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("upstream")).toBeInTheDocument();
   expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("2026-09-07 00:00:00 UTC")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "质量下一页" }));
-  await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "15m", undefined, undefined, "quality-page-2", expect.any(AbortSignal)));
+  await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "15m", undefined, undefined, "quality-page-2", expect.any(AbortSignal), "present"));
   const windowSelect = screen.getByRole("combobox", { name: "质量窗口" });
   fireEvent.mouseDown(windowSelect);
   fireEvent.click(await screen.findByText("最近 1 小时"));
@@ -175,7 +197,7 @@ it("passes window/provider/quality filters and keeps quality pagination bounded"
   const qualitySelect = screen.getByRole("combobox", { name: "质量分类" });
   fireEvent.mouseDown(qualitySelect);
   fireEvent.click(await screen.findByText("Bad"));
-  await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "1h", "openai", "bad", undefined, expect.any(AbortSignal)));
+  await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "1h", "openai", "bad", undefined, expect.any(AbortSignal), "present"));
   expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "质量下一页" })).toBeDisabled();
 });

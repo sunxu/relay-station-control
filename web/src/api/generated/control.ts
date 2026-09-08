@@ -1528,6 +1528,10 @@ window?: GetNodeAccountQualityWindow;
 provider?: string;
 quality?: GetNodeAccountQualityQuality;
 /**
+ * Inventory lifecycle filter. Omit to include all lifecycle states.
+ */
+lifecycle?: GetNodeAccountQualityLifecycle;
+/**
  * @minimum 1
  * @maximum 100
  */
@@ -1554,6 +1558,16 @@ export const GetNodeAccountQualityQuality = {
   degraded: 'degraded',
   bad: 'bad',
   unknown: 'unknown',
+} as const;
+
+export type GetNodeAccountQualityLifecycle = typeof GetNodeAccountQualityLifecycle[keyof typeof GetNodeAccountQualityLifecycle];
+
+
+export const GetNodeAccountQualityLifecycle = {
+  present: 'present',
+  suspected_missing: 'suspected_missing',
+  missing: 'missing',
+  out_of_scope: 'out_of_scope',
 } as const;
 
 export type ListNodeAccountRequestHistoryParams = {

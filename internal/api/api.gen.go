@@ -1137,6 +1137,30 @@ func (e GetNodeAccountQualityParamsQuality) Valid() bool {
 	}
 }
 
+// Defines values for GetNodeAccountQualityParamsLifecycle.
+const (
+	GetNodeAccountQualityParamsLifecycleMissing          GetNodeAccountQualityParamsLifecycle = "missing"
+	GetNodeAccountQualityParamsLifecycleOutOfScope       GetNodeAccountQualityParamsLifecycle = "out_of_scope"
+	GetNodeAccountQualityParamsLifecyclePresent          GetNodeAccountQualityParamsLifecycle = "present"
+	GetNodeAccountQualityParamsLifecycleSuspectedMissing GetNodeAccountQualityParamsLifecycle = "suspected_missing"
+)
+
+// Valid indicates whether the value is a known member of the GetNodeAccountQualityParamsLifecycle enum.
+func (e GetNodeAccountQualityParamsLifecycle) Valid() bool {
+	switch e {
+	case GetNodeAccountQualityParamsLifecycleMissing:
+		return true
+	case GetNodeAccountQualityParamsLifecycleOutOfScope:
+		return true
+	case GetNodeAccountQualityParamsLifecyclePresent:
+		return true
+	case GetNodeAccountQualityParamsLifecycleSuspectedMissing:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListNodeDuplicateHistoryParamsStatus.
 const (
 	ListNodeDuplicateHistoryParamsStatusACTIVE   ListNodeDuplicateHistoryParamsStatus = "ACTIVE"
@@ -2211,8 +2235,11 @@ type GetNodeAccountQualityParams struct {
 	Window   *GetNodeAccountQualityParamsWindow  `form:"window,omitempty" json:"window,omitempty"`
 	Provider *string                             `form:"provider,omitempty" json:"provider,omitempty"`
 	Quality  *GetNodeAccountQualityParamsQuality `form:"quality,omitempty" json:"quality,omitempty"`
-	Limit    *int                                `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor   *string                             `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Lifecycle Inventory lifecycle filter. Omit to include all lifecycle states.
+	Lifecycle *GetNodeAccountQualityParamsLifecycle `form:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+	Limit     *int                                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor    *string                               `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // GetNodeAccountQualityParamsWindow defines parameters for GetNodeAccountQuality.
@@ -2220,6 +2247,9 @@ type GetNodeAccountQualityParamsWindow string
 
 // GetNodeAccountQualityParamsQuality defines parameters for GetNodeAccountQuality.
 type GetNodeAccountQualityParamsQuality string
+
+// GetNodeAccountQualityParamsLifecycle defines parameters for GetNodeAccountQuality.
+type GetNodeAccountQualityParamsLifecycle string
 
 // ListNodeDuplicateHistoryParams defines parameters for ListNodeDuplicateHistory.
 type ListNodeDuplicateHistoryParams struct {
@@ -4488,6 +4518,19 @@ func (siw *ServerInterfaceWrapper) GetNodeAccountQuality(w http.ResponseWriter, 
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "quality"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "quality", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "lifecycle" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "lifecycle", r.URL.Query(), &params.Lifecycle, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "lifecycle"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "lifecycle", Err: err})
 		}
 		return
 	}

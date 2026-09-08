@@ -92,7 +92,7 @@ func TestAccountQualityHTTPReadContracts(t *testing.T) {
 
 	t.Run("default projection and cursor", func(t *testing.T) {
 		w := do(http.MethodGet, path, token)
-		if w.Code != http.StatusOK || reader.query.Window != 15*time.Minute || reader.query.Limit != 25 || reader.query.Provider != "" || reader.query.Quality != "" {
+		if w.Code != http.StatusOK || reader.query.Window != 15*time.Minute || reader.query.Limit != 25 || reader.query.Provider != "" || reader.query.Quality != "" || reader.query.Lifecycle != "" {
 			t.Fatalf("status/query=%d/%+v body=%s", w.Code, reader.query, w.Body.String())
 		}
 		var got NodeAccountQualityResponse
@@ -132,9 +132,51 @@ func TestAccountQualityHTTPReadContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("lifecycle filter and cursor compatibility", func(t *testing.T) {
+		for _, lifecycle := range []string{"present", "missing", "suspected_missing", "out_of_scope"} {
+			w := do(http.MethodGet, path+"?lifecycle="+lifecycle, token)
+			var got NodeAccountQualityResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 || got.NextCursor == nil || reader.query.Lifecycle != lifecycle {
+				t.Fatalf("lifecycle projection status=%d", w.Code)
+			}
+			before := reader.calls
+			other := "present"
+			if lifecycle == other {
+				other = "missing"
+			}
+			for _, filter := range []string{"", other} {
+				target := path + "?cursor=" + *got.NextCursor
+				if filter != "" {
+					target += "&lifecycle=" + filter
+				}
+				if w := do(http.MethodGet, target, token); w.Code != 400 {
+					t.Fatalf("mismatch status=%d", w.Code)
+				}
+			}
+			if reader.calls != before {
+				t.Fatal("mismatch reached reader")
+			}
+			if w := do(http.MethodGet, path+"?lifecycle="+lifecycle+"&cursor="+*got.NextCursor, token); w.Code != 200 || reader.query.AfterAccountKey != "openai:alice@example.invalid" {
+				t.Fatal("lifecycle cursor roundtrip failed")
+			}
+		}
+		w := do(http.MethodGet, path, token)
+		var got NodeAccountQualityResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.NextCursor == nil {
+			t.Fatal("missing all cursor")
+		}
+		if w := do(http.MethodGet, path+"?cursor="+*got.NextCursor, token); w.Code != 200 || reader.query.Lifecycle != "" {
+			t.Fatal("old all cursor incompatible")
+		}
+		before := reader.calls
+		if w := do(http.MethodGet, path+"?lifecycle=present&cursor="+*got.NextCursor, token); w.Code != 400 || reader.calls != before {
+			t.Fatal("all cursor accepted for present")
+		}
+	})
+
 	t.Run("invalid and authorization requests do not read", func(t *testing.T) {
 		before := reader.calls
-		for _, target := range []string{path + "?window=2h", path + "?quality=invalid", path + "?provider=OpenAI", path + "?limit=101", path + "?cursor=" + strings.Repeat("x", 2049)} {
+		for _, target := range []string{path + "?lifecycle=invalid", path + "?lifecycle=", path + "?window=2h", path + "?quality=invalid", path + "?provider=OpenAI", path + "?limit=101", path + "?cursor=" + strings.Repeat("x", 2049)} {
 			if w := do(http.MethodGet, target, token); w.Code != 400 {
 				t.Fatalf("target=%s status=%d", target, w.Code)
 			}
