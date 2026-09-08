@@ -46,4 +46,4 @@ Loading是请求进行中；Empty仅表示成功返回无账号/无匹配；Unkn
 
 本change不改变usage collector启用开关、HTTP-only source、resolved/unresolved、7天retention以及destructive-pop/no-ACK丢失窗口，详见[Request Quality runbook](account-request-quality.md)。Quality Unknown不等于采集正常，采集未启用或没有事件都可能导致无请求证据。
 
-未来发布需先应用additive function migration，再成对更新backend/Web。回滚应用即可停用此入口，生产保留forward schema；Down仅用于隔离测试且只能删除新增读取函数。本轮未部署，证据见[Account Quality view validation](../../openspec/changes/add-account-quality-topology-view/planning-validation.md)。
+未来发布需先应用additive function migration，再成对更新backend/Web。回滚应用即可停用此入口，生产保留forward schema；Down仅用于隔离测试且只能删除新增读取函数。本轮未部署，证据见[Account Quality view validation](../../openspec/changes/archive/2026-09-08-add-account-quality-topology-view/planning-validation.md)。
