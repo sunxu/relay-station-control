@@ -76,7 +76,7 @@ First Seen/Last Seen/Hits 是当前15分钟该类别失败的最早/最晚时间
 
 ## 统一账号列表与最近请求（待发布）
 
-`unify-account-list-and-request-outcomes`将`/account-inventory`和Node Topology中的账号展示统一：同一账号行包含Inventory状态、窗口质量与最近请求，不在浏览器拼接两个独立分页。账号清单保留Node选择、email/basic status/Provider/lifecycle/page size、显式查询、深链接初始一次查询及容量诊断；Topology使用当前Node。两处默认present，missing等记录仍能筛选。
+`consolidate-account-inventory-into-topology`将账号清单唯一收口到Node Topology：同一账号行包含Inventory状态、窗口质量与最近请求，不在浏览器拼接两个独立分页。Topology保留Node选择、email/basic status/Provider/lifecycle/page size、显式查询、深链接初始一次查询及容量诊断；默认present，missing等记录仍能筛选。旧`/account-inventory`前端地址不再提供入口或跳转，后端`/api/account-inventory/*`读取契约保留。
 
 最近请求条仅展示最近7天内最多10次可归属请求，左旧右新、最右是最新；成功绿色、失败红色并提供文字说明。无记录不补造成功；质量15m/1h与7天请求条是独立范围，不能根据10条状态重新计算Good/Degraded/Bad。采集未开启或destructive-pop/no-ACK丢失意味着缺乏证据，不代表健康。unresolved/event-only不制造账号。
 
