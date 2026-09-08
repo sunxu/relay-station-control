@@ -8,12 +8,13 @@ import type {
   NodeRelayBindingResponse,
 } from "./generated/control";
 import type { AccountQualityApi } from "./account-quality-types";
+import type { AccountRequestHistoryApi } from "./account-request-history-types";
 
 export type TopologyProviderState = NodeInventoryProviderState;
 export type TopologyOccurrence = CrossNodeDuplicateOccurrenceSummary;
 export type TopologyBinding = NodeRelayBindingResponse;
 
-export interface TopologyApi extends AccountQualityApi {
+export interface TopologyApi extends AccountQualityApi, AccountRequestHistoryApi {
   providers(instanceId: string, signal?: AbortSignal): Promise<NodeInventoryProviderStatesResponse>;
   binding(instanceId: string, signal?: AbortSignal): Promise<NodeRelayBindingResponse>;
   currentDuplicates(instanceId: string, cursor?: string, signal?: AbortSignal): Promise<CrossNodeDuplicateOccurrenceListResponse>;

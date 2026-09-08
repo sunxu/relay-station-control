@@ -1,5 +1,5 @@
-import { getNodeAccountQuality, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
-import type { GetNodeAccountQualityParams, NodeAccountQualityResponse } from "./generated/control";
+import { getNodeAccountQuality, listNodeAccountRequestHistory, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
+import type { GetNodeAccountQualityParams, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse } from "./generated/control";
 import type { AccountQualityFilter, AccountQualityWindow } from "./account-quality-types";
 import type { TopologyApi } from "./topology-types";
 import { TopologyApiError } from "./topology-types";
@@ -14,6 +14,10 @@ export const generatedTopologyApi: TopologyApi = {
   accountQuality: (id: string, window: AccountQualityWindow, provider?: string, quality?: AccountQualityFilter, cursor?: string, signal?: AbortSignal) => {
     const params: GetNodeAccountQualityParams = { window, provider, quality, cursor, limit: 25 };
     return read<NodeAccountQualityResponse>(getNodeAccountQuality(id, params, { signal, cache: "no-store", credentials: "same-origin" }));
+  },
+  requestHistory: (id: string, accountKey: string, cursor?: string, signal?: AbortSignal) => {
+    const params: ListNodeAccountRequestHistoryParams = { account_key: accountKey, cursor, limit: 25 };
+    return read<NodeAccountRequestHistoryResponse>(listNodeAccountRequestHistory(id, params, { signal, cache: "no-store", credentials: "same-origin" }));
   },
   providers: (id, signal) => read(getNodeInventoryProviderStates(id, { signal, cache: "no-store", credentials: "same-origin" })),
   binding: (id, signal) => read(getNodeRelayBinding(id, { signal, cache: "no-store", credentials: "same-origin" })),

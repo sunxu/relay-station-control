@@ -10,6 +10,7 @@ import { useTopologyBinding, useTopologyCurrentDuplicates, useTopologyEvidence, 
 import { TopologyApiError } from "../api/topology-types";
 import type { TopologyApi, TopologyOccurrence, TopologyProviderState } from "../api/topology-types";
 import type { AccountQualityFilter, AccountQualityItem, AccountQualityWindow } from "../api/account-quality-types";
+import { AccountRequestHistorySection } from "./AccountRequestHistorySection";
 
 const { Text } = Typography;
 function utc(value?: string | null) {
@@ -58,6 +59,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
   const [qualityProvider, setQualityProvider] = useState<string>();
   const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
   const [qualityCursor, setQualityCursor] = useState<string>();
+  const [historyAccountKey, setHistoryAccountKey] = useState<string>();
   const nodes = useNodeAssets(assetApi, { limit: 200, cursor: nodeCursor });
   const selected = useNodeAsset(assetApi, instanceId);
   const providers = useTopologyProviders(api, instanceId);
@@ -84,6 +86,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
       setCurrentCursor(undefined);
       setQualityCursor(undefined);
       setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined);
+      setHistoryAccountKey(undefined);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -94,6 +97,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
     setCurrentCursor(undefined);
     setQualityCursor(undefined);
     setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined);
+    setHistoryAccountKey(undefined);
     window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(id)}`);
   };
   const providerColumns: ColumnsType<TopologyProviderState> = [
@@ -156,7 +160,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
         {accountQuality.data && !accountQuality.error && <>
           {accountQuality.data.items.length === 0 && <Empty description="没有 Inventory 账号或匹配账号" />}
           {accountQuality.data.items.length > 0 && <Table<AccountQualityItem> rowKey="account_key" size="small" scroll={{ x: 1100 }} pagination={false} dataSource={accountQuality.data.items} columns={[
-            { title: "账号", dataIndex: "email", render: (value: string | null, row) => <Text>{value || row.account_key}</Text> },
+            { title: "账号", dataIndex: "email", render: (value: string | null, row) => <Flex align="center" gap={8}><Text>{value || row.account_key}</Text><Button type="link" size="small" onClick={() => setHistoryAccountKey(row.account_key)}>查看 History</Button></Flex> },
             { title: "Provider", dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
             { title: "Quality", dataIndex: "quality", render: (value: string) => <Tag color={value === "good" ? "green" : value === "bad" ? "red" : value === "degraded" ? "orange" : "default"}>{({ good: "Good", degraded: "Degraded", bad: "Bad", unknown: "Unknown" } as Record<string, string>)[value] ?? "Unknown"}</Tag> },
             { title: "成功率", dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
@@ -167,6 +171,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
           <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={!qualityCursor} onClick={() => setQualityCursor(undefined)}>质量首页</Button><Button disabled={!accountQuality.data.next_cursor || accountQuality.isFetching} onClick={() => setQualityCursor(accountQuality.data.next_cursor ?? undefined)}>质量下一页</Button></Flex>
         </>}
       </Card>
+      <AccountRequestHistorySection key={`${instanceId}:${historyAccountKey ?? "none"}`} api={api} instanceId={instanceId} accountKey={historyAccountKey} onUnauthorized={expireSession} />
       <Card title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError retry={() => void providers.refetch()} />}
