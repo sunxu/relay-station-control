@@ -40,10 +40,18 @@ proposal/design/spec/tasks已在实施前通过change strict；本轮canonical s
 
 扩大执行`go test -race ./internal/store -run 'TestCrossNodeDuplicate' -count=1 -v`时，4个既有migration acceptance失败：`MigrationUpDownUp`、`QueryAccessMigrationUpDownUp`、`EvidenceEvaluationMigrationUpDownUp`、`EvidenceEvaluationSnapshotGuardMigrationUpDownUp`（共同前缀`TestCrossNodeDuplicateOwnership`）。均为`migration version = 24, want 16`，不是本次material断言失败。
 
-`internal/store/cross_node_duplicate_ownership_migration_acceptance_test.go:35/95/157/225`在HEAD与工作树完全一致，固定要求16；HEAD已包含00024，`newIsolatedJobDatabase`默认迁移完整production集合。因此这是既有测试基线落后于migration序列。本轮不修改这些无关测试、不声称扩大PG套件全绿；相关专项已单独以race重新运行并PASS。后续独立修复该migration测试基线。
+在实现验收时，`internal/store/cross_node_duplicate_ownership_migration_acceptance_test.go:35/95/157/225`在当时HEAD与工作树完全一致，固定要求16；HEAD已包含00024，`newIsolatedJobDatabase`默认迁移完整production集合。因此这是既有测试基线落后于migration序列。本轮不修改这些无关测试、不声称扩大PG套件全绿；相关专项已单独以race重新运行并PASS。该基线在后续独立提交`63270e8`修复，见下方归档对账。
 
 ## Scope and Review
 
 0 migration；无新table/column/index/history truth；legacy evidence不改不删。OpenAPI、TS、Topology UI、Node/Gateway、eligibility/freshness/absence/resolve、告警身份均无变更。raw evidence诊断入口保留。仅generated sqlc Go因query变更由make生成。
 
 2026-09-08，主Agent与独立子Agent完成 Architecture + Implementation Final Review：PASS，P1/P2 blockers为0。审查覆盖source NULL、checkpoint范围、zero-evidence、verification时间、resolve、并发/重启。用户接受非阻塞措辞建议：恢复造成 material change 时才写 checkpoint，并授权本地提交本change。四个旧migration测试基线问题仍单独记录，不纳入本次修复。交付仅本地commit；未push、未deploy、未archive。
+
+## Archive Reconciliation
+
+2026-09-08，用户授权测试基线修复并收口归档。实现commit：`8616808`。独立测试修复commit：`63270e8`，仅固定四个历史测试的初始化`up-to 16`及恢复终点，未修改生产migration。
+
+真实隔离PG执行：`go test ./internal/store -run 'TestCrossNodeDuplicateOwnership(MigrationUpDownUp|QueryAccessMigrationUpDownUp|EvidenceEvaluationMigrationUpDownUp|EvidenceEvaluationSnapshotGuardMigrationUpDownUp)$' -count=1 -v`，4/4 PASS，5.693s；使用前述测试DB环境变量。保留原失败时间线，本次没有重跑整个PG套件。
+
+归档前change/all strict PASS（18/18），tasks 9/9。canonical spec在实现commit中已提前同步，归档前逐项比较delta的3个Requirement正文与canonical完全一致，因此使用标准CLI `openspec archive reduce-cross-node-duplicate-evidence-write-amplification --yes --skip-specs`避免重复添加已同步Requirement；不手工移动目录。所有设计、任务和验收文件随CLI归档保留。交付仍为本地提交，不push、不deploy。
