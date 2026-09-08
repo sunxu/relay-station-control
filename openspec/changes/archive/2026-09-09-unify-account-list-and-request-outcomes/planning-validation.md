@@ -55,3 +55,7 @@ go test -race ./internal/api ./internal/store -run 'TestUnifiedAccount|TestAccou
 `npm --prefix web test -- --run src/api/account-list-transport.test.ts src/pages/AccountInventoryView.test.tsx src/pages/TopologyView.test.tsx`：39/39 PASS；`npm --prefix web run typecheck`：PASS。
 
 修复后完整 `make test build`：PASS，前端 20 files / 127 tests PASS，构建成功。Go build 输出一次 module stat cache 写入权限警告但命令退出 0，不影响构建结果。change strict PASS、all strict 18/18 PASS、`git diff --check` PASS。独立修复审查 PASS，实际 transport 专项 3/3 PASS，原 P2 已修复；等待 Final Re-review。仅本地提交，无 push/deploy/archive。
+
+## Final Re-review and Archive Gate
+
+2026-09-09，基于 `88fa62449b6650b3b0fafdb6a1942df30718d710` 完成 Final Re-review：Architecture PASS，Implementation PASS，P1=0、P2=0，无新增非阻塞发现。原筛选序列化 P2 关闭。真实 transport 专项 3/3、typecheck、change/all strict（18/18）及 diff 检查再次通过，复核时工作树干净。用户随后要求继续归档；保留此前失败和修复时间线。仅执行本地 OpenSpec 归档和提交，不 push、不 deploy。

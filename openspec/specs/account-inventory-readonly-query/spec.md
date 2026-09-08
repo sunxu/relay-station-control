@@ -24,26 +24,26 @@ Control SHALL 提供只读 current account inventory query，只允许已认证�
 
 ### Requirement: query request MUST 避免在 URL 暴露敏感筛选
 
-Account inventory query MUST 使用 `POST /api/account-inventory/query` 和 JSON body 承载 instance、filters、cursor 与 limit。email、cursor 和 account identity MUST NOT 出现在 URL、route parameter、redirect、Location header、普通 access/application log 或浏览器持久 storage。所有成功与错误响应 MUST 设置 `Cache-Control: no-store`。
+原Account inventory query MUST继续使用`POST /api/account-inventory/query`；统一列表使用`POST /api/topology/nodes/{instance_id}/account-quality/query`。两者MUST以JSON body承载敏感filters/cursor/limit，email、cursor和account identity MUST NOT出现在列表URL、redirect、Location、普通log或浏览器持久storage。统一响应允许既有Topology canonical account_key用于只读详情关联，不改变原Inventory响应。所有响应MUST no-store。既有Request History独立API契约保持不变。
 
 #### Scenario: 管理员按 email 定位账号
-- **WHEN** 管理员提交带标准化 exact email filter 的 query
-- **THEN** email 只存在于 HTTPS 请求 body、受保护数据库比较和授权响应，不进入请求 URL或重定向
+- **WHEN** 管理员提交规范化exact email filter
+- **THEN** email仅在受保护POST body、数据库比较与授权响应，不进入列表URL或重定向
 
 #### Scenario: 非法敏感筛选
-- **WHEN** email/provider 超长、标准化为空、enum 非法或 body 含未知字段
-- **THEN** Control 返回固定 400且错误、日志和审计不回显输入
+- **WHEN** email/provider超长、标准化为空、enum非法或body含未知字段
+- **THEN** 返回固定400，错误/日志/审计不回显输入
 
 ### Requirement: query MUST 有界、稳定并绑定全部筛选
 
-请求 MUST 要求一个 instance，limit SHALL 默认为 50且只允许 1至100。Control MUST 在 Provider、lifecycle、basic status 和规范化 email 精确筛选后按不可变 account key升序执行 keyset pagination，并只在存在下一行时返回 cursor。它 MUST NOT 提供无界结果、offset pagination、模糊/前缀 email 搜索或跨 Node 聚合。
+请求 MUST 要求一个 instance，原Inventory POST limit SHALL默认50，统一账号POST SHALL默认25；两者只允许1至100。Control MUST 在 Provider、lifecycle、basic status 和规范化 email 精确筛选后（统一账号POST另含window/quality）按不可变 account key升序执行 keyset pagination，并只在存在下一行时返回 cursor。它 MUST NOT 提供无界结果、offset pagination、模糊/前缀 email 搜索或跨 Node 聚合。
 
 #### Scenario: 多页读取稳定账号集合
 - **WHEN** 第一页达到 limit且存在额外行，管理员在相同 instance和filters下提交 next cursor
-- **THEN** 下一页从上一页最后 account key之后继续，既有 key不重复且 API不返回内部 account key
+- **THEN** 下一页从上一页最后 account key之后继续，既有 key不重复；原Inventory API不返回内部account key，统一账号响应沿用Topology canonical account_key作为详情identity
 
 #### Scenario: filter 变化后重放 cursor
-- **WHEN** 客户端把 cursor用于不同 instance、Provider、lifecycle、basic status或email筛选
+- **WHEN** 客户端把 cursor用于不同 instance、Provider、lifecycle、basic status或email筛选（统一POST包括window/quality）
 - **THEN** Control 以统一 invalid cursor 400拒绝，不执行部分查询或泄露 cursor payload
 
 #### Scenario: promotion 与翻页并发
@@ -132,11 +132,11 @@ Runtime role SHALL 只通过版本化受控函数读取 query白名单并通过�
 
 ### Requirement: React账号页 MUST 清楚呈现筛选、降级和错误状态
 
-Control SHALL 为已认证管理员提供账号清单页面。页面 MUST 先选择具备账号清单capability的Node，支持Provider、lifecycle、basic status和exact email筛选及前后页导航，并分别呈现loading、empty、invalid filter、unsupported、unauthorized和unavailable状态。页面 MUST 明确区分last-reported basic status、lifecycle、Provider degraded和snapshot freshness，且 MUST NOT提供导出、批量选择、详情、状态修改、删除、补采或promotion控件。
+Control SHALL 为已认证管理员提供账号清单页面。页面 MUST 先选择具备账号清单capability的Node，支持Provider、lifecycle、basic status和exact email筛选及前后页导航，并分别呈现loading、empty、invalid filter、unsupported、unauthorized和unavailable状态。页面 MUST 明确区分last-reported basic status、lifecycle、Provider degraded和snapshot freshness，且 MUST NOT提供导出、批量选择、状态修改、删除、补采或promotion控件。
 
 当页面 URL 含 `instance_id` 时，页面 MUST 在首次加载阶段预选该值，并自动提交一次现有默认筛选的第一页查询。Node 的合法性、登记状态和 capability 继续由既有 API 校验；自动查询完成或失败后，页面 MUST 呈现现有结果或对应错误状态，不得因失败而自动循环重试。URL 缺少 `instance_id` 时，页面 MUST 保持手动选择 Node 后由管理员触发查询的行为。
 
-首次自动查询只适用于页面初始进入。管理员编辑筛选或切换 Node 时，页面 MUST 清空 cursor 历史；翻页沿用现有 cursor 历史。请求由现有显式查询/分页动作提交；这些动作不得被隐式的 URL 自动加载逻辑再次覆盖。该行为 MUST 复用现有 POST 只读查询及其查看审计，不新增业务写请求、补采、状态变更或数据面调用。
+首次自动查询只适用于页面初始进入。管理员编辑筛选或切换 Node 时，页面 MUST 清空 cursor 历史；翻页沿用现有 cursor 历史。请求由现有显式查询/分页动作提交；这些动作不得被隐式的 URL 自动加载逻辑再次覆盖。统一账号页面 MUST 使用新增Topology组合POST读取，并复用CSRF/加密cursor/逐页审计；旧POST只读查询及其查看审计契约保留给既有消费者。允许只读请求历史/采集详情抽屉，不新增业务写请求、补采、状态变更或数据面调用。
 
 #### Scenario: 从带 instance_id 的链接首次加载
 
@@ -151,7 +151,7 @@ Control SHALL 为已认证管理员提供账号清单页面。页面 MUST 先选
 #### Scenario: 过滤器变化
 
 - **WHEN** 管理员修改任一筛选或切换Node
-- **THEN** 页面清空cursor历史、回到第一页并只提交新筛选body
+- **THEN** 页面清空cursor历史、回到第一页并在管理员显式查询后提交新筛选参数
 
 #### Scenario: 窄屏或键盘访问
 
@@ -210,3 +210,19 @@ Query日志与指标 MAY 记录固定operation/result/error code、latency、res
 #### Scenario: 旧客户端继续使用现有API
 - **WHEN** 未使用账号query的新旧客户端调用既有route
 - **THEN** 状态码、schema、认证和行为保持兼容
+
+### Requirement: Account Inventory UI SHALL 复用统一账号工作视图
+
+账号清单入口MUST保留Node选择、provider/email/basic_status/lifecycle、page size、容量诊断及既有深链接，使用与Topology相同的账号列表与详情组件展示Inventory与请求质量。旧Inventory HTTP API MUST继续保持其既有安全与读取契约；新UI使用Topology组合只读POST及既有CSRF/AEAD cursor/view audit，不新增mutation。
+
+#### Scenario: 初始深链接
+- **WHEN** 进入携带instance_id的账号页面，包括StrictMode
+- **THEN** 预选Node并只触发一次默认present首页请求
+
+#### Scenario: 手动筛选
+- **WHEN** 无instance_id进入后选择Node，或编辑筛选
+- **THEN** 保持显式查询交互；提交后过滤先于分页，不拼接两套结果
+
+#### Scenario: 数据诊断入口
+- **WHEN** 管理员查看缺失记录或采集信息
+- **THEN** 保留生命周期筛选、容量诊断和采集详情，无需重新显示第二份账号表

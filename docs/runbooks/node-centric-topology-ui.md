@@ -84,4 +84,4 @@ First Seen/Last Seen/Hits 是当前15分钟该类别失败的最早/最晚时间
 
 新`POST /api/topology/nodes/{instance_id}/account-quality/query`将筛选及cursor放入body；不得将email或cursor放进列表URL、storage或日志。使用super_admin、CSRF、16KiB body限制、no-store、AEAD actor/filter绑定cursor（15分钟）及逐页审计。原质量GET和Inventory POST保留兼容。每页一次组合数据查询，另有固定审计写入；数据库内部逐账号复用quality函数并读取最多10条事件，计算成本不声称常数。
 
-发布需先应用00025只读query-access migration，再成对更新Control backend/Web；旧v1/v2保留，runtime不增加direct SELECT，没有新表/index/事件schema/retention改动。回滚旧应用保留forward schema，Down只用于隔离测试。此变更尚未部署，证据见[统一账号视图验收](../../openspec/changes/unify-account-list-and-request-outcomes/planning-validation.md)。
+发布需先应用00025只读query-access migration，再成对更新Control backend/Web；旧v1/v2保留，runtime不增加direct SELECT，没有新表/index/事件schema/retention改动。回滚旧应用保留forward schema，Down只用于隔离测试。此变更尚未部署，证据见[统一账号视图验收](../../openspec/changes/archive/2026-09-09-unify-account-list-and-request-outcomes/planning-validation.md)。
