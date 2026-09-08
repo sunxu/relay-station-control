@@ -47,3 +47,15 @@ Loading是请求进行中；Empty仅表示成功返回无账号/无匹配；Unkn
 本change不改变usage collector启用开关、HTTP-only source、resolved/unresolved、7天retention以及destructive-pop/no-ACK丢失窗口，详见[Request Quality runbook](account-request-quality.md)。Quality Unknown不等于采集正常，采集未启用或没有事件都可能导致无请求证据。
 
 未来发布需先应用additive function migration，再成对更新backend/Web。回滚应用即可停用此入口，生产保留forward schema；Down仅用于隔离测试且只能删除新增读取函数。本轮未部署，证据见[Account Quality view validation](../../openspec/changes/archive/2026-09-08-add-account-quality-topology-view/planning-validation.md)。
+
+## Account Request History
+
+在 Account Quality 行选择“查看 History”，使用该行的 canonical `account_key` 在当前 Node detail 读取最近七天具体请求。History 只解释窗口质量，不改变分类或任何账号状态。六列为 Time（UTC）、Model、Result、Failure、Latency、Request ID；空 latency/request ID 与成功事件的 Failure 显示 —。没有请求详情、raw body、导出或账号操作。
+
+只读接口为 `GET /api/topology/nodes/{instance_id}/request-history?account_key=...`；账号参数应由 generated client 编码，保持 opaque string。只支持 limit（默认25，最大100）与 opaque cursor。使用现有 super_admin 会话、no-store 和5秒预算；cursor绑定 Node/account/time/hash，错配400。account_key仅在该认证API请求内传递，不加入浏览器导航URL或持久化前端状态。
+
+账号必须仍在现有 current Inventory read model 中；不存在或只有events的账号返回404。NULL account_key事件不能归属到账号。数据库或Inventory读取失败返回503，页面显示Unavailable；仅成功读取且七天内无事件才Empty。未选择账号时不发请求；Node切换清除账号并取消旧请求，账号切换从首页开始。同一Node的Quality筛选/翻页可以保留所选History上下文。
+
+`00022_account_request_history_query_access.sql` 仅增加 `control_query_account_request_history_v1(uuid,text,timestamptz,text,integer)` 与EXECUTE授权。函数在同一statement内验证Inventory并按DB时间读取 `occurred_at >= statement_timestamp()-interval '7 days'` 且不晚于当前时间的事件，排序time DESC/hash DESC，keyset取limit+1。单次应用数据库查询；复用已有表和索引，runtime仍不能direct SELECT。跨页不冻结snapshot，retention可能移除已过期事件。
+
+该入口不启动collector，也不改变retention。HTTP queue仍是destructive pop/no-ACK；事件可能未被采到，因此空History不能证明账号从未收到请求，七天History也不是完整账本。限制沿用[采集runbook](account-request-quality.md)。未来发布先应用query-access migration，再更新API/Web；生产回滚保留forward schema，Down只在隔离测试中删除该函数。本轮不部署，证据见[Request History validation](../../openspec/changes/add-account-request-history/planning-validation.md)。
