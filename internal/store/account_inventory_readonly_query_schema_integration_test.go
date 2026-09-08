@@ -37,7 +37,7 @@ func TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility(
 		t.Fatal("readonly query compatibility remained available after Migration 8 down")
 	}
 
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-to", "9"); err != nil {
 		t.Fatal("readonly query Migration 8 up after protected down failed")
 	}
 	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
