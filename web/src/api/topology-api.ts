@@ -1,7 +1,7 @@
-import { getNodeAccountQuality, listNodeAccountRequestHistory, listNodeAccountQualityIncidents, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
-import type { GetNodeAccountQualityParams, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse, ListNodeAccountQualityIncidentsParams, NodeAccountQualityIncidentResponse } from "./generated/control";
+import { getNodeAccountQuality, queryNodeAccountQuality, listNodeAccountRequestHistory, listNodeAccountQualityIncidents, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
+import type { GetNodeAccountQualityParams, NodeAccountQualityQueryRequest, NodeAccountQualityQueryRequestBasicStatus, NodeAccountQualityQueryRequestQuality, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse, ListNodeAccountQualityIncidentsParams, NodeAccountQualityIncidentResponse } from "./generated/control";
 import type { IncidentFailureClass } from "./account-quality-incidents-types";
-import type { AccountQualityFilter, AccountQualityLifecycle, AccountQualityWindow } from "./account-quality-types";
+import type { AccountListFilters, AccountQualityFilter, AccountQualityLifecycle, AccountQualityWindow } from "./account-quality-types";
 import type { TopologyApi } from "./topology-types";
 import { TopologyApiError } from "./topology-types";
 
@@ -12,6 +12,19 @@ async function read<T>(pending: Promise<{ data: unknown; status: number }>): Pro
 }
 
 export const generatedTopologyApi: TopologyApi = {
+  accountList: (id, filters, csrfToken, signal) => {
+    const body: NodeAccountQualityQueryRequest = {
+      window: filters.window ?? "15m",
+      provider: filters.provider ?? "",
+      lifecycle: filters.lifecycle ?? "present",
+      basic_status: (filters.basicStatus ?? "") as NodeAccountQualityQueryRequestBasicStatus,
+      quality: (filters.quality ?? "") as NodeAccountQualityQueryRequestQuality,
+      email: filters.email,
+      cursor: filters.cursor,
+      limit: filters.limit ?? 50,
+    };
+    return read<NodeAccountQualityResponse>(queryNodeAccountQuality(id, body, { signal, cache: "no-store", credentials: "same-origin", headers: { "X-CSRF-Token": csrfToken } }));
+  },
   accountQuality: (id: string, window: AccountQualityWindow, provider?: string, quality?: AccountQualityFilter, cursor?: string, signal?: AbortSignal, lifecycle?: AccountQualityLifecycle) => {
     const params: GetNodeAccountQualityParams = { window, provider, quality, cursor, limit: 25, lifecycle };
     return read<NodeAccountQualityResponse>(getNodeAccountQuality(id, params, { signal, cache: "no-store", credentials: "same-origin" }));

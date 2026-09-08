@@ -17,7 +17,8 @@ function makeNode(instanceId: string, displayName: string): NodeAsset {
 }
 
 function emptyTopology(): TopologyApi {
-  return {
+  const topology = {
+    accountList: vi.fn(),
     accountQuality: vi.fn().mockResolvedValue({ instance_id: A, window: "15m", items: [], next_cursor: null }),
     requestHistory: vi.fn().mockResolvedValue({ instance_id: A, account_key: "openai:a@example.invalid", items: [], next_cursor: null }),
     incidents: vi.fn().mockResolvedValue({ instance_id: A, items: [], next_cursor: null }),
@@ -26,11 +27,13 @@ function emptyTopology(): TopologyApi {
     currentDuplicates: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
     evidence: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
     history: vi.fn().mockResolvedValue({ involvement: "historical", instance_id: A, observed_at: observedAt, items: [], next_cursor: null }),
-  };
+  } as unknown as TopologyApi;
+  topology.accountList = vi.fn((id, filters, _csrf, signal) => topology.accountQuality(id, filters.window ?? "15m", filters.provider, filters.quality, filters.cursor, signal, filters.lifecycle));
+  return topology;
 }
 
 function renderView(api: TopologyApi, assetApi: AssetApi, initialInstanceId: string | undefined = A, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
-  return { client, ...render(<QueryClientProvider client={client}><TopologyView api={api} assetApi={assetApi} initialInstanceId={initialInstanceId} onUnauthorized={vi.fn()} /></QueryClientProvider>) };
+  return { client, ...render(<QueryClientProvider client={client}><TopologyView api={api} assetApi={assetApi} initialInstanceId={initialInstanceId} csrfToken="csrf-proof" onUnauthorized={vi.fn()} /></QueryClientProvider>) };
 }
 
 it("keeps a late A response from replacing the selected B Node", async () => {
@@ -127,7 +130,7 @@ it("clears the query cache and calls onUnauthorized after a 401", async () => {
   const onUnauthorized = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["private-canary"], "secret");
-  render(<QueryClientProvider client={client}><TopologyView api={api} assetApi={assetApi} initialInstanceId={A} onUnauthorized={onUnauthorized} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><TopologyView api={api} assetApi={assetApi} initialInstanceId={A} csrfToken="csrf-proof" onUnauthorized={onUnauthorized} /></QueryClientProvider>);
 
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
   expect(client.getQueryData(["private-canary"])).toBeUndefined();
@@ -219,13 +222,13 @@ it("keeps the selected Node quality isolated from a late previous response", asy
   const api = emptyTopology();
   let resolveA!: (value: Awaited<ReturnType<TopologyApi["accountQuality"]>>) => void;
   const delayedA = new Promise<Awaited<ReturnType<TopologyApi["accountQuality"]>>>((resolve) => { resolveA = resolve; });
-  api.accountQuality = vi.fn((id: string) => id === A ? delayedA : Promise.resolve({ instance_id: B, window: "15m" as const, next_cursor: null, items: [{ account_key: "openai:b@example.invalid", email: "b@example.invalid", provider: "openai", quality: "good" as const, request_count: 1, success_count: 1, failure_count: 0, success_rate: 1, p95_latency_ms: 10, last_success_at: observedAt, last_failure_at: null, last_failure_class: null }] })) as unknown as TopologyApi["accountQuality"];
+  api.accountQuality = vi.fn((id: string) => id === A ? delayedA : Promise.resolve({ instance_id: B, window: "15m" as const, next_cursor: null, items: [{ account_key: "openai:b@example.invalid", email: "b@example.invalid", provider: "openai", quality: "good" as const, request_count: 1, success_count: 1, failure_count: 0, success_rate: 1, p95_latency_ms: 10, last_success_at: observedAt, last_failure_at: null, last_failure_class: null, inventory: {} as never, recent_requests: [] }] })) as unknown as TopologyApi["accountQuality"];
   renderView(api, assetApi);
   const combo = await screen.findByRole("combobox", { name: "Relay Node" });
   fireEvent.mouseDown(combo);
   fireEvent.click(await screen.findByText(`Node B · ${B}`));
   expect(await screen.findByText("b@example.invalid")).toBeInTheDocument();
-  resolveA({ instance_id: A, window: "15m", next_cursor: null, items: [{ account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "bad", request_count: 1, success_count: 0, failure_count: 1, success_rate: 0, p95_latency_ms: 10, last_success_at: null, last_failure_at: observedAt, last_failure_class: "auth" }] });
+  resolveA({ instance_id: A, window: "15m", next_cursor: null, items: [{ account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "bad", request_count: 1, success_count: 0, failure_count: 1, success_rate: 0, p95_latency_ms: 10, last_success_at: null, last_failure_at: observedAt, last_failure_class: "auth", inventory: {} as never, recent_requests: [] }] });
   await waitFor(() => expect(screen.queryByText("a@example.invalid")).not.toBeInTheDocument());
 });
 
@@ -267,7 +270,7 @@ it("clears the session when account quality returns 401", async () => {
   const api = emptyTopology();
   api.accountQuality = vi.fn().mockRejectedValue(new TopologyApiError(401));
   const onUnauthorized = vi.fn();
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TopologyView api={api} assetApi={assetApi} initialInstanceId={A} onUnauthorized={onUnauthorized} /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TopologyView api={api} assetApi={assetApi} initialInstanceId={A} csrfToken="csrf-proof" onUnauthorized={onUnauthorized} /></QueryClientProvider>);
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
 });
 
@@ -289,7 +292,7 @@ it("opens request history for the selected account row", async () => {
   api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [{ account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "good", request_count: 1, success_count: 1, failure_count: 0, success_rate: 1, p95_latency_ms: 20, last_success_at: observedAt, last_failure_at: null, last_failure_class: null }] });
   api.requestHistory = vi.fn().mockResolvedValue({ instance_id: A, account_key: "openai:a@example.invalid", items: [{ occurred_at: observedAt, model: "gpt-5", success: true, failure_class: null, duration_ms: 20, request_id: "history-1" }], next_cursor: null });
   renderView(api, assetApi);
-  fireEvent.click(await screen.findByRole("button", { name: "查看 History" }));
+  fireEvent.click(await screen.findByRole("button", { name: "查看详情" }));
   expect(await screen.findByText("history-1")).toBeInTheDocument();
   expect(api.requestHistory).toHaveBeenCalledWith(A, "openai:a@example.invalid", undefined, expect.any(AbortSignal));
 });
@@ -318,13 +321,14 @@ it("clears selected account history when switching Node", async () => {
   const pendingHistory = new Promise<Awaited<ReturnType<TopologyApi["requestHistory"]>>>((resolve) => { resolveHistory = resolve; });
   api.requestHistory = vi.fn((id: string, _account: string, _cursor?: string, signal?: AbortSignal) => { if (id === A) { oldSignal = signal!; return pendingHistory; } return Promise.resolve({ instance_id: B, account_key: "openai:a@example.invalid", items: [], next_cursor: null }); });
   renderView(api, assetApi);
-  fireEvent.click(await screen.findByRole("button", { name: "查看 History" }));
+  fireEvent.click(await screen.findByRole("button", { name: "查看详情" }));
   await waitFor(() => expect(api.requestHistory).toHaveBeenCalledWith(A, "openai:a@example.invalid", undefined, expect.any(AbortSignal)));
   const combo = await screen.findByRole("combobox", { name: "Relay Node" });
   fireEvent.mouseDown(combo);
   fireEvent.click(await screen.findByText(`Node B · ${B}`));
   expect(oldSignal.aborted).toBe(true);
-  expect(await screen.findByText("请选择账号查看请求历史")).toBeInTheDocument();
+  expect(screen.queryByText("请选择账号查看请求历史")).not.toBeInTheDocument();
+  expect(screen.queryByText("账号详情")).not.toBeInTheDocument();
   expect(api.requestHistory).toHaveBeenCalledTimes(1);
   resolveHistory({ instance_id: A, account_key: "openai:a@example.invalid", items: [{ occurred_at: observedAt, model: "old", success: true, failure_class: null, duration_ms: 1, request_id: "late" }], next_cursor: null });
   await waitFor(() => expect(screen.queryByText("late")).not.toBeInTheDocument());

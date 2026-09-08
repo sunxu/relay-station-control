@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, Empty, Flex, Input, Select, Space, Spin, Table, Tag, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useAccountInventoryPollCapacity, useAccountInventoryQuery } from "../api/account-inventory-hooks";
+import { useEffect, useState } from "react";
+import { Alert, Button, Card, Empty, Flex, Input, Select, Space, Spin, Tag, Typography } from "antd";
+import { useAccountInventoryPollCapacity } from "../api/account-inventory-hooks";
 import {
   AccountInventoryApiError,
   accountInventoryBasicStatuses,
@@ -10,13 +9,18 @@ import {
 import type {
   AccountInventoryApi,
   AccountInventoryBasicStatus,
-  AccountInventoryFilters,
-  AccountInventoryItem,
   AccountInventoryLifecycle,
   AccountInventoryPollCapacity,
 } from "../api/account-inventory-types";
 import { useNodeAssets } from "../api/asset-hooks";
 import type { AssetApi } from "../api/asset-types";
+import { AccountDetailsDrawer } from "../components/AccountDetailsDrawer";
+import { TopologyApiError } from "../api/topology-types";
+import type { AccountRequestHistoryApi } from "../api/account-request-history-types";
+import { AccountList, type AccountListRow } from "../components/AccountList";
+import { useAccountListQuery } from "../api/account-list-hooks";
+import type { AccountListApi, AccountListFilters } from "../api/account-quality-types";
+import type { AccountQualityFilter, AccountQualityWindow } from "../api/account-quality-types";
 
 const { Text } = Typography;
 type PageSize = 25 | 50 | 100;
@@ -32,19 +36,12 @@ function utc(value: string | null): string {
   }).format(parsed)} UTC`;
 }
 
-function lifecycleColor(value: AccountInventoryLifecycle): string {
-  if (value === "present") return "green";
-  if (value === "suspected_missing") return "gold";
-  if (value === "missing") return "red";
-  return "default";
-}
-
-function errorDescription(error: AccountInventoryApiError): string {
+function errorDescription(error: AccountInventoryApiError | TopologyApiError): string {
   if (error.status === 403) return "安全凭据已变化。请刷新会话后重新提交，本次查询不会自动重放。";
   if (error.status === 404) return "所选 Node 不存在或已不属于当前环境。";
   if (error.status === 409) return "所选 Node 不支持账号清单查询。";
   if (error.status === 400) return "筛选条件或分页凭据无效，请清除筛选并重新查询。";
-  return `Control 暂时无法读取账号清单（请求 ID：${error.detail.request_id}）。`;
+  return error instanceof AccountInventoryApiError ? `Control 暂时无法读取账号清单（请求 ID：${error.detail.request_id}）。` : "Control 暂时无法读取账号清单。";
 }
 
 function capacityStatusLabel(value: AccountInventoryPollCapacity["status"]): string {
@@ -58,44 +55,51 @@ export function AccountInventoryView({
   assetApi,
   csrfToken,
   onUnauthorized,
+  accountListApi,
 }: {
   api: AccountInventoryApi;
   assetApi: AssetApi;
   csrfToken: string;
   onUnauthorized: () => void;
+  accountListApi: AccountListApi & AccountRequestHistoryApi;
 }) {
   const nodes = useNodeAssets(assetApi, nodeFilters);
-  const query = useAccountInventoryQuery(api, csrfToken);
+  const unifiedQuery = useAccountListQuery(accountListApi, csrfToken);
   const capacity = useAccountInventoryPollCapacity(api, csrfToken);
   const [instanceId, setInstanceId] = useState<string | undefined>(() =>
     new URLSearchParams(window.location.search).get("instance_id") || undefined,
   );
+  const [detailsRow, setDetailsRow] = useState<AccountListRow>();
   const [provider, setProvider] = useState("");
   const [lifecycle, setLifecycle] = useState<AccountInventoryLifecycle>("present");
   const [basicStatus, setBasicStatus] = useState<AccountInventoryBasicStatus>();
   const [email, setEmail] = useState("");
+  const [qualityWindow, setQualityWindow] = useState<AccountQualityWindow>("15m");
+  const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
   const [pageSize, setPageSize] = useState<PageSize>(50);
   const [cursorHistory, setCursorHistory] = useState<Array<string | undefined>>([undefined]);
 
   useEffect(() => {
-    if (query.error instanceof AccountInventoryApiError && query.error.status === 401) onUnauthorized();
+    if ((unifiedQuery.error instanceof AccountInventoryApiError || unifiedQuery.error instanceof TopologyApiError) && unifiedQuery.error.status === 401) onUnauthorized();
     if (capacity.error instanceof AccountInventoryApiError && capacity.error.status === 401) onUnauthorized();
-  }, [query.error, capacity.error, onUnauthorized]);
+  }, [unifiedQuery.error, capacity.error, onUnauthorized]);
 
-  useEffect(() => () => query.reset(), []); // Component state is memory-only and is discarded on unmount.
+  useEffect(() => () => unifiedQuery.reset(), []); // Component state is memory-only and is discarded on unmount.
 
   const execute = (cursor?: string) => {
     if (!instanceId) return;
-    const filters: AccountInventoryFilters = {
+    const filters: AccountListFilters = {
       instanceId,
       provider: provider.trim().toLowerCase() || undefined,
+      window: qualityWindow,
+      quality: qualityFilter,
       lifecycle,
       basicStatus,
       email: email.trim().toLowerCase() || undefined,
       cursor,
       limit: pageSize,
     };
-    query.mutate(filters);
+    unifiedQuery.mutate(filters);
   };
 
   // Defer until mount settles so StrictMode's discarded mount does not issue a read/audit.
@@ -107,7 +111,8 @@ export function AccountInventoryView({
 
   const resetResult = () => {
     setCursorHistory([undefined]);
-    query.reset();
+    setDetailsRow(undefined);
+    unifiedQuery.reset();
   };
 
   const applyFilters = () => {
@@ -115,20 +120,23 @@ export function AccountInventoryView({
     execute(undefined);
   };
 
-  const columns = useMemo<ColumnsType<AccountInventoryItem>>(() => [
-    { title: "邮箱", dataIndex: "email", key: "email", render: (value: string) => <Text>{value}</Text> },
-    { title: "Provider", dataIndex: "provider", key: "provider", render: (value: string) => <Tag>{value}</Tag> },
-    { title: "最后报告基础状态", dataIndex: "basicStatus", key: "basicStatus", render: (value: string) => <Tag>{value}</Tag> },
-    { title: "生命周期", dataIndex: "lifecycle", key: "lifecycle", render: (value: AccountInventoryLifecycle, item) => <Space orientation="vertical" size={2}><Tag color={lifecycleColor(value)}>{value}</Tag>{item.consecutiveMissingCount > 0 && <Text type="secondary">连续缺失 {item.consecutiveMissingCount}</Text>}</Space> },
-    { title: "最近出现", dataIndex: "lastSeenAt", key: "lastSeenAt", render: utc },
-    { title: "最近刷新", dataIndex: "lastRefreshAt", key: "lastRefreshAt", render: utc },
-    { title: "下次重试", dataIndex: "nextRetryAt", key: "nextRetryAt", render: utc },
-    { title: "Provider 快照", key: "providerSnapshot", render: (_, item) => <Space orientation="vertical" size={2}><Text>{utc(item.providerLastCompleteAt)}</Text><Space wrap><Tag color={item.snapshotFreshness === "fresh" ? "green" : item.snapshotFreshness === "stale" ? "red" : "default"}>{item.snapshotFreshness}</Tag>{item.providerDegraded && <Tag color="orange">degraded</Tag>}</Space></Space> },
-  ], []);
+  const unifiedItems = unifiedQuery.data?.items ?? [];
+  const displayData = unifiedQuery.data ? { items: unifiedItems, nextCursor: unifiedQuery.data.next_cursor } : undefined;
+  const displayPending = unifiedQuery.isPending;
+  const displayError = unifiedQuery.error;
+  const accountRows: AccountListRow[] = unifiedItems.map((item) => ({
+    account_key: item.account_key, email: item.email, provider: item.provider,
+    basic_status: item.inventory.basic_status, lifecycle: item.inventory.lifecycle, quality: item.quality,
+    request_count: item.request_count, success_count: item.success_count, failure_count: item.failure_count, success_rate: item.success_rate, p95_latency_ms: item.p95_latency_ms,
+    last_success_at: item.last_success_at, last_failure_at: item.last_failure_at, last_failure_class: item.last_failure_class, recent_requests: item.recent_requests,
+    consecutive_missing_count: item.inventory.consecutive_missing_count, first_seen_at: item.inventory.first_seen_at, last_seen_at: item.inventory.last_seen_at,
+    last_refresh_at: item.inventory.last_refresh_at, next_retry_at: item.inventory.next_retry_at, provider_last_complete_at: item.inventory.provider_last_complete_at,
+    provider_degraded: item.inventory.provider_degraded, snapshot_freshness: item.inventory.snapshot_freshness,
+  }));
 
   const currentNode = nodes.data?.items.find((node) => node.instanceId === instanceId);
   const openTopology = () => { if (!instanceId) return; window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(instanceId)}`); window.dispatchEvent(new PopStateEvent("popstate")); };
-  const failure = query.error instanceof AccountInventoryApiError ? query.error : null;
+  const failure = displayError instanceof AccountInventoryApiError || displayError instanceof TopologyApiError ? displayError : null;
 
   return (
     <Flex vertical gap={16} data-testid="account-inventory-view">
@@ -152,17 +160,19 @@ export function AccountInventoryView({
                 aria-label="Relay Node"
                 placeholder="选择 Relay Node"
                 value={instanceId}
-                disabled={query.isPending}
+                disabled={displayPending}
                 options={nodes.data.items.map((node) => ({ value: node.instanceId, label: `${node.displayName} · ${node.instanceId}` }))}
                 onChange={(value) => { setInstanceId(value); resetResult(); }}
                 style={{ minWidth: 300 }}
               />
-              <Input aria-label="Provider 精确筛选" placeholder="Provider（精确）" value={provider} disabled={query.isPending} maxLength={64} onChange={(event) => { setProvider(event.target.value); resetResult(); }} style={{ width: 190 }} />
-              <Select aria-label="生命周期" allowClear placeholder="全部生命周期" value={lifecycle} disabled={query.isPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => { setLifecycle(value); resetResult(); }} style={{ width: 200 }} />
-              <Select aria-label="最后报告基础状态" allowClear placeholder="全部基础状态" value={basicStatus} disabled={query.isPending} options={accountInventoryBasicStatuses.map((value) => ({ value, label: value }))} onChange={(value) => { setBasicStatus(value); resetResult(); }} style={{ width: 210 }} />
-              <Input aria-label="邮箱精确筛选" placeholder="邮箱（精确匹配）" value={email} disabled={query.isPending} maxLength={320} autoComplete="off" onChange={(event) => { setEmail(event.target.value); resetResult(); }} style={{ width: 260 }} />
-              <Select<PageSize> aria-label="每页账号数" value={pageSize} disabled={query.isPending} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: `${value} / 页` }))} onChange={(value) => { setPageSize(value); resetResult(); }} style={{ width: 120 }} />
-            <Button type="primary" disabled={!instanceId} loading={query.isPending} onClick={applyFilters}>查询</Button>
+              <Input aria-label="Provider 精确筛选" placeholder="Provider（精确）" value={provider} disabled={displayPending} maxLength={64} onChange={(event) => { setProvider(event.target.value); resetResult(); }} style={{ width: 190 }} />
+              <Select aria-label="生命周期" allowClear placeholder="全部生命周期" value={lifecycle} disabled={displayPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => { setLifecycle(value); resetResult(); }} style={{ width: 200 }} />
+              <Select aria-label="最后报告基础状态" allowClear placeholder="全部基础状态" value={basicStatus} disabled={displayPending} options={accountInventoryBasicStatuses.map((value) => ({ value, label: value }))} onChange={(value) => { setBasicStatus(value); resetResult(); }} style={{ width: 210 }} />
+              <Input aria-label="邮箱精确筛选" placeholder="邮箱（精确匹配）" value={email} disabled={displayPending} maxLength={320} autoComplete="off" onChange={(event) => { setEmail(event.target.value); resetResult(); }} style={{ width: 260 }} />
+              <Select aria-label="质量窗口" value={qualityWindow} disabled={displayPending} options={[{ value: "15m", label: "最近 15 分钟" }, { value: "1h", label: "最近 1 小时" }]} onChange={(value) => { setQualityWindow(value); resetResult(); }} style={{ width: 150 }} />
+              <Select allowClear aria-label="质量分类" placeholder="全部质量" value={qualityFilter} disabled={displayPending} options={["good", "degraded", "bad", "unknown"].map((value) => ({ value, label: value }))} onChange={(value) => { setQualityFilter(value); resetResult(); }} style={{ width: 150 }} />
+              <Select<PageSize> aria-label="每页账号数" value={pageSize} disabled={displayPending} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: `${value} / 页` }))} onChange={(value) => { setPageSize(value); resetResult(); }} style={{ width: 120 }} />
+            <Button type="primary" disabled={!instanceId} loading={displayPending} onClick={applyFilters}>查询</Button>
             <Button disabled={!instanceId} onClick={openTopology}>查看 Node Topology</Button>
             </Space>
             <Text type="secondary">完整邮箱仅供实名管理员定位；每次查询（包括空结果和翻页）都会写入查看审计。</Text>
@@ -172,37 +182,31 @@ export function AccountInventoryView({
 
       <Card title={currentNode ? `${currentNode.displayName} 当前账号` : "当前账号"} data-testid="account-inventory-card">
         {!instanceId && <Empty description="请先选择一个支持账号清单能力的 Node" />}
-        {instanceId && !query.data && !query.isPending && !query.error && <Empty description="设置筛选后点击查询" />}
-        {query.isPending && <Flex justify="center"><Spin /></Flex>}
+        {instanceId && !displayData && !displayPending && !displayError && <Empty description="设置筛选后点击查询" />}
+        {displayPending && <Flex justify="center"><Spin /></Flex>}
         {failure && <Alert type="error" showIcon message="账号清单读取失败" description={errorDescription(failure)} action={<Button onClick={() => execute(cursorHistory.at(-1))}>重试</Button>} />}
-        {query.error && !failure && <Alert type="error" showIcon message="账号清单读取失败" description="Control 暂时无法完成查询。" />}
-        {!query.error && query.data?.items.length === 0 && <Empty description="当前过滤条件下没有账号" />}
-        {!query.error && query.data && query.data.items.length > 0 && (
-          <Table<AccountInventoryItem>
-            rowKey={(item) => `${item.instanceId}:${item.provider}:${item.email}`}
-            size="small"
-            scroll={{ x: 1450 }}
-            pagination={false}
-            dataSource={query.data.items}
-            columns={columns}
-          />
+        {displayError && !failure && <Alert type="error" showIcon message="账号清单读取失败" description="Control 暂时无法完成查询。" action={<Button onClick={() => execute(cursorHistory.at(-1))}>重试</Button>} />}
+        {!displayError && displayData?.items.length === 0 && <Empty description="当前过滤条件下没有账号" />}
+        {!displayError && displayData && displayData.items.length > 0 && (
+          <AccountList rows={accountRows} onSelectAccount={setDetailsRow} />
         )}
-        {instanceId && query.data && !query.error && (
+        {instanceId && displayData && !displayError && (
           <Flex justify="end" gap={8} style={{ marginTop: 16 }}>
-            <Button disabled={cursorHistory.length === 1 || query.isPending} onClick={() => {
+            <Button disabled={cursorHistory.length === 1 || displayPending} onClick={() => {
               const previous = cursorHistory.slice(0, -1);
               setCursorHistory(previous);
               execute(previous.at(-1));
             }}>上一页</Button>
-            <Button disabled={!query.data.nextCursor || query.isPending} onClick={() => {
-              if (!query.data?.nextCursor) return;
-              const next = query.data.nextCursor;
+            <Button disabled={!displayData.nextCursor || displayPending} onClick={() => {
+              if (!displayData?.nextCursor) return;
+              const next = displayData.nextCursor;
               setCursorHistory((history) => [...history, next]);
               execute(next);
             }}>下一页</Button>
           </Flex>
         )}
       </Card>
+      <AccountDetailsDrawer key={instanceId} api={accountListApi} instanceId={instanceId} row={detailsRow} onClose={() => setDetailsRow(undefined)} onUnauthorized={onUnauthorized} />
     </Flex>
   );
 }

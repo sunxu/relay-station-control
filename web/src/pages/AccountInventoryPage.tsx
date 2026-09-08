@@ -1,6 +1,7 @@
 import { Button, Flex, Typography } from "antd";
 import { generatedAccountInventoryApi } from "../api/account-inventory-api";
 import { generatedAssetApi } from "../api/asset-api";
+import { generatedTopologyApi } from "../api/topology-api";
 import { useAuth } from "../auth/AuthContext";
 import { AccountInventoryView } from "./AccountInventoryView";
 
@@ -24,6 +25,7 @@ export default function AccountInventoryPage() {
         assetApi={generatedAssetApi}
         csrfToken={auth.session.csrf_token}
         onUnauthorized={auth.clearSession}
+        accountListApi={generatedTopologyApi}
       />
     </main>
   );

@@ -5,13 +5,14 @@ import { useEffect, useState } from "react";
 import { useNodeAsset, useNodeAssets } from "../api/asset-hooks";
 import { AssetApiError } from "../api/asset-types";
 import type { AssetApi } from "../api/asset-types";
-import { useTopologyAccountQuality } from "../api/account-quality-hooks";
 import { useTopologyBinding, useTopologyCurrentDuplicates, useTopologyEvidence, useTopologyHistory, useTopologyProviders } from "../api/topology-hooks";
 import { TopologyApiError } from "../api/topology-types";
 import type { TopologyApi, TopologyOccurrence, TopologyProviderState } from "../api/topology-types";
 import type { AccountQualityFilter, AccountQualityItem, AccountQualityLifecycle, AccountQualityWindow } from "../api/account-quality-types";
-import { AccountRequestHistorySection } from "./AccountRequestHistorySection";
 import { AccountQualityIncidentsSection } from "./AccountQualityIncidentsSection";
+import { AccountList, type AccountListRow } from "../components/AccountList";
+import { AccountDetailsDrawer } from "../components/AccountDetailsDrawer";
+import { useTopologyAccountList } from "../api/account-list-hooks";
 
 const { Text } = Typography;
 function utc(value?: string | null) {
@@ -46,8 +47,8 @@ function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occ
   </Flex>;
 }
 
-export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized }: {
-  api: TopologyApi; assetApi: AssetApi; initialInstanceId?: string; onUnauthorized: () => void;
+export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "", onUnauthorized }: {
+  api: TopologyApi; assetApi: AssetApi; initialInstanceId?: string; csrfToken?: string; onUnauthorized: () => void;
 }) {
   const cache = useQueryClient();
   const screens = Grid.useBreakpoint();
@@ -61,14 +62,16 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
   const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
   const [qualityLifecycle, setQualityLifecycle] = useState<AccountQualityLifecycle>("present");
   const [qualityCursor, setQualityCursor] = useState<string>();
-  const [historyAccountKey, setHistoryAccountKey] = useState<string>();
+  const [detailsRow, setDetailsRow] = useState<AccountListRow>();
+  const [detailsAccountKey, setDetailsAccountKey] = useState<string>();
   const nodes = useNodeAssets(assetApi, { limit: 200, cursor: nodeCursor });
   const selected = useNodeAsset(assetApi, instanceId);
   const providers = useTopologyProviders(api, instanceId);
   const binding = useTopologyBinding(api, instanceId);
   const current = useTopologyCurrentDuplicates(api, instanceId, currentCursor);
   const history = useTopologyHistory(api, instanceId, historyStatus, historyCursor);
-  const accountQuality = useTopologyAccountQuality(api, instanceId, qualityWindow, qualityProvider, qualityFilter, qualityCursor, qualityLifecycle);
+  const accountList = useTopologyAccountList(api, instanceId, csrfToken, { window: qualityWindow, provider: qualityProvider, quality: qualityFilter, lifecycle: qualityLifecycle, limit: 25, cursor: qualityCursor });
+  const accountQualityView = accountList;
   const node = selected.error ? undefined : selected.data;
 
   const expireSession = () => {
@@ -79,8 +82,8 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
     onUnauthorized();
   };
   useEffect(() => {
-    if ([providers.error, binding.error, current.error, history.error, accountQuality.error, nodes.error, selected.error].some(unauthorized)) expireSession();
-  }, [providers.error, binding.error, current.error, history.error, accountQuality.error, nodes.error, selected.error]);
+    if ([providers.error, binding.error, current.error, history.error, accountQualityView.error, accountList.error, nodes.error, selected.error].some(unauthorized)) expireSession();
+  }, [providers.error, binding.error, current.error, history.error, accountQualityView.error, accountList.error, nodes.error, selected.error]);
   useEffect(() => {
     const onPop = () => {
       setInstanceId(new URLSearchParams(window.location.search).get("instance_id") ?? undefined);
@@ -88,7 +91,8 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
       setCurrentCursor(undefined);
       setQualityCursor(undefined);
       setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
-      setHistoryAccountKey(undefined);
+      setDetailsRow(undefined);
+      setDetailsAccountKey(undefined);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -99,7 +103,8 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
     setCurrentCursor(undefined);
     setQualityCursor(undefined);
     setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
-    setHistoryAccountKey(undefined);
+    setDetailsRow(undefined);
+    setDetailsAccountKey(undefined);
     window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(id)}`);
   };
   const providerColumns: ColumnsType<TopologyProviderState> = [
@@ -126,6 +131,27 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
     expandable={{ expandedRowRender: (row) => <Evidence api={api} occurrenceId={row.occurrence_id} onUnauthorized={expireSession} /> }}
     locale={{ emptyText: "没有符合条件的 occurrence" }}
   />;
+  const accountRows: AccountListRow[] = (accountQualityView.data?.items ?? []).map((item) => {
+    const extended = item as AccountQualityItem & { inventory?: Record<string, unknown>; recent_requests?: AccountListRow["recent_requests"] };
+    const inventory = extended.inventory ?? {};
+    return {
+      account_key: item.account_key, email: item.email, provider: item.provider,
+      basic_status: String(inventory.basic_status ?? "unknown"),
+      lifecycle: String(inventory.lifecycle ?? qualityLifecycle), quality: item.quality,
+      request_count: item.request_count, success_count: item.success_count, failure_count: item.failure_count,
+      success_rate: item.success_rate, p95_latency_ms: item.p95_latency_ms,
+      last_success_at: item.last_success_at, last_failure_at: item.last_failure_at,
+      last_failure_class: item.last_failure_class, recent_requests: extended.recent_requests ?? [],
+      consecutive_missing_count: Number(inventory.consecutive_missing_count ?? 0),
+      first_seen_at: typeof inventory.first_seen_at === "string" ? inventory.first_seen_at : undefined,
+      last_seen_at: typeof inventory.last_seen_at === "string" ? inventory.last_seen_at : undefined,
+      last_refresh_at: typeof inventory.last_refresh_at === "string" ? inventory.last_refresh_at : null,
+      next_retry_at: typeof inventory.next_retry_at === "string" ? inventory.next_retry_at : null,
+      provider_last_complete_at: typeof inventory.provider_last_complete_at === "string" ? inventory.provider_last_complete_at : null,
+      provider_degraded: inventory.provider_degraded === true,
+      snapshot_freshness: typeof inventory.snapshot_freshness === "string" ? inventory.snapshot_freshness : undefined,
+    };
+  });
   return <Flex vertical gap={16} data-testid="topology-view" className="topology-view" style={{ minWidth: 0 }}>
     <Card title="Node">
       {nodes.isPending && <Spin />}
@@ -149,33 +175,25 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
           {node && <Text>账号清单：<Button type="link" size="small" href={`/account-inventory?instance_id=${encodeURIComponent(instanceId)}`}>打开</Button></Text>}
         </Flex>
       </Card>
-      <Card title="Account Quality" role="region" aria-label="Account Quality">
+      <Card title="账号" role="region" aria-label="Account Quality">
         <Flex gap={8} wrap>
           <Select aria-label="质量窗口" value={qualityWindow} onChange={(value) => { setQualityWindow(value); setQualityCursor(undefined); }} options={[{ value: "15m", label: "最近 15 分钟" }, { value: "1h", label: "最近 1 小时" }]} />
           <Select allowClear aria-label="质量 Provider" placeholder="全部 Provider" value={qualityProvider} onChange={(value) => { setQualityProvider(value); setQualityCursor(undefined); }} options={(providers.data?.providers ?? []).map((row) => ({ value: row.provider, label: row.provider }))} disabled={providers.isError || providers.isPending} />
           <Select allowClear aria-label="质量分类" placeholder="全部质量" value={qualityFilter} onChange={(value) => { setQualityFilter(value); setQualityCursor(undefined); }} options={[{ value: "good", label: "Good" }, { value: "degraded", label: "Degraded" }, { value: "bad", label: "Bad" }, { value: "unknown", label: "Unknown" }]} />
           <Select allowClear aria-label="质量生命周期" placeholder="全部生命周期" value={qualityLifecycle} onChange={(value) => { setQualityLifecycle(value); setQualityCursor(undefined); }} options={["present", "missing", "suspected_missing", "out_of_scope"].map((value) => ({ value, label: value }))} />
-          <Button onClick={() => void accountQuality.refetch()} loading={accountQuality.isFetching}>刷新质量</Button>
+          <Button onClick={() => void accountQualityView.refetch()} loading={accountQualityView.isFetching}>刷新质量</Button>
         </Flex>
         {providers.isError && <Alert style={{ marginTop: 12 }} type="warning" showIcon message="Provider 筛选来源不可用" description="无法安全加载 Provider 过滤项。" />}
-        {accountQuality.isPending && <Flex role="status" aria-label="正在读取账号质量" justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
-        {accountQuality.error && !accountQuality.isPending && <ReadError retry={() => void accountQuality.refetch()} />}
-        {accountQuality.data && !accountQuality.error && <>
-          {accountQuality.data.items.length === 0 && <Empty description="没有 Inventory 账号或匹配账号" />}
-          {accountQuality.data.items.length > 0 && <Table<AccountQualityItem> rowKey="account_key" size="small" scroll={{ x: 1100 }} pagination={false} dataSource={accountQuality.data.items} columns={[
-            { title: "账号", dataIndex: "email", render: (value: string | null, row) => <Flex align="center" gap={8}><Text>{value || row.account_key}</Text><Button type="link" size="small" onClick={() => setHistoryAccountKey(row.account_key)}>查看 History</Button></Flex> },
-            { title: "Provider", dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
-            { title: "Quality", dataIndex: "quality", render: (value: string) => <Tag color={value === "good" ? "green" : value === "bad" ? "red" : value === "degraded" ? "orange" : "default"}>{({ good: "Good", degraded: "Degraded", bad: "Bad", unknown: "Unknown" } as Record<string, string>)[value] ?? "Unknown"}</Tag> },
-            { title: "成功率", dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
-            { title: "Requests", dataIndex: "request_count" },
-            { title: "P95", dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
-            { title: "Last Failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{utc(row.last_failure_at)}</Text></Flex> },
-          ]} />}
-          <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={!qualityCursor} onClick={() => setQualityCursor(undefined)}>质量首页</Button><Button disabled={!accountQuality.data.next_cursor || accountQuality.isFetching} onClick={() => setQualityCursor(accountQuality.data.next_cursor ?? undefined)}>质量下一页</Button></Flex>
+        {accountQualityView.isPending && <Flex role="status" aria-label="正在读取账号质量" justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
+        {accountQualityView.error && !accountQualityView.isPending && <ReadError retry={() => void accountQualityView.refetch()} />}
+        {accountQualityView.data && !accountQualityView.error && <>
+          {accountQualityView.data.items.length === 0 && <Empty description="没有 Inventory 账号或匹配账号" />}
+          {accountQualityView.data.items.length > 0 && <AccountList rows={accountRows} onSelectAccount={(row) => { setDetailsAccountKey(row.account_key); setDetailsRow(row); }} />}
+          <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={!qualityCursor} onClick={() => setQualityCursor(undefined)}>质量首页</Button><Button disabled={!accountQualityView.data.next_cursor || accountQualityView.isFetching} onClick={() => setQualityCursor(accountQualityView.data.next_cursor ?? undefined)}>质量下一页</Button></Flex>
         </>}
       </Card>
-      <AccountRequestHistorySection key={`${instanceId}:${historyAccountKey ?? "none"}`} api={api} instanceId={instanceId} accountKey={historyAccountKey} onUnauthorized={expireSession} />
-      <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={setHistoryAccountKey} onUnauthorized={expireSession} />
+      <AccountDetailsDrawer api={api} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />
+      <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={(accountKey) => { setDetailsAccountKey(accountKey); setDetailsRow(accountRows.find((item) => item.account_key === accountKey)); }} onUnauthorized={expireSession} />
       <Card title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError retry={() => void providers.refetch()} />}

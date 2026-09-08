@@ -7,7 +7,7 @@ import type {
   NodeInventoryProviderStatesResponse,
   NodeRelayBindingResponse,
 } from "./generated/control";
-import type { AccountQualityApi } from "./account-quality-types";
+import type { AccountListApi, AccountQualityApi } from "./account-quality-types";
 import type { AccountRequestHistoryApi } from "./account-request-history-types";
 import type { AccountQualityIncidentsApi } from "./account-quality-incidents-types";
 
@@ -15,7 +15,7 @@ export type TopologyProviderState = NodeInventoryProviderState;
 export type TopologyOccurrence = CrossNodeDuplicateOccurrenceSummary;
 export type TopologyBinding = NodeRelayBindingResponse;
 
-export interface TopologyApi extends AccountQualityApi, AccountRequestHistoryApi, AccountQualityIncidentsApi {
+export interface TopologyApi extends AccountQualityApi, AccountListApi, AccountRequestHistoryApi, AccountQualityIncidentsApi {
   providers(instanceId: string, signal?: AbortSignal): Promise<NodeInventoryProviderStatesResponse>;
   binding(instanceId: string, signal?: AbortSignal): Promise<NodeRelayBindingResponse>;
   currentDuplicates(instanceId: string, cursor?: string, signal?: AbortSignal): Promise<CrossNodeDuplicateOccurrenceListResponse>;

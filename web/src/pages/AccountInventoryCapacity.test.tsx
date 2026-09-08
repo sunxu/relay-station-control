@@ -6,6 +6,8 @@ import { AccountInventoryView } from "./AccountInventoryView";
 import { AccountInventoryApiError } from "../api/account-inventory-types";
 import type { AccountInventoryApi, AccountInventoryPollCapacity } from "../api/account-inventory-types";
 import type { AssetApi } from "../api/asset-types";
+import type { AccountRequestHistoryApi } from "../api/account-request-history-types";
+import type { AccountListApi } from "../api/account-quality-types";
 
 const capacity: AccountInventoryPollCapacity = {
   status: "ready", enabled: true, eligibleNodeCount: 9, effectiveCapacity: 8, concurrency: 4,
@@ -23,7 +25,11 @@ function assets(): AssetApi {
 }
 
 function renderCapacity(api: AccountInventoryApi, onUnauthorized = vi.fn()) {
-  return render(<AccountInventoryView api={api} assetApi={assets()} csrfToken="csrf" onUnauthorized={onUnauthorized} />, { wrapper });
+  const accountListApi: AccountListApi & AccountRequestHistoryApi = {
+    accountList: vi.fn().mockResolvedValue({ instance_id: "", window: "15m", items: [], next_cursor: null }),
+    requestHistory: vi.fn().mockResolvedValue({ instance_id: "", account_key: "", items: [], next_cursor: null }),
+  };
+  return render(<AccountInventoryView api={api} assetApi={assets()} csrfToken="csrf" onUnauthorized={onUnauthorized} accountListApi={accountListApi} />, { wrapper });
 }
 
 describe("account inventory poll capacity", () => {

@@ -9,3 +9,19 @@ export type AccountQualityResponse = NodeAccountQualityResponse;
 export interface AccountQualityApi {
   accountQuality(instanceId: string, window: AccountQualityWindow, provider?: string, quality?: AccountQualityFilter, cursor?: string, signal?: AbortSignal, lifecycle?: AccountQualityLifecycle): Promise<AccountQualityResponse>;
 }
+
+export interface AccountListFilters {
+  instanceId: string;
+  window?: AccountQualityWindow;
+  provider?: string;
+  quality?: AccountQualityFilter;
+  lifecycle?: AccountQualityLifecycle;
+  basicStatus?: string;
+  email?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface AccountListApi {
+  accountList(instanceId: string, filters: Omit<AccountListFilters, "instanceId">, csrfToken: string, signal?: AbortSignal): Promise<AccountQualityResponse>;
+}

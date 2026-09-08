@@ -6,6 +6,8 @@ import type { AccountInventoryApi, AccountInventoryItem } from "../api/account-i
 import { AccountInventoryApiError } from "../api/account-inventory-types";
 import type { AssetApi, NodeAsset } from "../api/asset-types";
 import { AccountInventoryView } from "./AccountInventoryView";
+import type { AccountListApi } from "../api/account-quality-types";
+import type { AccountRequestHistoryApi } from "../api/account-request-history-types";
 
 const instanceId = "00000000-0000-4000-8000-000000000101";
 const node: NodeAsset = {
@@ -54,6 +56,18 @@ function queryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 }
 
+function accountListApi(source: AccountInventoryApi): AccountListApi & AccountRequestHistoryApi {
+  return { accountList: vi.fn(async (id, filters, csrfToken) => {
+    const page = await source.query(csrfToken, { instanceId: id, provider: filters.provider, lifecycle: filters.lifecycle, basicStatus: filters.basicStatus as never, email: filters.email, cursor: filters.cursor, limit: filters.limit });
+    return { instance_id: id, window: filters.window ?? "15m", next_cursor: page.nextCursor, items: page.items.map((item) => ({ account_key: `${item.provider}:${item.email}`, email: item.email, provider: item.provider, quality: "unknown" as const, request_count: 0, success_count: 0, failure_count: 0, success_rate: null, p95_latency_ms: null, last_success_at: null, last_failure_at: null, last_failure_class: null, inventory: { instance_id: id, provider: item.provider, email: item.email, basic_status: item.basicStatus, lifecycle: item.lifecycle, consecutive_missing_count: item.consecutiveMissingCount, first_seen_at: item.firstSeenAt, last_seen_at: item.lastSeenAt, missing_since: item.missingSince, out_of_scope_since: item.outOfScopeSince, last_refresh_at: item.lastRefreshAt, next_retry_at: item.nextRetryAt, source_updated_at: item.sourceUpdatedAt, provider_last_complete_at: item.providerLastCompleteAt, provider_degraded: item.providerDegraded, snapshot_freshness: item.snapshotFreshness } as never, recent_requests: [] })) };
+  }), requestHistory: vi.fn(async (id, accountKey) => ({
+    instance_id: id,
+    account_key: accountKey,
+    items: [],
+    next_cursor: null,
+  })) };
+}
+
 async function selectNode() {
   fireEvent.mouseDown(await screen.findByLabelText("Relay Node"));
   fireEvent.click(await screen.findByText(/Inventory Node ·/));
@@ -70,7 +84,7 @@ describe("account inventory read-only view", () => {
   it("automatically loads the linked Node exactly once under StrictMode", async () => {
     window.history.replaceState(null, "", `/account-inventory?instance_id=${instanceId}`);
     const api: AccountInventoryApi = { query: vi.fn().mockResolvedValue({ items: [account], nextCursor: null }) };
-    render(<StrictMode><AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} /></StrictMode>, { wrapper: Wrapper });
+    render(<StrictMode><AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} /></StrictMode>, { wrapper: Wrapper });
 
     expect(await screen.findByText(`Inventory Node · ${instanceId}`)).toBeInTheDocument();
     await waitFor(() => expect(api.query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, lifecycle: "present", cursor: undefined })));
@@ -83,7 +97,7 @@ describe("account inventory read-only view", () => {
 
   it("does not query accounts without a linked Node", async () => {
     const api: AccountInventoryApi = { query: vi.fn() };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
     await screen.findByLabelText("Relay Node");
     expect(api.query).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /查\s*询/ })).toBeDisabled();
@@ -91,7 +105,7 @@ describe("account inventory read-only view", () => {
 
   it("manually queries a selected Node with the default present lifecycle", async () => {
     const query = vi.fn().mockResolvedValue({ items: [account], nextCursor: null });
-    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi({ query })} />, { wrapper: Wrapper });
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     await waitFor(() => expect(query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, lifecycle: "present", cursor: undefined })));
@@ -103,7 +117,7 @@ describe("account inventory read-only view", () => {
       .mockResolvedValueOnce({ items: [{ ...account, lifecycle: "missing" as const }], nextCursor: null })
       .mockResolvedValueOnce({ items: [{ ...account, lifecycle: "missing" as const }], nextCursor: null })
       .mockResolvedValueOnce({ items: [account], nextCursor: null });
-    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi({ query })} />, { wrapper: Wrapper });
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     await screen.findByText("operator@example.invalid");
@@ -130,7 +144,7 @@ describe("account inventory read-only view", () => {
     window.history.replaceState(null, "", `/account-inventory?instance_id=${instanceId}`);
     const query = vi.fn().mockRejectedValueOnce(new Error("unavailable"))
       .mockResolvedValueOnce({ items: [account], nextCursor: null });
-    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi({ query })} />, { wrapper: Wrapper });
     expect(await screen.findByText("账号清单读取失败")).toBeInTheDocument();
     expect(query).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
@@ -140,7 +154,7 @@ describe("account inventory read-only view", () => {
 
   it("queries exact normalized filters, displays current semantics and persists no sensitive state", async () => {
     const api: AccountInventoryApi = { query: vi.fn().mockResolvedValue({ items: [account], nextCursor: "encrypted-page-two" }) };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
     await selectNode();
 
     fireEvent.change(screen.getByLabelText("Provider 精确筛选"), { target: { value: " OpenAI " } });
@@ -158,8 +172,8 @@ describe("account inventory read-only view", () => {
       limit: 50,
     })));
     expect(await screen.findByText("operator@example.invalid")).toBeInTheDocument();
-    expect(screen.getAllByText("最后报告基础状态")).not.toHaveLength(0);
-    expect(screen.getByText("fresh")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "最后报告基础状态" })).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
     expect(window.location.href).not.toContain("Operator");
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
@@ -172,7 +186,7 @@ describe("account inventory read-only view", () => {
       .mockResolvedValueOnce({ items: [{ ...account, email: "second@example.invalid" }], nextCursor: null })
       .mockResolvedValueOnce({ items: [account], nextCursor: "encrypted-page-two" });
     const api: AccountInventoryApi = { query };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     await screen.findByText("operator@example.invalid");
@@ -198,7 +212,7 @@ describe("account inventory read-only view", () => {
     const client = queryClient();
     const rendered = render(
       <QueryClientProvider client={client}>
-        <AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />
+        <AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />
       </QueryClientProvider>,
     );
     await selectNode();
@@ -223,7 +237,7 @@ describe("account inventory read-only view", () => {
   it("hands a 401 to the authentication flow", async () => {
     const onUnauthorized = vi.fn();
     const api: AccountInventoryApi = { query: vi.fn().mockRejectedValue(new AccountInventoryApiError(401, { code: "unauthorized", message: "fixed", request_id: "fixed" })) };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={onUnauthorized} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={onUnauthorized} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
@@ -239,7 +253,7 @@ describe("account inventory read-only view", () => {
       }))
       .mockResolvedValueOnce({ items: [account], nextCursor: null });
     const api: AccountInventoryApi = { query };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     await screen.findByText("operator@example.invalid");
@@ -270,7 +284,7 @@ describe("account inventory read-only view", () => {
     const client = queryClient();
     const renderView = () => render(
       <QueryClientProvider client={client}>
-        <AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />
+        <AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />
       </QueryClientProvider>,
     );
     const first = renderView();
@@ -310,7 +324,7 @@ describe("account inventory read-only view", () => {
     const api: AccountInventoryApi = {
       query: vi.fn().mockResolvedValue({ items: [account], nextCursor: "opaque-page-two" }),
     };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
 
     const nodeSelect = await screen.findByRole("combobox", { name: "Relay Node" });
     const providerInput = screen.getByRole("textbox", { name: "Provider 精确筛选" });
@@ -345,20 +359,20 @@ describe("account inventory read-only view", () => {
 
   it("exposes no export, copy, detail, selection or mutation surface", async () => {
     const api: AccountInventoryApi = { query: vi.fn().mockResolvedValue({ items: [account], nextCursor: null }) };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} accountListApi={accountListApi(api)} />, { wrapper: Wrapper });
     await selectNode();
     fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     const table = await screen.findByRole("table");
-    const forbidden = /历史|压缩|导出|下载|复制|详情|查看详情|批量|选择全部|编辑|修改|删除|补采|重试采集|promotion|提升/i;
+    const forbidden = /历史|压缩|导出|下载|复制|批量|选择全部|编辑|修改|删除|补采|重试采集|promotion|提升/i;
     expect(screen.queryByRole("button", { name: forbidden })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: forbidden })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: forbidden })).not.toBeInTheDocument();
     expect(within(table).queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(within(table).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: "查看详情" })).toBeInTheDocument();
     expect(within(table).queryByRole("link")).not.toBeInTheDocument();
     expect(within(table).queryByText("操作", { selector: "th" })).not.toBeInTheDocument();
     expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "邮箱", "Provider", "最后报告基础状态", "生命周期", "最近出现", "最近刷新", "下次重试", "Provider 快照",
+      "账号", "Provider", "状态", "质量", "最近请求", "成功率", "Requests", "P95", "最近失败", "详情",
     ]);
   });
 });
