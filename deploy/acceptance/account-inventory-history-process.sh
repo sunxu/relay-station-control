@@ -1111,8 +1111,8 @@ main() {
   fixture_instance_id="$planner_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 planner_fault 5s
   wait_for_history_ready
-  seed_eligible_source 14 2
   set_history_execute planner revoke
+  seed_eligible_source 14 2
   verify_terminal_internal_source_preserved planner planner
   set_history_execute planner grant
   stop_control
@@ -1122,8 +1122,8 @@ main() {
   fixture_instance_id="$rollup_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 rollup_fault 5s
   wait_for_history_ready
-  seed_eligible_source 15 2
   set_history_execute rollup revoke
+  seed_eligible_source 15 2
   verify_terminal_internal_source_preserved rollup rollup
   set_history_execute rollup grant
   stop_control
@@ -1133,8 +1133,8 @@ main() {
   fixture_instance_id="$retention_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 retention_fault 5s
   wait_for_history_ready
-  seed_eligible_source 32 2
   set_history_execute retention revoke
+  seed_eligible_source 32 2
   verify_terminal_internal_source_preserved retention retention
   set_history_execute retention grant
   stop_control
