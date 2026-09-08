@@ -1,0 +1,20 @@
+{
+  "control_url": "https://control.example.invalid",
+  "ca_file": "/run/relay-station/acceptance/control-ca.pem",
+  "session_cookie_file": "/run/relay-station/acceptance/control.session",
+  "session_cookie_name": "__Host-relay_control_session",
+  "gateway_instance_id": "00000000-0000-0000-0000-000000000001",
+  "node_instance_id": "00000000-0000-0000-0000-000000000002",
+  "gateway_account_id": "9007199254740993",
+  "baseline_file": "/run/relay-station/acceptance/directory-baseline.json",
+  "directory_url": "https://gateway.example.invalid/internal/v1/api-account-directory",
+  "directory_token_file": "/run/relay-station/acceptance/directory-reader.token",
+  "directory_unknown_url": "https://gateway.example.invalid/internal/v1/unknown",
+  "directory_public_url": "https://gateway-public.example.invalid/internal/v1/api-account-directory",
+  "data_plane_url": "https://gateway.example.invalid/v1/chat/completions",
+  "data_plane_request_file": "/run/relay-station/acceptance/data-plane-request.json",
+  "data_plane_token_file": "/run/relay-station/acceptance/data-plane.token",
+  "timeout_seconds": 10,
+  "wait_timeout_seconds": 600,
+  "poll_interval_seconds": 10
+}

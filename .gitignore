@@ -13,3 +13,7 @@
 /web/*.tsbuildinfo
 /internal/webui/dist/*
 !/internal/webui/dist/.keep
+
+# Python acceptance harness
+__pycache__/
+*.py[cod]
