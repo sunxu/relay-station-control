@@ -3,7 +3,15 @@
 ## Implementation evidence — 2026-09-08
 
 用户已授权实施及当前本地环境更新。当前实现不修改产品 API、schema、generated client、
-UI 或 migration；不修改既有归档。Final Review 的 1 项 P1、4 项 P2 已修复并完成专项验证；任务恢复 15/15，等待 Final Re-review，不自动 archive 或 push。
+UI 或 migration；不修改既有归档。Final Review 的 1 项 P1、4 项 P2 已修复并完成专项验证；任务 15/15，Final Re-review 已通过，按用户指令执行标准归档；不 push。
+
+### Final Re-review
+
+2026-09-08：对 Control `a4b9843`、Ops `2363cf3` 及对应专项证据完成只读复审。
+原 1 项 P1、4 项 P2 全部闭合，未发现新的确定性 P1/P2。Change strict、all strict
+均通过（15 passed / 0 failed），Control/Ops/Gateway 工作树干净；Node 仅保留
+原有 AGENTS.md 修改。用户随后授权继续标准归档；本轮不部署、不 push。
+本 change 声明 skip_specs，CLI 确认没有 delta specs，canonical 产品 spec 无需同步。
 
 ### Final Review corrections — completed
 
