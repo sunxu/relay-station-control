@@ -42,7 +42,7 @@ Gateway Directory source v1 继续 numeric JSON → Go int64 → 原 persistence
 
 Loading是请求进行中；Empty仅表示成功返回无账号/无匹配；Unknown是存在账号但窗口内无请求；Unavailable表示读取失败，应重试并检查Control/DB。不得把503转成No accounts或Unknown。Success/P95/最后事件无值显示—；Last Failure只显示现有类别和时间，无raw body。
 
-新读取通过最小additive query-access migration调用既有Inventory及Account Quality函数，单次store数据库往返；内部仍逐账号复用统计，未新增事件表、索引、rollup或缓存。runtime只有function EXECUTE，不能直接SELECT account/request event/provider state表；产品不得使用owner连接绕过错误。原Inventory管理页的POST与view audit保持不变。
+新读取通过最小additive query-access migration调用既有Inventory及Account Quality函数，单次store数据库往返；内部仍逐账号复用统计，未新增事件表、索引、rollup或缓存。runtime只有function EXECUTE，不能直接SELECT account/request event/provider state表；产品不得使用owner连接绕过错误。原Inventory POST API与view audit保持不变；统一账号页的新组合POST沿用同等CSRF、加密cursor与逐页审计边界。
 
 本change不改变usage collector启用开关、HTTP-only source、resolved/unresolved、7天retention以及destructive-pop/no-ACK丢失窗口，详见[Request Quality runbook](account-request-quality.md)。Quality Unknown不等于采集正常，采集未启用或没有事件都可能导致无请求证据。
 
@@ -73,3 +73,15 @@ First Seen/Last Seen/Hits 是当前15分钟该类别失败的最早/最晚时间
 `00023_account_quality_incidents_query_access.sql`只新增受控readonly function/ACL，产品使用runtime EXECUTE，不能direct SELECT。Inventory按既有安全函数完整分块读取，事件集合聚合与分页在单次数据库往返中完成；不新增表/index/worker/materialized view/cache/rollup，也不接入Durable Jobs。未来发布先应用query-access migration再更新API/Web；生产回滚保留forward schema，Down仅在隔离测试删除该function。Incidents实现已进入remote main，Architecture与Implementation Final Review均APPROVED；已archive、尚未deploy，交付时间线见[Incidents validation](../../openspec/changes/archive/2026-09-08-add-account-quality-incidents/planning-validation.md)。
 
 当前 `default-account-inventory-to-present` 扩展尚未部署。发布需先应用 migration 00024 的只读 v2 查询函数，再更新 Control/Web；旧 v1 函数保留，回滚应用不执行数据库 Down。
+
+## 统一账号列表与最近请求（待发布）
+
+`unify-account-list-and-request-outcomes`将`/account-inventory`和Node Topology中的账号展示统一：同一账号行包含Inventory状态、窗口质量与最近请求，不在浏览器拼接两个独立分页。账号清单保留Node选择、email/basic status/Provider/lifecycle/page size、显式查询、深链接初始一次查询及容量诊断；Topology使用当前Node。两处默认present，missing等记录仍能筛选。
+
+最近请求条仅展示最近7天内最多10次可归属请求，左旧右新、最右是最新；成功绿色、失败红色并提供文字说明。无记录不补造成功；质量15m/1h与7天请求条是独立范围，不能根据10条状态重新计算Good/Degraded/Bad。采集未开启或destructive-pop/no-ACK丢失意味着缺乏证据，不代表健康。unresolved/event-only不制造账号。
+
+点击账号打开只读详情抽屉：请求历史复用原7天分页，采集信息显示生命周期、缺失次数、出现/刷新/重试时间与快照。Incident使用同一Node/account_key详情入口。切换Node取消并隔离旧列表和History，抽屉关闭不产生账号操作。无请求、空筛选结果、加载及不可用分别显示。
+
+新`POST /api/topology/nodes/{instance_id}/account-quality/query`将筛选及cursor放入body；不得将email或cursor放进列表URL、storage或日志。使用super_admin、CSRF、16KiB body限制、no-store、AEAD actor/filter绑定cursor（15分钟）及逐页审计。原质量GET和Inventory POST保留兼容。每页一次组合数据查询，另有固定审计写入；数据库内部逐账号复用quality函数并读取最多10条事件，计算成本不声称常数。
+
+发布需先应用00025只读query-access migration，再成对更新Control backend/Web；旧v1/v2保留，runtime不增加direct SELECT，没有新表/index/事件schema/retention改动。回滚旧应用保留forward schema，Down只用于隔离测试。此变更尚未部署，证据见[统一账号视图验收](../../openspec/changes/unify-account-list-and-request-outcomes/planning-validation.md)。
