@@ -3,7 +3,57 @@
 ## Implementation evidence — 2026-09-08
 
 用户已授权实施及当前本地环境更新。当前实现不修改产品 API、schema、generated client、
-UI 或 migration；不修改既有归档。任务完成 15/15，等待 Final Review；不自动 archive 或 push。
+UI 或 migration；不修改既有归档。Final Review 的 1 项 P1、4 项 P2 已修复并完成专项验证；任务恢复 15/15，等待 Final Re-review，不自动 archive 或 push。
+
+### Final Review corrections — completed
+
+- R1 / P1：应用或代理容器缺失时，恢复前校验阻止重建。补缺失 app/proxy/both 的恢复验收，并保留查询失败、外部冲突与 verified 阶段严格拒绝。
+- R2 / P2：代理摘要遗漏端口、挂载和网络配置。补稳定运行配置摘要及漂移负例，真实隔离重建验证排除项不会造成误报。
+- R3 / P2：等待 deadline 未覆盖完整登录和请求。补认证/轮询/响应体的剩余预算验收。
+- R4 / P2：相对 data-plane URL 忽略独立 token。拒绝相对路径，验证绝对 URL 的 Bearer 认证且不携带 Control Cookie。
+- R5 / P2：缺失 Binding ID 仍可成功。补合法 UUID 断言及缺失/畸形响应，不重放 bind。
+
+### Correction validation
+
+R1/R2：已修复并验证，Ops commit `2363cf3`。
+
+- `cd ../ops && python3 -m unittest -v dev.test_update_runtime` → 16 tests PASS。
+  逐个或同时缺失 app/proxy 可恢复；缺一容器时另一现存容器的外部镜像/挂载冲突
+  仍被拒绝；Docker 查询失败不等于缺失；verified 缺失不回滚；旧摘要版本拒绝；
+  端口、挂载、网络漂移被检测，动态 IP/endpoint/MAC 变化不误报。
+- `cd ../ops && python3 -m unittest discover -s dev -p 'test_*.py' -v`
+  → 57 tests PASS，3 Docker tests 明确跳过，3.073s。
+- `cd ../ops && RELAY_DEV_CONTAINER_TEST=1 python3 -m unittest discover -s dev -p test_container_operations.py -v`
+  → 3 tests PASS，40.393s。新增真实子进程在 applying 后移除随机 fixture 的两个
+  目标容器，再 SIGKILL；父进程确认退出码、pending、容器缺失，使用正式 recover
+  恢复原 app/proxy digest 和完整 proxy identity，peer ID 不变，schema/health 通过，
+  pending 清理。未操作现有开发栈。
+- `bash -n dev/devctl`、Ops `git diff --check`、commit 前 cached diff check → PASS。
+- 旧 pending 若缺少 `proxy.version=2`，须使用旧工具先收尾；不得伪造新版摘要。
+
+R3/R4/R5：已修复并验证。
+
+- `python3 -m unittest discover -s deploy/acceptance -p 'test_directory*.py' -v`
+  → 30 tests PASS，13.993s。
+- `Client.call` 正常/HTTPError 响应的连接、headers 和 body 共用同一个请求计时器；
+  请求预算取单请求上限与等待剩余时间的较小值。真实 session 响应延迟 1.6s，
+  wait 总预算 1s、单请求上限 30s，必须以 wait_timeout 在 1.5s 内结束。
+  错误响应先延迟 headers，再分块慢送 body，仍不重置总 deadline。
+- 合成 data-plane 请求使用已登录的 Control Client 作为输入，断言实际请求携带
+  独立 Bearer token、没有 Control Cookie；相对 URL 在读取 token/发请求前被拒绝。
+- read/已有 bind 对 None、空字符串、畸形字符串、numeric Binding ID 均拒绝，
+  没有 POST；丢响应后的畸形 Binding ID 保持 mutation_unknown，严格一次 POST。
+  合法合成 fixture 改用真实 UUID，四个 int64 大整数契约测试继续 PASS。
+- 慢响应 fixture 显式处理客户端超时断开，避免预期 BrokenPipe 干扰测试日志；
+  `python3 -m unittest discover -s deploy/acceptance -p test_directory_http.py -k deadline -v`
+  → 3 tests PASS，2.528s。
+
+本轮仅重跑直接相关 Python/隔离 Docker 专项，未重跑自然 540s、完整构建、Chrome
+或全量 PostgreSQL；没有产品实现/API/schema/generated/UI 变化。本轮也未重新部署
+或再次调用模型。下方先前部署与自然恢复证据仍对应原先明确列出的 commit/image，
+不会将旧运行结果改写为本轮修复后的部署结果。
+
+以下记录为修复前已实际执行的结果，仍是历史运行证据，不能替代上述修复的专项验证。
 
 ### Commands and results
 

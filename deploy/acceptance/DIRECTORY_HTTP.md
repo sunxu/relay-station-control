@@ -24,7 +24,8 @@ TOTP seed 或个人恢复码。可用 `session_cookie_name` 显式指定现有�
 
 HTTPS 使用系统 CA 或 `ca_file`；Directory 可单独配置 `directory_ca_file`。
 工具不使用环境代理，不跟随重定向，不关闭 TLS 验证。
-每次请求 `timeout_seconds` 为 1–30 秒，响应上限 4 MiB；
+每次请求 `timeout_seconds` 为 1–30 秒，响应上限 4 MiB；`wait-stale`/`wait-recovered`
+还会把登录、每次轮询和响应 body 读取共同限制在单一 `wait_timeout_seconds` 总预算内。
 等待预算 `wait_timeout_seconds` 为 1–900 秒，`poll_interval_seconds` 为 1–30 秒。
 
 ## 模式
@@ -32,12 +33,12 @@ HTTPS 使用系统 CA 或 `ca_file`；Directory 可单独配置 `directory_ca_fi
 | mode | 行为 |
 | --- | --- |
 | `read` | 认证后核对目标当前 Binding，默认无变更 |
-| `bind` | 同一绑定只核验；空绑定执行一次 POST；不同绑定拒绝替换。响应丢失先读回对账，无法确认返回失败，不重放 |
+| `bind` | 同一绑定只核验；空绑定执行一次 POST；不同绑定拒绝替换。已有或对账得到的 `binding_id` 必须是非空 UUID。响应丢失先读回对账，无法确认返回失败，不重放 |
 | `baseline` | 将目标、环境、Binding ID 和成功观测时间保存到私有 `baseline_file` |
 | `assert-stale` / `wait-stale` | 同一目标 stale/unknown，成功观测时间不推进；wait 有明确截止时间 |
 | `assert-recovered` / `wait-recovered` | 同一目标 fresh/resolved，成功观测时间严格推进 |
 | `directory-check` | 有效 reader 200、缺失/错误 token 401、POST 405、unknown internal 404、public 403，以及 JSON/no-store/source v1 结构 |
-| `data-plane` | 显式发送一次 `data_plane_request_file` 请求，使用独立 token，仅断言响应结构，不记录模型内容 |
+| `data-plane` | 只向显式绝对 `http(s)` `data_plane_url` 发送一次请求，使用独立 Bearer token；不会复用 Control session/cookie/CSRF，仅断言响应结构，不记录模型内容 |
 
 Directory 检查使用样例中的三个显式 URL；无需启停服务。source 关闭导致读取失败时，
 不能视为空集合或成功。`data-plane` 会使用已有 Gateway 额度，只有显式选择才执行。

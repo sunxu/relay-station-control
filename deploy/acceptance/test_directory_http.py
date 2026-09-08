@@ -25,9 +25,18 @@ class AcceptanceHandler(BaseHTTPRequestHandler):
     binding_available_after_lost = False
     fail_reconcile_read = False
     auth_mode = "normal"
+    binding_id = "00000000-0000-0000-0000-000000000003"
+    slow_session = False
 
     def log_message(self, *_):
         pass
+
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            # Deadline tests deliberately close the client socket mid-response.
+            pass
 
     def _send(self, status, body, headers=None):
         raw = json.dumps(body, separators=(",", ":")).encode()
@@ -44,6 +53,8 @@ class AcceptanceHandler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization")
         self.__class__.requests.append(("GET", self.path, cookie, auth))
         if self.path == "/api/auth/session":
+            if self.__class__.slow_session:
+                time.sleep(self.__class__.slow_session)
             if self.__class__.auth_mode == "always401" or (self.__class__.auth_mode == "expired" and "session-value" not in cookie):
                 return self._send(401, {"error": "unauthorized"})
             if "__Host-relay_control_session=session-value" not in cookie:
@@ -58,6 +69,12 @@ class AcceptanceHandler(BaseHTTPRequestHandler):
             for chunk in (b'{"x":', b'1', b'}'):
                 self.wfile.write(chunk); self.wfile.flush(); time.sleep(0.6)
             return
+        if self.path == "/slow-error":
+            time.sleep(0.5)
+            self.send_response(503); self.send_header("Content-Type", "application/json"); self.end_headers()
+            for chunk in (b'{"error":', b'"busy"', b'}'):
+                self.wfile.write(chunk); self.wfile.flush(); time.sleep(0.6)
+            return
         if self.path.startswith("/api/relay-bindings/nodes/"):
             if self.__class__.fail_reconcile_read:
                 return self._send(503, {"error": "unavailable"})
@@ -68,7 +85,7 @@ class AcceptanceHandler(BaseHTTPRequestHandler):
                 "gateway_instance_id": "00000000-0000-0000-0000-000000000001",
                 "gateway_account_id": str(self.account),
                 "current_binding": {
-                    "binding_id": "binding-1",
+                    "binding_id": self.__class__.binding_id,
                     "gateway_instance_id": "00000000-0000-0000-0000-000000000001",
                     "relay_node_id": "00000000-0000-0000-0000-000000000002",
                     "gateway_account_id": str(self.account),
@@ -161,6 +178,8 @@ class DirectoryHTTPTests(unittest.TestCase):
         AcceptanceHandler.lose_bind_response = False
         AcceptanceHandler.binding_available_after_lost = False
         AcceptanceHandler.fail_reconcile_read = False
+        AcceptanceHandler.binding_id = "00000000-0000-0000-0000-000000000003"
+        AcceptanceHandler.slow_session = False
         AcceptanceHandler.auth_mode = "normal"
         self.server.shutdown()
         self.server.server_close()
@@ -212,7 +231,7 @@ class DirectoryHTTPTests(unittest.TestCase):
 
     def test_same_binding_is_noop_and_different_identity_is_rejected(self):
         cfg = harness._cfg(str(self.config_file))
-        harness.run("bind", cfg)
+        self.assertEqual(harness.run("bind", cfg), {"result": "already_bound", "binding_id": "00000000-0000-0000-0000-000000000003"})
         self.assertNotIn("POST", [r[0] for r in AcceptanceHandler.requests])
         self.cfg["gateway_instance_id"] = "00000000-0000-0000-0000-000000000003"
         self.config_file.write_text(json.dumps(self.cfg))
@@ -237,9 +256,19 @@ class DirectoryHTTPTests(unittest.TestCase):
         AcceptanceHandler.lose_bind_response = True
         AcceptanceHandler.binding_available_after_lost = True
         result = harness.run("bind", cfg)
-        self.assertEqual(result, {"result": "reconciled", "binding_id": "binding-1"})
+        self.assertEqual(result, {"result": "reconciled", "binding_id": "00000000-0000-0000-0000-000000000003"})
         self.assertEqual([r[0] for r in AcceptanceHandler.requests].count("POST"), 1)
         self.assertEqual(len(AcceptanceHandler.bind_bodies), 1)
+
+    def test_bound_read_rejects_missing_or_malformed_binding_id(self):
+        cfg = harness._cfg(str(self.config_file))
+        for value in (None, "", "binding-1", 123):
+            AcceptanceHandler.binding_id = value
+            for mode in ("read", "bind"):
+                with self.subTest(value=value, mode=mode):
+                    with self.assertRaisesRegex(harness.HarnessError, "binding_contract_invalid"):
+                        harness.run(mode, cfg)
+        self.assertNotIn("POST", [row[0] for row in AcceptanceHandler.requests])
 
     def test_all_int64_values_are_read_and_request_serialized_as_strings(self):
         values = ("9007199254740991", "9007199254740992", "9007199254740993", "9223372036854775807")
@@ -344,9 +373,9 @@ class DirectoryHTTPTests(unittest.TestCase):
 
     def test_stale_and_recovered_compare_utc_and_resolution(self):
         cfg = harness._cfg(str(self.config_file))
-        baseline = {"gateway_instance_id": cfg["gateway_instance_id"], "node_instance_id": cfg["node_instance_id"], "gateway_account_id": cfg["gateway_account_id"], "control_url": cfg["control_url"], "binding_id": "binding-1", "last_success_observation_at": "2026-09-08T01:00:00Z"}
+        baseline = {"gateway_instance_id": cfg["gateway_instance_id"], "node_instance_id": cfg["node_instance_id"], "gateway_account_id": cfg["gateway_account_id"], "control_url": cfg["control_url"], "binding_id": "00000000-0000-0000-0000-000000000003", "last_success_observation_at": "2026-09-08T01:00:00Z"}
         harness._write(cfg["baseline_file"], baseline)
-        stale = {"relay_node_id": cfg["node_instance_id"], "current_binding": {"binding_id": "binding-1", "relay_node_id": cfg["node_instance_id"], "gateway_instance_id": cfg["gateway_instance_id"], "gateway_account_id": cfg["gateway_account_id"]}, "gateway_account_id": cfg["gateway_account_id"], "directory_freshness": "stale", "resolution": "unknown", "last_success_observation_at": "2026-09-08T01:00:00+00:00"}
+        stale = {"relay_node_id": cfg["node_instance_id"], "current_binding": {"binding_id": "00000000-0000-0000-0000-000000000003", "relay_node_id": cfg["node_instance_id"], "gateway_instance_id": cfg["gateway_instance_id"], "gateway_account_id": cfg["gateway_account_id"]}, "gateway_account_id": cfg["gateway_account_id"], "directory_freshness": "stale", "resolution": "unknown", "last_success_observation_at": "2026-09-08T01:00:00+00:00"}
         recovered = dict(stale, directory_freshness="fresh", resolution="resolved", last_success_observation_at="2026-09-08T01:01:00+00:00")
         with mock.patch.object(harness, "_read", side_effect=[stale, recovered]):
             self.assertEqual(harness.run("assert-stale", cfg)["resolution"], "unknown")
@@ -354,8 +383,30 @@ class DirectoryHTTPTests(unittest.TestCase):
 
     def test_data_plane_requires_explicit_mode_and_keeps_only_response_shape(self):
         cfg = harness._cfg(str(self.config_file))
-        result = harness.run("data-plane", cfg)
+        client = harness.Client(cfg)
+        client.session()
+        result = harness.run("data-plane", cfg, client)
         self.assertEqual(result, {"result": "data_plane", "status": 200, "response_shape": "object"})
+        self.assertEqual(AcceptanceHandler.requests[-1][3], "Bearer data-plane-secret")
+        self.assertEqual(AcceptanceHandler.requests[-1][2], "")
+        self.cfg["data_plane_url"] = "/chat/completions"
+        self.config_file.write_text(json.dumps(self.cfg))
+        relative_cfg = harness._cfg(str(self.config_file))
+        before = len(AcceptanceHandler.requests)
+        with mock.patch.object(harness, "_protected", side_effect=AssertionError("must not read token")):
+            with self.assertRaisesRegex(harness.HarnessError, "url_invalid"):
+                harness.run("data-plane", relative_cfg)
+        self.assertEqual(len(AcceptanceHandler.requests), before)
+
+    def test_lost_bind_response_with_malformed_reconciled_id_stays_unknown(self):
+        cfg = harness._cfg(str(self.config_file))
+        AcceptanceHandler.binding_none = True
+        AcceptanceHandler.lose_bind_response = True
+        AcceptanceHandler.binding_available_after_lost = True
+        AcceptanceHandler.binding_id = "binding-1"
+        with self.assertRaisesRegex(harness.HarnessError, "mutation_unknown"):
+            harness.run("bind", cfg)
+        self.assertEqual([r[0] for r in AcceptanceHandler.requests].count("POST"), 1)
 
     def test_slowdrip_obeys_single_total_deadline(self):
         started = time.monotonic()
@@ -363,6 +414,39 @@ class DirectoryHTTPTests(unittest.TestCase):
             harness._external_call(self.cfg["control_url"] + "/slowdrip", None, 1, method="GET")
         self.assertEqual(str(caught.exception), "http_timeout")
         self.assertLess(time.monotonic() - started, 1.8)
+
+    def test_wait_deadline_caps_control_body_read_and_reports_wait_timeout(self):
+        client = harness.Client(harness._cfg(str(self.config_file)))
+        started = time.monotonic()
+        client.wait_deadline = started + 0.4
+        with self.assertRaisesRegex(harness.HarnessError, "wait_timeout"):
+            client.call("GET", "/slowdrip")
+        self.assertLess(time.monotonic() - started, 0.9)
+
+    def test_wait_deadline_is_not_reset_for_http_error_body(self):
+        client = harness.Client(harness._cfg(str(self.config_file)))
+        started = time.monotonic()
+        client.wait_deadline = started + 0.6
+        with self.assertRaisesRegex(harness.HarnessError, "wait_timeout"):
+            client.call("GET", "/slow-error", expected={200})
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_run_wait_budget_covers_initial_session(self):
+        cfg = harness._cfg(str(self.config_file))
+        harness._write(cfg["baseline_file"], {
+            "gateway_instance_id": cfg["gateway_instance_id"],
+            "node_instance_id": cfg["node_instance_id"],
+            "gateway_account_id": cfg["gateway_account_id"],
+            "control_url": cfg["control_url"],
+            "binding_id": "00000000-0000-0000-0000-000000000003",
+            "last_success_observation_at": "2026-09-08T01:02:03Z",
+        })
+        cfg.update({"wait_timeout_seconds": 1, "timeout_seconds": 30})
+        AcceptanceHandler.slow_session = 1.6
+        started = time.monotonic()
+        with self.assertRaisesRegex(harness.HarnessError, "wait_timeout"):
+            harness.run("wait-stale", cfg)
+        self.assertLess(time.monotonic() - started, 1.5)
 
     def test_main_stdout_and_stderr_are_fixed_shape_and_redacted(self):
         # The persistent-config policy intentionally rejects TemporaryDirectory

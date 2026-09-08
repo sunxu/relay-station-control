@@ -89,6 +89,15 @@ class Client:
         handlers.append(HTTPCookieProcessor(self.cookies))
         self.opener = build_opener(*handlers)
         self.csrf = None
+        self.wait_deadline = None
+
+    def _request_budget(self):
+        if self.wait_deadline is None:
+            return self.timeout
+        remaining = self.wait_deadline - time.monotonic()
+        if remaining <= 0:
+            raise HarnessError("wait_timeout")
+        return min(self.timeout, remaining)
 
     def call(self, method, path, payload=None, csrf=False, expected=None):
         body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode()
@@ -98,19 +107,23 @@ class Client:
             if not self.csrf: self.session()
             headers["X-CSRF-Token"] = self.csrf
         req = Request(_url(self.base, path), data=body, headers=headers, method=method)
+        budget = self._request_budget()
         try:
-            with _deadline(self.timeout):
-                with self.opener.open(req, timeout=self.timeout) as resp:
+            with _deadline(budget):
+                try:
+                    resp = self.opener.open(req, timeout=budget)
+                    status = resp.status
+                except HTTPError as exc:
+                    resp = exc
+                    status = exc.code
+                try:
                     raw = resp.read(MAX_BODY + 1)
                     if len(raw) > MAX_BODY: raise HarnessError("response_too_large")
-                    status = resp.status
-        except HTTPError as exc:
-            try:
-                with _deadline(self.timeout): raw = exc.read(MAX_BODY + 1)
-                status = exc.code
-            finally:
-                exc.close()
+                finally:
+                    resp.close()
         except (URLError, OSError, TimeoutError, HarnessError) as exc:
+            if self.wait_deadline is not None and time.monotonic() >= self.wait_deadline:
+                raise HarnessError("wait_timeout") from exc
             if isinstance(exc, HarnessError): raise
             raise HarnessError("http_unavailable") from exc
         if len(raw) > MAX_BODY: raise HarnessError("response_too_large")
@@ -231,6 +244,7 @@ def _read(c):
     binding = data.get("current_binding")
     if binding is not None:
         if not isinstance(binding, dict): raise HarnessError("binding_contract_invalid")
+        _binding_id(data)
         for key in ("relay_node_id", "gateway_instance_id", "gateway_account_id"):
             if binding.get(key) != (c.cfg["node_instance_id"] if key == "relay_node_id" else c.cfg[key]) or data.get(key) != binding.get(key):
                 raise HarnessError("binding_identity_mismatch")
@@ -238,7 +252,16 @@ def _read(c):
 
 def _binding_id(data):
     b = data.get("current_binding")
-    return b.get("binding_id") if isinstance(b, dict) else None
+    if not isinstance(b, dict):
+        return None
+    value = b.get("binding_id")
+    if not isinstance(value, str) or not value:
+        raise HarnessError("binding_contract_invalid")
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise HarnessError("binding_contract_invalid")
+    return value
 
 def run(mode, cfg, _client=None):
     c = _client or Client(cfg)
@@ -293,6 +316,7 @@ def run(mode, cfg, _client=None):
         if not 1 <= wait_timeout <= 900 or not 1 <= poll_interval <= 30:
             raise HarnessError("wait_config_invalid")
         deadline = time.monotonic() + wait_timeout
+        c.wait_deadline = deadline
         c.session()
         target = "assert-stale" if mode == "wait-stale" else "assert-recovered"
         while time.monotonic() < deadline:
@@ -301,19 +325,31 @@ def run(mode, cfg, _client=None):
                 if str(exc) not in ("stale_assertion_failed", "recovered_not_fresh", "observation_not_advanced", "http_unavailable", "unexpected_http_status"):
                     raise
                 print(json.dumps({"mode": mode, "result": "polling"}, separators=(",", ":")), flush=True)
-                time.sleep(min(poll_interval, max(0.1, deadline-time.monotonic())))
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(poll_interval, remaining))
         raise HarnessError("wait_timeout")
     if mode == "directory-check":
         return _directory_check(cfg, c.timeout)
     if mode == "data-plane":
         url = cfg.get("data_plane_url")
         if not url: raise HarnessError("data_plane_config_missing")
+        from urllib.parse import urlsplit
+        parsed_url = urlsplit(url) if isinstance(url, str) else None
+        if (parsed_url is None or parsed_url.scheme not in ("http", "https") or
+            not parsed_url.netloc or parsed_url.username or parsed_url.query or parsed_url.fragment):
+            raise HarnessError("url_invalid")
         payload = _json_file(cfg["data_plane_request_file"]) if cfg.get("data_plane_request_file") else {"model": cfg.get("data_plane_model", "gpt-test"), "messages": [{"role": "user", "content": "health"}], "stream": False}
         token = None
         if cfg.get("data_plane_token_file"):
             token = _protected(cfg["data_plane_token_file"], 8192).decode().strip()
             if not token: raise HarnessError("data_plane_token_invalid")
-        status, data = c.call("POST", url, payload, expected={200}) if url.startswith("/") else _external_call(url, payload, c.timeout, cfg.get("data_plane_ca_file", cfg.get("ca_file")), "POST", token)
+        if token is None:
+            raise HarnessError("data_plane_token_required")
+        # Data-plane calls always use their own absolute endpoint and token;
+        # never route a relative path through the Control session/cookie.
+        status, data = _external_call(url, payload, c.timeout, cfg.get("data_plane_ca_file", cfg.get("ca_file")), "POST", token)
         if status != 200 or not isinstance(data, dict): raise HarnessError("data_plane_invalid")
         choices, output = data.get("choices"), data.get("output")
         if not ((isinstance(choices, list) and choices and all(isinstance(x, dict) and isinstance(x.get("message"), dict) for x in choices)) or

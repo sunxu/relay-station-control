@@ -32,6 +32,8 @@ Gateway Account ID输入必须是十进制字符串；拒绝numeric配置，保�
 
 默认read检查不绑定、不关闭source、不部署，也不调用收费AI请求。显式bind模式先查目标当前Binding：完全相同则只核验；空时执行一次已有bind；不同则失败，不替换。超时/响应丢失后先read精确身份对账；无法确认返回unknown，不盲目重复POST，不自动撤销已有Binding。
 
+Binding 成功判定同时要求非空、合法 UUID 的 `binding_id`；既有绑定和丢响应对账都不能接受缺少此字段的记录。等待模式的总 deadline 包含认证、每次 HTTP 请求和轮询间隔，每个子步骤只能消耗剩余预算。数据面验收仅接受绝对 HTTP(S) URL，并通过独立 Bearer token 请求；不提供指向 Control 会话客户端的相对路径分支。
+
 baseline只记录该次测试的目标、Binding ID、成功观测时间与非敏感环境定位，保存在受保护文件中；跨目标或错环境拒绝复用，不以baseline覆盖API状态。timestamp解析为UTC时间比较，不做未经规范化的字典序比较。
 
 显式recovery演练要求已有fresh/resolved Binding及启用的source/poller，保存原开关和baseline后关闭source。等待真实540秒窗口，自然查询stale/unknown且last_success不变、Binding ID和Account字符串完全相同；恢复source，等待正常180秒槽成功，断言同一Binding resolved/fresh且观测严格推进。使用有界等待与进度输出，不伪造时间或手动写run/snapshot。显式data-plane模式才发送一个有界模型请求，只断言HTTP与响应结构，不持久化模型内容。
@@ -71,6 +73,10 @@ recovery演练在EXIT/INT/TERM恢复原source/poller配置，正常完成也恢�
 phase仅为 `prepared`、`applying`、`verified`：prepared在备份齐全且变更前原子落盘；applying在首次配置或服务变更前持久化；verified仅在最终健康/不变量检查后持久化。多文件更新逐文件原子rename，不能假设多文件事务；每个当前文件可匹配记录的旧或新摘要，任一两者都不匹配即 `recovery_conflict`，不覆盖。recover在prepared/applying均恢复原配置、原digest及对应代理，并核验健康与schema；verified只核对记录的最终状态，符合则完成清理，不再回滚成功更新。故障演练的最终状态为原开关已恢复，不是source关闭状态。
 
 恢复不依赖phase推断容器是否已启动：实际inspect及文件摘要决定需要重建的步骤；镜像不属于记录的旧/新digest视为外部冲突。恢复前证明原owner不再存活，PID复用、跨宿主或不能可靠识别则停止，不自动抢锁。成功验证后原子完成记录移出pending并释放锁；崩溃发生在verified和清理之间时重复recover仍幂等。回滚过程中再次中断保留applying，允许重复显式recover；恢复失败保留记录并返回非零，不伪报成功。
+
+`prepared/applying` 恢复允许固定目标应用或代理处于“Compose 查询成功但没有容器”的中间状态；先核对配置、备份、schema 与未选服务，使用记录的旧应用和代理 digest 重建，再严格核验健康与完整不变量。Docker 查询失败不等于容器缺失；现存容器使用非记录镜像或配置仍必须拒绝。`verified` 阶段缺失容器不满足最终状态，不得用回滚掩盖。
+
+代理配置摘要覆盖容器 Config、稳定的 HostConfig、挂载和网络配置，包括端口绑定、挂载源/目标及模式、重启策略和网络连接；仅排除重建必然变化的容器 ID、动态 IP、endpoint 等运行标识。缺失新版摘要的旧恢复记录不得被视为通过完整配置核验。
 
 演练所需多次source操作由一个持锁的 `devctl directory drill --acceptance-config <protected-file>` 演练协调过程完成，HTTP harness只执行read/baseline/断言子阶段；不让跨命令的pending标记阻止演练自己的合法恢复。该协调过程只组合固定source开关和已有HTTP验收，不泛化为任意任务执行器。INT/TERM退出先有界恢复，SIGKILL后由显式recover恢复；长等待期间输出固定阶段与耗时。
 
