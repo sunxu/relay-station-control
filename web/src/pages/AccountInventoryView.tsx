@@ -59,7 +59,9 @@ export function AccountInventoryView({
 }) {
   const nodes = useNodeAssets(assetApi, nodeFilters);
   const query = useAccountInventoryQuery(api, csrfToken);
-  const [instanceId, setInstanceId] = useState<string>();
+  const [instanceId, setInstanceId] = useState<string | undefined>(() =>
+    new URLSearchParams(window.location.search).get("instance_id") || undefined,
+  );
   const [provider, setProvider] = useState("");
   const [lifecycle, setLifecycle] = useState<AccountInventoryLifecycle>();
   const [basicStatus, setBasicStatus] = useState<AccountInventoryBasicStatus>();

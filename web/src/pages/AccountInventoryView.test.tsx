@@ -67,6 +67,18 @@ describe("account inventory read-only view", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
   });
 
+  it("preselects the linked Node without querying accounts until explicitly requested", async () => {
+    window.history.replaceState(null, "", `/account-inventory?instance_id=${instanceId}`);
+    const api: AccountInventoryApi = { query: vi.fn().mockResolvedValue({ items: [account], nextCursor: null }) };
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+
+    expect(await screen.findByText(`Inventory Node · ${instanceId}`)).toBeInTheDocument();
+    expect(api.query).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
+    await waitFor(() => expect(api.query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, cursor: undefined })));
+    expect(await screen.findByText("operator@example.invalid")).toBeInTheDocument();
+  });
+
   it("queries exact normalized filters, displays current semantics and persists no sensitive state", async () => {
     const api: AccountInventoryApi = { query: vi.fn().mockResolvedValue({ items: [account], nextCursor: "encrypted-page-two" }) };
     render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
