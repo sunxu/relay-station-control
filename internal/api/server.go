@@ -212,7 +212,7 @@ func (s *Server) auditSecurityRejection(r *http.Request, session *authn.Session,
 
 func (s *Server) sameOrigin(r *http.Request) bool {
 	expectedScheme := "https"
-	if s.service.Config().Environment == authn.EnvironmentDev && !s.service.Config().CookieSecure {
+	if !s.service.Config().CookieSecure() {
 		expectedScheme = "http"
 	}
 	check := func(value string) bool {
@@ -248,32 +248,32 @@ func (s *Server) requestID(r *http.Request) string {
 }
 
 func (s *Server) sessionCookieName() string {
-	if s.service != nil && s.service.Config().Environment == authn.EnvironmentDev && !s.service.Config().CookieSecure {
+	if s.service != nil && !s.service.Config().CookieSecure() {
 		return authn.DevSessionCookieName
 	}
 	return authn.SessionCookieName
 }
 func (s *Server) challengeCookieName() string {
-	if s.service != nil && s.service.Config().Environment == authn.EnvironmentDev && !s.service.Config().CookieSecure {
+	if s.service != nil && !s.service.Config().CookieSecure() {
 		return authn.DevChallengeCookieName
 	}
 	return authn.ChallengeCookieName
 }
 func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
-	http.SetCookie(w, sessionCookie(s.sessionCookieName(), value, s.service.Config().CookieSecure))
+	http.SetCookie(w, sessionCookie(s.sessionCookieName(), value, s.service.Config().CookieSecure()))
 }
 
 func sessionCookie(name, value string, secure bool) *http.Cookie {
 	return &http.Cookie{Name: name, Value: value, Path: "/", Secure: secure, HttpOnly: true, SameSite: http.SameSiteStrictMode}
 }
 func (s *Server) setChallengeCookie(w http.ResponseWriter, value string) {
-	http.SetCookie(w, &http.Cookie{Name: s.challengeCookieName(), Value: value, Path: "/api/auth", MaxAge: int((5 * time.Minute).Seconds()), Secure: s.service.Config().CookieSecure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: s.challengeCookieName(), Value: value, Path: "/api/auth", MaxAge: int((5 * time.Minute).Seconds()), Secure: s.service.Config().CookieSecure(), HttpOnly: true, SameSite: http.SameSiteStrictMode})
 }
 func (s *Server) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: s.sessionCookieName(), Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), Secure: s.service != nil && s.service.Config().CookieSecure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: s.sessionCookieName(), Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), Secure: s.service != nil && s.service.Config().CookieSecure(), HttpOnly: true, SameSite: http.SameSiteStrictMode})
 }
 func (s *Server) clearChallengeCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: s.challengeCookieName(), Value: "", Path: "/api/auth", MaxAge: -1, Expires: time.Unix(1, 0), Secure: s.service != nil && s.service.Config().CookieSecure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: s.challengeCookieName(), Value: "", Path: "/api/auth", MaxAge: -1, Expires: time.Unix(1, 0), Secure: s.service != nil && s.service.Config().CookieSecure(), HttpOnly: true, SameSite: http.SameSiteStrictMode})
 }
 
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {

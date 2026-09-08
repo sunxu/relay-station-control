@@ -110,7 +110,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 	}
 
 	// 4. Admins & Sessions: super_admin (enabled) vs disabled admin vs unauthenticated
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(runtime, config)
 	if err != nil {
 		t.Fatal(err)

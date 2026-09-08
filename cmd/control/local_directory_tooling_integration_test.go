@@ -96,7 +96,7 @@ func TestLocalDirectoryToolingNaturalRecovery(t *testing.T) {
 	}
 	address := "http://127.0.0.1:" + port
 	process := exec.Command(os.Args[0], "-test.run=^TestGatewayDirectoryMainDeploymentHelper$")
-	process.Env = []string{"PATH=" + os.Getenv("PATH"), "CONTROL_MAIN_DEPLOYMENT_HELPER=1", "DATABASE_URL=" + runtimePool.Config().ConnString(), "CONTROL_ENVIRONMENT_ID=" + environment, "CONTROL_ENVIRONMENT=dev", "CONTROL_AUTH_KEYRING_FILE=" + keyPath, "CONTROL_BOOTSTRAP_SECRET_FILE=" + bootstrap, "CONTROL_HTTP_ADDR=127.0.0.1:" + port, "CONTROL_COOKIE_SECURE=false", "CONTROL_MFA_REQUIRED=false", "CONTROL_GATEWAY_DIRECTORY_ENABLED=true", "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE=" + mappingPath}
+	process.Env = []string{"PATH=" + os.Getenv("PATH"), "CONTROL_MAIN_DEPLOYMENT_HELPER=1", "DATABASE_URL=" + runtimePool.Config().ConnString(), "CONTROL_ENVIRONMENT_ID=" + environment, "CONTROL_ENVIRONMENT=dev", "CONTROL_AUTH_KEYRING_FILE=" + keyPath, "CONTROL_BOOTSTRAP_SECRET_FILE=" + bootstrap, "CONTROL_HTTP_ADDR=127.0.0.1:" + port, "CONTROL_MFA_REQUIRED=false", "CONTROL_GATEWAY_DIRECTORY_ENABLED=true", "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE=" + mappingPath}
 	logs := &deploymentTestBuffer{}
 	process.Stdout = logs
 	process.Stderr = logs

@@ -47,7 +47,7 @@ func TestAccountQualityHTTPReadContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Close()
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(runtime, config)
 	if err != nil {
 		t.Fatal(err)

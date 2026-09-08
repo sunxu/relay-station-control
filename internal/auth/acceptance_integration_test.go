@@ -660,7 +660,7 @@ func TestDevWithoutRequiredMFASignsSessionWhileProductionRequiresChallenge(t *te
 	}
 
 	productionService, err := NewService(pool, &ValidatedConfig{
-		Config:  Config{Environment: EnvironmentProduction, CookieSecure: true, MFARequired: true},
+		Config:  Config{Environment: EnvironmentProduction, MFARequired: true},
 		Keyring: testKeyring(t, EnvironmentProduction, 1, 1),
 	})
 	if err != nil {

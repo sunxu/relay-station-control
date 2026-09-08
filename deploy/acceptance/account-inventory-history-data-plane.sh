@@ -235,7 +235,6 @@ main() {
   CONTROL_HTTP_ADDR="127.0.0.1:${control_port}" \
   CONTROL_ENVIRONMENT_ID='history-data-plane' \
   CONTROL_ENVIRONMENT='dev' \
-  CONTROL_COOKIE_SECURE='false' \
   CONTROL_MFA_REQUIRED='false' \
   CONTROL_BOOTSTRAP_SECRET_FILE="$runtime_directory/bootstrap-secret" \
   CONTROL_AUTH_KEYRING_FILE="$runtime_directory/auth-keyring.json" \

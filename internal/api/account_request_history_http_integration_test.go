@@ -43,7 +43,7 @@ func TestAccountRequestHistoryHTTPReadContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Close()
-	cfg := testValidatedConfig(t, authn.EnvironmentDev, false)
+	cfg := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(runtime, cfg)
 	if err != nil {
 		t.Fatal(err)

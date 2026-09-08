@@ -307,7 +307,6 @@ start_current_disabled_control() {
   CONTROL_HTTP_ADDR="127.0.0.1:${control_port}" \
   CONTROL_ENVIRONMENT_ID='history-forward' \
   CONTROL_ENVIRONMENT='dev' \
-  CONTROL_COOKIE_SECURE='true' \
   CONTROL_MFA_REQUIRED='false' \
   CONTROL_BOOTSTRAP_SECRET_FILE="$runtime_directory/control/bootstrap-secret" \
   CONTROL_AUTH_KEYRING_FILE="$runtime_directory/control/auth-keyring.json" \

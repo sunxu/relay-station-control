@@ -94,7 +94,7 @@ func TestAssetRegistryHTTPRuntimeReadsPaginationSecurityAndRecovery(t *testing.T
 		t.Fatal(err)
 	}
 
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(runtime, config)
 	if err != nil {
 		t.Fatal(err)
@@ -343,7 +343,7 @@ func TestAssetRegistryRejectsForgedExpiredAndRevokedSessions(t *testing.T) {
 	if _, err := owner.Exec(ctx, `INSERT INTO environments(environment_id,name,environment_type) VALUES('asset-auth-test','Asset Auth Test','dev')`); err != nil {
 		t.Fatal(err)
 	}
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(runtime, config)
 	if err != nil {
 		t.Fatal(err)

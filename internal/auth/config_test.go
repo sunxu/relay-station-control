@@ -26,16 +26,14 @@ func TestConfigFailClosed(t *testing.T) {
 		config  Config
 		wantErr bool
 	}{
-		{name: "production valid", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", AuthKeyringFile: productionKeyring, CookieSecure: true, MFARequired: true}},
-		{name: "production missing keyring", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", CookieSecure: true, MFARequired: true}, wantErr: true},
-		{name: "production insecure cookie", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", AuthKeyringFile: productionKeyring, MFARequired: true}, wantErr: true},
-		{name: "production MFA disabled", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", AuthKeyringFile: productionKeyring, CookieSecure: true}, wantErr: true},
-		{name: "staging explicit MFA disabled", config: Config{Environment: EnvironmentStaging, BindAddress: ":8080", AuthKeyringFile: stagingKeyring, CookieSecure: true}},
-		{name: "staging missing keyring", config: Config{Environment: EnvironmentStaging, BindAddress: ":8080", CookieSecure: true}, wantErr: true},
-		{name: "staging insecure cookie", config: Config{Environment: EnvironmentStaging, BindAddress: ":8080", AuthKeyringFile: stagingKeyring}, wantErr: true},
+		{name: "production valid", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", AuthKeyringFile: productionKeyring, MFARequired: true}},
+		{name: "production missing keyring", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", MFARequired: true}, wantErr: true},
+		{name: "production MFA disabled", config: Config{Environment: EnvironmentProduction, BindAddress: ":8080", AuthKeyringFile: productionKeyring}, wantErr: true},
+		{name: "staging explicit MFA disabled", config: Config{Environment: EnvironmentStaging, BindAddress: ":8080", AuthKeyringFile: stagingKeyring}},
+		{name: "staging missing keyring", config: Config{Environment: EnvironmentStaging, BindAddress: ":8080"}, wantErr: true},
 		{name: "dev loopback insecure", config: Config{Environment: EnvironmentDev, BindAddress: "127.0.0.1:8080"}},
-		{name: "dev wildcard insecure", config: Config{Environment: EnvironmentDev, BindAddress: "0.0.0.0:8080"}, wantErr: true},
-		{name: "unknown environment", config: Config{Environment: "preview", BindAddress: ":8080", CookieSecure: true}, wantErr: true},
+		{name: "dev wildcard insecure", config: Config{Environment: EnvironmentDev, BindAddress: "0.0.0.0:8080"}},
+		{name: "unknown environment", config: Config{Environment: "preview", BindAddress: ":8080"}, wantErr: true},
 		{name: "invalid trusted proxy", config: Config{Environment: EnvironmentDev, BindAddress: "127.0.0.1:8080", TrustedProxyCIDRs: []string{"not-a-cidr"}}, wantErr: true},
 	}
 	for _, test := range tests {
@@ -62,5 +60,29 @@ func TestBootstrapSecretFileValidation(t *testing.T) {
 	}
 	if _, err := config.Validate(); err == nil {
 		t.Fatal("broad bootstrap secret permissions accepted")
+	}
+}
+
+func TestCookieTransportIsDerivedOnlyFromEnvironment(t *testing.T) {
+	for _, retired := range []string{"true", "false", "not-a-bool"} {
+		t.Run(retired, func(t *testing.T) {
+			t.Setenv("CONTROL_COOKIE_SECURE", retired)
+			for _, environment := range []Environment{EnvironmentDev, EnvironmentStaging, EnvironmentProduction} {
+				for _, address := range []string{"127.0.0.1:8080", "0.0.0.0:8080", "[::]:8080"} {
+					config := Config{Environment: environment, BindAddress: address, MFARequired: true}
+					if environment != EnvironmentDev {
+						config.AuthKeyringFile = writeKeyring(t, environment)
+					}
+					validated, err := config.Validate()
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := environment != EnvironmentDev
+					if validated.CookieSecure() != want || config.CookieSecure() != want {
+						t.Fatalf("environment %s policy was overridden", environment)
+					}
+				}
+			}
+		})
 	}
 }

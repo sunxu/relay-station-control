@@ -8,6 +8,19 @@ Single-environment management and observability service for Relay Station.
 - Node.js 24 LTS
 - Docker with Compose
 
+## Browser transport policy
+
+Control derives browser transport from `CONTROL_ENVIRONMENT`: `dev` uses HTTP
+and non-Secure development cookies; `staging` and `production` require HTTPS
+origins and Secure cookies. `CONTROL_COOKIE_SECURE` is retired and ignored.
+Session authentication, HttpOnly, SameSite and CSRF checks remain enabled.
+Local Docker development publishes Control only on `127.0.0.1:18080`; a dev
+listener may bind inside its container without requiring a TLS proxy. Production
+MFA and keyring requirements are unchanged. See the sibling ops `dev/OPERATIONS.md`
+for the first-time topology transition; existing deployments are not changed by
+building this repository. The pinned historical rollback fixture still supplies
+the old cookie variable to its old binary only.
+
 ## Local validation
 
 ```bash

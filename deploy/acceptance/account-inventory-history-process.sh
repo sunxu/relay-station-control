@@ -311,7 +311,6 @@ start_default_disabled_control() {
   CONTROL_HTTP_ADDR="127.0.0.1:${control_port}" \
   CONTROL_ENVIRONMENT_ID='history-process' \
   CONTROL_ENVIRONMENT='dev' \
-  CONTROL_COOKIE_SECURE='false' \
   CONTROL_MFA_REQUIRED='false' \
   CONTROL_BOOTSTRAP_SECRET_FILE="$bootstrap_file" \
   CONTROL_AUTH_KEYRING_FILE="$keyring_file" \
@@ -599,7 +598,6 @@ start_enabled_control() {
   CONTROL_HTTP_ADDR="127.0.0.1:${control_port}" \
   CONTROL_ENVIRONMENT_ID='history-process' \
   CONTROL_ENVIRONMENT='dev' \
-  CONTROL_COOKIE_SECURE='false' \
   CONTROL_MFA_REQUIRED='false' \
   CONTROL_BOOTSTRAP_SECRET_FILE="$bootstrap_file" \
   CONTROL_AUTH_KEYRING_FILE="$keyring_file" \

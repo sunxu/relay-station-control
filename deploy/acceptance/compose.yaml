@@ -76,7 +76,6 @@ services:
       CONTROL_HTTP_ADDR: 0.0.0.0:8080
       CONTROL_ENVIRONMENT_ID: development
       CONTROL_ENVIRONMENT: production
-      CONTROL_COOKIE_SECURE: "true"
       CONTROL_MFA_REQUIRED: "true"
       CONTROL_BOOTSTRAP_SECRET_FILE: /run/control-secrets/bootstrap-secret
       CONTROL_AUTH_KEYRING_FILE: /run/control-secrets/auth-keyring.json

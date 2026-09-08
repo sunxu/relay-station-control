@@ -203,3 +203,24 @@ func TestControlEnvironmentGateHelperProcess(t *testing.T) {
 	}
 	main()
 }
+
+func TestRetiredCookieVariableDoesNotAffectStartup(t *testing.T) {
+	for _, value := range []string{"true", "false", "invalid-retired-value"} {
+		t.Run(value, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=TestControlEnvironmentGateHelperProcess")
+			command.Env = []string{
+				"PATH=" + os.Getenv("PATH"),
+				"GO_WANT_CONTROL_ENVIRONMENT_GATE_HELPER=1",
+				"CONTROL_ENVIRONMENT_ID=local-http-test", "CONTROL_ENVIRONMENT=dev",
+				"CONTROL_HTTP_ADDR=0.0.0.0:8080", "CONTROL_COOKIE_SECURE=" + value,
+			}
+			output, err := command.CombinedOutput()
+			if err == nil || !strings.Contains(string(output), "database configuration is required") {
+				t.Fatalf("retired variable prevented config validation: %s", output)
+			}
+			if strings.Contains(string(output), value) {
+				t.Fatal("retired variable echoed into startup log")
+			}
+		})
+	}
+}

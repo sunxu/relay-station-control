@@ -132,11 +132,6 @@ func main() {
 		logger.Error("invalid control configuration", "component", "environment", "reason", controlenv.ReasonOf(err))
 		os.Exit(1)
 	}
-	cookieSecure, err := envBool("CONTROL_COOKIE_SECURE", false)
-	if err != nil {
-		logger.Error("invalid control configuration", "component", "auth")
-		os.Exit(1)
-	}
 	mfaRequired, err := envBool("CONTROL_MFA_REQUIRED", false)
 	if err != nil {
 		logger.Error("invalid control configuration", "component", "auth")
@@ -168,7 +163,6 @@ func main() {
 		BootstrapSecretFile: os.Getenv("CONTROL_BOOTSTRAP_SECRET_FILE"),
 		AuthKeyringFile:     os.Getenv("CONTROL_AUTH_KEYRING_FILE"),
 		TrustedProxyCIDRs:   splitCSV(os.Getenv("CONTROL_TRUSTED_PROXY_CIDRS")),
-		CookieSecure:        cookieSecure,
 		MFARequired:         mfaRequired,
 	}).Validate()
 	if err != nil {

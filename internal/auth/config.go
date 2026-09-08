@@ -3,7 +3,6 @@ package auth
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -17,7 +16,6 @@ type Config struct {
 	BootstrapSecretFile string
 	AuthKeyringFile     string
 	TrustedProxyCIDRs   []string
-	CookieSecure        bool
 	MFARequired         bool
 }
 
@@ -36,14 +34,9 @@ func (c Config) Validate() (*ValidatedConfig, error) {
 	}
 
 	if c.Environment != EnvironmentDev {
-		if !c.CookieSecure {
-			return nil, errors.New("auth: secure cookies are required outside dev")
-		}
 		if c.AuthKeyringFile == "" {
 			return nil, errors.New("auth: keyring file is required outside dev")
 		}
-	} else if !c.CookieSecure && !isLoopbackBind(c.BindAddress) {
-		return nil, errors.New("auth: insecure dev cookies require a loopback bind address")
 	}
 	if c.Environment == EnvironmentProduction && !c.MFARequired {
 		return nil, errors.New("auth: MFA is required in production")
@@ -82,16 +75,10 @@ func parsePrefixes(values []string) ([]netip.Prefix, error) {
 	return prefixes, nil
 }
 
-func isLoopbackBind(address string) bool {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip, err := netip.ParseAddr(host)
-	return err == nil && ip.IsLoopback()
+// CookieSecure derives the browser transport policy from the environment.
+// There is no independent override that can weaken a non-dev environment.
+func (c Config) CookieSecure() bool {
+	return c.Environment != EnvironmentDev
 }
 
 func validateSecretFile(path string, minBytes int) error {

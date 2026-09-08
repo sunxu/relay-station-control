@@ -97,7 +97,7 @@ func TestLogoutDatabaseFailureReturns503WithoutClearingSessionCookie(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := authn.NewService(pool, testValidatedConfig(t, authn.EnvironmentDev, false))
+	service, err := authn.NewService(pool, testValidatedConfig(t, authn.EnvironmentDev))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestSameOriginPolicyRejectsCrossSiteAndMissingProductionProof(t *testing.T)
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	service, err := authn.NewService(pool, testValidatedConfig(t, authn.EnvironmentStaging, true))
+	service, err := authn.NewService(pool, testValidatedConfig(t, authn.EnvironmentStaging))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestAuthenticationCanaryDoesNotLeakAcrossHTTPAuditOrMetrics(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(pool, config)
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestRuntimeRoleDisableAdministratorHTTPAndLastAdminGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Close()
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	service, err := authn.NewService(runtime, config)
 	if err != nil {
 		t.Fatal(err)
@@ -368,7 +368,7 @@ func TestDisableAdministratorRejectsMissingOrShortReasonWithoutDatabaseWrites(t 
 	}
 	defer runtime.Close()
 
-	config := testValidatedConfig(t, authn.EnvironmentDev, false)
+	config := testValidatedConfig(t, authn.EnvironmentDev)
 	actorID, targetID := uuid.New(), uuid.New()
 	for id, login := range map[uuid.UUID]string{
 		actorID:  "reason_actor_" + actorID.String()[:8],
@@ -499,7 +499,7 @@ func authenticatedTestServer(t *testing.T) (*Server, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := authn.NewService(pool, testValidatedConfig(t, authn.EnvironmentDev, false))
+	service, err := authn.NewService(pool, testValidatedConfig(t, authn.EnvironmentDev))
 	if err != nil {
 		pool.Close()
 		t.Fatal(err)
@@ -507,7 +507,7 @@ func authenticatedTestServer(t *testing.T) (*Server, func()) {
 	return NewAuthenticatedServer("test", service), pool.Close
 }
 
-func testValidatedConfig(t *testing.T, environment authn.Environment, secure bool) *authn.ValidatedConfig {
+func testValidatedConfig(t *testing.T, environment authn.Environment) *authn.ValidatedConfig {
 	t.Helper()
 	key := make([]byte, 32)
 	for index := range key {
@@ -518,5 +518,58 @@ func testValidatedConfig(t *testing.T, environment authn.Environment, secure boo
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &authn.ValidatedConfig{Config: authn.Config{Environment: environment, BindAddress: "127.0.0.1:8080", CookieSecure: secure}, Keyring: keyring}
+	return &authn.ValidatedConfig{Config: authn.Config{Environment: environment, BindAddress: "127.0.0.1:8080"}, Keyring: keyring}
+}
+
+func TestEnvironmentCookieAndOriginPolicy(t *testing.T) {
+	databaseURL := os.Getenv("CONTROL_DATABASE_TEST_URL")
+	if databaseURL == "" {
+		t.Skip("set CONTROL_DATABASE_TEST_URL")
+	}
+	pool, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	for _, environment := range []authn.Environment{authn.EnvironmentDev, authn.EnvironmentStaging, authn.EnvironmentProduction} {
+		t.Run(string(environment), func(t *testing.T) {
+			service, err := authn.NewService(pool, testValidatedConfig(t, environment))
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := NewAuthenticatedServer("test", service)
+			secure := environment != authn.EnvironmentDev
+			response := httptest.NewRecorder()
+			server.setSessionCookie(response, "opaque-session-test")
+			server.setChallengeCookie(response, "opaque-challenge-test")
+			cookies := response.Result().Cookies()
+			if len(cookies) != 2 {
+				t.Fatal("missing cookies")
+			}
+			for _, cookie := range cookies {
+				if cookie.Secure != secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Domain != "" {
+					t.Fatal("cookie policy mismatch")
+				}
+			}
+			wantName := authn.DevSessionCookieName
+			if secure {
+				wantName = authn.SessionCookieName
+			}
+			if cookies[0].Name != wantName {
+				t.Fatal("session namespace mismatch")
+			}
+			for _, scheme := range []string{"http", "https"} {
+				request := httptest.NewRequest(http.MethodPost, "http://control.example/api/auth/logout", nil)
+				request.Header.Set("Origin", scheme+"://control.example")
+				request.Header.Set("X-Forwarded-Proto", scheme)
+				if server.sameOrigin(request) != ((scheme == "https") == secure) {
+					t.Fatal("origin policy mismatch")
+				}
+				request.Header.Set("Origin", scheme+"://other.example")
+				if server.sameOrigin(request) {
+					t.Fatal("cross-origin accepted")
+				}
+			}
+		})
+	}
 }

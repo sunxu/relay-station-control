@@ -176,37 +176,33 @@ run_negative_configuration_tests() {
 
   expect_start_failure "missing keyring" \
     -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
-    -e CONTROL_COOKIE_SECURE=true -e CONTROL_MFA_REQUIRED=true \
+    -e CONTROL_MFA_REQUIRED=true \
     -e CONTROL_AUTH_KEYRING_FILE=/run/secrets/missing \
     -e CONTROL_BOOTSTRAP_SECRET_FILE=/run/secrets/bootstrap-secret \
     -v "$secret_volume:/run/secrets:ro"
   expect_start_failure "missing bootstrap secret" \
     -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
-    -e CONTROL_COOKIE_SECURE=true -e CONTROL_MFA_REQUIRED=true \
+    -e CONTROL_MFA_REQUIRED=true \
     -e CONTROL_AUTH_KEYRING_FILE=/run/secrets/auth-keyring.json \
     -e CONTROL_BOOTSTRAP_SECRET_FILE=/run/secrets/missing \
     -v "$secret_volume:/run/secrets:ro"
   expect_start_failure "over-wide keyring permissions" \
     -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
-    -e CONTROL_COOKIE_SECURE=true -e CONTROL_MFA_REQUIRED=true \
+    -e CONTROL_MFA_REQUIRED=true \
     -e CONTROL_AUTH_KEYRING_FILE=/run/input/bad-permissions/auth-keyring.json \
     -v "$root:/run/input:ro"
   expect_start_failure "over-wide bootstrap permissions" \
     -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
-    -e CONTROL_COOKIE_SECURE=true -e CONTROL_MFA_REQUIRED=true \
+    -e CONTROL_MFA_REQUIRED=true \
     -e CONTROL_AUTH_KEYRING_FILE=/run/secrets/auth-keyring.json \
     -e CONTROL_BOOTSTRAP_SECRET_FILE=/run/input/bad-permissions/bootstrap-secret \
     -v "$secret_volume:/run/secrets:ro" \
     -v "$root:/run/input:ro"
-  expect_start_failure "insecure production cookies" \
-    -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
-    -e CONTROL_COOKIE_SECURE=false -e CONTROL_MFA_REQUIRED=true
-
   expect_start_failure "environment ID mismatch" \
     --network "${CONTROL_E2E_PROJECT}_default" \
     -e CONTROL_ENVIRONMENT_ID=wrong-environment \
     -e CONTROL_ENVIRONMENT=production -e CONTROL_HTTP_ADDR=0.0.0.0:8080 \
-    -e CONTROL_COOKIE_SECURE=true -e CONTROL_MFA_REQUIRED=true \
+    -e CONTROL_MFA_REQUIRED=true \
     -e CONTROL_AUTH_KEYRING_FILE=/run/secrets/auth-keyring.json \
     -e CONTROL_BOOTSTRAP_SECRET_FILE=/run/secrets/bootstrap-secret \
     -e "DATABASE_URL=postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable" \
