@@ -19,4 +19,4 @@
 ## 4. Evidence and handoff
 
 - [x] 4.1 更新 planning-validation.md，记录实现文件、测试命令和结果
-- [x] 4.2 完成 scope/self-review、检查 git diff/status，并等待 Architecture + Implementation Final Review
+- [x] 4.2 完成 scope/self-review、检查 git diff/status，并完成 Architecture + Implementation Final Review

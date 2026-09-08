@@ -16,7 +16,7 @@
 
 ### Release and rollback
 
-本 change 无 migration、无外部数据变更、无 deploy 或 archive；实现完成后等待 Final Review。失败时回滚 Web bundle/commit，保留现有 API 与数据库数据。
+本 change 无 migration、无外部数据变更。实现已按用户授权提交并部署本地；随后完成独立 Final Review。失败时回滚 Web bundle/commit，保留现有 API 与数据库数据。
 
 ## Implementation evidence — 2026-09-09
 
@@ -46,4 +46,12 @@ formatter 测试用本地构造的 `2026-09-08 18:40:40.987` 对应 instant 断�
 
 ### Final scope review
 
-独立只读复核未发现 blocker。扫描确认产品展示代码无 `utc()`、`toLocale*()`、固定 `timeZone` 或 UTC 后缀残留；唯一 `toISOString()` 是任务查询的既有请求转换。API、generated files、Go、数据库、collector、CLIProxy、时间窗口与数据面均无 diff；没有持久化变更或新的配置。最终工作树仅包含本 change 的 Web、测试、OpenSpec 和 runbook 修改。此处记录实现自查，不代替用户 Final Review。
+独立只读复核未发现 blocker。扫描确认产品展示代码无 `utc()`、`toLocale*()`、固定 `timeZone` 或 UTC 后缀残留；唯一 `toISOString()` 是任务查询的既有请求转换。API、generated files、Go、数据库、collector、CLIProxy、时间窗口与数据面均无 diff；没有持久化变更或新的配置。实现阶段工作树仅包含本 change 的 Web、测试、OpenSpec 和 runbook 修改。此段为当时的实现自查；后续独立 Final Review 见下。
+
+## Final Review and release reconciliation — 2026-09-09
+
+- 独立 Agent Architecture Final Review：PASS；Implementation Final Review：PASS；code blockers：none。主 Agent 复核通过。此次为用户授权继续执行流程后的独立评审，不冒称用户另行给出人工 APPROVED。
+- 顺序如实记录：实现 `7be7b7652f01e15fa4c24b6415a025279fbf55d2` 先按用户授权提交并部署本地，随后完成本次 Final Review，属于 review-after-local-deployment。没有把部署前的实现自查追认为 Final Review。
+- 标准部署 `devctl backup control` / `devctl update control relay-station/control:7be7b76` 均 PASS；备份 `20260908T185752Z-control-88d0cdb9`。镜像 digest `sha256:3e9a0459348ec8810f1d52e3b3e36ed00700a25406575d38afc3f1f138a179f3`，容器 revision 精确对应实现提交，复核状态 healthy。未重新部署其它服务。
+- 本轮重新执行三个 TZ formatter 专项均为 3/3 PASS，change strict 与 all strict（18/18）PASS，git diff check PASS。复用实现提交的完整 `make test build` 证据；后续 HEAD 仅增加独立 acceptance 测试修改，不涉及本 change 产品实现。
+- 11/11 tasks 完成。用户授权的后续步骤为标准 CLI archive、canonical 同步、文档提交及 push main；无新增功能，无需再次部署本次归档文档。

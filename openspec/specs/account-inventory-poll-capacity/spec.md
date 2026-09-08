@@ -24,7 +24,8 @@ Control SHALL 取满足 `(ceil(N/C)-1)*(T+F+L)+N*Q+M<G` 的最大整数 N，且 
 - **THEN** 3时本轮不新增 poll，既有证据保留；回到2后正常调度恢复，无需重启
 
 ### Requirement: 管理员 SHALL 读取明确容量诊断
-认证管理员 SHALL 在账号清单页面看到全环境当前槽的 enabled、eligible Node 数、推导容量、并发、时间预算、UTC评估槽与评估时间，以及 `ready|capacity_exceeded|disabled` 状态。诊断 MUST 使用与调度相同的 eligibility 和容量公式，明确这是当前条件评估而不是最近一次成功调度。数据库或配置读取失败 MUST 返回 unavailable，不能返回零或ready。超限提示 SHALL 明确说明整轮新调度暂停，提供调整并发或通过既有管理流程减少监控 Node 的建议；不得自动修改配置或监控。
+
+认证管理员 SHALL 在账号清单页面看到全环境当前槽的 enabled、eligible Node 数、推导容量、并发、时间预算、按浏览器系统时区展示的评估槽与评估时间，以及 `ready|capacity_exceeded|disabled` 状态。诊断 MUST 使用与调度相同的 eligibility 和容量公式，明确这是当前条件评估而不是最近一次成功调度。数据库或配置读取失败 MUST 返回 unavailable，不能返回零或ready。超限提示 SHALL 明确说明整轮新调度暂停，提供调整并发或通过既有管理流程减少监控 Node 的建议；不得自动修改配置或监控。评估槽的 instant、接口传输和数据库时间仍遵循既有 UTC 契约，只有用户可见格式化使用系统时区与 `YYYY-MM-DD HH:mm:ss`。
 
 #### Scenario: 超限可见
 - **WHEN** eligible=3、capacity=2
