@@ -268,8 +268,11 @@ type isolatedJobDatabase struct {
 	runtime    *pgxpool.Pool
 }
 
-func newIsolatedJobDatabase(t *testing.T) *isolatedJobDatabase {
+func newIsolatedJobDatabase(t *testing.T, migrationArguments ...string) *isolatedJobDatabase {
 	t.Helper()
+	if len(migrationArguments) == 0 {
+		migrationArguments = []string{"up"}
+	}
 	ownerConfig, err := pgx.ParseConfig(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +312,7 @@ func newIsolatedJobDatabase(t *testing.T) *isolatedJobDatabase {
 	runtimeLocation.Path = "/" + databaseName
 	result := &isolatedJobDatabase{ownerURL: ownerLocation.String(), runtimeURL: runtimeLocation.String()}
 	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
-	err = runAssetGoose(t, migrationCtx, "../..", result.ownerURL, "up")
+	err = runAssetGoose(t, migrationCtx, "../..", result.ownerURL, migrationArguments...)
 	cancelMigration()
 	if err != nil {
 		t.Fatal(err)

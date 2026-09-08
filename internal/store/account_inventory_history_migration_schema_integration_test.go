@@ -34,7 +34,7 @@ var historyTables = []string{
 
 func TestAccountInventoryHistoryMigrationEmptyDownUpAndChecksumGolden(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "9")
 	requireHistoryMigrationVersion(t, ctx, database, 9)
 
 	var emptyDigest, singleDigest, multipleDigest string
@@ -154,7 +154,7 @@ func TestAccountInventoryHistoryMigrationEmptyDownUpAndChecksumGolden(t *testing
 
 func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "9")
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
 		t.Fatal("prepare Migration 8 database")
 	}
@@ -405,7 +405,7 @@ func TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentity
 
 func TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "9")
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
 		t.Fatal(err)
 	}

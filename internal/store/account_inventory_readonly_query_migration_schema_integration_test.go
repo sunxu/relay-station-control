@@ -26,7 +26,7 @@ type readonlyQueryMigrationState struct {
 
 func TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "9")
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
 		t.Fatal("prepare isolated Migration 8 database")
 	}

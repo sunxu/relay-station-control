@@ -299,9 +299,6 @@ func TestReadonlyQueryBundlePinsPostgresAndOwnsTemporaryCleanup(t *testing.T) {
 		if !strings.Contains(script, "SELECT max(version_id) FROM goose_db_version WHERE is_applied") {
 			t.Errorf("%s does not verify the applied Migration version", name)
 		}
-		if !strings.Contains(script, "go tool goose up-to 9") {
-			t.Errorf("%s does not pin its historical Migration target to version 9", name)
-		}
 	}
 	postgresScript := readFile(t, filepath.Join(root, "account-inventory-readonly-query-postgres.sh"))
 	for _, required := range []string{

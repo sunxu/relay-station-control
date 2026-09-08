@@ -14,7 +14,7 @@ import (
 
 func TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "9")
 	repository, err := productstore.NewAccountInventoryRepository(database.runtime)
 	if err != nil {
 		t.Fatal("create readonly query repository")

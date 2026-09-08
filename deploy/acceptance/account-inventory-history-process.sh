@@ -177,13 +177,9 @@ write_secrets() {
 }
 
 migrate_up() {
-  if ! (
-    cd "$repository_root/tools"
-    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      GOOSE_DRIVER=postgres \
-      GOOSE_DBSTRING="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" GOOSE_MIGRATION_DIR=../migrations \
-      go tool goose up-to 9
-  ) >"$runtime_directory/migration.log" 2>&1; then
+  if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    DATABASE_URL="$CONTROL_HISTORY_PROCESS_MIGRATOR_URL" \
+    make --silent migrate-up >"$runtime_directory/migration.log" 2>&1; then
     fixed_failure 'migration_up_failed'
   fi
 }
@@ -194,7 +190,9 @@ assert_migration_and_seed_environment() {
     --tuples-only --no-align --command \
     'SELECT max(version_id) FROM goose_db_version WHERE is_applied' 2>/dev/null)" \
     || fixed_failure 'migration_version_check_failed'
-  [ "$version" = '9' ] || fixed_failure 'migration_version_invalid'
+  case "$version" in
+    ''|*[!0-9]*) fixed_failure 'migration_version_invalid' ;;
+  esac
   if ! compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control \
     --set ON_ERROR_STOP=1 --command \
     "INSERT INTO environments (environment_id, name, environment_type) VALUES ('history-process', 'History process acceptance', 'dev') ON CONFLICT (singleton_id) DO NOTHING" \

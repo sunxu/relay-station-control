@@ -214,7 +214,7 @@ main() {
     cd "$repository_root/tools"
     env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
       GOOSE_DRIVER=postgres GOOSE_DBSTRING="$CONTROL_DATABASE_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
-      go tool goose up-to 9
+      go tool goose up
   ) >"$runtime_directory/migration.log" 2>&1; then
     fixed_failure 'migration_failed'
   fi
