@@ -131,6 +131,7 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodGet, "/api/jobs"}:                                                      "listJobs",
 		{http.MethodGet, "/api/jobs/{job_id}"}:                                             "getJob",
 		{http.MethodPost, "/api/account-inventory/query"}:                                  "queryAccountInventory",
+		{http.MethodGet, "/api/account-inventory/poll-capacity"}:                           "getAccountInventoryPollCapacity",
 		{http.MethodGet, "/api/relay-bindings/nodes/{instance_id}"}:                        "getNodeRelayBinding",
 		{http.MethodGet, "/api/relay-bindings/gateways/{instance_id}"}:                     "getGatewayAccountRelayBindings",
 		{http.MethodGet, "/api/relay-bindings/unresolved"}:                                 "listUnresolvedRelayBindings",

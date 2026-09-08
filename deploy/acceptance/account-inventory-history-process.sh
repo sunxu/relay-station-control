@@ -1135,7 +1135,7 @@ main() {
   fixture_instance_id="$retention_fault_instance_id"
   start_enabled_control '' 10s 11s 20s 2 retention_fault 5s
   wait_for_history_ready
-  seed_eligible_source 16 2
+  seed_eligible_source 32 2
   set_history_execute retention revoke
   verify_terminal_internal_source_preserved retention retention
   set_history_execute retention grant
