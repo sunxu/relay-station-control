@@ -361,6 +361,7 @@ func main() {
 		os.Exit(1)
 	}
 	apiServer.SetAccountQualityReader(accountQuality)
+	apiServer.SetAccountQualityIncidentsReader(accountQuality)
 	apiServer.SetAccountRequestHistoryReader(accountQuality)
 	pollCapacity, err := assetstore.NewInventoryPollCapacityRepository(pool)
 	if err != nil {

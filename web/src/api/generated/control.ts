@@ -1282,6 +1282,52 @@ export interface NodeAccountRequestHistoryResponse {
   next_cursor: string | null;
 }
 
+export type NodeAccountQualityIncidentItemFailureClass = typeof NodeAccountQualityIncidentItemFailureClass[keyof typeof NodeAccountQualityIncidentItemFailureClass];
+
+
+export const NodeAccountQualityIncidentItemFailureClass = {
+  auth: 'auth',
+  quota: 'quota',
+  rate_limit: 'rate_limit',
+  upstream: 'upstream',
+} as const;
+
+export type NodeAccountQualityIncidentItemStatus = typeof NodeAccountQualityIncidentItemStatus[keyof typeof NodeAccountQualityIncidentItemStatus];
+
+
+export const NodeAccountQualityIncidentItemStatus = {
+  active: 'active',
+} as const;
+
+export interface NodeAccountQualityIncidentItem {
+  node_id: string;
+  /**
+     * @minLength 3
+     * @maxLength 385
+     */
+  account_key: string;
+  provider: string;
+  failure_class: NodeAccountQualityIncidentItemFailureClass;
+  status: NodeAccountQualityIncidentItemStatus;
+  first_seen: string;
+  last_seen: string;
+  /** @minimum 3 */
+  hit_count: number;
+  /** @nullable */
+  last_success_at: string | null;
+}
+
+export interface NodeAccountQualityIncidentResponse {
+  instance_id: string;
+  /** @maxItems 100 */
+  items: NodeAccountQualityIncidentItem[];
+  /**
+     * @maxLength 8192
+     * @nullable
+     */
+  next_cursor: string | null;
+}
+
 export type NodeInventoryProviderStateMonitoringStatus = typeof NodeInventoryProviderStateMonitoringStatus[keyof typeof NodeInventoryProviderStateMonitoringStatus];
 
 
@@ -1526,6 +1572,42 @@ limit?: number;
  */
 cursor?: string;
 };
+
+export type ListNodeAccountQualityIncidentsParams = {
+status?: ListNodeAccountQualityIncidentsStatus;
+/**
+ * @maxLength 64
+ * @pattern ^[a-z0-9][a-z0-9._-]*$
+ */
+provider?: string;
+failure_class?: ListNodeAccountQualityIncidentsFailureClass;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @maxLength 8192
+ */
+cursor?: string;
+};
+
+export type ListNodeAccountQualityIncidentsStatus = typeof ListNodeAccountQualityIncidentsStatus[keyof typeof ListNodeAccountQualityIncidentsStatus];
+
+
+export const ListNodeAccountQualityIncidentsStatus = {
+  active: 'active',
+} as const;
+
+export type ListNodeAccountQualityIncidentsFailureClass = typeof ListNodeAccountQualityIncidentsFailureClass[keyof typeof ListNodeAccountQualityIncidentsFailureClass];
+
+
+export const ListNodeAccountQualityIncidentsFailureClass = {
+  auth: 'auth',
+  quota: 'quota',
+  rate_limit: 'rate_limit',
+  upstream: 'upstream',
+} as const;
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -7056,6 +7138,169 @@ export function useListNodeAccountRequestHistory<TData = Awaited<ReturnType<type
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListNodeAccountRequestHistoryQueryOptions(instanceId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listNodeAccountQualityIncidentsResponse200 = {
+  data: NodeAccountQualityIncidentResponse
+  status: 200
+}
+
+export type listNodeAccountQualityIncidentsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listNodeAccountQualityIncidentsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listNodeAccountQualityIncidentsResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listNodeAccountQualityIncidentsResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listNodeAccountQualityIncidentsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listNodeAccountQualityIncidentsResponseSuccess = (listNodeAccountQualityIncidentsResponse200) & {
+  headers: Headers;
+};
+export type listNodeAccountQualityIncidentsResponseError = (listNodeAccountQualityIncidentsResponse400 | listNodeAccountQualityIncidentsResponse401 | listNodeAccountQualityIncidentsResponse403 | listNodeAccountQualityIncidentsResponse404 | listNodeAccountQualityIncidentsResponse503) & {
+  headers: Headers;
+};
+
+export type listNodeAccountQualityIncidentsResponse = (listNodeAccountQualityIncidentsResponseSuccess | listNodeAccountQualityIncidentsResponseError)
+
+export const getListNodeAccountQualityIncidentsUrl = (instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/topology/nodes/${instanceId}/incidents?${stringifiedParams}` : `/api/topology/nodes/${instanceId}/incidents`
+}
+
+/**
+ * Requires an enabled super_admin session. Readonly, with a 5 second HTTP budget. Only active incidents are currently supported; query failure is unavailable, never an empty success.
+ * @summary List active account quality incidents for one Node
+ */
+export const listNodeAccountQualityIncidents = async (instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams, options?: RequestInit): Promise<listNodeAccountQualityIncidentsResponse> => {
+
+  const res = await fetch(getListNodeAccountQualityIncidentsUrl(instanceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listNodeAccountQualityIncidentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listNodeAccountQualityIncidentsResponse
+}
+
+
+
+
+
+export const getListNodeAccountQualityIncidentsQueryKey = (instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams,) => {
+    return [
+    `/api/topology/nodes/${instanceId}/incidents`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListNodeAccountQualityIncidentsQueryOptions = <TData = Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError = ErrorResponse>(instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodeAccountQualityIncidentsQueryKey(instanceId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>> = ({ signal }) => listNodeAccountQualityIncidents(instanceId,params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNodeAccountQualityIncidentsQueryResult = NonNullable<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>>
+export type ListNodeAccountQualityIncidentsQueryError = ErrorResponse
+
+
+export function useListNodeAccountQualityIncidents<TData = Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: undefined |  ListNodeAccountQualityIncidentsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAccountQualityIncidents<TData = Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAccountQualityIncidents<TData = Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List active account quality incidents for one Node
+ */
+
+export function useListNodeAccountQualityIncidents<TData = Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeAccountQualityIncidentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountQualityIncidents>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNodeAccountQualityIncidentsQueryOptions(instanceId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

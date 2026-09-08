@@ -1467,6 +1467,44 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
 
+  /api/topology/nodes/{instance_id}/incidents:
+    get:
+      operationId: listNodeAccountQualityIncidents
+      summary: List active account quality incidents for one Node
+      description: Requires an enabled super_admin session. Readonly, with a 5 second HTTP budget. Only active incidents are currently supported; query failure is unavailable, never an empty success.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - name: status
+          in: query
+          schema: {type: string, enum: [active], default: active}
+        - name: provider
+          in: query
+          schema: {type: string, maxLength: 64, pattern: "^[a-z0-9][a-z0-9._-]*$"}
+        - name: failure_class
+          in: query
+          schema: {type: string, enum: [auth, quota, rate_limit, upstream]}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 8192}
+      responses:
+        "200":
+          description: Active account quality incident page.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/NoStore"}
+            X-Request-ID: {$ref: "#/components/headers/RequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NodeAccountQualityIncidentResponse"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+
 components:
   securitySchemes:
     SessionCookie:
@@ -3230,6 +3268,33 @@ components:
           type: array
           maxItems: 100
           items: {$ref: "#/components/schemas/NodeAccountRequestHistoryItem"}
+        next_cursor: {type: [string, "null"], maxLength: 8192}
+
+    NodeAccountQualityIncidentItem:
+      type: object
+      additionalProperties: false
+      required: [node_id, account_key, provider, failure_class, status, first_seen, last_seen, hit_count, last_success_at]
+      properties:
+        node_id: {type: string, format: uuid}
+        account_key: {type: string, minLength: 3, maxLength: 385}
+        provider: {type: string}
+        failure_class: {type: string, enum: [auth, quota, rate_limit, upstream]}
+        status: {type: string, enum: [active]}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+        hit_count: {type: integer, format: int64, minimum: 3}
+        last_success_at: {type: [string, "null"], format: date-time}
+
+    NodeAccountQualityIncidentResponse:
+      type: object
+      additionalProperties: false
+      required: [instance_id, items, next_cursor]
+      properties:
+        instance_id: {type: string, format: uuid}
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/NodeAccountQualityIncidentItem"}
         next_cursor: {type: [string, "null"], maxLength: 8192}
 
     NodeInventoryProviderState:

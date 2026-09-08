@@ -663,6 +663,45 @@ func (e MfaMethod) Valid() bool {
 	}
 }
 
+// Defines values for NodeAccountQualityIncidentItemFailureClass.
+const (
+	NodeAccountQualityIncidentItemFailureClassAuth      NodeAccountQualityIncidentItemFailureClass = "auth"
+	NodeAccountQualityIncidentItemFailureClassQuota     NodeAccountQualityIncidentItemFailureClass = "quota"
+	NodeAccountQualityIncidentItemFailureClassRateLimit NodeAccountQualityIncidentItemFailureClass = "rate_limit"
+	NodeAccountQualityIncidentItemFailureClassUpstream  NodeAccountQualityIncidentItemFailureClass = "upstream"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityIncidentItemFailureClass enum.
+func (e NodeAccountQualityIncidentItemFailureClass) Valid() bool {
+	switch e {
+	case NodeAccountQualityIncidentItemFailureClassAuth:
+		return true
+	case NodeAccountQualityIncidentItemFailureClassQuota:
+		return true
+	case NodeAccountQualityIncidentItemFailureClassRateLimit:
+		return true
+	case NodeAccountQualityIncidentItemFailureClassUpstream:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountQualityIncidentItemStatus.
+const (
+	NodeAccountQualityIncidentItemStatusActive NodeAccountQualityIncidentItemStatus = "active"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityIncidentItemStatus enum.
+func (e NodeAccountQualityIncidentItemStatus) Valid() bool {
+	switch e {
+	case NodeAccountQualityIncidentItemStatusActive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeAccountQualityItemLastFailureClass.
 const (
 	NodeAccountQualityItemLastFailureClassAuth        NodeAccountQualityItemLastFailureClass = "auth"
@@ -1110,6 +1149,45 @@ func (e ListNodeDuplicateHistoryParamsStatus) Valid() bool {
 	case ListNodeDuplicateHistoryParamsStatusACTIVE:
 		return true
 	case ListNodeDuplicateHistoryParamsStatusRESOLVED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListNodeAccountQualityIncidentsParamsStatus.
+const (
+	ListNodeAccountQualityIncidentsParamsStatusActive ListNodeAccountQualityIncidentsParamsStatus = "active"
+)
+
+// Valid indicates whether the value is a known member of the ListNodeAccountQualityIncidentsParamsStatus enum.
+func (e ListNodeAccountQualityIncidentsParamsStatus) Valid() bool {
+	switch e {
+	case ListNodeAccountQualityIncidentsParamsStatusActive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListNodeAccountQualityIncidentsParamsFailureClass.
+const (
+	ListNodeAccountQualityIncidentsParamsFailureClassAuth      ListNodeAccountQualityIncidentsParamsFailureClass = "auth"
+	ListNodeAccountQualityIncidentsParamsFailureClassQuota     ListNodeAccountQualityIncidentsParamsFailureClass = "quota"
+	ListNodeAccountQualityIncidentsParamsFailureClassRateLimit ListNodeAccountQualityIncidentsParamsFailureClass = "rate_limit"
+	ListNodeAccountQualityIncidentsParamsFailureClassUpstream  ListNodeAccountQualityIncidentsParamsFailureClass = "upstream"
+)
+
+// Valid indicates whether the value is a known member of the ListNodeAccountQualityIncidentsParamsFailureClass enum.
+func (e ListNodeAccountQualityIncidentsParamsFailureClass) Valid() bool {
+	switch e {
+	case ListNodeAccountQualityIncidentsParamsFailureClassAuth:
+		return true
+	case ListNodeAccountQualityIncidentsParamsFailureClassQuota:
+		return true
+	case ListNodeAccountQualityIncidentsParamsFailureClassRateLimit:
+		return true
+	case ListNodeAccountQualityIncidentsParamsFailureClassUpstream:
 		return true
 	default:
 		return false
@@ -1608,6 +1686,32 @@ type MfaMethod string
 
 // NewPassword defines model for NewPassword.
 type NewPassword = string
+
+// NodeAccountQualityIncidentItem defines model for NodeAccountQualityIncidentItem.
+type NodeAccountQualityIncidentItem struct {
+	AccountKey    string                                     `json:"account_key"`
+	FailureClass  NodeAccountQualityIncidentItemFailureClass `json:"failure_class"`
+	FirstSeen     time.Time                                  `json:"first_seen"`
+	HitCount      int64                                      `json:"hit_count"`
+	LastSeen      time.Time                                  `json:"last_seen"`
+	LastSuccessAt *time.Time                                 `json:"last_success_at"`
+	NodeId        openapi_types.UUID                         `json:"node_id"`
+	Provider      string                                     `json:"provider"`
+	Status        NodeAccountQualityIncidentItemStatus       `json:"status"`
+}
+
+// NodeAccountQualityIncidentItemFailureClass defines model for NodeAccountQualityIncidentItem.FailureClass.
+type NodeAccountQualityIncidentItemFailureClass string
+
+// NodeAccountQualityIncidentItemStatus defines model for NodeAccountQualityIncidentItem.Status.
+type NodeAccountQualityIncidentItemStatus string
+
+// NodeAccountQualityIncidentResponse defines model for NodeAccountQualityIncidentResponse.
+type NodeAccountQualityIncidentResponse struct {
+	InstanceId openapi_types.UUID               `json:"instance_id"`
+	Items      []NodeAccountQualityIncidentItem `json:"items"`
+	NextCursor *string                          `json:"next_cursor"`
+}
 
 // NodeAccountQualityItem defines model for NodeAccountQualityItem.
 type NodeAccountQualityItem struct {
@@ -2127,6 +2231,21 @@ type ListNodeDuplicateHistoryParams struct {
 // ListNodeDuplicateHistoryParamsStatus defines parameters for ListNodeDuplicateHistory.
 type ListNodeDuplicateHistoryParamsStatus string
 
+// ListNodeAccountQualityIncidentsParams defines parameters for ListNodeAccountQualityIncidents.
+type ListNodeAccountQualityIncidentsParams struct {
+	Status       *ListNodeAccountQualityIncidentsParamsStatus       `form:"status,omitempty" json:"status,omitempty"`
+	Provider     *string                                            `form:"provider,omitempty" json:"provider,omitempty"`
+	FailureClass *ListNodeAccountQualityIncidentsParamsFailureClass `form:"failure_class,omitempty" json:"failure_class,omitempty"`
+	Limit        *int                                               `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor       *string                                            `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListNodeAccountQualityIncidentsParamsStatus defines parameters for ListNodeAccountQualityIncidents.
+type ListNodeAccountQualityIncidentsParamsStatus string
+
+// ListNodeAccountQualityIncidentsParamsFailureClass defines parameters for ListNodeAccountQualityIncidents.
+type ListNodeAccountQualityIncidentsParamsFailureClass string
+
 // ListNodeAccountRequestHistoryParams defines parameters for ListNodeAccountRequestHistory.
 type ListNodeAccountRequestHistoryParams struct {
 	AccountKey string  `form:"account_key" json:"account_key"`
@@ -2607,6 +2726,9 @@ type ServerInterface interface {
 	// ListNodeDuplicateHistory Read occurrences historically involving this Node
 	// (GET /api/topology/nodes/{instance_id}/duplicate-history)
 	ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams)
+	// ListNodeAccountQualityIncidents List active account quality incidents for one Node
+	// (GET /api/topology/nodes/{instance_id}/incidents)
+	ListNodeAccountQualityIncidents(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountQualityIncidentsParams)
 	// ListNodeAccountRequestHistory Read recent request history for one account
 	// (GET /api/topology/nodes/{instance_id}/request-history)
 	ListNodeAccountRequestHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountRequestHistoryParams)
@@ -2853,6 +2975,12 @@ func (_ Unimplemented) GetNodeAccountQuality(w http.ResponseWriter, r *http.Requ
 // ListNodeDuplicateHistory Read occurrences historically involving this Node
 // (GET /api/topology/nodes/{instance_id}/duplicate-history)
 func (_ Unimplemented) ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListNodeAccountQualityIncidents List active account quality incidents for one Node
+// (GET /api/topology/nodes/{instance_id}/incidents)
+func (_ Unimplemented) ListNodeAccountQualityIncidents(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountQualityIncidentsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4469,6 +4597,100 @@ func (siw *ServerInterfaceWrapper) ListNodeDuplicateHistory(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListNodeAccountQualityIncidents operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeAccountQualityIncidents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListNodeAccountQualityIncidentsParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "provider" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "provider", r.URL.Query(), &params.Provider, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "provider"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "failure_class" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "failure_class", r.URL.Query(), &params.FailureClass, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "failure_class"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "failure_class", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeAccountQualityIncidents(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListNodeAccountRequestHistory operation middleware
 func (siw *ServerInterfaceWrapper) ListNodeAccountRequestHistory(w http.ResponseWriter, r *http.Request) {
 
@@ -4772,6 +4994,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/request-history", wrapper.ListNodeAccountRequestHistory)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/incidents", wrapper.ListNodeAccountQualityIncidents)
 	})
 
 	return r
