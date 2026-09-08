@@ -458,7 +458,7 @@ verify_source_backed_retention() {
 }
 
 set_history_execute() {
-  local target="$1" action="$2" signature statement
+  local target="$1" action="$2" signature statement expected effective
   case "$target" in
     planner) signature='public.control_plan_account_inventory_history_v1(integer)' ;;
     summarize) signature='public.control_summarize_account_inventory_compaction_v1(uuid,uuid)' ;;
@@ -467,14 +467,26 @@ set_history_execute() {
     *) fixed_failure 'history_permission_target_invalid' ;;
   esac
   case "$action" in
-    revoke) statement="REVOKE EXECUTE ON FUNCTION ${signature} FROM relay_control_runtime" ;;
-    grant) statement="GRANT EXECUTE ON FUNCTION ${signature} TO relay_control_runtime" ;;
+    revoke)
+      statement="REVOKE EXECUTE ON FUNCTION ${signature} FROM relay_control_runtime"
+      expected='f'
+      ;;
+    grant)
+      statement="GRANT EXECUTE ON FUNCTION ${signature} TO relay_control_runtime"
+      expected='t'
+      ;;
     *) fixed_failure 'history_permission_action_invalid' ;;
   esac
   compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control \
     --set ON_ERROR_STOP=1 --command "$statement" \
     >"$runtime_directory/${target}-permission-${action}.log" 2>&1 \
     || fixed_failure "${target}_permission_${action}_failed"
+  effective="$(compose exec -T postgres psql --username relay_control_migrator \
+    --dbname relay_station_control --tuples-only --no-align --command \
+    "SELECT has_function_privilege('relay_control_app_dev', '${signature}', 'EXECUTE')" 2>/dev/null)" \
+    || fixed_failure "${target}_permission_${action}_check_failed"
+  [ "$effective" = "$expected" ] \
+    || fixed_failure "${target}_permission_${action}_ineffective"
 }
 
 set_summarize_trigger_fault() {
