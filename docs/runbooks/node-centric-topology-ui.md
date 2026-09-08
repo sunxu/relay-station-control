@@ -59,3 +59,15 @@ Loading是请求进行中；Empty仅表示成功返回无账号/无匹配；Unkn
 `00022_account_request_history_query_access.sql` 仅增加 `control_query_account_request_history_v1(uuid,text,timestamptz,text,integer)` 与EXECUTE授权。函数在同一statement内验证Inventory并按DB时间读取 `occurred_at >= statement_timestamp()-interval '7 days'` 且不晚于当前时间的事件，排序time DESC/hash DESC，keyset取limit+1。单次应用数据库查询；复用已有表和索引，runtime仍不能direct SELECT。跨页不冻结snapshot，retention可能移除已过期事件。
 
 该入口不启动collector，也不改变retention。HTTP queue仍是destructive pop/no-ACK；事件可能未被采到，因此空History不能证明账号从未收到请求，七天History也不是完整账本。限制沿用[采集runbook](account-request-quality.md)。未来发布先应用query-access migration，再更新API/Web；生产回滚保留forward schema，Down只在隔离测试中删除该函数。本轮不部署，证据见[Request History validation](../../openspec/changes/archive/2026-09-08-add-account-request-history/planning-validation.md)。
+
+## Account Quality Incidents
+
+Node detail 的 Incidents 只显示当前 Inventory 账号的重复失败模式：最近15分钟同 Node/account_key/failure_class 至少3次失败为 Active。auth、quota、rate_limit、upstream 分别计数；unknown/unresolved/event-only 不生成账号Incident。成功请求不抵消窗口内失败；低于阈值后从列表消失，不代表恢复。第一版不提供 Recovered、episode history 或持久状态。
+
+First Seen/Last Seen/Hits 是当前15分钟该类别失败的最早/最晚时间和次数，并非账号生命周期累计。只读模型的 last_success_at 是同账号最近7天成功请求的最后时间，可能为NULL，不作为解除Active的条件。Inventory lifecycle、Quality分类、Binding及Duplicate均不受影响。
+
+`GET /api/topology/nodes/{instance_id}/incidents` 只接受status=active（默认）、provider、failure_class、limit（默认25，最大100）、cursor。按last_seen DESC/account_key ASC/failure_class ASC过滤后keyset分页；cursor绑定Node和筛选。窗口实时计算，跨页有新事件时排序可改变，刷新应回首页。无session401、非管理员403、非法参数400、Node不存在404，DB/Inventory失败503不能显示为Empty。
+
+页面七列表为Account/Provider/Reason/Status/Hits/First Seen/Last Seen；Provider/Reason过滤可回到首页。点击Account用canonical key打开已有Request History。Node切换取消旧读取并清除History选择；没有resolve、disable、请求retry、ack或其它账号操作。Empty仅表示当前筛选下没有达标Incident，采集未启用或destructive-pop/no-ACK丢失也会影响证据，不能将Empty当作健康证明。
+
+`00023_account_quality_incidents_query_access.sql`只新增受控readonly function/ACL，产品使用runtime EXECUTE，不能direct SELECT。Inventory按既有安全函数完整分块读取，事件集合聚合与分页在单次数据库往返中完成；不新增表/index/worker/materialized view/cache/rollup，也不接入Durable Jobs。未来发布先应用query-access migration再更新API/Web；生产回滚保留forward schema，Down仅在隔离测试删除该function。本轮未部署，见[Incidents validation](../../openspec/changes/add-account-quality-incidents/planning-validation.md)。
