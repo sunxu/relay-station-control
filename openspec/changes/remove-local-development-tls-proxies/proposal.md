@@ -21,4 +21,4 @@
 
 ## Impact
 
-Control auth/main/tests 与 ops Compose/devctl/operations/tests/runbook；无 OpenAPI、generated code、SQL/schema/migration、collector、数据面或身份变更。当前仅规划：用户已要求暂停开发，未重新授权实施；后续实施及本地更新等待指令，不 push、不 archive。涉及 dev 安全边界变化（受限本地网络中的明文），不扩展 staging/production。遵循 System Design v1.8/R4.7 与 ADR-0001/0002；其入站 TLS 要求保留为非本地-dev规则，本 change 明确本地例外。dev 不再提供独立 HTTPS 登录模式，旧 Cookie 配置不再生效，部署模板和私有 override 在未来实施时移除旧键。
+Control auth/main/tests 与 ops Compose/devctl/operations/tests/runbook；无 OpenAPI、generated code、SQL/schema/migration、collector、数据面或身份变更。用户最新授权先提交规划，再实施、测试；本轮不更新本地运行环境，不 push、不 archive。涉及 dev 安全边界变化（受限本地网络中的明文），不扩展 staging/production。遵循 System Design v1.8/R4.7 与 ADR-0001/0002；其入站 TLS 要求保留为非本地-dev规则，本 change 明确本地例外。dev 不再提供独立 HTTPS 登录模式，旧 Cookie 配置不再生效，部署模板和私有 override 在未来实施时移除旧键。
