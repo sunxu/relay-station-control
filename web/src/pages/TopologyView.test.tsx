@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { TopologyView } from "./TopologyView";
 import type { AssetApi, NodeAsset } from "../api/asset-types";
@@ -18,6 +18,7 @@ function makeNode(instanceId: string, displayName: string): NodeAsset {
 
 function emptyTopology(): TopologyApi {
   return {
+    accountQuality: vi.fn().mockResolvedValue({ instance_id: A, window: "15m", items: [], next_cursor: null }),
     providers: vi.fn().mockResolvedValue({ instance_id: A, observed_at: observedAt, providers: [] }),
     binding: vi.fn().mockResolvedValue({ relay_node_id: A, resolution: "unbound", directory_freshness: "fresh", context_source: "none", observed_at: observedAt }),
     currentDuplicates: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
@@ -127,4 +128,132 @@ it("clears the query cache and calls onUnauthorized after a 401", async () => {
 
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
   expect(client.getQueryData(["private-canary"])).toBeUndefined();
+});
+
+it("renders account quality metrics and an unknown zero-request row", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [
+    { account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "good", request_count: 20, success_count: 20, failure_count: 0, success_rate: 1, p95_latency_ms: 120, last_success_at: observedAt, last_failure_at: null, last_failure_class: null },
+    { account_key: "openai:b@example.invalid", email: "b@example.invalid", provider: "openai", quality: "unknown", request_count: 0, success_count: 0, failure_count: 0, success_rate: null, p95_latency_ms: null, last_success_at: null, last_failure_at: null, last_failure_class: null },
+  ] });
+  renderView(api, assetApi);
+  expect(await screen.findByText("a@example.invalid")).toBeInTheDocument();
+  expect(screen.getByText("100.0%")).toBeInTheDocument();
+  expect(screen.getByText("120 ms")).toBeInTheDocument();
+  expect(screen.getByText("Unknown")).toBeInTheDocument();
+  const unknownRow = screen.getByText("b@example.invalid").closest("tr")!;
+  expect(within(unknownRow).getByText("0")).toBeInTheDocument();
+  expect(within(unknownRow).getAllByText("—")).toHaveLength(4);
+  expect(within(screen.getByRole("region", { name: "Account Quality" })).queryByRole("button", { name: /bind|disable|delete|quota|inspect/i })).not.toBeInTheDocument();
+});
+
+it("passes window/provider/quality filters and keeps quality pagination bounded", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.providers = vi.fn().mockResolvedValue({ instance_id: A, observed_at: observedAt, providers: [{ provider: "openai", monitoring_status: "active", state: "current", current_scheduled_at: null, last_complete_at: observedAt, snapshot_freshness: "fresh", health_scheduled_at: observedAt, health_degraded: false, health_reason: null }] });
+  const quality = vi.fn()
+    .mockResolvedValueOnce({ instance_id: A, window: "15m", next_cursor: "quality-page-2", items: [{ account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "degraded", request_count: 5, success_count: 4, failure_count: 1, success_rate: .8, p95_latency_ms: 400, last_success_at: null, last_failure_at: observedAt, last_failure_class: "upstream" }] })
+    .mockResolvedValue({ instance_id: A, window: "1h", next_cursor: null, items: [] });
+  api.accountQuality = quality;
+  renderView(api, assetApi);
+  await screen.findByText("a@example.invalid");
+  expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("upstream")).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("2026-09-07 00:00:00 UTC")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "质量下一页" }));
+  await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "15m", undefined, undefined, "quality-page-2", expect.any(AbortSignal)));
+  const windowSelect = screen.getByRole("combobox", { name: "质量窗口" });
+  fireEvent.mouseDown(windowSelect);
+  fireEvent.click(await screen.findByText("最近 1 小时"));
+  const providerSelect = screen.getByRole("combobox", { name: "质量 Provider" });
+  fireEvent.mouseDown(providerSelect);
+  fireEvent.click(screen.getAllByText("openai").at(-1)!);
+  const qualitySelect = screen.getByRole("combobox", { name: "质量分类" });
+  fireEvent.mouseDown(qualitySelect);
+  fireEvent.click(await screen.findByText("Bad"));
+  await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "1h", "openai", "bad", undefined, expect.any(AbortSignal)));
+  expect(screen.getByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "质量下一页" })).toBeDisabled();
+});
+
+it("shows unavailable quality reads instead of empty", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockRejectedValue(new TopologyApiError(503));
+  renderView(api, assetApi);
+  expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
+  expect(screen.queryByText("没有 Inventory 账号或匹配账号")).not.toBeInTheDocument();
+});
+
+it("keeps the selected Node quality isolated from a late previous response", async () => {
+  const a = makeNode(A, "Node A");
+  const b = makeNode(B, "Node B");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [a, b], nextCursor: null }), node: vi.fn((id: string) => Promise.resolve(id === A ? a : b)) } as unknown as AssetApi;
+  const api = emptyTopology();
+  let resolveA!: (value: Awaited<ReturnType<TopologyApi["accountQuality"]>>) => void;
+  const delayedA = new Promise<Awaited<ReturnType<TopologyApi["accountQuality"]>>>((resolve) => { resolveA = resolve; });
+  api.accountQuality = vi.fn((id: string) => id === A ? delayedA : Promise.resolve({ instance_id: B, window: "15m" as const, next_cursor: null, items: [{ account_key: "openai:b@example.invalid", email: "b@example.invalid", provider: "openai", quality: "good" as const, request_count: 1, success_count: 1, failure_count: 0, success_rate: 1, p95_latency_ms: 10, last_success_at: observedAt, last_failure_at: null, last_failure_class: null }] })) as unknown as TopologyApi["accountQuality"];
+  renderView(api, assetApi);
+  const combo = await screen.findByRole("combobox", { name: "Relay Node" });
+  fireEvent.mouseDown(combo);
+  fireEvent.click(await screen.findByText(`Node B · ${B}`));
+  expect(await screen.findByText("b@example.invalid")).toBeInTheDocument();
+  resolveA({ instance_id: A, window: "15m", next_cursor: null, items: [{ account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "bad", request_count: 1, success_count: 0, failure_count: 1, success_rate: 0, p95_latency_ms: 10, last_success_at: null, last_failure_at: observedAt, last_failure_class: "auth" }] });
+  await waitFor(() => expect(screen.queryByText("a@example.invalid")).not.toBeInTheDocument());
+});
+
+it("shows account quality loading independently", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockReturnValue(new Promise(() => {}));
+  renderView(api, assetApi);
+  expect(await screen.findByRole("status", { name: "正在读取账号质量" })).toBeInTheDocument();
+  expect(screen.queryByText("没有 Inventory 账号或匹配账号")).not.toBeInTheDocument();
+});
+
+it("shows a successful empty account quality result distinctly", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
+  renderView(api, assetApi);
+  expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
+  expect(screen.queryByText("读取不可用（unavailable）")).not.toBeInTheDocument();
+});
+
+it("recovers an unavailable account quality read with retry", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockRejectedValueOnce(new TopologyApiError(503)).mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
+  renderView(api, assetApi);
+  expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
+  const qualityAlert = screen.getByText("读取不可用（unavailable）").closest(".ant-alert");
+  fireEvent.click(qualityAlert!.querySelector("button")!);
+  await waitFor(() => expect(screen.getByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument());
+});
+
+it("clears the session when account quality returns 401", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockRejectedValue(new TopologyApiError(401));
+  const onUnauthorized = vi.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TopologyView api={api} assetApi={assetApi} initialInstanceId={A} onUnauthorized={onUnauthorized} /></QueryClientProvider>);
+  await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
+});
+
+it("keeps Provider source failure explicit for quality filtering", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.providers = vi.fn().mockRejectedValue(new TopologyApiError(503));
+  api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
+  renderView(api, assetApi);
+  expect(await screen.findByText("Provider 筛选来源不可用")).toBeInTheDocument();
+  expect(screen.getByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
 });
