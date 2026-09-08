@@ -21,7 +21,7 @@ const (
 	DefaultLifecycleObserverBudget = 30 * time.Second
 	DefaultSchedulerInterval       = time.Second
 	DefaultWorkerScanInterval      = 500 * time.Millisecond
-	DefaultReconcileInterval       = 5 * time.Second
+	DefaultReconcileInterval       = 20 * time.Second
 	DefaultDatabaseBackoffInitial  = time.Second
 	DefaultDatabaseBackoffMaximum  = 30 * time.Second
 	DefaultShutdownGrace           = 20 * time.Second

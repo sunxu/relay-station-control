@@ -55,8 +55,8 @@ type CrossNodeDuplicateOwnershipEvaluation struct {
 	Removed       []uuid.UUID
 	// EvaluationID identifies this lifecycle pass's evaluation. It always
 	// reflects the evaluation actually performed in Go (evaluateEvidenceAtDatabaseNowTx),
-	// but a zero-evidence degraded pass (every retained Node unclassifiable
-	// this pass) persists no evidence rows for it, so occurrence.latest_evaluation_id
+	// but an unchanged evaluation or zero-evidence degraded pass persists no
+	// evidence rows for it, so occurrence.latest_evaluation_id
 	// in the database is left pointing at the previous pass that did have
 	// evidence, not at this EvaluationID.
 	EvaluationID uuid.UUID
@@ -504,7 +504,8 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) create(
 	}
 
 	if err := queries.RefreshCrossNodeDuplicateOccurrenceProjection(ctx, generated.RefreshCrossNodeDuplicateOccurrenceProjectionParams{
-		EvaluationAt: pgTime(evaluationAt), EvidenceState: "complete", HasEvidence: true,
+		EvaluationAt: pgTime(evaluationAt), EvidenceState: "complete",
+		HasCheckpoint: true, HasVerifiedEvidence: true,
 		EvaluationID: nullableUUID(evaluationID), OccurrenceID: nullableUUID(occurrenceID),
 	}); err != nil {
 		return nil, err
@@ -562,18 +563,34 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 
 	decision := classifyCrossNodeDuplicateMembership(allNodes, currentSet, evalResults)
 	toAdd, toRemove, anyDegradedRetained := decision.ToAdd, decision.ToRemove, decision.AnyDegradedRetained
+	previousCheckpoint, err := latestCrossNodeDuplicateCheckpoint(ctx, queries, existing)
+	if err != nil {
+		return nil, err
+	}
+
+	evidenceState := "complete"
+	if anyDegradedRetained {
+		evidenceState = "degraded"
+	}
+	material := crossNodeDuplicateMaterialChange(previousCheckpoint, evalResults, allNodes, toAdd, toRemove, evidenceState, existing.EvidenceState)
+	// A status transition itself is material, even when a legacy projection
+	// already has the same source rows and membership.
+	willResolve := evidenceState == "complete" && len(currentSet)+len(toAdd)-len(toRemove) <= 1 && len(evalResults) > 0
+	material = material || willResolve
 
 	evidenceCount := 0
-	for _, node := range allNodes {
-		row, ok := evalResults[node]
-		// Evidence is appended for every Node this pass actually evaluated
-		// (design.md §4 refresh: "append 本次全部 per-node evidence"),
-		// regardless of whether it changes membership.
-		if ok {
-			if err := insertEvidenceRow(ctx, queries, occurrenceID, node, row, evaluationID, evaluationAt); err != nil {
-				return nil, err
+	if material {
+		for _, node := range allNodes {
+			row, ok := evalResults[node]
+			// A material checkpoint contains every evidence row that this
+			// authoritative evaluation could cite. Keeping the group complete
+			// preserves latest_evaluation_id's existing per-node semantics.
+			if ok {
+				if err := insertEvidenceRow(ctx, queries, occurrenceID, node, row, evaluationID, evaluationAt); err != nil {
+					return nil, err
+				}
+				evidenceCount++
 			}
-			evidenceCount++
 		}
 	}
 
@@ -612,20 +629,14 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 	}
 	sortUUIDs(retained)
 
-	evidenceState := "complete"
-	if anyDegradedRetained {
-		evidenceState = "degraded"
-	}
-
 	// Resolve requires a coherent evaluation covering every currently
 	// retained affected Node (no degraded/unverifiable Node left, i.e.
 	// evidence_state == complete), owner_confirmed count <= 1 (exactly
 	// len(retained) once every retained Node is owner_confirmed), and at
-	// least one evidence row actually backing this evaluation_id (design.md
-	// §4 resolve; Phase 3 review item 3 defensive guard -- in practice
-	// evidenceCount == 0 can only coincide with a currently-empty affected
-	// set, never with a genuine resolve).
-	if evidenceState == "complete" && len(retained) <= 1 && evidenceCount > 0 {
+	// least one evidence row actually backing this evaluation_id. A resolve
+	// always forces a material checkpoint; an unchanged ACTIVE evaluation
+	// can legitimately have evidenceCount == 0.
+	if willResolve && evidenceCount > 0 {
 		if err := queries.ResolveCrossNodeDuplicateOccurrence(ctx, generated.ResolveCrossNodeDuplicateOccurrenceParams{
 			EvaluationAt: pgTime(evaluationAt), EvaluationID: nullableUUID(evaluationID),
 			OccurrenceID: nullableUUID(occurrenceID),
@@ -646,9 +657,14 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 	// backing it, instead of advancing to an evaluation_id with zero
 	// evidence rows (which the 00013 latest_evaluation_id consistency
 	// trigger would reject with 23514).
-	hasEvidence := evidenceCount > 0
+	// Verification is a property of the authoritative evaluation, while a
+	// checkpoint is only persisted for material changes. Keep these signals
+	// independent so no-op complete evaluations still advance
+	// last_fully_verified_at without moving latest_evaluation_id.
+	hasVerifiedEvidence := evidenceState == "complete" && len(evalResults) > 0
 	if err := queries.RefreshCrossNodeDuplicateOccurrenceProjection(ctx, generated.RefreshCrossNodeDuplicateOccurrenceProjectionParams{
-		EvaluationAt: pgTime(evaluationAt), EvidenceState: evidenceState, HasEvidence: hasEvidence,
+		EvaluationAt: pgTime(evaluationAt), EvidenceState: evidenceState,
+		HasCheckpoint: material && evidenceCount > 0, HasVerifiedEvidence: hasVerifiedEvidence,
 		EvaluationID: nullableUUID(evaluationID), OccurrenceID: nullableUUID(occurrenceID),
 	}); err != nil {
 		return nil, err
@@ -658,6 +674,63 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) reconcile(
 		AffectedNodes: retained, Added: toAdd, Removed: toRemove,
 		EvaluationID: evaluationID, EvaluationAt: evaluationAt, FirstSeenAt: existing.FirstSeenAt.Time,
 	}, nil
+}
+
+func latestCrossNodeDuplicateCheckpoint(
+	ctx context.Context, queries *generated.Queries, occurrence generated.CrossNodeDuplicateOccurrence,
+) (map[uuid.UUID]crossNodeDuplicateEvidenceRow, error) {
+	checkpoint := make(map[uuid.UUID]crossNodeDuplicateEvidenceRow)
+	if !occurrence.LatestEvaluationID.Valid {
+		return checkpoint, nil
+	}
+	rows, err := queries.ListCrossNodeDuplicateOccurrenceLatestCheckpoint(ctx,
+		generated.ListCrossNodeDuplicateOccurrenceLatestCheckpointParams{
+			OccurrenceID: occurrence.OccurrenceID,
+			EvaluationID: occurrence.LatestEvaluationID,
+		})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		checkpoint[uuidFromPG(row.InstanceID)] = crossNodeDuplicateEvidenceRow{
+			InstanceID: uuidFromPG(row.InstanceID), ObservationKind: row.ObservationKind,
+			SourceProvider: row.SourceProvider, SourceScheduledAt: row.SourceScheduledAt.Time,
+			SourceCompletedAt: row.SourceCompletedAt.Time,
+			SourcePollRunID:   nullableUUIDPointer(row.SourcePollRunID),
+		}
+	}
+	return checkpoint, nil
+}
+
+func crossNodeDuplicateMaterialChange(
+	previous, current map[uuid.UUID]crossNodeDuplicateEvidenceRow,
+	allNodes, toAdd, toRemove []uuid.UUID,
+	evidenceState, previousEvidenceState string,
+) bool {
+	if evidenceState != previousEvidenceState || len(toAdd) != 0 || len(toRemove) != 0 {
+		return true
+	}
+	for _, node := range allNodes {
+		before, beforeOK := previous[node]
+		after, afterOK := current[node]
+		if beforeOK != afterOK || (beforeOK && !crossNodeDuplicateEvidenceMaterialEqual(before, after)) {
+			return true
+		}
+	}
+	return false
+}
+
+func crossNodeDuplicateEvidenceMaterialEqual(a, b crossNodeDuplicateEvidenceRow) bool {
+	if a.InstanceID != b.InstanceID || a.ObservationKind != b.ObservationKind ||
+		a.SourceProvider != b.SourceProvider ||
+		!a.SourceScheduledAt.Equal(b.SourceScheduledAt) ||
+		!a.SourceCompletedAt.Equal(b.SourceCompletedAt) {
+		return false
+	}
+	// A poll pointer may disappear after retention. It is informational and
+	// must not turn an otherwise identical source into a new checkpoint.
+	return a.SourcePollRunID == nil || b.SourcePollRunID == nil ||
+		(a.SourcePollRunID != nil && b.SourcePollRunID != nil && *a.SourcePollRunID == *b.SourcePollRunID)
 }
 
 func insertEvidenceRow(

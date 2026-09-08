@@ -49,7 +49,7 @@
 
 - Key set = `ListCrossNodeDuplicateCandidates`（当前候选） ∪ `ListActiveCrossNodeDuplicateOccurrenceKeys`（当前数据库中仍 ACTIVE 的 occurrence key，覆盖"候选列表里已经消失，但数据库还是 ACTIVE"的场景）。
 - 去重后，对每个 key 复用现有 `LifecycleRepository.Evaluate()`，**不复制第二套 lifecycle 逻辑**。
-- 幂等：同一 Inventory truth 下连续 reconcile 2 次、3 次，ACTIVE occurrence 数量不增加、occurrence_id 不变化、membership 不重复。Evidence observation 可以每次 append 新记录（这不算不幂等，只要 occurrence identity/lifecycle 不重复）。
+- 幂等：同一 Inventory truth 下连续 reconcile 2 次、3 次，ACTIVE occurrence 数量不增加、occurrence_id 不变化、membership 不重复。每轮仍authoritative evaluation；无material变化时evidence数量与latest_evaluation_id保持不变，last_seen_at和完整评估时间继续更新。
 - 覆盖场景：duplicate 已存在 restart 后 reuse；duplicate 停机期间首次出现 restart 后创建；Node fresh absent 停机期间 restart 后 resolve；Node stale 停机期间 restart 后 degrade（不 resolve）；A/B/C 其一 fresh absent 停机期间 restart 后收缩仍 ACTIVE。
 
 ## 9. 并发模型：为什么不需要 lease/fencing
@@ -126,3 +126,13 @@ git diff --check
 ```
 
 PostgreSQL 相关 integration/acceptance 测试需要设置 `CONTROL_DATABASE_TEST_URL` 与 `CONTROL_RUNTIME_DATABASE_TEST_URL`（指向拥有 `relay_control_runtime` capability 的 LOGIN 角色，例如开发环境的 `relay_control_app_dev`，而不是 migration owner `relay_control_migrator`）；未设置时用例会 `SKIP`，不构成验收证据。用错 migration-owner 凭据会让 runtime 权限矩阵测试静默通过（因为 owner 拥有全部权限），必须使用真正受限的 runtime 角色凭据才能验证最小权限边界。
+
+## Material evidence checkpoint 与周期
+
+`reduce-cross-node-duplicate-evidence-write-amplification` 将默认inventorypoll reconciliation从5秒改为20秒。lease仍30秒，校验保持周期严格小于lease，既有启动及成功finalize回调保留。周期只影响无新采集时的再次发现延迟；不延长15分钟freshness阈值或放宽absence/resolve/fencing规则。数据库错误backoff及回调执行时间可能另增延迟。
+
+每轮先锁occurrence并获取新的authoritative结果，再读取latest_evaluation_id对应checkpoint。source identity、kind、membership、evidence_state或status变化时，追加本轮完整可引用证据组。来源身份包含Node/provider/source scheduled/completed；双方非NULL的poll ID不同也表示变化，单纯retention造成当前poll ID为空不制造新source。新source同结论仍追加，原source随时间stale会因kind变化追加，重复degraded不再追加。
+
+无变化仍更新last_seen_at；完整评估仍推进last_fully_verified_at。latest_evaluation_id只指向最近实际写入的checkpoint，不能用它的evaluation_at当作最近一次轮询时间。全部来源不可引用时只更新degraded projection，不伪造证据或指针；恢复造成 material change 时才写 checkpoint；恢复到相同旧 degraded checkpoint 且无其他变化时不追加。已从membership移出的Node证据永久保留，但不因它不再在本轮目标集合而重复写checkpoint。
+
+Resolve先保存absence_confirmed再移除membership；历史涉及仍由evidence EXISTS证明。旧记录完全保留，不去重删除、不迁移清理，无新增表/列/index/migration。不修改UI，raw evidence继续可用于诊断。回滚旧代码可恢复原写入频率，数据不回滚。此change尚未部署。

@@ -13,7 +13,7 @@ func TestDefaultConfigurationMatchesApprovedCapacity(t *testing.T) {
 	}
 	if configuration.period != 5*time.Minute || configuration.pollStartGrace != 120*time.Second ||
 		configuration.maxMonitoredNodes != 20 || configuration.concurrency != 10 ||
-		configuration.worstCasePollDuration != 15*time.Second || configuration.leaseDuration != 30*time.Second ||
+		configuration.worstCasePollDuration != 15*time.Second || configuration.leaseDuration != 30*time.Second || configuration.reconcileInterval != 20*time.Second ||
 		configuration.maxAttempts != 2 || configuration.CapacityBudget() != 85*time.Second {
 		t.Fatalf("unexpected defaults: %#v", configuration)
 	}
@@ -37,7 +37,7 @@ func TestConfigurationClosedInvalidMatrix(t *testing.T) {
 		{"lease cannot finalize", func(config *Config) { config.LeaseDuration = 24 * time.Second }},
 		{"attempts exceed bound", func(config *Config) { config.MaxAttempts = 3 }},
 		{"capacity consumes margin", func(config *Config) { config.DispatchMargin = 119 * time.Second }},
-		{"reconcile not below lease", func(config *Config) { config.ReconcileInterval = 30 * time.Second }},
+		{"reconcile at lease", func(config *Config) { config.ReconcileInterval = 30 * time.Second }},
 		{"backoff inverted", func(config *Config) {
 			config.DatabaseBackoffInitial = 10 * time.Second
 			config.DatabaseBackoffMaximum = time.Second
@@ -55,6 +55,12 @@ func TestConfigurationClosedInvalidMatrix(t *testing.T) {
 				t.Fatalf("error=%v", err)
 			}
 		})
+	}
+}
+
+func TestReconcileIntervalCannotEqualLease(t *testing.T) {
+	if _, err := (Config{LeaseDuration: 30 * time.Second, ReconcileInterval: 30 * time.Second}).Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("reconcile interval equal to lease accepted: %v", err)
 	}
 }
 

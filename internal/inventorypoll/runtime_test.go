@@ -44,6 +44,81 @@ type eventObserver struct {
 	events []Event
 }
 
+type recordingTimer struct {
+	ch     chan time.Time
+	mu     sync.Mutex
+	delays []time.Duration
+}
+
+func (timer *recordingTimer) C() <-chan time.Time { return timer.ch }
+func (timer *recordingTimer) Reset(delay time.Duration) {
+	timer.mu.Lock()
+	timer.delays = append(timer.delays, delay)
+	timer.mu.Unlock()
+}
+func (timer *recordingTimer) Stop() bool { return true }
+
+type recordingClock struct {
+	mu    sync.Mutex
+	timer *recordingTimer
+}
+
+func (clock *recordingClock) Now() time.Time { return time.Now() }
+func (clock *recordingClock) NewTimer(delay time.Duration) Timer {
+	timer := &recordingTimer{ch: make(chan time.Time, 1), delays: []time.Duration{delay}}
+	clock.mu.Lock()
+	clock.timer = timer
+	clock.mu.Unlock()
+	return timer
+}
+func (clock *recordingClock) Timer() *recordingTimer {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.timer
+}
+
+func TestReconcilerRunUsesTwentySecondDefaultInterval(t *testing.T) {
+	repository := &fakeRepository{}
+	clock := &recordingClock{}
+	observer := &eventObserver{}
+	var lifecycleCalls atomic.Int32
+	config := Config{Clock: clock, Observer: observer, LifecycleObserver: func(context.Context) { lifecycleCalls.Add(1) }}
+	reconciler, err := NewReconciler(repository, config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- reconciler.Run(ctx) }()
+	waitFor(t, time.Second, func() bool { return clock.Timer() != nil })
+	timer := clock.Timer()
+	timer.mu.Lock()
+	initial := append([]time.Duration(nil), timer.delays...)
+	timer.mu.Unlock()
+	if len(initial) != 1 || initial[0] != 20*time.Second {
+		t.Fatalf("initial timer delays=%v, want [20s]", initial)
+	}
+	timer.ch <- time.Now()
+	waitFor(t, time.Second, func() bool { repository.mu.Lock(); defer repository.mu.Unlock(); return repository.reconcileCalls == 1 })
+	waitFor(t, time.Second, func() bool {
+		timer.mu.Lock()
+		defer timer.mu.Unlock()
+		return len(timer.delays) == 2
+	})
+	timer.mu.Lock()
+	delays := append([]time.Duration(nil), timer.delays...)
+	timer.mu.Unlock()
+	if len(delays) != 2 || delays[1] != 20*time.Second {
+		t.Fatalf("reset timer delays=%v, want [20s 20s]", delays)
+	}
+	waitFor(t, time.Second, func() bool { return lifecycleCalls.Load() == 1 })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (observer *eventObserver) Observe(_ context.Context, event Event) {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()

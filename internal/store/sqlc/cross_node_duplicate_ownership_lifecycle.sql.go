@@ -158,6 +158,59 @@ func (q *Queries) ListActiveCrossNodeDuplicateOccurrenceKeys(ctx context.Context
 	return items, nil
 }
 
+const listCrossNodeDuplicateOccurrenceLatestCheckpoint = `-- name: ListCrossNodeDuplicateOccurrenceLatestCheckpoint :many
+SELECT instance_id, observation_kind, source_poll_run_id,
+       source_provider, source_scheduled_at, source_completed_at
+FROM cross_node_duplicate_occurrence_evidence
+WHERE occurrence_id = $1
+  AND evaluation_id = $2
+ORDER BY instance_id
+`
+
+type ListCrossNodeDuplicateOccurrenceLatestCheckpointParams struct {
+	OccurrenceID pgtype.UUID `json:"occurrence_id"`
+	EvaluationID pgtype.UUID `json:"evaluation_id"`
+}
+
+type ListCrossNodeDuplicateOccurrenceLatestCheckpointRow struct {
+	InstanceID        pgtype.UUID        `json:"instance_id"`
+	ObservationKind   string             `json:"observation_kind"`
+	SourcePollRunID   pgtype.UUID        `json:"source_poll_run_id"`
+	SourceProvider    string             `json:"source_provider"`
+	SourceScheduledAt pgtype.Timestamptz `json:"source_scheduled_at"`
+	SourceCompletedAt pgtype.Timestamptz `json:"source_completed_at"`
+}
+
+// Reads the evidence rows referenced by latest_evaluation_id. The lifecycle
+// caller already holds the occurrence row lock, so this is the persisted
+// checkpoint used for the material-change comparison.
+func (q *Queries) ListCrossNodeDuplicateOccurrenceLatestCheckpoint(ctx context.Context, arg ListCrossNodeDuplicateOccurrenceLatestCheckpointParams) ([]ListCrossNodeDuplicateOccurrenceLatestCheckpointRow, error) {
+	rows, err := q.db.Query(ctx, listCrossNodeDuplicateOccurrenceLatestCheckpoint, arg.OccurrenceID, arg.EvaluationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCrossNodeDuplicateOccurrenceLatestCheckpointRow{}
+	for rows.Next() {
+		var i ListCrossNodeDuplicateOccurrenceLatestCheckpointRow
+		if err := rows.Scan(
+			&i.InstanceID,
+			&i.ObservationKind,
+			&i.SourcePollRunID,
+			&i.SourceProvider,
+			&i.SourceScheduledAt,
+			&i.SourceCompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCrossNodeDuplicateOccurrenceNodes = `-- name: ListCrossNodeDuplicateOccurrenceNodes :many
 SELECT instance_id, first_confirmed_at
 FROM cross_node_duplicate_occurrence_nodes
@@ -199,36 +252,33 @@ SET last_seen_at = $1,
         WHEN $2::text = 'complete' THEN $1
         ELSE last_fully_verified_at
     END,
-    latest_evaluation_id = CASE WHEN $3::boolean
-        THEN $4 ELSE latest_evaluation_id END
-WHERE occurrence_id = $5 AND status = 'ACTIVE'
+    latest_evaluation_id = CASE WHEN $4::boolean
+        THEN $5 ELSE latest_evaluation_id END
+WHERE occurrence_id = $6 AND status = 'ACTIVE'
 `
 
 type RefreshCrossNodeDuplicateOccurrenceProjectionParams struct {
-	EvaluationAt  pgtype.Timestamptz `json:"evaluation_at"`
-	EvidenceState string             `json:"evidence_state"`
-	HasEvidence   bool               `json:"has_evidence"`
-	EvaluationID  pgtype.UUID        `json:"evaluation_id"`
-	OccurrenceID  pgtype.UUID        `json:"occurrence_id"`
+	EvaluationAt        pgtype.Timestamptz `json:"evaluation_at"`
+	EvidenceState       string             `json:"evidence_state"`
+	HasVerifiedEvidence bool               `json:"has_verified_evidence"`
+	HasCheckpoint       bool               `json:"has_checkpoint"`
+	EvaluationID        pgtype.UUID        `json:"evaluation_id"`
+	OccurrenceID        pgtype.UUID        `json:"occurrence_id"`
 }
 
 // Non-resolving pass (detect seed / refresh / add / remove / degrade): the
 // occurrence stays ACTIVE, only the mutable projection columns move.
 //
-// has_evidence is false specifically for the zero-evidence degraded pass
-// (Phase 3 review item 3): when a reconcile pass appended no evidence rows
-// at all this evaluation (every retained Node was unclassifiable), the
-// caller passes has_evidence=false so latest_evaluation_id (and
-// last_fully_verified_at) keep pointing at the last evaluation that
-// actually has evidence backing it -- the 00013 latest_evaluation_id
-// consistency trigger requires an EXISTS evidence row for whatever
-// latest_evaluation_id is set to, and would reject an evaluation_id with
-// zero evidence rows this pass.
+// has_checkpoint means this pass appended real material evidence rows.
+// Unchanged or zero-evidence evaluations retain latest_evaluation_id.
+// has_verified_evidence is independent: complete authoritative no-op passes
+// still advance last_fully_verified_at; zero-evidence degraded passes do not.
 func (q *Queries) RefreshCrossNodeDuplicateOccurrenceProjection(ctx context.Context, arg RefreshCrossNodeDuplicateOccurrenceProjectionParams) error {
 	_, err := q.db.Exec(ctx, refreshCrossNodeDuplicateOccurrenceProjection,
 		arg.EvaluationAt,
 		arg.EvidenceState,
-		arg.HasEvidence,
+		arg.HasVerifiedEvidence,
+		arg.HasCheckpoint,
 		arg.EvaluationID,
 		arg.OccurrenceID,
 	)

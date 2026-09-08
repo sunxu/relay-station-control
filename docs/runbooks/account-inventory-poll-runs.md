@@ -44,7 +44,7 @@ Control 已接入以下固定配置契约。`CONTROL_ACCOUNT_INVENTORY_POLL_ENAB
 | finalize margin | `10s` | lease 显式余量 |
 | scheduler interval | `1s` | 有界扫描 |
 | worker scan interval | `500ms` | 无 busy-loop |
-| reconcile interval | `5s` | 小于 lease |
+| reconcile interval | `20s` | 小于 lease |
 | database backoff | `1s..30s` | PostgreSQL 故障时不请求 Node |
 | shutdown grace | `20s` | 先停调度/认领，再有限收尾 |
 

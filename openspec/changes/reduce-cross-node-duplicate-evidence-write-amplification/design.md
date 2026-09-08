@@ -1,0 +1,26 @@
+## Context
+
+当前reconcile先FOR UPDATE锁ACTIVE occurrence，再发现owner并由单statement获取DB时间与authoritative evidence。每轮无条件append，再变更membership与projection。latest_evaluation_id由数据库触发器要求必须指向实际存在的同occurrence evidence。Evidence不可修改，source_poll_run_id无FK；retention可使后续current读取缺少poll ID，原evidence仍保留。
+
+## Decisions
+
+1. 保留每轮完整authoritative evaluation。material判断只在取得occurrence锁、重新读取本轮truth之后进行，不缓存上轮Go结果、不跳过freshness评估。create/reopen仍新建occurrence并记录初始checkpoint。
+2. 优先通过latest_evaluation_id读取最近持久化checkpoint全部per-node rows，复用现有runtime对evidence的SELECT权限，新增sqlc query而非数据库truth。Material至少包含可评估Node集合、source identity、observation_kind、membership add/remove、evidence_state或status变化。
+3. source identity比较Node、provider、source_scheduled_at、source_completed_at；双方poll ID均存在时也比较ID。仅retention导致当前poll ID变NULL不视为新source；稳定来源元数据仍必须相同。不比较evaluation_id/evaluation_at/recorded_at，它们每轮变化但不是新来源。
+4. checkpoint按当前待评估Node集合（current membership union eligible）比较。上次checkpoint中已被absence移出membership的Node仍永久保留其历史，但不因它不再属于本轮集合而制造又一次变化。新加入/移除membership总是material。可评估Node行缺失或重新出现也参与比较，不能忽略source不可读和恢复。
+5. 有material时追加本轮全部实际可引用evidence（非仅变化的Node），同一evaluation_id形成一致checkpoint；先写absence evidence再DELETE membership。无material不插入，不推进latest_evaluation_id。每轮仍更新last_seen_at；完整authoritative评估仍更新last_fully_verified_at，与是否追加证据分离。
+6. 零可引用行的降级例外沿用：不能伪造来源或空checkpoint，仍更新mutable projection为degraded/last_seen_at，保留latest_evaluation_id及last_fully_verified_at。不满足可证明resolve条件时不resolve。恢复造成 material change 时才写 checkpoint；例如 evidence_state 变化时，即使来源与旧 checkpoint 一致也写入。若恢复后与旧 degraded checkpoint 相同且无其他 material change，则不追加。重复零行评估不增加evidence。
+7. 现有FOR UPDATE与create冲突后重读保证串行material判断。重试/重启使用DB checkpoint，同source结果不重复写。新source即使同结论仍写；同source从fresh变stale改变kind并写，不能仅比较采集ID。
+8. 默认DefaultReconcileInterval=20s。保持默认lease30s及既有0<interval<lease校验；运行环境上限保持29s。lease expiry/fencing、claim/dispatch/finalize资格及poll cadence均不变。正常周期扫描最坏额外发现延迟约20s（DB错误backoff与回调耗时另计），startup和successful finalize仍立即回调。不是把freshness阈值增加20s，评估时仍按数据库当前时间原规则判断。
+
+## Invariants and Compatibility
+
+Historical involvement仍使用evidence EXISTS；不把历史参与关系改为current membership，不新增history表。A/B均absence后membership为空，原目标RESOLVED occurrence仍被A/B历史查到。legacy evidence全部保留，不回填、不删除、不压缩。原latest_evaluation_id变为最近有实际evidence的material checkpoint，非每次轮询ID；API字段与分页不变。现有zero-evidence例外不变。
+
+## Migration and Rollback
+
+0 DB migration。仅生成sqlc Go，不手改generated。回滚旧二进制保留数据，重新以旧频率追加不会破坏新checkpoint。无需改变外部服务或权限，不部署。Topology暂不增加最新过滤或折叠，避免混入展示改造。
+
+## Validation
+
+真实隔离PG证明100次无变化仍逐次evaluation且evidence不增长；新source同结论、stale/degraded及重复、absence先写后移除与A/B历史、并发refresh、重启重试、retention NULL来源、zero-row降级恢复。fake clock验证20秒tick及startup/finalize保留，runtime config默认与边界；原duplicate lifecycle/retention/race、库存runtime与acceptance回归，make test build、strict、diff check。

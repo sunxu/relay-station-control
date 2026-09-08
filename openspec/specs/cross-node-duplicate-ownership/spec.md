@@ -63,7 +63,7 @@ Resolve MUST 取得足够的新合格 evidence，覆盖 occurrence 当前 affect
 
 #### Scenario: 持续存在且 membership 不变时刷新而非新建
 - **WHEN** 一条 ACTIVE occurrence 对应的 duplicate 情况在下一次检测中仍然成立，且本次合格 evidence 证明的 owner membership 与当前 affected Node set 相同
-- **THEN** Control 刷新该 occurrence 的 `last_seen_at` 与 evidence 引用，不创建新记录，affected Node set 不变；若本次合格 evidence 证明 membership 发生变化，MUST 按 affected Node set 增减规则处理，而非直接刷新
+- **THEN** Control 刷新该 occurrence 的 `last_seen_at`，仅有 material evidence change 时追加checkpoint并推进 evidence 引用，不创建新记录，affected Node set 不变；若本次合格 evidence 证明 membership 发生变化，MUST 按 affected Node set 增减规则处理，而非直接刷新
 
 #### Scenario: A/B duplicate，B 变 stale 时不 resolve 也不缩减
 - **WHEN** Node A、B 的 duplicate occurrence 处于 ACTIVE，B 的 evidence 变为 stale
@@ -99,19 +99,54 @@ Cross-node duplicate occurrence 的 severity MUST 固定为 Critical。Gateway b
 
 ### Requirement: Control SHALL 区分 occurrence mutable projection 与 append-only evidence observation
 
-Occurrence 的数据模型 MUST 区分两类数据：occurrence mutable projection（`status`、affected Node set 关联、`last_seen_at`、`evidence_state`、`last_fully_verified_at`、latest evidence 引用等，随 detect/refresh/degrade/resolve 更新，代表当前已知最新状态）与 evidence observation（append-only，记录每次 detect/refresh/degrade/resolve 产生的具体证据）。Evidence observation MUST NOT 被 UPDATE 或 DELETE；每次状态变化 MUST 追加新的 evidence observation 记录，occurrence mutable projection 只更新指向最新 observation 的引用。Resolve evidence 同样 MUST 是 append-only、immutable。
+Control MUST 每轮执行authoritative evaluation并更新mutable projection，但只在material evidence change时追加不可变checkpoint。Material MUST 包括source identity、observation_kind、可评估Node集合、membership add/remove、evidence_state、occurrence status变化（含resolve与新occurrence reopen）。Node/source/kind/membership/evidence_state/status与最近持久化checkpoint相同，MUST NOT追加evidence。latest_evaluation_id MUST指向最近实际写入的checkpoint，而不是无变化评估。每轮last_seen_at与完整评估last_fully_verified_at MUST继续正确更新。
 
-#### Scenario: 状态变化追加而非覆盖 evidence
-- **WHEN** occurrence 发生 detect、refresh、degrade 或 resolve
-- **THEN** Control 追加一条新的 evidence observation 记录，不修改此前已写入的 evidence observation
+历史evidence MUST全部保留，禁止本change删除、清理、迁移压缩或新增第二套history truth。Historical involvement MUST继续通过evidence EXISTS证明。零可引用行降级MUST继续不伪造evidence，保留latest checkpoint并更新projection；恢复造成 material change 时才追加。来源poll ID仅因retention缺失时MUST使用保留来源元数据比较，不能因此制造新source。
+
+#### Scenario: 连续100轮无变化
+
+- **WHEN** 同一occurrence连续100轮authoritative evaluation的source、结论与membership均相同
+- **THEN** 每轮仍评估，evidence数量与latest_evaluation_id不增长/不变，projection时间正确推进
+
+#### Scenario: 新source同结论
+
+- **WHEN** 新promoted来源仍确认相同owner
+- **THEN** 追加完整可引用per-node checkpoint并推进latest_evaluation_id
+
+#### Scenario: 无新采集而fresh变stale
+
+- **WHEN** 原source在评估时过期导致owner变degraded
+- **THEN** 追加变化证据、保留membership且不resolve；后续相同degraded评估不追加
+
+#### Scenario: absence与历史参与
+
+- **WHEN** A/B重复后fresh完整证据确认缺失并解除重复
+- **THEN** 先追加absence_confirmed再删除membership；即使affected set为空，A/B历史仍能查到同一目标RESOLVED occurrence
+
+#### Scenario: 并发和重启
+
+- **WHEN** 并发refresh、重试或Repository重启评估同一material变化
+- **THEN** 在occurrence锁内与最新checkpoint比较，最多追加一次，legacy evidence不变
+
+#### Scenario: 零来源降级与恢复
+
+- **WHEN** 所有受影响Node均无可引用来源，随后来源恢复
+- **THEN** 降级只更新projection、不伪造或删除证据；重复降级不增长，恢复造成 material change 时才追加 checkpoint；若恢复后的状态与最近持久化 checkpoint 相同且无其他 material change，则不追加
 
 #### Scenario: evidence observation 不可修改
-- **WHEN** 任意调用尝试 UPDATE 或 DELETE 已写入的 evidence observation 记录
-- **THEN** Control/数据库拒绝该操作，历史 evidence observation 保持完整
+
+- **WHEN** 任意调用尝试UPDATE或DELETE已有evidence
+- **THEN** 现有数据库保护继续拒绝，legacy evidence保留完整
+
+#### Scenario: 状态变化追加而非覆盖 evidence
+
+- **WHEN** occurrence 的 detect、refresh、degrade 或 resolve 产生 material change 且有可引用来源
+- **THEN** Control 追加本轮checkpoint，不修改此前已写入的evidence
 
 #### Scenario: resolve evidence 同样 append-only
-- **WHEN** occurrence 被标记为 RESOLVED
-- **THEN** 对应 resolve evidence 以追加方式写入且不可修改，occurrence mutable projection 只更新 `resolved_at` 与最新引用
+
+- **WHEN** authoritative evaluation支持解除duplicate
+- **THEN** Control追加resolve所需的不可变evidence，不覆盖先前证据，先保留absence再移除membership
 
 ### Requirement: Control SHALL 保存最小 evidence 且不持久化敏感 credential 数据
 
@@ -160,3 +195,17 @@ Control 检测到 cross-node duplicate ownership 后 SHALL 只执行 detect、ev
 #### Scenario: 管理员必须在原生系统中处置
 - **WHEN** 管理员需要解决一条 cross-node duplicate occurrence
 - **THEN** 修复动作必须由管理员在真正拥有配置权的原生系统（Sub2API 或 CLIProxyAPI）中执行，Control 不提供自动化修复入口
+
+### Requirement: Duplicate reconciliation SHALL 默认每20秒执行周期评估
+
+Control MUST复用inventorypoll现有reconciliation loop，默认周期20秒；启动及成功finalize回调MUST保留。不得新增duplicate scheduler或更改eligibility、freshness阈值、absence、degraded或resolve规则。默认lease保持30秒，周期继续严格小于lease；数据库fencing继续防止expired lease写入。
+
+#### Scenario: 无新采集的20秒周期
+
+- **WHEN** 没有新finalize且数据库正常
+- **THEN** 既有loop按20秒默认周期继续authoritative evaluation，按评估时DB时间识别stale而非延长freshness window
+
+#### Scenario: Startup与新采集
+
+- **WHEN** 启动reconcile成功或新poll finalize成功
+- **THEN** 仍触发既有低延迟回调，失败/过期lease不获得额外执行资格

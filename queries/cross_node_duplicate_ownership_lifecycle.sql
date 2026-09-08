@@ -69,28 +69,34 @@ INSERT INTO cross_node_duplicate_occurrence_evidence (
     sqlc.arg(evaluation_id), sqlc.arg(evaluation_at)
 );
 
+-- name: ListCrossNodeDuplicateOccurrenceLatestCheckpoint :many
+-- Reads the evidence rows referenced by latest_evaluation_id. The lifecycle
+-- caller already holds the occurrence row lock, so this is the persisted
+-- checkpoint used for the material-change comparison.
+SELECT instance_id, observation_kind, source_poll_run_id,
+       source_provider, source_scheduled_at, source_completed_at
+FROM cross_node_duplicate_occurrence_evidence
+WHERE occurrence_id = sqlc.arg(occurrence_id)
+  AND evaluation_id = sqlc.arg(evaluation_id)
+ORDER BY instance_id;
+
 -- name: RefreshCrossNodeDuplicateOccurrenceProjection :exec
 -- Non-resolving pass (detect seed / refresh / add / remove / degrade): the
 -- occurrence stays ACTIVE, only the mutable projection columns move.
 --
--- has_evidence is false specifically for the zero-evidence degraded pass
--- (Phase 3 review item 3): when a reconcile pass appended no evidence rows
--- at all this evaluation (every retained Node was unclassifiable), the
--- caller passes has_evidence=false so latest_evaluation_id (and
--- last_fully_verified_at) keep pointing at the last evaluation that
--- actually has evidence backing it -- the 00013 latest_evaluation_id
--- consistency trigger requires an EXISTS evidence row for whatever
--- latest_evaluation_id is set to, and would reject an evaluation_id with
--- zero evidence rows this pass.
+-- has_checkpoint means this pass appended real material evidence rows.
+-- Unchanged or zero-evidence evaluations retain latest_evaluation_id.
+-- has_verified_evidence is independent: complete authoritative no-op passes
+-- still advance last_fully_verified_at; zero-evidence degraded passes do not.
 UPDATE cross_node_duplicate_occurrences
 SET last_seen_at = sqlc.arg(evaluation_at),
     evidence_state = sqlc.arg(evidence_state),
     last_fully_verified_at = CASE
-        WHEN NOT sqlc.arg(has_evidence)::boolean THEN last_fully_verified_at
+        WHEN NOT sqlc.arg(has_verified_evidence)::boolean THEN last_fully_verified_at
         WHEN sqlc.arg(evidence_state)::text = 'complete' THEN sqlc.arg(evaluation_at)
         ELSE last_fully_verified_at
     END,
-    latest_evaluation_id = CASE WHEN sqlc.arg(has_evidence)::boolean
+    latest_evaluation_id = CASE WHEN sqlc.arg(has_checkpoint)::boolean
         THEN sqlc.arg(evaluation_id) ELSE latest_evaluation_id END
 WHERE occurrence_id = sqlc.arg(occurrence_id) AND status = 'ACTIVE';
 
