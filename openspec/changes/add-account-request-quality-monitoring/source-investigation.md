@@ -1,6 +1,6 @@
 # 本地源码调研与阻塞证据
 
-日期：2026-09-08。状态：**BLOCKED，只有调研/设计，无生产实现**。
+日期：2026-09-08。最初调研状态为BLOCKED；后续Architecture Review允许unresolved，已解除，进入正式实现。原源码发现保留如下。
 
 ## CPA Manager Plus（只读）
 
@@ -43,18 +43,12 @@
 - `../node-cliproxyapi/sdk/cliproxy/auth/types.go:555-581` OAuth AccountInfo使用metadata email；仅此路径可直接证明email来源。
 - Node工作树已有`M AGENTS.md`，本轮没有修改此文件或其它Node文件。
 
-## 唯一当前 blocker 与解除方向
+## Architecture Review 变更
 
-HTTP source存在、单实例可用；当前缺口是auth_index-only事件没有现成Control canonical映射。**直接provider/email事件可处理，不代表整个事件集合已覆盖**。CPA的可选AccountSnapshot来自额外auth-files enrichment，复制Normalizer本身不会补齐它。
+原调研正确证明Control不保存auth_index，且CPA完整Event含enrichment，不等同queue raw格式。最新Architecture Review不再要求每个事件归属账号：允许account_key=NULL，保留Node/Provider结果。该决定解除原blocker，不需要历史身份系统。
 
-最小候选方向是在Control既有auth-files读取中保留唯一auth_index→provider/email lookup，不新增canonical identity或Node patch。但必须先证明时间差、删除、重复index下归属可靠；当前没有此实现/验证证据。不以跳过无法关联事件缩短用户要求的闭环。按用户第6/15节条件停止实现。
+实现仅在当前auth-files显式provider/email唯一且无冲突时用auth_index解析；直接事件identity可独立解析；其它保留unresolved。CPA的label/file fallback不搬入canonical identity。AccountQuality排除NULL，NodeProviderQuality保留并返回unresolved_request_count。
 
-## 验证与自查状态
+## 实施验证
 
-- 本轮只运行源码检索、只读Git检查和OpenSpec文档验证；未执行真实queue pop，未改动Node/CPA。
-- `openspec validate add-account-request-quality-monitoring --type change --strict --no-interactive`：PASS。
-- `git diff --check`：PASS；提交前另执行cached check。
-- 14项业务测试、真实PostgreSQL persistence/query、100000事件性能：**未运行，因identity blocker未实施**。不能声称PASS。
-- 无SQLite、RESP/Subscribe、quota/inspection、rollup/partition、UI或Grafana改动。
-- 事件表、collector、7天retention、单账号quality query均为设计而非已交付能力；duplicate safety仍待测试。
-- 无生产代码、API、migration、generated客户端变更。无push/deploy/archive。
+最终命令、fixture、结果和100k查询证据集中记录在planning-validation.md。生产改动仅Control；无CPA/Node修改，无push/deploy/archive，无真实本地Node queue消费。

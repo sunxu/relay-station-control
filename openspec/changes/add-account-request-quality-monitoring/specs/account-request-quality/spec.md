@@ -14,23 +14,43 @@ Control SHALL 仅消费 CLIProxy `/v0/management/usage-queue`，批量100、正�
 
 #### Scenario: 非法事件或 unsupported
 - **WHEN** payload malformed或endpoint unsupported
-- **THEN** 返回明确采集错误而不是空数据，不访问其他source
+- **THEN** 返回明确采集错误而不是空数据，不访问其他source；malformed单项计数后保留同批其它合法事件
 
 #### Scenario: 取消
 - **WHEN** runtime context取消
 - **THEN** 停止HTTP请求与退避等待，不开始下一次pop
 
-### Requirement: 既有 canonical account identity
+### Requirement: Unproven Account Identity Must Remain Unresolved
 
-事件 MUST 可靠映射到既有规范化provider:email account_key，auth_index只能作lookup key。无法证明映射时 MUST 阻止完整采集验收，不得猜测归属或以跳过事件宣称闭环通过。
+Control MUST 正确归属每个能够证明身份的事件（Every provably attributable event is attributed correctly），而非要求每个合法事件都有account_key。直接provider/email沿用既有canonicalization；auth_index只作为当前Node management快照lookup。只有exactly-one不同account_key且没有冲突才resolved，其余持久化account_key=NULL。MUST NOT使用latest/first wins、任意fallback或当前账号覆盖无法证明的历史事件，不新增temporal identity subsystem。
 
-#### Scenario: 明确身份
-- **WHEN** 事件带有可证明的provider和email
-- **THEN** 沿用现有规范化得到同一account_key
+#### Scenario: Direct identity
+- **WHEN** event提供足够provider/email且无冲突
+- **THEN** 归一化为既有account_key，resolved
 
-#### Scenario: 只有 auth_index
-- **WHEN** 事件没有可靠email且现有read model没有唯一映射
-- **THEN** 报告identity blocker，不生成伪造account_key
+#### Scenario: Unique auth_index
+- **WHEN** event只有auth_index且当前同Node快照证明exactly-one不同account_key
+- **THEN** 关联该account_key；重复相同映射不制造歧义
+
+#### Scenario: Missing lookup
+- **WHEN** auth_index缺失或lookup读取失败/不存在且无独立direct identity
+- **THEN** 保留事件且account_key=NULL
+
+#### Scenario: Conflicting lookup
+- **WHEN** 同auth_index对应多个不同account_key，或当前snapshot与event身份/provider证据冲突
+- **THEN** 保留事件且account_key=NULL，不选first/latest
+
+#### Scenario: Deleted account
+- **WHEN** account已删除、当前lookup缺失且event只有auth_index
+- **THEN** unresolved，不重建历史assignment
+
+#### Scenario: Unresolved account exclusion
+- **WHEN** 查询某个account_key质量
+- **THEN** NULL身份事件不得出现在该账号计数/失败率/latency中
+
+#### Scenario: Unresolved Node and Provider inclusion
+- **WHEN** 查询Node或Provider质量且包含unresolved失败事件
+- **THEN** 计入请求/失败/latency及unresolved_request_count，不伪装无请求
 
 ### Requirement: 最小事件与固定失败类别
 
@@ -58,7 +78,7 @@ Control MUST 使用PostgreSQL additive append-only事件表，按node_id+event_h
 
 ### Requirement: 单账号窗口质量查询
 
-查询 SHALL 按node_id+account_key返回15m或1h的request_count、success_count、failure_count、success_rate、p95_latency_ms、last_success_at、last_failure_at、last_failure_class；窗口使用DB UTC时间，p95为有效duration的percentile_cont(0.95)。不扩展UI、Node quality、quota或自动行为。
+Account Quality查询 SHALL 按node_id+非NULL account_key返回15m或1h的request_count、success_count、failure_count、success_rate、p95_latency_ms、last_success_at、last_failure_at、last_failure_class；窗口使用DB UTC时间，p95为有效duration的percentile_cont(0.95)。只补Node/Provider同字段聚合与unresolved_request_count，不扩展UI、完整Node quality产品、quota或自动行为。
 
 #### Scenario: 两个窗口与 p95
 - **WHEN** 存在窗口内外及不同账号事件
