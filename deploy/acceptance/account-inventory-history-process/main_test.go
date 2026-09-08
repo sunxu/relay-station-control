@@ -652,6 +652,7 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+	stateObserved := false
 	for {
 		var valid bool
 		var err error
@@ -725,6 +726,7 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 				fixture.summaryDate, fixture.instanceID).Scan(&valid)
 		}
 		if err == nil && valid {
+			stateObserved = true
 			families, _ := readProcessMetrics(t, ctx, processURL)
 			if stopped, exists := metricValue(families,
 				"relay_control_account_inventory_history_enabled",
@@ -734,7 +736,10 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatal("history process terminal internal source preservation timed out")
+			if stateObserved {
+				t.Fatal("history process terminal internal timed out class=runtime_not_stopped")
+			}
+			t.Fatal("history process terminal internal timed out class=state_not_ready")
 		case <-ticker.C:
 		}
 	}

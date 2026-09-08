@@ -522,6 +522,12 @@ verify_terminal_internal_source_preserved() {
       go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessTerminalInternalPreservesSource$' -count=1 \
       >"$runtime_directory/${label}-terminal-internal.log" 2>&1; then
+    if grep -Fq 'class=runtime_not_stopped' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_runtime_not_stopped"
+    fi
+    if grep -Fq 'class=state_not_ready' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_terminal_state_not_ready"
+    fi
     fixed_failure "${label}_terminal_internal_failed"
   fi
   grep -F '"msg":"account inventory history stopped","component":"account_inventory_history","reason":"runtime_stopped"' \
