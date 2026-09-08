@@ -43,3 +43,15 @@ go test -race ./internal/api ./internal/store -run 'TestUnifiedAccount|TestAccou
 - `85ab811`：共享账号列表、最近请求条、详情抽屉及前端测试。
 
 每个提交前执行 `git diff --cached --check`。首次 staged 检查发现新 spec 文件末尾多余空行，已修正后通过；未改变产品代码或已验证行为，因此不重复完整构建。验证和 runbook 另以文档提交保存。用户 Final Review 仍待完成，未 push/deploy/archive。
+
+## Final Review P2 Follow-up
+
+对 `49ab258` 的后续 Final Review 确认 Architecture PASS、Implementation BLOCKED：真实 Web adapter 将 All lifecycle 的 `undefined` 覆盖成 `present`，并把未设置的 provider/basic_status/quality 写成 OpenAPI 不允许的空字符串。此前“无 blocker”的独立自查未覆盖真实 adapter，此处以后续发现为准。
+
+修复只涉及 Web transport：页面初始 `present` 保留；adapter 不覆盖 lifecycle，未指定字段随 JSON serialization 省略。basicStatus 使用生成的枚举类型，删除空字符串的强制类型断言；API/schema/数据库及数据采集行为均未修改。
+
+新增 `web/src/api/account-list-transport.test.ts` 使用真实 generated client、仅 mock fetch：分别以 25/50 page size 验证 present → missing → All 的实际 POST body；确认所有未指定筛选均省略，并验证显式过滤、CSRF、no-store、same-origin 和 AbortSignal 透传。补齐旧页面 mock 未覆盖的序列化边界。
+
+`npm --prefix web test -- --run src/api/account-list-transport.test.ts src/pages/AccountInventoryView.test.tsx src/pages/TopologyView.test.tsx`：39/39 PASS；`npm --prefix web run typecheck`：PASS。
+
+修复后完整 `make test build`：PASS，前端 20 files / 127 tests PASS，构建成功。Go build 输出一次 module stat cache 写入权限警告但命令退出 0，不影响构建结果。change strict PASS、all strict 18/18 PASS、`git diff --check` PASS。独立修复审查 PASS，实际 transport 专项 3/3 PASS，原 P2 已修复；等待 Final Re-review。仅本地提交，无 push/deploy/archive。

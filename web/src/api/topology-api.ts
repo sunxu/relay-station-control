@@ -1,7 +1,7 @@
 import { getNodeAccountQuality, queryNodeAccountQuality, listNodeAccountRequestHistory, listNodeAccountQualityIncidents, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
-import type { GetNodeAccountQualityParams, NodeAccountQualityQueryRequest, NodeAccountQualityQueryRequestBasicStatus, NodeAccountQualityQueryRequestQuality, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse, ListNodeAccountQualityIncidentsParams, NodeAccountQualityIncidentResponse } from "./generated/control";
+import type { GetNodeAccountQualityParams, NodeAccountQualityQueryRequest, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse, ListNodeAccountQualityIncidentsParams, NodeAccountQualityIncidentResponse } from "./generated/control";
 import type { IncidentFailureClass } from "./account-quality-incidents-types";
-import type { AccountListFilters, AccountQualityFilter, AccountQualityLifecycle, AccountQualityWindow } from "./account-quality-types";
+import type { AccountQualityFilter, AccountQualityLifecycle, AccountQualityWindow } from "./account-quality-types";
 import type { TopologyApi } from "./topology-types";
 import { TopologyApiError } from "./topology-types";
 
@@ -15,10 +15,10 @@ export const generatedTopologyApi: TopologyApi = {
   accountList: (id, filters, csrfToken, signal) => {
     const body: NodeAccountQualityQueryRequest = {
       window: filters.window ?? "15m",
-      provider: filters.provider ?? "",
-      lifecycle: filters.lifecycle ?? "present",
-      basic_status: (filters.basicStatus ?? "") as NodeAccountQualityQueryRequestBasicStatus,
-      quality: (filters.quality ?? "") as NodeAccountQualityQueryRequestQuality,
+      provider: filters.provider,
+      lifecycle: filters.lifecycle,
+      basic_status: filters.basicStatus,
+      quality: filters.quality,
       email: filters.email,
       cursor: filters.cursor,
       limit: filters.limit ?? 50,

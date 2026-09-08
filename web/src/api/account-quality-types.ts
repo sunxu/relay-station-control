@@ -1,4 +1,4 @@
-import type { NodeAccountQualityItem, NodeAccountQualityResponse, GetNodeAccountQualityQuality, GetNodeAccountQualityWindow, GetNodeAccountQualityLifecycle } from "./generated/control";
+import type { NodeAccountQualityQueryRequestBasicStatus, NodeAccountQualityItem, NodeAccountQualityResponse, GetNodeAccountQualityQuality, GetNodeAccountQualityWindow, GetNodeAccountQualityLifecycle } from "./generated/control";
 
 export type AccountQualityWindow = GetNodeAccountQualityWindow;
 export type AccountQualityFilter = GetNodeAccountQualityQuality;
@@ -16,7 +16,7 @@ export interface AccountListFilters {
   provider?: string;
   quality?: AccountQualityFilter;
   lifecycle?: AccountQualityLifecycle;
-  basicStatus?: string;
+  basicStatus?: NodeAccountQualityQueryRequestBasicStatus;
   email?: string;
   cursor?: string;
   limit?: number;
