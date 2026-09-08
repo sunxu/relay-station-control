@@ -199,6 +199,12 @@ func main() {
 		logger.Error("environment identity verification failed", "component", "environment", "reason", controlenv.ReasonOf(err))
 		os.Exit(1)
 	}
+	requestQualityRuntime, err := newAccountRequestQualityRuntime(pool, nodeDrivers, logger)
+	if err != nil {
+		logger.Error("request quality initialization failed", "component", "account_request_quality")
+		os.Exit(1)
+	}
+
 	authService, err := controlauth.NewService(pool, config)
 	if err != nil {
 		logger.Error("authentication initialization failed", "component", "auth")
@@ -401,6 +407,16 @@ func main() {
 		defer controlLoops.Done()
 		_ = runAccountInventoryHistoryRuntime(shutdownContext, historyRuntime, logger)
 	}()
+	if requestQualityRuntime != nil {
+		controlLoops.Add(1)
+		go func() {
+			defer controlLoops.Done()
+			if runErr := requestQualityRuntime.Run(shutdownContext); runErr != nil && !errors.Is(runErr, context.Canceled) {
+				logger.Error("request quality collector stopped", "component", "account_request_quality")
+			}
+		}()
+	}
+
 	if inventoryPollRuntime.enabled {
 		controlLoops.Add(1)
 		go func() {

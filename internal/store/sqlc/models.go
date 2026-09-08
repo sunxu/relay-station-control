@@ -305,6 +305,19 @@ type AccountInventorySnapshotItem struct {
 	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
 }
 
+type AccountRequestQualityEvent struct {
+	EventHash    string             `json:"event_hash"`
+	RequestID    string             `json:"request_id"`
+	NodeID       pgtype.UUID        `json:"node_id"`
+	Provider     string             `json:"provider"`
+	AccountKey   pgtype.Text        `json:"account_key"`
+	Model        string             `json:"model"`
+	OccurredAt   pgtype.Timestamptz `json:"occurred_at"`
+	DurationMs   pgtype.Int8        `json:"duration_ms"`
+	Success      bool               `json:"success"`
+	FailureClass pgtype.Text        `json:"failure_class"`
+}
+
 type AsyncJob struct {
 	JobID                    pgtype.UUID        `json:"job_id"`
 	IdempotencyKey           string             `json:"idempotency_key"`
