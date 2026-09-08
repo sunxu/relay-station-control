@@ -58,8 +58,8 @@ Worker SHALL 在认领数据库记录前取得有界 HTTP 并发额度。认领 
 - **THEN** context 阻止 HTTP dispatch，Control 不越过宽限请求 Node，并按未完成 Control 执行恢复或 abandoned
 
 #### Scenario: 容量配置危险
-- **WHEN** 最大 Node 数、并发、15 秒最坏请求时长、120 秒 grace、30 秒 lease 和调度余量不能满足容量公式，或 50 Node 配置的并发低于 10
-- **THEN** poll service 在任何 Node 请求前拒绝启动并暴露固定配置错误，Control 数据面隔离保持不变
+- **WHEN** 并发、最坏请求时长、grace、lease 和调度余量不能推导出至少一个安全 Node 容量，或 lease 校验不通过
+- **THEN** poll service 在任何 Node 请求前拒绝启动并暴露固定配置错误；容量使用 account-inventory-poll-capacity 定义的统一公式，不使用人工 MAX_NODES 或独立50/10特例，Control 数据面隔离保持不变
 
 ### Requirement: poll run SHALL 使用有界 lease、fencing 和恢复尝试
 
