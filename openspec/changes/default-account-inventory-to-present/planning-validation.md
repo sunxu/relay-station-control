@@ -22,3 +22,7 @@
 - 原Account Quality composition/acceptance/ACL/rollback/performance回归一并PASS。100账号/10000事件，既有15m/1h、provider/quality case约127–130ms、每次1数据库请求（race环境）；没有新增index或缓存。
 - 独立API/Web只读审查未发现P1/P2；旧页面initial默认行为、无参数HTTP兼容、cursor绑定、Node/cache隔离与只读边界保持。完整Final Review尚待用户。
 - 最终change/all strict、git diff --check：PASS；所有9项任务完成。用户授权将本阶段与此前账号清单提交 3634931 合并 amend，提交标题为 `feat(inventory): default account views to present lifecycle`；不 push、不部署、不 archive。
+
+## Canonical Rebase（2026-09-09）
+
+归档consolidate-account-inventory-into-topology后，本change的React账号页MODIFIED delta基于最新canonical重新对齐，保留所有新场景及默认present/查看缺失验收。旧独立页面、无Node时手动查询及禁止只读详情等已被后续已批准契约取代，不能在未来归档本change时恢复。仅修订文档，不改变本change的API/lifecycle默认值或生产实现，不归档本change。

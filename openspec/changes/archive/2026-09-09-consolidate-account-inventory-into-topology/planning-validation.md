@@ -57,4 +57,17 @@ git diff --check
 
 筛选只留内存；Node变化/离开取消旧请求；查询按钮在任何页均重置首页。默认present且可查看全部/缺失；Unknown不等于Unavailable；Inventory状态不受质量影响。只有一个账号工作入口，不新增业务mutation。浏览器旧/account-inventory有意失效，HTTP /api/account-inventory/*契约不受影响。归档历史与canonical spec暂不改，待正式archive同步delta。
 
-change strict PASS、all strict 18/18 PASS、diff check PASS。5/5任务完成。本地提交，未push、未deploy、未archive；当前运行环境仍为合并前版本，等待Architecture + Implementation Final Review。
+change strict PASS、all strict 18/18 PASS、diff check PASS。5/5任务完成。本地提交，未push、未deploy、未archive；当前运行环境仍为合并前版本。Final Review结果见下节。
+
+## Final Review and Archive Gate
+
+2026-09-09，基于已提交HEAD `8349ac8` 完成Architecture + Implementation Final Review：两项均PASS，P1/P2 blockers=0。独立只读review与主Agent复核确认功能迁移、旧路由移除、Node/分页/敏感值隔离及后端边界保持。
+
+最终专项命令：
+
+```sh
+cd web
+npm test -- --run src/App.account-inventory.test.tsx src/pages/TopologyView.test.tsx src/pages/TopologyConsolidation.test.tsx src/pages/AccountInventoryCapacity.test.tsx src/api/account-list-transport.test.ts
+```
+
+5 files / 43 tests PASS。change strict PASS，all strict 18/18 PASS，提交范围diff check PASS，工作树当时干净。复用已有make test build结果，不重复无关构建或PG。用户随后授权继续归档，5/5任务完成；同步account-inventory-readonly-query与node-centric-topology-ui canonical。归档不改变产品，不代表已部署；未push，本地部署仍待后续执行。
