@@ -21,4 +21,4 @@
 
 ## Impact
 
-仅control仓库。OpenAPI与generated Go/TS新增GET；00023只加SECURITY DEFINER query-access function/ACL，sqlc无新查询；不新增metrics/audit truth。复用runtime身份与super_admin，不影响既有API；Runbook明确窗口计数与采集缺口。未来发布先function再API/Web，回滚保留forward schema，Down只在隔离测试删除新function。本轮本地commit，不push/deploy/archive。
+仅control仓库。OpenAPI与generated Go/TS新增GET；00023只加SECURITY DEFINER query-access function/ACL，sqlc无新查询；不新增metrics/audit truth。复用runtime身份与super_admin，不影响既有API；Runbook明确窗口计数与采集缺口。未来发布先function再API/Web，回滚保留forward schema，Down只在隔离测试删除新function。实现已提交至remote main，Architecture与Implementation Final Review均APPROVED；尚未deploy、尚未archive，交付时间线见planning-validation.md。

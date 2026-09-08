@@ -23,4 +23,4 @@
 
 ## Migration Plan
 
-未来发布先query-access migration再API/Web；回滚应用保留forward schema，Down仅隔离测试。现在不push/deploy/archive，本地分阶段commit后等待Final Review。
+未来发布先query-access migration再API/Web；回滚应用保留forward schema，Down仅隔离测试。实现已进入remote main，Architecture与Implementation Final Review均APPROVED；尚未deploy、尚未archive，评审证据补录及sequencing deviation见planning-validation.md。

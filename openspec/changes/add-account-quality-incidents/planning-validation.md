@@ -19,9 +19,19 @@ active-only是用户允许的MVP分支：15m同Node/account/class至少3失败�
 | U2 | section same QueryClient换Node明确old signal aborted、迟到401不清新Node会话；`TopologyView.test.tsx`真实Incident账号按钮以account_key调用已有History；现有Node switch测试继续证明History清选择。Incidents父组件key=Node，scope切换重建filters/pages，读取无placeholder旧结果 | frontend PASS |
 | P1 | `TestAccountQualityIncidentsPerformancePostgres`100accounts10000events，四类共400active，每组25失败；每行精确identity/class/count/null校验，tracer每次1query，所有case <1s本地预算；无新增index/persistence | PG PASS |
 | V1 | 下述targeted PG/API及History回归race、全量frontend/typecheck/build/make test build | PASS |
-| V2 | change/all strict、diffcheck、runbook、13/13任务、本地分阶段commit | change PASS/all 18/18 PASS，Final Review待用户 |
+| V2 | change/all strict、diffcheck、runbook、13/13任务、本地分阶段commit | change PASS/all 18/18 PASS；Architecture与Implementation Final Review均APPROVED |
 
-## Commands and results
+## Final Review reconciliation
+
+本次用户确认：Architecture Final Review **APPROVED**，Implementation Final Review **APPROVED**，code blockers **none**，13/13 tasks complete。final reviewed commit 为 `4dbd6cb41805e383f62c6289be136fce44badb26`，已在remote `main`；本次读取的本地HEAD与origin/main引用均为该SHA。远端已落地的事实采用用户明确确认，本轮未重新push。
+
+时间线：原实现交付时记录的是本地提交、等待Final Review；随后提交进入remote main，本次补录批准确认。这是 **review-after-landing / sequencing deviation** 的评审证据补录，不能回写成评审在landing前已记录。用户未提供实际评审与push的精确时间，因此不推造时间戳，也不以commit时间代替评审时间。
+
+当前状态：评审通过、实现已进入remote main、**尚未deploy**、尚未archive；不再是local only/not pushed/waiting Final Review。本次仅校正文档delivery state，不修改架构、契约或产品行为。下述业务测试结果保留为原实现验收历史，本次只运行OpenSpec strict与diff检查，不重新generate或跑完整测试。完成本次证据校正后可执行独立archive流程，部署仍需独立执行。
+
+本次文档校正验证：change strict PASS，all strict 18/18 PASS，`git diff --check` PASS；变更范围仅五份交付状态文档，未修改spec delta或任何实现文件。
+
+## Commands and results（原实现验收）
 
 真实PostgreSQL使用既有55432测试服务并显式设置 `CONTROL_DATABASE_TEST_URL`（migrator）与 `CONTROL_RUNTIME_DATABASE_TEST_URL`（受限runtime）；fixture创建隔离数据库。未以SKIP作为PG通过，未操作55434部署DB或CLIProxy。Go保留默认GOCACHE/GOTMPDIR。
 
@@ -65,5 +75,5 @@ git diff --check
 - 无mutation/resolve/disable/请求retry/ack/comments/notifications/Jobs remediation、Prometheus/Grafana/quota/inspection。
 - 00023只readonly query-access，默认runtime无direct SELECT；生产回滚保留forward schema，Down仅隔离测试。
 - 采集destructive-pop/no-ACK限制仍在runbook，Empty不等于健康；所有操作只读，重启重算，不持久化Incident。
-- 本地分阶段commit：规划`39c154d`、API`2fa935a`、Web`c41eb68`；证据收尾commit最终SHA见git log。
-- 13/13 implementation tasks完成；不push、不deploy、不archive，等待Architecture + Implementation Final Review。
+- 实现分阶段commit：规划`39c154d`、API`2fa935a`、Web`c41eb68`、证据收尾`4dbd6cb41805e383f62c6289be136fce44badb26`；该交付已在remote main并通过Final Review。
+- 13/13 implementation tasks完成；Architecture与Implementation Final Review均APPROVED，code blockers none；已进入remote main，尚未deploy、尚未archive。

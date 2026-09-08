@@ -14,4 +14,4 @@
 - [x] 4.1 targeted PG/API及relevant race通过。
 - [x] 4.2 frontend tests/typecheck/build与make test build通过。
 - [x] 4.3 change/all strict、diffcheck、runbook/evidence reconciliation。
-- [x] 4.4 分阶段本地commit、git status、等待Final Review；不push/deploy/archive。
+- [x] 4.4 分阶段commit与git status完成；Final Review已APPROVED、实现已在remote main，尚未deploy/archive；时间线见planning-validation.md。
