@@ -737,6 +737,17 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 		select {
 		case <-ctx.Done():
 			if stateObserved {
+				if faultStage == "retention" {
+					metricsContext, metricsCancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+					families, _ := readProcessMetrics(t, metricsContext, processURL)
+					metricsCancel()
+					failureDuration, exists := metricValue(families,
+						"relay_control_account_inventory_history_delete_duration_seconds_total",
+						map[string]string{"result": "failure"})
+					if !exists || failureDuration == 0 {
+						t.Fatal("history process terminal internal timed out class=retention_worker_not_observed")
+					}
+				}
 				t.Fatal("history process terminal internal timed out class=runtime_not_stopped")
 			}
 			t.Fatal("history process terminal internal timed out class=state_not_ready")
