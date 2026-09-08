@@ -98,6 +98,13 @@ export function AccountInventoryView({
     query.mutate(filters);
   };
 
+  // Defer until mount settles so StrictMode's discarded mount does not issue a read/audit.
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) execute(); });
+    return () => { active = false; };
+  }, []); // Only the initial deep link auto-loads; filter edits remain explicit.
+
   const resetResult = () => {
     setCursorHistory([undefined]);
     query.reset();

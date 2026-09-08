@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import type { AccountInventoryApi, AccountInventoryItem } from "../api/account-inventory-types";
 import { AccountInventoryApiError } from "../api/account-inventory-types";
 import type { AssetApi, NodeAsset } from "../api/asset-types";
@@ -67,16 +67,38 @@ describe("account inventory read-only view", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
   });
 
-  it("preselects the linked Node without querying accounts until explicitly requested", async () => {
+  it("automatically loads the linked Node exactly once under StrictMode", async () => {
     window.history.replaceState(null, "", `/account-inventory?instance_id=${instanceId}`);
     const api: AccountInventoryApi = { query: vi.fn().mockResolvedValue({ items: [account], nextCursor: null }) };
-    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    render(<StrictMode><AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} /></StrictMode>, { wrapper: Wrapper });
 
     expect(await screen.findByText(`Inventory Node · ${instanceId}`)).toBeInTheDocument();
-    expect(api.query).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
     await waitFor(() => expect(api.query).toHaveBeenCalledWith("csrf-proof", expect.objectContaining({ instanceId, cursor: undefined })));
     expect(await screen.findByText("operator@example.invalid")).toBeInTheDocument();
+    expect(api.query).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText("Provider 精确筛选"), { target: { value: "openai" } });
+    expect(screen.getByText("设置筛选后点击查询")).toBeInTheDocument();
+    expect(api.query).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not query accounts without a linked Node", async () => {
+    const api: AccountInventoryApi = { query: vi.fn() };
+    render(<AccountInventoryView api={api} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    await screen.findByLabelText("Relay Node");
+    expect(api.query).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /查\s*询/ })).toBeDisabled();
+  });
+
+  it("shows a linked query failure and recovers only on explicit retry", async () => {
+    window.history.replaceState(null, "", `/account-inventory?instance_id=${instanceId}`);
+    const query = vi.fn().mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce({ items: [account], nextCursor: null });
+    render(<AccountInventoryView api={{ query }} assetApi={assetApi()} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    expect(await screen.findByText("账号清单读取失败")).toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
+    expect(await screen.findByText("operator@example.invalid")).toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it("queries exact normalized filters, displays current semantics and persists no sensitive state", async () => {
