@@ -16,9 +16,10 @@ import (
 // cleanly, and the pre-existing migration 12 fail-closed rollback guard is
 // unaffected by this additive migration. Migrations 00014/00015/00016
 // (Phase 2/3/4 query access, none with history of their own) sit on top and
-// are stepped down first.
+// are stepped down first. These historical tests explicitly pin their setup
+// and restoration versions so later migrations do not change their subject.
 func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "16")
 	ctx := context.Background()
 
 	assertVersion := func(t *testing.T, want int32) {
@@ -65,7 +66,7 @@ func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 		t.Fatal("expected migration 14/15 down to drop all three readonly query functions")
 	}
 
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-to", "16"); err != nil {
 		t.Fatal(err)
 	}
 	assertVersion(t, 16)
@@ -78,7 +79,7 @@ func TestCrossNodeDuplicateOwnershipMigrationUpDownUp(t *testing.T) {
 // is stepped down first since it has no history of its own to protect and
 // sits on top of 00014.
 func TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp(t *testing.T) {
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "16")
 	ctx := context.Background()
 
 	assertVersion := func(t *testing.T, want int32) {
@@ -140,7 +141,7 @@ func TestCrossNodeDuplicateOwnershipQueryAccessMigrationUpDownUp(t *testing.T) {
 // cleanly, without touching migrations 00013/00014's tables, functions, or
 // history.
 func TestCrossNodeDuplicateOwnershipEvidenceEvaluationMigrationUpDownUp(t *testing.T) {
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "16")
 	ctx := context.Background()
 
 	assertVersion := func(t *testing.T, want int32) {
@@ -195,7 +196,7 @@ func TestCrossNodeDuplicateOwnershipEvidenceEvaluationMigrationUpDownUp(t *testi
 		t.Fatal("migration 15/16 down must not touch migration 13's occurrence/evidence tables")
 	}
 
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-to", "16"); err != nil {
 		t.Fatal(err)
 	}
 	assertVersion(t, 16)
@@ -208,7 +209,7 @@ func TestCrossNodeDuplicateOwnershipEvidenceEvaluationMigrationUpDownUp(t *testi
 // the pre-00016 function body -- it must never touch the 00013 tables or
 // the 00014/00015 functions.
 func TestCrossNodeDuplicateOwnershipEvidenceEvaluationSnapshotGuardMigrationUpDownUp(t *testing.T) {
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "16")
 	ctx := context.Background()
 
 	assertVersion := func(t *testing.T, want int32) {
@@ -253,7 +254,7 @@ func TestCrossNodeDuplicateOwnershipEvidenceEvaluationSnapshotGuardMigrationUpDo
 		t.Fatal("migration 16 down must not touch migration 13's occurrence/evidence tables")
 	}
 
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-to", "16"); err != nil {
 		t.Fatal(err)
 	}
 	assertVersion(t, 16)
