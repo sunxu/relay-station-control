@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Empty, Flex, Grid, Select, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Empty, Flex, Grid, Input, Select, Spin, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -12,7 +12,11 @@ import type { AccountQualityFilter, AccountQualityItem, AccountQualityLifecycle,
 import { AccountQualityIncidentsSection } from "./AccountQualityIncidentsSection";
 import { AccountList, type AccountListRow } from "../components/AccountList";
 import { AccountDetailsDrawer } from "../components/AccountDetailsDrawer";
-import { useTopologyAccountList } from "../api/account-list-hooks";
+import { useAccountListQuery } from "../api/account-list-hooks";
+import type { AccountInventoryApi, AccountInventoryBasicStatus } from "../api/account-inventory-types";
+import { accountInventoryBasicStatuses, accountInventoryLifecycles } from "../api/account-inventory-types";
+import type { AccountListFilters } from "../api/account-quality-types";
+import { AccountInventoryCapacity } from "../components/AccountInventoryCapacity";
 
 const { Text } = Typography;
 function utc(value?: string | null) {
@@ -23,6 +27,16 @@ function unauthorized(error: unknown) {
 }
 function ReadError({ retry, message = "读取不可用（unavailable）" }: { retry: () => void; message?: string }) {
   return <Alert type="error" title={message} action={<Button onClick={retry}>重试</Button>} />;
+}
+function accountReadError(error: unknown): string {
+  if (error instanceof TopologyApiError) {
+    if (error.status === 400) return "筛选条件或分页凭据无效，请清除筛选并重新查询。";
+    if (error.status === 403) return "当前会话无权读取账号清单。";
+    if (error.status === 404) return "所选 Node 不存在或已不属于当前环境。";
+    if (error.status === 409) return "所选 Node 不支持账号清单查询。";
+    if (error.status === 503) return "读取不可用（unavailable）";
+  }
+  return "Control 暂时无法读取账号清单。";
 }
 function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occurrenceId: string; onUnauthorized: () => void }) {
   const [cursor, setCursor] = useState<string>();
@@ -47,8 +61,8 @@ function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occ
   </Flex>;
 }
 
-export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "", onUnauthorized }: {
-  api: TopologyApi; assetApi: AssetApi; initialInstanceId?: string; csrfToken?: string; onUnauthorized: () => void;
+export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, csrfToken = "", onUnauthorized }: {
+  api: TopologyApi; assetApi: AssetApi; inventoryApi?: AccountInventoryApi; initialInstanceId?: string; csrfToken?: string; onUnauthorized: () => void;
 }) {
   const cache = useQueryClient();
   const screens = Grid.useBreakpoint();
@@ -60,8 +74,12 @@ export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "",
   const [qualityWindow, setQualityWindow] = useState<AccountQualityWindow>("15m");
   const [qualityProvider, setQualityProvider] = useState<string>();
   const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
-  const [qualityLifecycle, setQualityLifecycle] = useState<AccountQualityLifecycle>("present");
+  const [qualityLifecycle, setQualityLifecycle] = useState<AccountQualityLifecycle | undefined>("present");
+  const [qualityBasicStatus, setQualityBasicStatus] = useState<AccountInventoryBasicStatus>();
+  const [qualityEmail, setQualityEmail] = useState("");
+  const [qualityPageSize, setQualityPageSize] = useState<25 | 50 | 100>(25);
   const [qualityCursor, setQualityCursor] = useState<string>();
+  const [qualityCursorHistory, setQualityCursorHistory] = useState<Array<string | undefined>>([undefined]);
   const [detailsRow, setDetailsRow] = useState<AccountListRow>();
   const [detailsAccountKey, setDetailsAccountKey] = useState<string>();
   const nodes = useNodeAssets(assetApi, { limit: 200, cursor: nodeCursor });
@@ -70,8 +88,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "",
   const binding = useTopologyBinding(api, instanceId);
   const current = useTopologyCurrentDuplicates(api, instanceId, currentCursor);
   const history = useTopologyHistory(api, instanceId, historyStatus, historyCursor);
-  const accountList = useTopologyAccountList(api, instanceId, csrfToken, { window: qualityWindow, provider: qualityProvider, quality: qualityFilter, lifecycle: qualityLifecycle, limit: 25, cursor: qualityCursor });
-  const accountQualityView = accountList;
+  const accountQualityView = useAccountListQuery(api, csrfToken);
   const node = selected.error ? undefined : selected.data;
 
   const expireSession = () => {
@@ -82,15 +99,16 @@ export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "",
     onUnauthorized();
   };
   useEffect(() => {
-    if ([providers.error, binding.error, current.error, history.error, accountQualityView.error, accountList.error, nodes.error, selected.error].some(unauthorized)) expireSession();
-  }, [providers.error, binding.error, current.error, history.error, accountQualityView.error, accountList.error, nodes.error, selected.error]);
+    if ([providers.error, binding.error, current.error, history.error, accountQualityView.error, nodes.error, selected.error].some(unauthorized)) expireSession();
+  }, [providers.error, binding.error, current.error, history.error, accountQualityView.error, nodes.error, selected.error]);
   useEffect(() => {
     const onPop = () => {
       setInstanceId(new URLSearchParams(window.location.search).get("instance_id") ?? undefined);
       setHistoryCursor(undefined);
       setCurrentCursor(undefined);
-      setQualityCursor(undefined);
+      setQualityCursor(undefined); setQualityCursorHistory([undefined]);
       setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
+      setQualityBasicStatus(undefined); setQualityEmail(""); setQualityPageSize(25);
       setDetailsRow(undefined);
       setDetailsAccountKey(undefined);
     };
@@ -101,12 +119,29 @@ export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "",
     setInstanceId(id);
     setHistoryCursor(undefined);
     setCurrentCursor(undefined);
-    setQualityCursor(undefined);
+    setQualityCursor(undefined); setQualityCursorHistory([undefined]);
     setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
+    setQualityBasicStatus(undefined); setQualityEmail(""); setQualityPageSize(25);
     setDetailsRow(undefined);
     setDetailsAccountKey(undefined);
     window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(id)}`);
   };
+  const executeAccountQuery = (cursor?: string) => {
+    if (!instanceId) return;
+    const filters: AccountListFilters = {
+      instanceId, window: qualityWindow, provider: qualityProvider?.trim().toLowerCase() || undefined, quality: qualityFilter,
+      lifecycle: qualityLifecycle, basicStatus: qualityBasicStatus,
+      email: qualityEmail.trim().toLowerCase() || undefined, cursor, limit: qualityPageSize,
+    };
+    accountQualityView.mutate(filters);
+  };
+  const resetAccountResult = () => { setQualityCursor(undefined); setQualityCursorHistory([undefined]); setDetailsRow(undefined); setDetailsAccountKey(undefined); accountQualityView.reset(); };
+  useEffect(() => {
+    let active = true;
+    accountQualityView.reset();
+    queueMicrotask(() => { if (active) executeAccountQuery(); });
+    return () => { active = false; accountQualityView.reset(); };
+  }, [instanceId]);
   const providerColumns: ColumnsType<TopologyProviderState> = [
     { title: "Provider", dataIndex: "provider", width: 120 },
     { title: "监控范围", dataIndex: "monitoring_status", width: 130, render: (v) => <Tag>{v}</Tag> },
@@ -163,6 +198,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "",
         <Button disabled={!nodes.data?.nextCursor || nodes.isFetching || nodes.isError} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>下一页 Node</Button>
       </Flex>
     </Card>
+    {inventoryApi && <AccountInventoryCapacity api={inventoryApi} csrfToken={csrfToken} onUnauthorized={expireSession} />}
     {!instanceId && <Empty description="请选择 Node 查看只读拓扑" />}
     {instanceId && <>
       <Card title="Inventory evidence">
@@ -172,24 +208,26 @@ export function TopologyView({ api, assetApi, initialInstanceId, csrfToken = "",
           <Text>Node：{node?.displayName ?? instanceId}</Text>
           <Text style={{ overflowWrap: "anywhere" }}>Instance ID：{instanceId}</Text>
           <Text>监控：{node ? node.monitoringActive ? "active" : "inactive" : "unknown"}</Text>
-          {node && <Text>账号清单：<Button type="link" size="small" href={`/account-inventory?instance_id=${encodeURIComponent(instanceId)}`}>打开</Button></Text>}
         </Flex>
       </Card>
-      <Card title="账号" role="region" aria-label="Account Quality">
+      <Card title="账号清单与质量" role="region" aria-label="Account Quality">
         <Flex gap={8} wrap>
-          <Select aria-label="质量窗口" value={qualityWindow} onChange={(value) => { setQualityWindow(value); setQualityCursor(undefined); }} options={[{ value: "15m", label: "最近 15 分钟" }, { value: "1h", label: "最近 1 小时" }]} />
-          <Select allowClear aria-label="质量 Provider" placeholder="全部 Provider" value={qualityProvider} onChange={(value) => { setQualityProvider(value); setQualityCursor(undefined); }} options={(providers.data?.providers ?? []).map((row) => ({ value: row.provider, label: row.provider }))} disabled={providers.isError || providers.isPending} />
-          <Select allowClear aria-label="质量分类" placeholder="全部质量" value={qualityFilter} onChange={(value) => { setQualityFilter(value); setQualityCursor(undefined); }} options={[{ value: "good", label: "Good" }, { value: "degraded", label: "Degraded" }, { value: "bad", label: "Bad" }, { value: "unknown", label: "Unknown" }]} />
-          <Select allowClear aria-label="质量生命周期" placeholder="全部生命周期" value={qualityLifecycle} onChange={(value) => { setQualityLifecycle(value); setQualityCursor(undefined); }} options={["present", "missing", "suspected_missing", "out_of_scope"].map((value) => ({ value, label: value }))} />
-          <Button onClick={() => void accountQualityView.refetch()} loading={accountQualityView.isFetching}>刷新质量</Button>
+          <Input aria-label="Provider 精确筛选" placeholder="Provider（精确）" value={qualityProvider ?? ""} disabled={accountQualityView.isPending} maxLength={64} onChange={(event) => { setQualityProvider(event.target.value || undefined); resetAccountResult(); }} style={{ width: 190 }} />
+          <Select allowClear aria-label="质量生命周期" placeholder="全部生命周期" value={qualityLifecycle} disabled={accountQualityView.isPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => { setQualityLifecycle(value); resetAccountResult(); }} style={{ width: 180 }} />
+          <Select allowClear aria-label="最后报告基础状态" placeholder="全部基础状态" value={qualityBasicStatus} disabled={accountQualityView.isPending} options={accountInventoryBasicStatuses.map((value) => ({ value, label: value }))} onChange={(value) => { setQualityBasicStatus(value); resetAccountResult(); }} style={{ width: 200 }} />
+          <Input aria-label="邮箱精确筛选" placeholder="邮箱（精确匹配）" value={qualityEmail} disabled={accountQualityView.isPending} maxLength={320} autoComplete="off" onChange={(event) => { setQualityEmail(event.target.value); resetAccountResult(); }} style={{ width: 240 }} />
+          <Select aria-label="质量窗口" value={qualityWindow} disabled={accountQualityView.isPending} options={[{ value: "15m", label: "最近 15 分钟" }, { value: "1h", label: "最近 1 小时" }]} onChange={(value) => { setQualityWindow(value); resetAccountResult(); }} />
+          <Select allowClear aria-label="质量分类" placeholder="全部质量" value={qualityFilter} disabled={accountQualityView.isPending} options={[{ value: "good", label: "Good" }, { value: "degraded", label: "Degraded" }, { value: "bad", label: "Bad" }, { value: "unknown", label: "Unknown" }]} onChange={(value) => { setQualityFilter(value); resetAccountResult(); }} />
+          <Select aria-label="每页账号数" value={qualityPageSize} disabled={accountQualityView.isPending} options={[25, 50, 100].map((value) => ({ value, label: `${value} / 页` }))} onChange={(value) => { setQualityPageSize(value); resetAccountResult(); }} />
+          <Button type="primary" disabled={!instanceId} loading={accountQualityView.isPending} onClick={() => { resetAccountResult(); executeAccountQuery(); }}>查询</Button>
         </Flex>
-        {providers.isError && <Alert style={{ marginTop: 12 }} type="warning" showIcon message="Provider 筛选来源不可用" description="无法安全加载 Provider 过滤项。" />}
+
         {accountQualityView.isPending && <Flex role="status" aria-label="正在读取账号质量" justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
-        {accountQualityView.error && !accountQualityView.isPending && <ReadError retry={() => void accountQualityView.refetch()} />}
+        {accountQualityView.error && !accountQualityView.isPending && <ReadError message={accountReadError(accountQualityView.error)} retry={() => executeAccountQuery(qualityCursor)} />}
         {accountQualityView.data && !accountQualityView.error && <>
           {accountQualityView.data.items.length === 0 && <Empty description="没有 Inventory 账号或匹配账号" />}
           {accountQualityView.data.items.length > 0 && <AccountList rows={accountRows} onSelectAccount={(row) => { setDetailsAccountKey(row.account_key); setDetailsRow(row); }} />}
-          <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={!qualityCursor} onClick={() => setQualityCursor(undefined)}>质量首页</Button><Button disabled={!accountQualityView.data.next_cursor || accountQualityView.isFetching} onClick={() => setQualityCursor(accountQualityView.data.next_cursor ?? undefined)}>质量下一页</Button></Flex>
+          <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={qualityCursorHistory.length === 1 || accountQualityView.isPending} onClick={() => { const previous = qualityCursorHistory.slice(0, -1); const cursor = previous.at(-1); setQualityCursorHistory(previous); setQualityCursor(cursor); executeAccountQuery(cursor); }}>账号上一页</Button><Button disabled={!accountQualityView.data.next_cursor || accountQualityView.isPending} onClick={() => { const next = accountQualityView.data.next_cursor ?? undefined; setQualityCursorHistory((items) => [...items, next]); setQualityCursor(next); executeAccountQuery(next); }}>账号下一页</Button></Flex>
         </>}
       </Card>
       <AccountDetailsDrawer api={api} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />

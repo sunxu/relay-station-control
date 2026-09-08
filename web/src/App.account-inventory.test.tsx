@@ -4,12 +4,9 @@ import App from "./App";
 import type { AuthApi } from "./api/auth-api";
 import type { SessionResponse } from "./api/generated/control";
 
-const chunk = vi.hoisted(() => ({ loaded: vi.fn() }));
-
-vi.mock("./pages/AccountInventoryPage", () => {
-  chunk.loaded();
-  return { default: () => <main data-testid="mock-account-inventory-page">账号清单 chunk</main> };
-});
+vi.mock("./pages/TopologyPage", () => ({
+  default: () => <main data-testid="mock-topology-page">Node Topology chunk</main>,
+}));
 
 const session: SessionResponse = {
   state: "authenticated",
@@ -43,21 +40,24 @@ function api(): AuthApi {
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
-  chunk.loaded.mockClear();
 });
 
-it("lazy-loads the account inventory page only after authenticated navigation", async () => {
+it("keeps account inventory out of the management navigation", async () => {
   render(<App api={api()} />);
   expect(await screen.findByTestId("management-page")).toBeInTheDocument();
-  expect(chunk.loaded).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "账号清单" }));
-  expect(await screen.findByTestId("mock-account-inventory-page")).toBeInTheDocument();
-  expect(window.location.pathname).toBe("/account-inventory");
+  expect(screen.queryByRole("button", { name: "账号清单" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Node Topology" }));
+  expect(window.location.pathname).toBe("/topology");
 });
 
-it("restores an authenticated direct visit without putting filters in the URL", async () => {
-  window.history.replaceState(null, "", "/account-inventory");
-  render(<App api={api()} />);
-  expect(await screen.findByTestId("mock-account-inventory-page")).toBeInTheDocument();
-  expect(window.location.search).toBe("");
-});
+it.each(["/account-inventory", "/account-inventory?instance_id=node-a"]) (
+  "does not load the removed account inventory route (%s)", async (path) => {
+    window.history.replaceState(null, "", path);
+    render(<App api={api()} />);
+    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("account-inventory-page")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-topology-page")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/account-inventory");
+    expect(window.location.search).toBe(path.includes("?") ? "?instance_id=node-a" : "");
+  },
+);

@@ -18,7 +18,7 @@ function captureRequests() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("unified account list HTTP serialization", () => {
-  it.each([25, 50])("preserves explicit present then omits cleared lifecycle at page size %i", async (limit) => {
+  it.each([25, 50, 100])("preserves explicit present then omits cleared lifecycle at page size %i", async (limit) => {
     const { request } = captureRequests();
     await generatedTopologyApi.accountList(instanceId, { lifecycle: "present", limit }, "csrf-proof");
     expect(request(0).body.lifecycle).toBe("present");
@@ -34,6 +34,9 @@ describe("unified account list HTTP serialization", () => {
   it("sends selected filters unchanged only in the protected POST body", async () => {
     const { fetchMock, request } = captureRequests();
     const controller = new AbortController();
+    window.history.replaceState(null, "", `/topology?instance_id=${instanceId}`);
+    const browserBefore = JSON.stringify({ href: window.location.href, history: window.history.state,
+      local: { ...localStorage }, session: { ...sessionStorage } });
     await generatedTopologyApi.accountList(instanceId, {
       window: "1h", provider: "openai", lifecycle: "missing", basicStatus: "disabled",
       quality: "bad", email: "transport@example.invalid", cursor: "opaque-cursor", limit: 25,
@@ -44,6 +47,10 @@ describe("unified account list HTTP serialization", () => {
     expect(body).toEqual({ window: "1h", provider: "openai", lifecycle: "missing",
       basic_status: "disabled", quality: "bad", email: "transport@example.invalid",
       cursor: "opaque-cursor", limit: 25 });
+    expect(JSON.stringify({ href: window.location.href, history: window.history.state,
+      local: { ...localStorage }, session: { ...sessionStorage } })).toBe(browserBefore);
+    expect(url).not.toContain("transport@example.invalid");
+    expect(url).not.toContain("opaque-cursor");
     expect(init.method).toBe("POST");
     expect(init.cache).toBe("no-store");
     expect(init.credentials).toBe("same-origin");

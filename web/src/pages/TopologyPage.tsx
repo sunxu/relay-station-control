@@ -1,4 +1,5 @@
 import { Button, Flex, Typography } from "antd";
+import { generatedAccountInventoryApi } from "../api/account-inventory-api";
 import { generatedAssetApi } from "../api/asset-api";
 import { generatedTopologyApi } from "../api/topology-api";
 import { useAuth } from "../auth/AuthContext";
@@ -12,6 +13,6 @@ export default function TopologyPage() {
       <div><Typography.Title level={2}>Node Topology</Typography.Title><Typography.Text type="secondary">Node 及其只读关联观察</Typography.Text></div>
       <Button onClick={() => auth.navigate("management")}>管理员控制台</Button>
     </Flex>
-    <TopologyView api={generatedTopologyApi} assetApi={generatedAssetApi} initialInstanceId={new URLSearchParams(window.location.search).get("instance_id") ?? undefined} csrfToken={auth.session.csrf_token} onUnauthorized={auth.clearSession} />
+    <TopologyView api={generatedTopologyApi} assetApi={generatedAssetApi} inventoryApi={generatedAccountInventoryApi} initialInstanceId={new URLSearchParams(window.location.search).get("instance_id") ?? undefined} csrfToken={auth.session.csrf_token} onUnauthorized={auth.clearSession} />
   </main>;
 }

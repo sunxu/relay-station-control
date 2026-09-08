@@ -165,14 +165,16 @@ it("filters Account Quality by lifecycle and resets to all", async () => {
     .mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
   renderView(api, assetApi);
   await screen.findByText("没有 Inventory 账号或匹配账号");
-  fireEvent.click(screen.getByRole("button", { name: "质量下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "账号下一页" }));
   await waitFor(() => expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, "quality-next", expect.any(AbortSignal), "present"));
   fireEvent.mouseDown(screen.getByRole("combobox", { name: "质量生命周期" }));
   fireEvent.click(await screen.findByText("missing", { selector: ".ant-select-item-option-content" }));
+  fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
   await waitFor(() => expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), "missing"));
   const input = screen.getByLabelText("质量生命周期");
   const clear = input.closest(".ant-select")?.querySelector(".ant-select-clear")!;
   fireEvent.mouseDown(clear); fireEvent.click(clear);
+  fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
   await waitFor(() => expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), undefined));
 });
 
@@ -189,20 +191,20 @@ it("passes window/provider/quality filters and keeps quality pagination bounded"
   await screen.findByText("a@example.invalid");
   expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("upstream")).toBeInTheDocument();
   expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("2026-09-07 00:00:00 UTC")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "质量下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "账号下一页" }));
   await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "15m", undefined, undefined, "quality-page-2", expect.any(AbortSignal), "present"));
   const windowSelect = screen.getByRole("combobox", { name: "质量窗口" });
   fireEvent.mouseDown(windowSelect);
   fireEvent.click(await screen.findByText("最近 1 小时"));
-  const providerSelect = screen.getByRole("combobox", { name: "质量 Provider" });
-  fireEvent.mouseDown(providerSelect);
-  fireEvent.click(screen.getAllByText("openai").at(-1)!);
+  const providerSelect = screen.getByRole("textbox", { name: "Provider 精确筛选" });
+  fireEvent.change(providerSelect, { target: { value: "openai" } });
   const qualitySelect = screen.getByRole("combobox", { name: "质量分类" });
   fireEvent.mouseDown(qualitySelect);
   fireEvent.click(await screen.findByText("Bad"));
+  fireEvent.click(screen.getByRole("button", { name: /查\s*询/ }));
   await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "1h", "openai", "bad", undefined, expect.any(AbortSignal), "present"));
   expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "质量下一页" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "账号下一页" })).toBeDisabled();
 });
 
 it("shows unavailable quality reads instead of empty", async () => {
@@ -274,14 +276,15 @@ it("clears the session when account quality returns 401", async () => {
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
 });
 
-it("keeps Provider source failure explicit for quality filtering", async () => {
+it("keeps Provider read failure independent from the exact account provider filter", async () => {
   const asset = makeNode(A, "Node A");
   const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
   const api = emptyTopology();
   api.providers = vi.fn().mockRejectedValue(new TopologyApiError(503));
   api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
   renderView(api, assetApi);
-  expect((await screen.findAllByText("Provider 筛选来源不可用")).length).toBeGreaterThan(0);
+  expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Provider 精确筛选" })).toBeEnabled();
   expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
 });
 
