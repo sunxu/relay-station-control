@@ -511,8 +511,6 @@ verify_terminal_internal_source_preserved() {
       go test ./deploy/acceptance/account-inventory-history-process \
       -run '^TestAccountInventoryHistoryProcessTerminalInternalPreservesSource$' -count=1 \
       >"$runtime_directory/${label}-terminal-internal.log" 2>&1; then
-    cat "$runtime_directory/${label}-terminal-internal.log" >&2
-    tail -n 100 "$control_log" >&2 || true
     fixed_failure "${label}_terminal_internal_failed"
   fi
   grep -F '"msg":"account inventory history stopped","component":"account_inventory_history","reason":"runtime_stopped"' \

@@ -143,6 +143,7 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodGet, "/api/cross-node-duplicate-occurrences/{occurrence_id}/evidence"}: "listCrossNodeDuplicateOccurrenceEvidence",
 		{http.MethodGet, "/api/topology/nodes/{instance_id}/duplicate-history"}:            "listNodeDuplicateHistory",
 		{http.MethodGet, "/api/topology/nodes/{instance_id}/account-quality"}:              "getNodeAccountQuality",
+		{http.MethodPost, "/api/topology/nodes/{instance_id}/account-quality/query"}:        "queryNodeAccountQuality",
 		{http.MethodGet, "/api/topology/nodes/{instance_id}/request-history"}:              "listNodeAccountRequestHistory",
 		{http.MethodGet, "/api/topology/nodes/{instance_id}/incidents"}:                   "listNodeAccountQualityIncidents",
 		{http.MethodGet, "/api/account-inventory/nodes/{instance_id}/providers"}:           "getNodeInventoryProviderStates",
