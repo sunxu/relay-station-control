@@ -142,15 +142,15 @@ type fakeGatewayDirectoryService struct {
 
 func (service *fakeGatewayDirectoryService) ReconcileTick(context.Context) ([]controlstore.GatewayDirectoryReconcileResult, error) {
 	service.reconcileCalls.Add(1)
-	select {
-	case service.called <- struct{}{}:
-	default:
-	}
 	return nil, nil
 }
 
 func (service *fakeGatewayDirectoryService) WorkOnce(context.Context) ([]controlstore.GatewayDirectoryWorkResult, error) {
 	service.workCalls.Add(1)
+	select {
+	case service.called <- struct{}{}:
+	default:
+	}
 	return nil, nil
 }
 

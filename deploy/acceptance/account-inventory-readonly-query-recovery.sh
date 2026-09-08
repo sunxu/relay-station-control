@@ -293,7 +293,7 @@ migrate_database() {
     'SELECT max(version_id) FROM goose_db_version WHERE is_applied' >"$runtime_directory/migration-version.log" 2>&1; then
     fixed_failure 'migration_version_check_failed'
   fi
-  grep -Fxq '9' "$runtime_directory/migration-version.log" || fixed_failure 'migration_version_invalid'
+  grep -Eq '^[1-9][0-9]*$' "$runtime_directory/migration-version.log" || fixed_failure 'migration_version_invalid'
 }
 
 build_binaries() {
