@@ -9,3 +9,15 @@ export function useAccountInventoryQuery(api: AccountInventoryApi, csrfToken: st
     retry: false,
   });
 }
+
+export function useAccountInventoryPollCapacity(api: AccountInventoryApi, csrfToken: string) {
+  return useMutation({
+    mutationKey: ["account-inventory", "poll-capacity"],
+    mutationFn: () => {
+      if (!api.capacity) throw new Error("capacity_unavailable");
+      return api.capacity(csrfToken);
+    },
+    gcTime: 0,
+    retry: false,
+  });
+}

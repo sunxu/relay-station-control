@@ -44,6 +44,25 @@ export interface AccountInventoryPage {
 
 export interface AccountInventoryApi {
   query(csrfToken: string, filters: AccountInventoryFilters): Promise<AccountInventoryPage>;
+  capacity?(csrfToken: string): Promise<AccountInventoryPollCapacity>;
+}
+
+export type AccountInventoryPollCapacityStatus = "ready" | "capacity_exceeded" | "disabled";
+
+export interface AccountInventoryPollCapacity {
+  status: AccountInventoryPollCapacityStatus;
+  enabled: boolean;
+  eligibleNodeCount: number;
+  effectiveCapacity: number;
+  concurrency: number;
+  requestTimeoutMs: number;
+  finalizeTimeoutMs: number;
+  lifecycleTimeoutMs: number;
+  claimTimeoutMs: number;
+  dispatchMarginMs: number;
+  pollStartGraceMs: number;
+  evaluatedSlot: string;
+  evaluatedAt: string;
 }
 
 export class AccountInventoryApiError extends Error {

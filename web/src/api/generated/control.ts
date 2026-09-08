@@ -29,6 +29,67 @@ import type {
   UseQueryResult
 } from '@tanstack/react-query';
 
+export type AccountInventoryPollCapacityStatus = typeof AccountInventoryPollCapacityStatus[keyof typeof AccountInventoryPollCapacityStatus];
+
+
+export const AccountInventoryPollCapacityStatus = {
+  ready: 'ready',
+  capacity_exceeded: 'capacity_exceeded',
+  disabled: 'disabled',
+} as const;
+
+export interface AccountInventoryPollCapacity {
+  status: AccountInventoryPollCapacityStatus;
+  enabled: boolean;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  eligible_node_count: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  effective_capacity: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  concurrency: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  request_timeout_ms: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  finalize_timeout_ms: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  lifecycle_timeout_ms: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  claim_timeout_ms: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  dispatch_margin_ms: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  poll_start_grace_ms: number;
+  evaluated_slot: string;
+  evaluated_at: string;
+}
+
 /**
  * @minLength 1
  * @maxLength 64
@@ -4368,6 +4429,139 @@ export function useGetCurrentProviderInventoryPolicy<TData = Awaited<ReturnType<
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetCurrentProviderInventoryPolicyQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getAccountInventoryPollCapacityResponse200 = {
+  data: AccountInventoryPollCapacity
+  status: 200
+}
+
+export type getAccountInventoryPollCapacityResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getAccountInventoryPollCapacityResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getAccountInventoryPollCapacityResponseSuccess = (getAccountInventoryPollCapacityResponse200) & {
+  headers: Headers;
+};
+export type getAccountInventoryPollCapacityResponseError = (getAccountInventoryPollCapacityResponse401 | getAccountInventoryPollCapacityResponse503) & {
+  headers: Headers;
+};
+
+export type getAccountInventoryPollCapacityResponse = (getAccountInventoryPollCapacityResponseSuccess | getAccountInventoryPollCapacityResponseError)
+
+export const getGetAccountInventoryPollCapacityUrl = () => {
+
+
+
+
+  return `/api/account-inventory/poll-capacity`
+}
+
+/**
+ * Administrator-only current eligibility assessment, not evidence of successful scheduling. Does not query accounts.
+ * @summary Read current-slot inventory poll capacity diagnostics
+ */
+export const getAccountInventoryPollCapacity = async ( options?: RequestInit): Promise<getAccountInventoryPollCapacityResponse> => {
+
+  const res = await fetch(getGetAccountInventoryPollCapacityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAccountInventoryPollCapacityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAccountInventoryPollCapacityResponse
+}
+
+
+
+
+
+export const getGetAccountInventoryPollCapacityQueryKey = () => {
+    return [
+    `/api/account-inventory/poll-capacity`
+    ] as const;
+    }
+
+
+export const getGetAccountInventoryPollCapacityQueryOptions = <TData = Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError = ErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAccountInventoryPollCapacityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>> = ({ signal }) => getAccountInventoryPollCapacity({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAccountInventoryPollCapacityQueryResult = NonNullable<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>>
+export type GetAccountInventoryPollCapacityQueryError = ErrorResponse
+
+
+export function useGetAccountInventoryPollCapacity<TData = Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError = ErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>,
+          TError,
+          Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccountInventoryPollCapacity<TData = Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>,
+          TError,
+          Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccountInventoryPollCapacity<TData = Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read current-slot inventory poll capacity diagnostics
+ */
+
+export function useGetAccountInventoryPollCapacity<TData = Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError = ErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountInventoryPollCapacity>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetAccountInventoryPollCapacityQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

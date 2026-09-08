@@ -1,14 +1,14 @@
-import { queryAccountInventory } from "./generated/control";
+import { getAccountInventoryPollCapacity, queryAccountInventory } from "./generated/control";
 import type {
   AccountInventoryItem as GeneratedAccountInventoryItem,
+  AccountInventoryPollCapacity as GeneratedAccountInventoryPollCapacity,
   AccountInventoryQueryResponse,
   ErrorResponse,
 } from "./generated/control";
 import { AccountInventoryApiError } from "./account-inventory-types";
-import type { AccountInventoryApi, AccountInventoryItem } from "./account-inventory-types";
+import type { AccountInventoryApi, AccountInventoryItem, AccountInventoryPollCapacity } from "./account-inventory-types";
 
 type GeneratedResponse<T> = { data: T | unknown; status: number };
-
 function isErrorResponse(value: unknown): value is ErrorResponse {
   return typeof value === "object" && value !== null && "code" in value && "request_id" in value;
 }
@@ -56,5 +56,26 @@ export const generatedAccountInventoryApi: AccountInventoryApi = {
       headers: { "X-CSRF-Token": csrfToken },
     }));
     return { items: response.items.map(mapItem), nextCursor: response.next_cursor ?? null };
+  },
+  async capacity(csrfToken) {
+    const response = unwrap<GeneratedAccountInventoryPollCapacity>(await getAccountInventoryPollCapacity({
+      cache: "no-store", credentials: "same-origin", headers: { "X-CSRF-Token": csrfToken },
+    }));
+    const value = response;
+    return {
+      status: value.status,
+      enabled: value.enabled,
+      eligibleNodeCount: value.eligible_node_count,
+      effectiveCapacity: value.effective_capacity,
+      concurrency: value.concurrency,
+      requestTimeoutMs: value.request_timeout_ms,
+      finalizeTimeoutMs: value.finalize_timeout_ms,
+      lifecycleTimeoutMs: value.lifecycle_timeout_ms,
+      claimTimeoutMs: value.claim_timeout_ms,
+      dispatchMarginMs: value.dispatch_margin_ms,
+      pollStartGraceMs: value.poll_start_grace_ms,
+      evaluatedSlot: value.evaluated_slot,
+      evaluatedAt: value.evaluated_at,
+    } as AccountInventoryPollCapacity;
   },
 };
