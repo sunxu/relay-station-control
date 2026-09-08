@@ -1,12 +1,12 @@
 # Planning Validation
 
-2026-09-09，Control baseline f25eb89，ops baseline 4e4be1e，两仓起始干净。最初用户批准本地移除TLS并执行，随后明确要求暂停开发；当前授权仅继续规划修订，实施和部署均暂停，不push/archive。Gateway Directory当前内部HTTP、Node两个HTTP入口保留。未读取或记录Secret值。
+2026-09-09，Control baseline f25eb89，ops baseline 4e4be1e，两仓起始干净。最初用户批准本地移除TLS并执行，随后明确要求暂停开发；当时授权仅继续规划修订，实施和部署均暂停，不push/archive。Gateway Directory当前内部HTTP、Node两个HTTP入口保留。未读取或记录Secret值。
 
 ## Simplified Architecture Decision
 
 2026-09-09，用户接受移除 CONTROL_COOKIE_SECURE、不新增 CONTROL_DEV_ALLOW_INSECURE_HTTP。冻结dev固定HTTP、staging/production固定HTTPS；复用现有Cookie/CSRF/同源机制，不增加传输策略系统。旧变量不再解析或影响结果；开发环境不再单独选择HTTPS。本地容器非loopback由dev策略允许，宿主仅loopback映射由ops负责。
 
-本轮仅修订proposal/design/spec/tasks与本证据文档，代码和runtime未改变。7项任务中仅规划项完成，6项实施/验收/部署任务保持未完成。不得把设计strict通过当成实现测试通过。
+规划阶段仅修订proposal/design/spec/tasks与本证据文档，代码和runtime未改变。当时7项任务中仅规划项完成，6项实施/验收/部署任务保持未完成。不得把设计strict通过当成实现测试通过。
 
 ## Implementation and Validation
 
@@ -45,6 +45,20 @@ RELAY_DEV_CONTAINER_TEST=1 python3 -m unittest discover -s dev -p 'test_*.py'
 
 ### Review and Delivery State
 
-独立代码审查PASS，无已知P1/P2。变更与设计一致，无新增API/DB/collector/Node/Gateway产品能力；staging/production边界未放宽。change strict PASS，all strict 18/18 PASS，两仓diff check PASS。
+首次独立代码审查曾报告PASS，随后Final Review发现1项P2：legacy TLS pending在prepared/applying的recover入口中先改写owner，之后才拒绝不兼容记录。此前仅内部校验测试通过，不能证明入口无副作用。Architecture PASS，Implementation当时BLOCKED；后续修复与验收见下节。变更无新增API/DB/collector/Node/Gateway产品能力，staging/production边界未放宽。
 
-实施与验收6/7项完成；3.3实际部署未执行，不可宣称TLS已从当前本地运行环境移除，不archive。两仓分阶段本地提交，未push；等待Implementation Final Review与后续部署指令。
+实施与验收6/7项完成；3.3实际部署未执行，不可宣称TLS已从当前本地运行环境移除，不archive。两仓分阶段本地提交，未push；本轮修复复核通过，后续部署仍待执行。
+
+### Final Review P2 Reconciliation
+
+2026-09-09，用户授权继续修复。ops提交 `445ad33` 将既有Control legacy shape检查提取复用，并在 `recover()` 中于owner检查、接管及pending写入之前执行；未改变Gateway恢复策略、正常恢复校验或产品契约。
+
+`test_legacy_control_tls_pending_recover_rejects_before_adoption` 通过真实临时pending文件和完整recover入口，覆盖update/directory/recovery-drill × prepared/applying/verified × 两种独立legacy条件（旧pair且无proxy字段、单Control但残留old.proxy），共18组。每组均拒绝为 `recovery_record_incompatible`；pending原始字节及owner不变、未进入owner接管检查、runner零调用。临时跳过前置检查的回归有效性实验按预期失败，未保留实验改动。
+
+```sh
+RELAY_DEV_CONTAINER_TEST=1 python3 -m unittest discover -s dev -p 'test_*.py'
+```
+
+最终65 tests / 39.952s，全部PASS、无skip，包括真实隔离容器更新/失败回滚/中断恢复。首次沙箱内运行3个Docker构建因缓存权限失败；获准环境重跑通过，不计首次为PASS。此次仅ops恢复顺序及测试、Control证据文档变更，复用上文已通过的Control Go/PG/race/make证据，无需重跑无关构建。
+
+主Agent复核确认legacy拒绝先于pending修改，两个触发条件独立覆盖，原P2已关闭：Architecture PASS、Implementation PASS，当前无已知P1/P2。change strict PASS、all strict 18/18 PASS、两仓diff check PASS。6/7任务完成，3.3仍未部署；未push、未archive。
