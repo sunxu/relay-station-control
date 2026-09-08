@@ -788,14 +788,14 @@ func pollCounts(ctx context.Context, owner *pgxpool.Pool, pollID, instanceID uui
 
 func recoveryConfig(observer inventorypoll.Observer) inventorypoll.Config {
 	return inventorypoll.Config{
-		Period: 5 * time.Minute, PollStartGrace: 20 * time.Second,
-		MaxMonitoredNodes: 1, Concurrency: 1, WorstCasePollDuration: time.Second,
+		Period: 5 * time.Minute, PollStartGrace: 40 * time.Second,
+		Concurrency: 1, WorstCasePollDuration: time.Second,
 		LeaseDuration: 3 * time.Second, MaxAttempts: 2,
 		DispatchMargin: time.Second, FinalizeMargin: time.Second,
 		SchedulerInterval: 100 * time.Millisecond, WorkerScanInterval: 100 * time.Millisecond,
 		ReconcileInterval:      500 * time.Millisecond,
 		DatabaseBackoffInitial: 50 * time.Millisecond, DatabaseBackoffMaximum: 100 * time.Millisecond,
-		ShutdownGrace: time.Second, ScheduleLimit: 1, ReconcileLimit: 10, Observer: observer,
+		ShutdownGrace: time.Second, ReconcileLimit: 10, Observer: observer,
 	}
 }
 

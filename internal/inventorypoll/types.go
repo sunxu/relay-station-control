@@ -14,6 +14,8 @@ import (
 	"github.com/sunxu/relay-station-control/internal/drivers"
 )
 
+var ErrCapacityExceeded = errors.New("account inventory poll capacity exceeded")
+
 var (
 	ErrInvalidConfig           = errors.New("account inventory poll: invalid configuration")
 	ErrNoWork                  = errors.New("account inventory poll: no work")
@@ -68,6 +70,7 @@ type ControlReason string
 const (
 	ControlReasonNone                ControlReason = "none"
 	ControlReasonDatabaseUnavailable ControlReason = "database_unavailable"
+	ControlReasonCapacityExceeded    ControlReason = "capacity_exceeded"
 	ControlReasonInvalidClaim        ControlReason = "invalid_claim"
 	ControlReasonGraceExhausted      ControlReason = "grace_exhausted"
 	ControlReasonLostLease           ControlReason = "lost_lease"
@@ -77,7 +80,7 @@ const (
 
 func (reason ControlReason) Valid() bool {
 	switch reason {
-	case ControlReasonNone, ControlReasonDatabaseUnavailable, ControlReasonInvalidClaim,
+	case ControlReasonNone, ControlReasonDatabaseUnavailable, ControlReasonCapacityExceeded, ControlReasonInvalidClaim,
 		ControlReasonGraceExhausted, ControlReasonLostLease,
 		ControlReasonAttemptsExhausted, ControlReasonShutdown:
 		return true

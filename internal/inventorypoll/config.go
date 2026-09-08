@@ -6,23 +6,26 @@ import (
 )
 
 const (
-	DefaultPeriod                 = 5 * time.Minute
-	DefaultPollStartGrace         = 120 * time.Second
-	DefaultMaxMonitoredNodes      = 50
-	DefaultConcurrency            = 10
-	DefaultWorstCasePollDuration  = 15 * time.Second
-	DefaultLeaseDuration          = 30 * time.Second
-	DefaultMaxAttempts            = 2
-	DefaultDispatchMargin         = 10 * time.Second
-	DefaultFinalizeMargin         = 10 * time.Second
-	DefaultSchedulerInterval      = time.Second
-	DefaultWorkerScanInterval     = 500 * time.Millisecond
-	DefaultReconcileInterval      = 5 * time.Second
-	DefaultDatabaseBackoffInitial = time.Second
-	DefaultDatabaseBackoffMaximum = 30 * time.Second
-	DefaultShutdownGrace          = 20 * time.Second
-	DefaultScheduleLimit          = 50
-	DefaultReconcileLimit         = 100
+	DefaultPeriod                = 5 * time.Minute
+	DefaultPollStartGrace        = 120 * time.Second
+	DefaultConcurrency           = 10
+	DefaultWorstCasePollDuration = 15 * time.Second
+	DefaultLeaseDuration         = 30 * time.Second
+	DefaultMaxAttempts           = 2
+	DefaultDispatchMargin        = 10 * time.Second
+	DefaultFinalizeMargin        = 10 * time.Second
+	// Claim and observer budgets are fixed parts of the dispatch safety model.
+	// They are deliberately not configurable: capacity must not depend on an
+	// unbounded database claim or lifecycle callback.
+	DefaultClaimBudget             = time.Second
+	DefaultLifecycleObserverBudget = 30 * time.Second
+	DefaultSchedulerInterval       = time.Second
+	DefaultWorkerScanInterval      = 500 * time.Millisecond
+	DefaultReconcileInterval       = 5 * time.Second
+	DefaultDatabaseBackoffInitial  = time.Second
+	DefaultDatabaseBackoffMaximum  = 30 * time.Second
+	DefaultShutdownGrace           = 20 * time.Second
+	DefaultReconcileLimit          = 100
 
 	MaximumConcurrency    = 50
 	MaximumMonitoredNodes = 50
@@ -32,7 +35,6 @@ const (
 type Config struct {
 	Period                 time.Duration
 	PollStartGrace         time.Duration
-	MaxMonitoredNodes      int
 	Concurrency            int
 	WorstCasePollDuration  time.Duration
 	LeaseDuration          time.Duration
@@ -45,7 +47,6 @@ type Config struct {
 	DatabaseBackoffInitial time.Duration
 	DatabaseBackoffMaximum time.Duration
 	ShutdownGrace          time.Duration
-	ScheduleLimit          int
 	ReconcileLimit         int
 	Clock                  Clock
 	Observer               Observer
@@ -103,7 +104,6 @@ func (configuration Config) Validate() (ValidatedConfig, error) {
 	configuration.applyDefaults()
 	if configuration.Period != DefaultPeriod ||
 		configuration.PollStartGrace <= 0 || configuration.PollStartGrace >= configuration.Period ||
-		configuration.MaxMonitoredNodes < 1 || configuration.MaxMonitoredNodes > MaximumMonitoredNodes ||
 		configuration.Concurrency < 1 || configuration.Concurrency > MaximumConcurrency ||
 		configuration.WorstCasePollDuration < time.Second || configuration.WorstCasePollDuration > DefaultWorstCasePollDuration ||
 		configuration.LeaseDuration <= 0 || configuration.LeaseDuration > configuration.PollStartGrace ||
@@ -115,16 +115,13 @@ func (configuration Config) Validate() (ValidatedConfig, error) {
 		configuration.DatabaseBackoffInitial <= 0 || configuration.DatabaseBackoffMaximum < configuration.DatabaseBackoffInitial ||
 		configuration.DatabaseBackoffMaximum > configuration.Period ||
 		configuration.ShutdownGrace <= 0 || configuration.ShutdownGrace > time.Minute ||
-		configuration.ScheduleLimit < 1 || configuration.ScheduleLimit > MaximumMonitoredNodes ||
 		configuration.ReconcileLimit < 1 || configuration.ReconcileLimit > 1000 {
 		return ValidatedConfig{}, ErrInvalidConfig
 	}
-	if configuration.MaxMonitoredNodes == MaximumMonitoredNodes && configuration.Concurrency < DefaultConcurrency {
-		return ValidatedConfig{}, ErrInvalidConfig
-	}
-	lastBatchStart := lastBatchStart(configuration.MaxMonitoredNodes, configuration.Concurrency, configuration.WorstCasePollDuration)
-	if lastBatchStart+configuration.DispatchMargin >= configuration.PollStartGrace ||
-		configuration.LeaseDuration < configuration.WorstCasePollDuration+configuration.FinalizeMargin {
+	derived := deriveCapacity(configuration.Concurrency, configuration.WorstCasePollDuration,
+		configuration.FinalizeMargin, DefaultLifecycleObserverBudget, DefaultClaimBudget,
+		configuration.DispatchMargin, configuration.PollStartGrace)
+	if derived < 1 || configuration.LeaseDuration < configuration.WorstCasePollDuration+configuration.FinalizeMargin {
 		return ValidatedConfig{}, ErrInvalidConfig
 	}
 	clock := configuration.Clock
@@ -141,14 +138,14 @@ func (configuration Config) Validate() (ValidatedConfig, error) {
 	}
 	return ValidatedConfig{
 		period: configuration.Period, pollStartGrace: configuration.PollStartGrace,
-		maxMonitoredNodes: configuration.MaxMonitoredNodes, concurrency: configuration.Concurrency,
+		maxMonitoredNodes: derived, concurrency: configuration.Concurrency,
 		worstCasePollDuration: configuration.WorstCasePollDuration, leaseDuration: configuration.LeaseDuration,
 		maxAttempts: configuration.MaxAttempts, dispatchMargin: configuration.DispatchMargin,
 		finalizeMargin: configuration.FinalizeMargin, schedulerInterval: configuration.SchedulerInterval,
 		workerScanInterval: configuration.WorkerScanInterval, reconcileInterval: configuration.ReconcileInterval,
 		databaseBackoffInitial: configuration.DatabaseBackoffInitial,
 		databaseBackoffMaximum: configuration.DatabaseBackoffMaximum,
-		shutdownGrace:          configuration.ShutdownGrace, scheduleLimit: configuration.ScheduleLimit,
+		shutdownGrace:          configuration.ShutdownGrace, scheduleLimit: derived,
 		reconcileLimit: configuration.ReconcileLimit, clock: clock, observer: observer,
 		lifecycleObserver: lifecycleObserver,
 	}, nil
@@ -160,9 +157,6 @@ func (configuration *Config) applyDefaults() {
 	}
 	if configuration.PollStartGrace == 0 {
 		configuration.PollStartGrace = DefaultPollStartGrace
-	}
-	if configuration.MaxMonitoredNodes == 0 {
-		configuration.MaxMonitoredNodes = DefaultMaxMonitoredNodes
 	}
 	if configuration.Concurrency == 0 {
 		configuration.Concurrency = DefaultConcurrency
@@ -200,30 +194,51 @@ func (configuration *Config) applyDefaults() {
 	if configuration.ShutdownGrace == 0 {
 		configuration.ShutdownGrace = DefaultShutdownGrace
 	}
-	if configuration.ScheduleLimit == 0 {
-		configuration.ScheduleLimit = DefaultScheduleLimit
-	}
 	if configuration.ReconcileLimit == 0 {
 		configuration.ReconcileLimit = DefaultReconcileLimit
 	}
 }
 
-func lastBatchStart(nodes, concurrency int, worstCase time.Duration) time.Duration {
-	if nodes <= 0 || concurrency <= 0 {
+// deriveCapacity returns the largest eligible-node count whose first-attempt
+// dispatches fit inside the start grace. The semaphore is held through
+// finalize and the lifecycle callback, so those bounded costs are part of the
+// batch spacing. Claim cost is charged per node as a conservative admission
+// budget. This does not promise that retries complete inside the grace.
+func deriveCapacity(concurrency int, request, finalize, observer, claim, margin, grace time.Duration) int {
+	if concurrency <= 0 || request < 0 || finalize < 0 || observer < 0 || claim < 0 || margin < 0 || grace <= 0 {
 		return 0
 	}
-	batches := (nodes + concurrency - 1) / concurrency
-	return time.Duration(batches-1) * worstCase
+	batchCost := request + finalize + observer
+	for nodes := MaximumMonitoredNodes; nodes >= 1; nodes-- {
+		batches := (nodes + concurrency - 1) / concurrency
+		if time.Duration(batches-1)*batchCost+time.Duration(nodes)*claim+margin < grace {
+			return nodes
+		}
+	}
+	return 0
 }
 
 func (configuration ValidatedConfig) LastBatchStart() time.Duration {
-	return lastBatchStart(configuration.maxMonitoredNodes, configuration.concurrency, configuration.worstCasePollDuration)
+	return configuration.CapacityBudget() - configuration.dispatchMargin
 }
 
-func (configuration ValidatedConfig) Concurrency() int { return configuration.concurrency }
-func (configuration Config) ConfiguredMaxMonitoredNodes() int {
-	configuration.applyDefaults()
-	return configuration.MaxMonitoredNodes
+func (configuration ValidatedConfig) Concurrency() int       { return configuration.concurrency }
+func (configuration ValidatedConfig) EffectiveCapacity() int { return configuration.maxMonitoredNodes }
+func (configuration ValidatedConfig) DispatchMargin() time.Duration {
+	return configuration.dispatchMargin
+}
+func (configuration ValidatedConfig) FinalizeMargin() time.Duration {
+	return configuration.finalizeMargin
+}
+func (configuration ValidatedConfig) ClaimBudget() time.Duration { return DefaultClaimBudget }
+func (configuration ValidatedConfig) LifecycleObserverBudget() time.Duration {
+	return DefaultLifecycleObserverBudget
+}
+func (configuration ValidatedConfig) CapacityBudget() time.Duration {
+	nodes := configuration.maxMonitoredNodes
+	batches := (nodes + configuration.concurrency - 1) / configuration.concurrency
+	return time.Duration(batches-1)*(configuration.worstCasePollDuration+configuration.finalizeMargin+DefaultLifecycleObserverBudget) +
+		time.Duration(nodes)*DefaultClaimBudget + configuration.dispatchMargin
 }
 func (configuration ValidatedConfig) PollStartGrace() time.Duration {
 	return configuration.pollStartGrace

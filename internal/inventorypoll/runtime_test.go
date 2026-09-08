@@ -23,9 +23,10 @@ type fakeRepository struct {
 	scheduleResult   ScheduleResult
 	scheduleErr      error
 
-	claimCalls int
-	claimErr   error
-	claims     []ClaimedRun
+	claimCalls    int
+	claimErr      error
+	claims        []ClaimedRun
+	claimDeadline time.Time
 
 	finalizeCalls int
 	finalizes     []FinalizeRequest
@@ -38,6 +39,17 @@ type fakeRepository struct {
 	reconcileHook     func(context.Context) error
 }
 
+type eventObserver struct {
+	mu     sync.Mutex
+	events []Event
+}
+
+func (observer *eventObserver) Observe(_ context.Context, event Event) {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	observer.events = append(observer.events, event)
+}
+
 func (repository *fakeRepository) ScheduleCurrent(_ context.Context, request ScheduleRequest) (ScheduleResult, error) {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
@@ -46,10 +58,13 @@ func (repository *fakeRepository) ScheduleCurrent(_ context.Context, request Sch
 	return repository.scheduleResult, repository.scheduleErr
 }
 
-func (repository *fakeRepository) ClaimRunnable(_ context.Context, request ClaimRequest) (*ClaimedRun, error) {
+func (repository *fakeRepository) ClaimRunnable(ctx context.Context, request ClaimRequest) (*ClaimedRun, error) {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
 	repository.claimCalls++
+	if deadline, ok := ctx.Deadline(); ok {
+		repository.claimDeadline = deadline
+	}
 	if repository.claimErr != nil {
 		return nil, repository.claimErr
 	}
@@ -60,6 +75,40 @@ func (repository *fakeRepository) ClaimRunnable(_ context.Context, request Claim
 	repository.claims = repository.claims[1:]
 	claim.FencingToken = request.Token
 	return &claim, nil
+}
+
+func TestWorkerUsesFixedClaimAndObserverBudgets(t *testing.T) {
+	validated, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &fakeRepository{}
+	worker, err := NewWorker(repository, &fakeDriver{}, smallTestConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- worker.Run(ctx) }()
+	waitFor(t, time.Second, func() bool { _, claims, _, _ := repository.counts(); return claims > 0 })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	remaining := time.Until(repository.claimDeadline)
+	if remaining <= 0 || remaining > DefaultClaimBudget+100*time.Millisecond {
+		t.Fatalf("claim deadline remaining=%s, want <=%s", remaining, DefaultClaimBudget)
+	}
+
+	var observerDeadline time.Time
+	validated.lifecycleObserver = func(ctx context.Context) {
+		observerDeadline, _ = ctx.Deadline()
+	}
+	worker = newWorker(&fakeRepository{}, &fakeDriver{}, validated)
+	worker.execute(context.Background(), testClaim("antigravity"))
+	if remaining := time.Until(observerDeadline); remaining <= 0 || remaining > DefaultLifecycleObserverBudget+100*time.Millisecond {
+		t.Fatalf("observer deadline remaining=%s, want <=%s", remaining, DefaultLifecycleObserverBudget)
+	}
 }
 
 func (repository *fakeRepository) FinalizeFenced(_ context.Context, request FinalizeRequest) error {
@@ -175,13 +224,33 @@ func TestSchedulerUsesOnlyDatabaseCurrentSlotAndIsIdempotencyNeutral(t *testing.
 	repository.mu.Lock()
 	request := repository.scheduleRequests[0]
 	repository.mu.Unlock()
-	if request.Period != 5*time.Minute || request.PollStartGrace != 10*time.Second || request.MaxAttempts != 2 {
+	if request.Period != 5*time.Minute || request.PollStartGrace != 60*time.Second || request.MaxAttempts != 2 || request.Limit != 2 {
 		t.Fatalf("schedule request=%#v", request)
 	}
 
 	repository.scheduleResult.ScheduledAt = time.Unix(3_001, 0).UTC()
 	if _, err := scheduler.ScheduleOnce(context.Background()); !errors.Is(err, ErrInvalidRepositoryResult) {
 		t.Fatalf("misaligned database slot error=%v", err)
+	}
+}
+
+func TestSchedulerClassifiesCapacityExceededSeparately(t *testing.T) {
+	observer := &eventObserver{}
+	configuration := smallTestConfig()
+	configuration.Observer = observer
+	repository := &fakeRepository{scheduleErr: ErrCapacityExceeded}
+	scheduler, err := NewScheduler(repository, configuration, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scheduler.ScheduleOnce(context.Background()); !errors.Is(err, ErrCapacityExceeded) {
+		t.Fatalf("schedule error=%v", err)
+	}
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	if len(observer.events) != 1 || observer.events[0].Reason != ControlReasonCapacityExceeded ||
+		observer.events[0].Result != EventResultFailure {
+		t.Fatalf("events=%#v", observer.events)
 	}
 }
 
@@ -199,7 +268,7 @@ func TestReconcilerDelegatesDatabaseTimeStateMachineAndNeverCallsDriver(t *testi
 	repository.mu.Lock()
 	request := repository.reconcileRequests[0]
 	repository.mu.Unlock()
-	if request.PollStartGrace != 10*time.Second || request.Limit != 10 {
+	if request.PollStartGrace != 60*time.Second || request.Limit != 10 {
 		t.Fatalf("request=%#v", request)
 	}
 	repository.reconcileResult = ReconcileResult{RetryWait: 11}
@@ -263,7 +332,6 @@ func TestReconcilerNeverCallsLifecycleObserverOnDatabaseFailure(t *testing.T) {
 
 func TestWorkerAcquiresSemaphoreBeforeClaimAndHonorsConcurrency(t *testing.T) {
 	configuration := smallTestConfig()
-	configuration.MaxMonitoredNodes = 2
 	configuration.Concurrency = 2
 	repository := &fakeRepository{claims: []ClaimedRun{testClaim("antigravity"), testClaim("antigravity"), testClaim("antigravity")}}
 	release := make(chan struct{})
@@ -530,9 +598,7 @@ func TestServiceReconcilesBeforeSchedulerOrWorkerAfterDatabaseRecovery(t *testin
 
 func TestFiftyNodeCapacityNeverExceedsTenConcurrentDrivers(t *testing.T) {
 	configuration := smallTestConfig()
-	configuration.MaxMonitoredNodes = 50
 	configuration.Concurrency = 10
-	configuration.ScheduleLimit = 50
 	repository := &fakeRepository{}
 	for range 50 {
 		repository.claims = append(repository.claims, testClaim("antigravity"))

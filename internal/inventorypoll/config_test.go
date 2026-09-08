@@ -12,12 +12,12 @@ func TestDefaultConfigurationMatchesApprovedCapacity(t *testing.T) {
 		t.Fatalf("default configuration: %v", err)
 	}
 	if configuration.period != 5*time.Minute || configuration.pollStartGrace != 120*time.Second ||
-		configuration.maxMonitoredNodes != 50 || configuration.concurrency != 10 ||
+		configuration.maxMonitoredNodes != 20 || configuration.concurrency != 10 ||
 		configuration.worstCasePollDuration != 15*time.Second || configuration.leaseDuration != 30*time.Second ||
-		configuration.maxAttempts != 2 || configuration.LastBatchStart() != 60*time.Second {
+		configuration.maxAttempts != 2 || configuration.CapacityBudget() != 85*time.Second {
 		t.Fatalf("unexpected defaults: %#v", configuration)
 	}
-	if configuration.LastBatchStart()+configuration.dispatchMargin >= configuration.pollStartGrace {
+	if configuration.CapacityBudget() >= configuration.pollStartGrace {
 		t.Fatal("default capacity has no dispatch margin")
 	}
 	if configuration.leaseDuration < configuration.worstCasePollDuration+configuration.finalizeMargin {
@@ -32,13 +32,11 @@ func TestConfigurationClosedInvalidMatrix(t *testing.T) {
 	}{
 		{"period not five minutes", func(config *Config) { config.Period = 4 * time.Minute }},
 		{"grace at period", func(config *Config) { config.PollStartGrace = 5 * time.Minute }},
-		{"too many nodes", func(config *Config) { config.MaxMonitoredNodes = 51 }},
-		{"fifty nodes below ten", func(config *Config) { config.Concurrency = 9 }},
 		{"unbounded concurrency", func(config *Config) { config.Concurrency = 51 }},
 		{"request exceeds approved maximum", func(config *Config) { config.WorstCasePollDuration = 16 * time.Second }},
 		{"lease cannot finalize", func(config *Config) { config.LeaseDuration = 24 * time.Second }},
 		{"attempts exceed bound", func(config *Config) { config.MaxAttempts = 3 }},
-		{"last batch consumes margin", func(config *Config) { config.DispatchMargin = 60 * time.Second }},
+		{"capacity consumes margin", func(config *Config) { config.DispatchMargin = 119 * time.Second }},
 		{"reconcile not below lease", func(config *Config) { config.ReconcileInterval = 30 * time.Second }},
 		{"backoff inverted", func(config *Config) {
 			config.DatabaseBackoffInitial = 10 * time.Second
@@ -46,7 +44,6 @@ func TestConfigurationClosedInvalidMatrix(t *testing.T) {
 		}},
 		{"scan unbounded", func(config *Config) { config.WorkerScanInterval = 3 * time.Minute }},
 		{"shutdown unbounded", func(config *Config) { config.ShutdownGrace = 2 * time.Minute }},
-		{"schedule limit above asset bound", func(config *Config) { config.ScheduleLimit = 51 }},
 		{"reconcile limit unbounded", func(config *Config) { config.ReconcileLimit = 1001 }},
 	}
 	for _, test := range tests {
@@ -58,6 +55,27 @@ func TestConfigurationClosedInvalidMatrix(t *testing.T) {
 				t.Fatalf("error=%v", err)
 			}
 		})
+	}
+}
+
+func TestDerivedCapacityBoundary(t *testing.T) {
+	for _, test := range []struct {
+		concurrency, want int
+	}{{1, 2}, {2, 4}, {6, 12}, {7, 14}, {10, 20}, {25, 50}, {50, 50}} {
+		configuration := Config{Concurrency: test.concurrency}
+		validated, err := configuration.Validate()
+		if err != nil {
+			t.Fatalf("C=%d: %v", test.concurrency, err)
+		}
+		if validated.EffectiveCapacity() != test.want {
+			t.Errorf("C=%d capacity=%d, want %d", test.concurrency, validated.EffectiveCapacity(), test.want)
+		}
+	}
+	configuration := Config{Concurrency: 1, PollStartGrace: 11 * time.Second,
+		WorstCasePollDuration: time.Second, FinalizeMargin: time.Second,
+		LeaseDuration: 3 * time.Second}
+	if _, err := configuration.Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected no feasible capacity at equality, got %v", err)
 	}
 }
 
@@ -85,12 +103,12 @@ func TestPollStatusClosedTransitionMatrix(t *testing.T) {
 
 func smallTestConfig() Config {
 	return Config{
-		PollStartGrace: 10 * time.Second, MaxMonitoredNodes: 1, Concurrency: 1,
+		PollStartGrace: 60 * time.Second, Concurrency: 1,
 		WorstCasePollDuration: time.Second, LeaseDuration: 3 * time.Second,
 		DispatchMargin: time.Second, FinalizeMargin: time.Second,
 		SchedulerInterval: 10 * time.Millisecond, WorkerScanInterval: 10 * time.Millisecond,
 		ReconcileInterval:      20 * time.Millisecond,
 		DatabaseBackoffInitial: 10 * time.Millisecond, DatabaseBackoffMaximum: 40 * time.Millisecond,
-		ShutdownGrace: 200 * time.Millisecond, ScheduleLimit: 1, ReconcileLimit: 10,
+		ShutdownGrace: 200 * time.Millisecond, ReconcileLimit: 10,
 	}
 }

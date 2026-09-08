@@ -39,7 +39,11 @@ func (scheduler *Scheduler) ScheduleOnce(ctx context.Context) (ScheduleResult, e
 		MaxAttempts: scheduler.config.maxAttempts, Limit: scheduler.config.scheduleLimit,
 	})
 	if err != nil {
-		scheduler.config.observer.Observe(ctx, Event{Component: EventComponentScheduler, Action: EventActionSchedule, Result: EventResultFailure, Reason: ControlReasonDatabaseUnavailable})
+		reason := ControlReasonDatabaseUnavailable
+		if errors.Is(err, ErrCapacityExceeded) {
+			reason = ControlReasonCapacityExceeded
+		}
+		scheduler.config.observer.Observe(ctx, Event{Component: EventComponentScheduler, Action: EventActionSchedule, Result: EventResultFailure, Reason: reason})
 		return ScheduleResult{}, err
 	}
 	if err := validateScheduleResult(result, scheduler.config.period); err != nil {

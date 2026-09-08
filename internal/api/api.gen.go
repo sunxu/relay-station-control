@@ -66,6 +66,27 @@ func (e AccountInventoryLifecycle) Valid() bool {
 	}
 }
 
+// Defines values for AccountInventoryPollCapacityStatus.
+const (
+	AccountInventoryPollCapacityStatusCapacityExceeded AccountInventoryPollCapacityStatus = "capacity_exceeded"
+	AccountInventoryPollCapacityStatusDisabled         AccountInventoryPollCapacityStatus = "disabled"
+	AccountInventoryPollCapacityStatusReady            AccountInventoryPollCapacityStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the AccountInventoryPollCapacityStatus enum.
+func (e AccountInventoryPollCapacityStatus) Valid() bool {
+	switch e {
+	case AccountInventoryPollCapacityStatusCapacityExceeded:
+		return true
+	case AccountInventoryPollCapacityStatusDisabled:
+		return true
+	case AccountInventoryPollCapacityStatusReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AccountInventorySnapshotFreshness.
 const (
 	AccountInventorySnapshotFreshnessFresh      AccountInventorySnapshotFreshness = "fresh"
@@ -979,6 +1000,26 @@ type AccountInventoryItem struct {
 
 // AccountInventoryLifecycle defines model for AccountInventoryLifecycle.
 type AccountInventoryLifecycle string
+
+// AccountInventoryPollCapacity defines model for AccountInventoryPollCapacity.
+type AccountInventoryPollCapacity struct {
+	ClaimTimeoutMs     int64                              `json:"claim_timeout_ms"`
+	Concurrency        int64                              `json:"concurrency"`
+	DispatchMarginMs   int64                              `json:"dispatch_margin_ms"`
+	EffectiveCapacity  int64                              `json:"effective_capacity"`
+	EligibleNodeCount  int64                              `json:"eligible_node_count"`
+	Enabled            bool                               `json:"enabled"`
+	EvaluatedAt        time.Time                          `json:"evaluated_at"`
+	EvaluatedSlot      time.Time                          `json:"evaluated_slot"`
+	FinalizeTimeoutMs  int64                              `json:"finalize_timeout_ms"`
+	LifecycleTimeoutMs int64                              `json:"lifecycle_timeout_ms"`
+	PollStartGraceMs   int64                              `json:"poll_start_grace_ms"`
+	RequestTimeoutMs   int64                              `json:"request_timeout_ms"`
+	Status             AccountInventoryPollCapacityStatus `json:"status"`
+}
+
+// AccountInventoryPollCapacityStatus defines model for AccountInventoryPollCapacity.Status.
+type AccountInventoryPollCapacityStatus string
 
 // AccountInventoryQueryRequest defines model for AccountInventoryQueryRequest.
 type AccountInventoryQueryRequest struct {
@@ -2229,6 +2270,9 @@ type ServerInterface interface {
 	// GetNodeInventoryProviderStates Read complete Provider snapshot and latest health evidence
 	// (GET /api/account-inventory/nodes/{instance_id}/providers)
 	GetNodeInventoryProviderStates(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId)
+	// GetAccountInventoryPollCapacity Read current-slot inventory poll capacity diagnostics
+	// (GET /api/account-inventory/poll-capacity)
+	GetAccountInventoryPollCapacity(w http.ResponseWriter, r *http.Request)
 	// QueryAccountInventory Query one Relay Node current account inventory
 	// (POST /api/account-inventory/query)
 	QueryAccountInventory(w http.ResponseWriter, r *http.Request, params QueryAccountInventoryParams)
@@ -2349,6 +2393,12 @@ type Unimplemented struct{}
 // GetNodeInventoryProviderStates Read complete Provider snapshot and latest health evidence
 // (GET /api/account-inventory/nodes/{instance_id}/providers)
 func (_ Unimplemented) GetNodeInventoryProviderStates(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAccountInventoryPollCapacity Read current-slot inventory poll capacity diagnostics
+// (GET /api/account-inventory/poll-capacity)
+func (_ Unimplemented) GetAccountInventoryPollCapacity(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2600,6 +2650,20 @@ func (siw *ServerInterfaceWrapper) GetNodeInventoryProviderStates(w http.Respons
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetNodeInventoryProviderStates(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAccountInventoryPollCapacity operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountInventoryPollCapacity(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccountInventoryPollCapacity(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4257,6 +4321,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/provider-policies/current", wrapper.GetCurrentProviderInventoryPolicy)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/account-inventory/poll-capacity", wrapper.GetAccountInventoryPollCapacity)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/account-inventory/query", wrapper.QueryAccountInventory)

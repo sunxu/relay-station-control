@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"sort"
 	"time"
 
@@ -71,9 +72,8 @@ func loadAccountInventoryPollRuntimeConfig() (accountInventoryPollRuntimeConfig,
 	if err != nil || enabled && !lifecycleEnabled {
 		return invalid()
 	}
-	maxNodes, err := envIntBounded("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES", controlpoll.DefaultMaxMonitoredNodes, 1, controlpoll.MaximumMonitoredNodes)
-	if err != nil {
-		return invalid()
+	if _, present := os.LookupEnv("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES"); present {
+		slog.Warn("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES is deprecated and ignored")
 	}
 	concurrency, err := envIntBounded("CONTROL_ACCOUNT_INVENTORY_POLL_CONCURRENCY", controlpoll.DefaultConcurrency, 1, controlpoll.MaximumConcurrency)
 	if err != nil {
@@ -121,13 +121,13 @@ func loadAccountInventoryPollRuntimeConfig() (accountInventoryPollRuntimeConfig,
 	}
 	poll := controlpoll.Config{
 		Period: controlpoll.DefaultPeriod, PollStartGrace: grace,
-		MaxMonitoredNodes: maxNodes, Concurrency: concurrency,
+		Concurrency:           concurrency,
 		WorstCasePollDuration: worstCase, LeaseDuration: lease, MaxAttempts: maxAttempts,
 		DispatchMargin: controlpoll.DefaultDispatchMargin, FinalizeMargin: controlpoll.DefaultFinalizeMargin,
 		SchedulerInterval: schedulerInterval, WorkerScanInterval: workerScanInterval,
 		ReconcileInterval: reconcileInterval, DatabaseBackoffInitial: databaseBackoffInitial,
 		DatabaseBackoffMaximum: databaseBackoffMaximum, ShutdownGrace: shutdownGrace,
-		ScheduleLimit: maxNodes, ReconcileLimit: controlpoll.DefaultReconcileLimit,
+		ReconcileLimit: controlpoll.DefaultReconcileLimit,
 	}
 	if _, err = poll.Validate(); err != nil {
 		return invalid()
@@ -154,9 +154,13 @@ func newAccountInventoryPollRuntime(
 			return accountInventoryPollRuntime{}, errors.New("account inventory lifecycle database is incompatible")
 		}
 	}
+	validatedPoll, err := configuration.poll.Validate()
+	if err != nil {
+		return accountInventoryPollRuntime{}, err
+	}
 	collector, err := controlpollobs.NewCollector(
 		accountInventoryPollMetricsProvider{store: repository, lifecycleEnabled: configuration.lifecycleEnabled},
-		configuration.poll.ConfiguredMaxMonitoredNodes(),
+		validatedPoll.EffectiveCapacity(),
 	)
 	if err != nil {
 		return accountInventoryPollRuntime{}, err

@@ -38,6 +38,7 @@ const (
 	ReasonAssetIneligible             Reason = "asset_ineligible"
 	ReasonAssetInconsistent           Reason = "asset_inconsistent"
 	ReasonCapacityUnavailable         Reason = "capacity_unavailable"
+	ReasonCapacityExceeded            Reason = "capacity_exceeded"
 	ReasonInvalidClaim                Reason = "invalid_claim"
 	ReasonGraceExhausted              Reason = "grace_exhausted"
 	ReasonLeaseExpired                Reason = "lease_expired"
@@ -158,7 +159,7 @@ func validLogResult(value LogResult) bool {
 func validLogReason(value Reason) bool {
 	switch value {
 	case ReasonNone, ReasonInvalidRuntimeConfig, ReasonDatabaseUnavailable, ReasonAssetIneligible,
-		ReasonAssetInconsistent, ReasonCapacityUnavailable, ReasonInvalidClaim, ReasonGraceExhausted,
+		ReasonAssetInconsistent, ReasonCapacityUnavailable, ReasonCapacityExceeded, ReasonInvalidClaim, ReasonGraceExhausted,
 		ReasonLeaseExpired, ReasonLostFencing, ReasonLostLease, ReasonAttemptsExhausted, ReasonNodeObservationFinalized,
 		ReasonControlExecutionInterrupted, ReasonPolicyChanged, ReasonTransportFailed, ReasonContractInvalid,
 		ReasonDiskFallback, ReasonProviderIdentityIncomplete, ReasonProviderDuplicate, ReasonStalePoll, ReasonShutdown:

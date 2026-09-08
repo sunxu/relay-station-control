@@ -308,13 +308,13 @@ func (repository *reportingRepository) FinalizeFenced(ctx context.Context, reque
 func workerConfig() inventorypoll.Config {
 	return inventorypoll.Config{
 		Period: 5 * time.Minute, PollStartGrace: 299 * time.Second,
-		MaxMonitoredNodes: 1, Concurrency: 1, WorstCasePollDuration: 15 * time.Second,
+		Concurrency: 1, WorstCasePollDuration: 15 * time.Second,
 		LeaseDuration: 30 * time.Second, MaxAttempts: 2,
 		DispatchMargin: time.Second, FinalizeMargin: 10 * time.Second,
 		SchedulerInterval: time.Second, WorkerScanInterval: 100 * time.Millisecond,
 		ReconcileInterval: 5 * time.Second, DatabaseBackoffInitial: time.Second,
 		DatabaseBackoffMaximum: 5 * time.Second, ShutdownGrace: 2 * time.Second,
-		ScheduleLimit: 1, ReconcileLimit: 10,
+		ReconcileLimit: 10,
 	}
 }
 

@@ -242,6 +242,10 @@ func (repository *InventoryPollRepository) ScheduleCurrent(
 		return inventorypoll.ScheduleResult{}, inventorypoll.ErrInvalidRepositoryResult
 	}
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22023" && pgErr.Message == "account inventory poll capacity exceeded" {
+			return inventorypoll.ScheduleResult{}, inventorypoll.ErrCapacityExceeded
+		}
 		return inventorypoll.ScheduleResult{}, err
 	}
 	existing := stored.EligibleCount - stored.CreatedCount

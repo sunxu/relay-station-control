@@ -165,13 +165,13 @@ func (repository *workerProjectionRepository) waitForFinalize(t *testing.T) cont
 
 func workerProjectionConfig() controlpoll.Config {
 	return controlpoll.Config{
-		PollStartGrace: 10 * time.Second, MaxMonitoredNodes: 1, Concurrency: 1,
+		PollStartGrace: 40 * time.Second, Concurrency: 1,
 		WorstCasePollDuration: time.Second, LeaseDuration: 3 * time.Second,
 		DispatchMargin: time.Second, FinalizeMargin: time.Second,
 		SchedulerInterval: 10 * time.Millisecond, WorkerScanInterval: 10 * time.Millisecond,
 		ReconcileInterval: 20 * time.Millisecond, DatabaseBackoffInitial: 10 * time.Millisecond,
 		DatabaseBackoffMaximum: 40 * time.Millisecond, ShutdownGrace: 200 * time.Millisecond,
-		ScheduleLimit: 1, ReconcileLimit: 10,
+		ReconcileLimit: 10,
 	}
 }
 

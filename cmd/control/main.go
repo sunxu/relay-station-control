@@ -349,6 +349,18 @@ func main() {
 		os.Exit(1)
 	}
 	apiServer.SetAccountInventoryProviderStateReader(providerStates)
+	pollCapacity, err := assetstore.NewInventoryPollCapacityRepository(pool)
+	if err != nil {
+		logger.Error("poll capacity reader initialization failed", "component", "account_inventory")
+		os.Exit(1)
+	}
+	pollCapacityConfig, err := inventoryPollConfig.poll.Validate()
+	if err != nil {
+		logger.Error("poll capacity configuration is invalid", "component", "account_inventory")
+		os.Exit(1)
+	}
+	apiServer.SetInventoryPollCapacityReader(pollCapacity, inventoryPollConfig.enabled, pollCapacityConfig)
+
 	metricsRegistry.MustRegister(apiServer.AccountInventoryMetrics())
 	controlapi.HandlerWithOptions(apiServer, controlapi.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 		apiServer.PrepareGeneratedError(w, r, err)

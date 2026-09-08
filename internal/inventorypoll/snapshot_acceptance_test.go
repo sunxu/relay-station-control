@@ -189,16 +189,16 @@ func TestSnapshotCapacityOneTenFiftyUsesApprovedWorstCaseModel(t *testing.T) {
 	tests := []struct {
 		nodes       int
 		concurrency int
-	}{{nodes: 1, concurrency: 1}, {nodes: 10, concurrency: 10}, {nodes: 50, concurrency: 10}}
+	}{{nodes: 1, concurrency: 1}, {nodes: 10, concurrency: 10}, {nodes: 50, concurrency: 25}}
 
 	for _, test := range tests {
 		t.Run(capacityName(test.nodes), func(t *testing.T) {
-			configuration := Config{MaxMonitoredNodes: test.nodes, Concurrency: test.concurrency, ScheduleLimit: test.nodes}
+			configuration := Config{Concurrency: test.concurrency}
 			validated, err := configuration.Validate()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if validated.RequestTimeout() != 15*time.Second || validated.PollStartGrace() != 120*time.Second ||
+			if validated.EffectiveCapacity() < test.nodes || validated.RequestTimeout() != 15*time.Second || validated.PollStartGrace() != 120*time.Second ||
 				validated.LeaseDuration() != 30*time.Second || validated.LastBatchStart()+DefaultDispatchMargin >= validated.PollStartGrace() ||
 				validated.LeaseDuration() < validated.RequestTimeout()+DefaultFinalizeMargin {
 				t.Fatalf("unsafe approved capacity model: %#v", validated)

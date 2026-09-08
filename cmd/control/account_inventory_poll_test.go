@@ -1,17 +1,41 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	controlpoll "github.com/sunxu/relay-station-control/internal/inventorypoll"
 	controlpollobs "github.com/sunxu/relay-station-control/internal/pollobservability"
 	controlstore "github.com/sunxu/relay-station-control/internal/store"
 )
+
+func TestAccountInventoryPollLogObserverEmitsCapacityExceeded(t *testing.T) {
+	var output bytes.Buffer
+	adapter := accountInventoryPollLogObserver{
+		observer: controlpollobs.NewObserver(slog.New(slog.NewJSONHandler(&output, nil))),
+	}
+	adapter.Observe(context.Background(), controlpoll.Event{
+		Component: controlpoll.EventComponentScheduler,
+		Action:    controlpoll.EventActionSchedule,
+		Result:    controlpoll.EventResultFailure,
+		Reason:    controlpoll.ControlReasonCapacityExceeded,
+	})
+	var fields map[string]any
+	if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+		t.Fatalf("adapter emitted invalid log: %v; output=%q", err, output.String())
+	}
+	if fields["reason"] != string(controlpoll.ControlReasonCapacityExceeded) {
+		t.Fatalf("adapter reason = %v, want %q", fields["reason"], controlpoll.ControlReasonCapacityExceeded)
+	}
+}
 
 type fakeAccountInventoryPollMetricsStore struct {
 	runs       []controlstore.PollRunMetric
@@ -55,14 +79,18 @@ func TestLoadAccountInventoryPollRuntimeConfigDefaultsAndBounds(t *testing.T) {
 	}
 	validated, err := configuration.poll.Validate()
 	if err != nil || validated.Concurrency() != 10 || validated.PollStartGrace() != 120*time.Second ||
-		validated.LeaseDuration() != 30*time.Second || validated.MaxAttempts() != 2 {
+		validated.LeaseDuration() != 30*time.Second || validated.MaxAttempts() != 2 || validated.EffectiveCapacity() != 20 {
 		t.Fatalf("unexpected defaults: config=%+v err=%v", configuration.poll, err)
 	}
 
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES", "50")
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_CONCURRENCY", "9")
-	if _, err = loadAccountInventoryPollRuntimeConfig(); err == nil {
-		t.Fatal("unsafe fifty-node capacity was accepted")
+	if configuration, err = loadAccountInventoryPollRuntimeConfig(); err != nil {
+		t.Fatalf("derived capacity with legacy max-node variable rejected: %+v/%v", configuration, err)
+	}
+	validated, err = configuration.poll.Validate()
+	if err != nil || validated.EffectiveCapacity() != 18 {
+		t.Fatalf("unexpected derived legacy capacity: config=%+v err=%v", configuration.poll, err)
 	}
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES", "1")
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_CONCURRENCY", "1")

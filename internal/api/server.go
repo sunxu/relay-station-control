@@ -11,12 +11,16 @@ import (
 	"time"
 
 	authn "github.com/sunxu/relay-station-control/internal/auth"
+	controlpoll "github.com/sunxu/relay-station-control/internal/inventorypoll"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 const authenticationResponseFloor = 250 * time.Millisecond
 
 type Server struct {
+	pollCapacity                  assetstore.InventoryPollCapacityReader
+	pollCapacityConfig            controlpoll.ValidatedConfig
+	pollCapacityEnabled           bool
 	version                       string
 	service                       *authn.Service
 	resolver                      *authn.SourceResolver

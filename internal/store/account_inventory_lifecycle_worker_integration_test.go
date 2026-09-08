@@ -279,13 +279,13 @@ func runLifecycleWorkerPoll(
 		},
 	}}
 	worker, err := inventorypoll.NewWorker(repository, driver, inventorypoll.Config{
-		PollStartGrace: 30 * time.Second, MaxMonitoredNodes: 1, Concurrency: 1,
+		PollStartGrace: 40 * time.Second, Concurrency: 1,
 		WorstCasePollDuration: time.Second, LeaseDuration: 15 * time.Second,
 		DispatchMargin: time.Second, FinalizeMargin: time.Second,
 		SchedulerInterval: time.Second, WorkerScanInterval: 5 * time.Millisecond,
 		ReconcileInterval: 100 * time.Millisecond, DatabaseBackoffInitial: 5 * time.Millisecond,
 		DatabaseBackoffMaximum: 20 * time.Millisecond, ShutdownGrace: time.Second,
-		ScheduleLimit: 1, ReconcileLimit: 1,
+		ReconcileLimit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)

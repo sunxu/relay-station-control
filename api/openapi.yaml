@@ -805,6 +805,27 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/account-inventory/poll-capacity:
+    get:
+      operationId: getAccountInventoryPollCapacity
+      summary: Read current-slot inventory poll capacity diagnostics
+      description: Administrator-only current eligibility assessment, not evidence of successful scheduling. Does not query accounts.
+      tags: [account-inventory]
+      responses:
+        "200":
+          description: Current process capacity and database current-slot eligibility.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountInventoryPollCapacity"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/account-inventory/query:
     post:
       operationId: queryAccountInventory
@@ -1527,6 +1548,81 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    AccountInventoryPollCapacity:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - enabled
+        - eligible_node_count
+        - effective_capacity
+        - concurrency
+        - request_timeout_ms
+        - finalize_timeout_ms
+        - lifecycle_timeout_ms
+        - claim_timeout_ms
+        - dispatch_margin_ms
+        - poll_start_grace_ms
+        - evaluated_slot
+        - evaluated_at
+      properties:
+        status:
+          type: string
+          enum: [ready, capacity_exceeded, disabled]
+        enabled:
+          type: boolean
+        eligible_node_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        effective_capacity:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        concurrency:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        request_timeout_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        finalize_timeout_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        lifecycle_timeout_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        claim_timeout_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        dispatch_margin_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        poll_start_grace_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        evaluated_slot:
+          type: string
+          format: date-time
+        evaluated_at:
+          type: string
+          format: date-time
+
     AccountInventoryQueryRequest:
       type: object
       additionalProperties: false

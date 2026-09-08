@@ -46,6 +46,26 @@ func TestObserverEmitsOnlyClosedLogAllowlist(t *testing.T) {
 	}
 }
 
+func TestObserverEmitsCapacityExceededSchedulerClassification(t *testing.T) {
+	var output bytes.Buffer
+	observer := NewObserver(slog.New(slog.NewJSONHandler(&output, nil)))
+	record := LogRecord{
+		Component: ComponentScheduler, Action: ActionSchedule,
+		Result: LogResultFailure, Reason: ReasonCapacityExceeded,
+	}
+	if !observer.Record(context.Background(), record) {
+		t.Fatal("capacity exceeded scheduler record was dropped")
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["component"] != string(ComponentScheduler) || fields["action"] != string(ActionSchedule) ||
+		fields["result"] != string(LogResultFailure) || fields["reason"] != string(ReasonCapacityExceeded) {
+		t.Fatalf("unexpected capacity classification: %v", fields)
+	}
+}
+
 func TestObserverEmitsClosedProviderPromotionClassification(t *testing.T) {
 	instanceID := uuid.New()
 	tests := []struct {

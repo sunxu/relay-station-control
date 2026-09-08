@@ -70,9 +70,11 @@ func (worker *Worker) Run(ctx context.Context) error {
 			// The token is acquired before ClaimRunnable. A record cannot become
 			// running while it waits for in-process HTTP capacity.
 			semaphore <- struct{}{}
-			claim, err := worker.repository.ClaimRunnable(ctx, ClaimRequest{
+			claimContext, cancelClaim := context.WithTimeout(ctx, DefaultClaimBudget)
+			claim, err := worker.repository.ClaimRunnable(claimContext, ClaimRequest{
 				Token: uuid.New(), LeaseDuration: worker.config.leaseDuration,
 			})
+			cancelClaim()
 			if err != nil {
 				<-semaphore
 				if !errors.Is(err, ErrNoWork) && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
@@ -185,7 +187,9 @@ func (worker *Worker) execute(parent context.Context, claim ClaimedRun) {
 	// a downstream reconciliation observe truth this Worker itself failed
 	// to commit.
 	if finalizeErr == nil {
-		worker.config.lifecycleObserver(parent)
+		observerContext, cancelObserver := context.WithTimeout(parent, DefaultLifecycleObserverBudget)
+		worker.config.lifecycleObserver(observerContext)
+		cancelObserver()
 	}
 }
 
