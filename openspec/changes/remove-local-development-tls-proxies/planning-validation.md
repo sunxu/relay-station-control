@@ -47,7 +47,7 @@ RELAY_DEV_CONTAINER_TEST=1 python3 -m unittest discover -s dev -p 'test_*.py'
 
 首次独立代码审查曾报告PASS，随后Final Review发现1项P2：legacy TLS pending在prepared/applying的recover入口中先改写owner，之后才拒绝不兼容记录。此前仅内部校验测试通过，不能证明入口无副作用。Architecture PASS，Implementation当时BLOCKED；后续修复与验收见下节。变更无新增API/DB/collector/Node/Gateway产品能力，staging/production边界未放宽。
 
-当时实施与验收6/7项完成；3.3实际部署未执行，不可宣称TLS已从当前本地运行环境移除，不archive。两仓分阶段本地提交，未push；本轮修复复核通过，后续部署仍待执行。
+当时实施与验收6/7项完成；3.3实际部署未执行，不可宣称TLS已从当前本地运行环境移除，不archive。该阶段两仓分阶段本地提交，未push；修复复核通过，部署当时待执行，现已完成（见Local HTTP Deployment）。
 
 ### Final Review P2 Reconciliation
 
