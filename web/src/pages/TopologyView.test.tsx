@@ -20,6 +20,7 @@ function emptyTopology(): TopologyApi {
   return {
     accountQuality: vi.fn().mockResolvedValue({ instance_id: A, window: "15m", items: [], next_cursor: null }),
     requestHistory: vi.fn().mockResolvedValue({ instance_id: A, account_key: "openai:a@example.invalid", items: [], next_cursor: null }),
+    incidents: vi.fn().mockResolvedValue({ instance_id: A, items: [], next_cursor: null }),
     providers: vi.fn().mockResolvedValue({ instance_id: A, observed_at: observedAt, providers: [] }),
     binding: vi.fn().mockResolvedValue({ relay_node_id: A, resolution: "unbound", directory_freshness: "fresh", context_source: "none", observed_at: observedAt }),
     currentDuplicates: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
@@ -175,7 +176,7 @@ it("passes window/provider/quality filters and keeps quality pagination bounded"
   fireEvent.mouseDown(qualitySelect);
   fireEvent.click(await screen.findByText("Bad"));
   await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "1h", "openai", "bad", undefined, expect.any(AbortSignal)));
-  expect(screen.getByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
+  expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "质量下一页" })).toBeDisabled();
 });
 
@@ -255,8 +256,8 @@ it("keeps Provider source failure explicit for quality filtering", async () => {
   api.providers = vi.fn().mockRejectedValue(new TopologyApiError(503));
   api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
   renderView(api, assetApi);
-  expect(await screen.findByText("Provider 筛选来源不可用")).toBeInTheDocument();
-  expect(screen.getByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
+  expect((await screen.findAllByText("Provider 筛选来源不可用")).length).toBeGreaterThan(0);
+  expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
 });
 
 it("opens request history for the selected account row", async () => {
@@ -269,6 +270,19 @@ it("opens request history for the selected account row", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "查看 History" }));
   expect(await screen.findByText("history-1")).toBeInTheDocument();
   expect(api.requestHistory).toHaveBeenCalledWith(A, "openai:a@example.invalid", undefined, expect.any(AbortSignal));
+});
+
+it("opens existing History from a real Incident account row", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [] });
+  api.incidents = vi.fn().mockResolvedValue({ instance_id: A, next_cursor: null, items: [{ node_id: A, account_key: "openai:incident@example.invalid", provider: "openai", failure_class: "auth", status: "active", first_seen: observedAt, last_seen: observedAt, hit_count: 3, last_success_at: null }] });
+  api.requestHistory = vi.fn().mockResolvedValue({ instance_id: A, account_key: "openai:incident@example.invalid", items: [{ occurred_at: observedAt, model: "gpt", success: false, failure_class: "auth", duration_ms: 10, request_id: "incident-history" }], next_cursor: null });
+  renderView(api, assetApi);
+  fireEvent.click(await screen.findByRole("button", { name: "openai:incident@example.invalid" }));
+  expect(await screen.findByText("incident-history")).toBeInTheDocument();
+  expect(api.requestHistory).toHaveBeenCalledWith(A, "openai:incident@example.invalid", undefined, expect.any(AbortSignal));
 });
 
 it("clears selected account history when switching Node", async () => {

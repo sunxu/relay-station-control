@@ -1,5 +1,6 @@
-import { getNodeAccountQuality, listNodeAccountRequestHistory, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
-import type { GetNodeAccountQualityParams, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse } from "./generated/control";
+import { getNodeAccountQuality, listNodeAccountRequestHistory, listNodeAccountQualityIncidents, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
+import type { GetNodeAccountQualityParams, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse, ListNodeAccountQualityIncidentsParams, NodeAccountQualityIncidentResponse } from "./generated/control";
+import type { IncidentFailureClass } from "./account-quality-incidents-types";
 import type { AccountQualityFilter, AccountQualityWindow } from "./account-quality-types";
 import type { TopologyApi } from "./topology-types";
 import { TopologyApiError } from "./topology-types";
@@ -18,6 +19,10 @@ export const generatedTopologyApi: TopologyApi = {
   requestHistory: (id: string, accountKey: string, cursor?: string, signal?: AbortSignal) => {
     const params: ListNodeAccountRequestHistoryParams = { account_key: accountKey, cursor, limit: 25 };
     return read<NodeAccountRequestHistoryResponse>(listNodeAccountRequestHistory(id, params, { signal, cache: "no-store", credentials: "same-origin" }));
+  },
+  incidents: (id: string, provider?: string, failureClass?: IncidentFailureClass, cursor?: string, signal?: AbortSignal) => {
+    const params: ListNodeAccountQualityIncidentsParams = { provider, failure_class: failureClass, cursor, limit: 25 };
+    return read<NodeAccountQualityIncidentResponse>(listNodeAccountQualityIncidents(id, params, { signal, cache: "no-store", credentials: "same-origin" }));
   },
   providers: (id, signal) => read(getNodeInventoryProviderStates(id, { signal, cache: "no-store", credentials: "same-origin" })),
   binding: (id, signal) => read(getNodeRelayBinding(id, { signal, cache: "no-store", credentials: "same-origin" })),

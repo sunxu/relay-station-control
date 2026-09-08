@@ -11,6 +11,7 @@ import { TopologyApiError } from "../api/topology-types";
 import type { TopologyApi, TopologyOccurrence, TopologyProviderState } from "../api/topology-types";
 import type { AccountQualityFilter, AccountQualityItem, AccountQualityWindow } from "../api/account-quality-types";
 import { AccountRequestHistorySection } from "./AccountRequestHistorySection";
+import { AccountQualityIncidentsSection } from "./AccountQualityIncidentsSection";
 
 const { Text } = Typography;
 function utc(value?: string | null) {
@@ -172,6 +173,7 @@ export function TopologyView({ api, assetApi, initialInstanceId, onUnauthorized 
         </>}
       </Card>
       <AccountRequestHistorySection key={`${instanceId}:${historyAccountKey ?? "none"}`} api={api} instanceId={instanceId} accountKey={historyAccountKey} onUnauthorized={expireSession} />
+      <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={setHistoryAccountKey} onUnauthorized={expireSession} />
       <Card title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError retry={() => void providers.refetch()} />}
