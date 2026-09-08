@@ -735,6 +735,36 @@ func (e NodeAccountQualityResponseWindow) Valid() bool {
 	}
 }
 
+// Defines values for NodeAccountRequestHistoryItemFailureClass.
+const (
+	NodeAccountRequestHistoryItemFailureClassAuth        NodeAccountRequestHistoryItemFailureClass = "auth"
+	NodeAccountRequestHistoryItemFailureClassLessThannil NodeAccountRequestHistoryItemFailureClass = "<nil>"
+	NodeAccountRequestHistoryItemFailureClassQuota       NodeAccountRequestHistoryItemFailureClass = "quota"
+	NodeAccountRequestHistoryItemFailureClassRateLimit   NodeAccountRequestHistoryItemFailureClass = "rate_limit"
+	NodeAccountRequestHistoryItemFailureClassUnknown     NodeAccountRequestHistoryItemFailureClass = "unknown"
+	NodeAccountRequestHistoryItemFailureClassUpstream    NodeAccountRequestHistoryItemFailureClass = "upstream"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountRequestHistoryItemFailureClass enum.
+func (e NodeAccountRequestHistoryItemFailureClass) Valid() bool {
+	switch e {
+	case NodeAccountRequestHistoryItemFailureClassAuth:
+		return true
+	case NodeAccountRequestHistoryItemFailureClassLessThannil:
+		return true
+	case NodeAccountRequestHistoryItemFailureClassQuota:
+		return true
+	case NodeAccountRequestHistoryItemFailureClassRateLimit:
+		return true
+	case NodeAccountRequestHistoryItemFailureClassUnknown:
+		return true
+	case NodeAccountRequestHistoryItemFailureClassUpstream:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeCapability.
 const (
 	ManagementAccountInventoryRead NodeCapability = "management_account_inventory_read"
@@ -1612,6 +1642,27 @@ type NodeAccountQualityResponse struct {
 // NodeAccountQualityResponseWindow defines model for NodeAccountQualityResponse.Window.
 type NodeAccountQualityResponseWindow string
 
+// NodeAccountRequestHistoryItem defines model for NodeAccountRequestHistoryItem.
+type NodeAccountRequestHistoryItem struct {
+	DurationMs   *int64                                     `json:"duration_ms"`
+	FailureClass *NodeAccountRequestHistoryItemFailureClass `json:"failure_class"`
+	Model        string                                     `json:"model"`
+	OccurredAt   time.Time                                  `json:"occurred_at"`
+	RequestId    string                                     `json:"request_id"`
+	Success      bool                                       `json:"success"`
+}
+
+// NodeAccountRequestHistoryItemFailureClass defines model for NodeAccountRequestHistoryItem.FailureClass.
+type NodeAccountRequestHistoryItemFailureClass string
+
+// NodeAccountRequestHistoryResponse defines model for NodeAccountRequestHistoryResponse.
+type NodeAccountRequestHistoryResponse struct {
+	AccountKey string                          `json:"account_key"`
+	InstanceId openapi_types.UUID              `json:"instance_id"`
+	Items      []NodeAccountRequestHistoryItem `json:"items"`
+	NextCursor *string                         `json:"next_cursor"`
+}
+
 // NodeAsset defines model for NodeAsset.
 type NodeAsset struct {
 	Capabilities          []NodeCapability      `json:"capabilities"`
@@ -2075,6 +2126,13 @@ type ListNodeDuplicateHistoryParams struct {
 
 // ListNodeDuplicateHistoryParamsStatus defines parameters for ListNodeDuplicateHistory.
 type ListNodeDuplicateHistoryParamsStatus string
+
+// ListNodeAccountRequestHistoryParams defines parameters for ListNodeAccountRequestHistory.
+type ListNodeAccountRequestHistoryParams struct {
+	AccountKey string  `form:"account_key" json:"account_key"`
+	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
 
 // QueryAccountInventoryJSONRequestBody defines body for QueryAccountInventory for application/json ContentType.
 type QueryAccountInventoryJSONRequestBody = AccountInventoryQueryRequest
@@ -2549,6 +2607,9 @@ type ServerInterface interface {
 	// ListNodeDuplicateHistory Read occurrences historically involving this Node
 	// (GET /api/topology/nodes/{instance_id}/duplicate-history)
 	ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams)
+	// ListNodeAccountRequestHistory Read recent request history for one account
+	// (GET /api/topology/nodes/{instance_id}/request-history)
+	ListNodeAccountRequestHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountRequestHistoryParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -2792,6 +2853,12 @@ func (_ Unimplemented) GetNodeAccountQuality(w http.ResponseWriter, r *http.Requ
 // ListNodeDuplicateHistory Read occurrences historically involving this Node
 // (GET /api/topology/nodes/{instance_id}/duplicate-history)
 func (_ Unimplemented) ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListNodeAccountRequestHistory Read recent request history for one account
+// (GET /api/topology/nodes/{instance_id}/request-history)
+func (_ Unimplemented) ListNodeAccountRequestHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountRequestHistoryParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4402,6 +4469,74 @@ func (siw *ServerInterfaceWrapper) ListNodeDuplicateHistory(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListNodeAccountRequestHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeAccountRequestHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListNodeAccountRequestHistoryParams
+
+	// ------------- Required query parameter "account_key" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "account_key", r.URL.Query(), &params.AccountKey, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "account_key"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_key", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeAccountRequestHistory(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -4634,6 +4769,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/account-quality", wrapper.GetNodeAccountQuality)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/request-history", wrapper.ListNodeAccountRequestHistory)
 	})
 
 	return r

@@ -1434,6 +1434,39 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
 
+  /api/topology/nodes/{instance_id}/request-history:
+    get:
+      operationId: listNodeAccountRequestHistory
+      summary: Read recent request history for one account
+      description: Requires an enabled super_admin session. Readonly, with a 5 second HTTP budget. History is limited to the current Inventory account and the retained seven-day event window.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - name: account_key
+          in: query
+          required: true
+          schema: {type: string, minLength: 3, maxLength: 385}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 8192}
+      responses:
+        "200":
+          description: Account request history page.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/NoStore"}
+            X-Request-ID: {$ref: "#/components/headers/RequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NodeAccountRequestHistoryResponse"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+
 components:
   securitySchemes:
     SessionCookie:
@@ -3173,6 +3206,31 @@ components:
           maxItems: 100
           items: {$ref: "#/components/schemas/NodeAccountQualityItem"}
         next_cursor: {type: [string, "null"], maxLength: 2048}
+
+    NodeAccountRequestHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [occurred_at, model, success, failure_class, duration_ms, request_id]
+      properties:
+        occurred_at: {type: string, format: date-time}
+        model: {type: string}
+        success: {type: boolean}
+        failure_class: {type: [string, "null"], enum: [auth, quota, rate_limit, upstream, unknown, null]}
+        duration_ms: {type: [integer, "null"], format: int64, minimum: 0}
+        request_id: {type: string}
+
+    NodeAccountRequestHistoryResponse:
+      type: object
+      additionalProperties: false
+      required: [instance_id, account_key, items, next_cursor]
+      properties:
+        instance_id: {type: string, format: uuid}
+        account_key: {type: string, minLength: 3, maxLength: 385}
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/NodeAccountRequestHistoryItem"}
+        next_cursor: {type: [string, "null"], maxLength: 8192}
 
     NodeInventoryProviderState:
       type: object

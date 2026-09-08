@@ -361,6 +361,7 @@ func main() {
 		os.Exit(1)
 	}
 	apiServer.SetAccountQualityReader(accountQuality)
+	apiServer.SetAccountRequestHistoryReader(accountQuality)
 	pollCapacity, err := assetstore.NewInventoryPollCapacityRepository(pool)
 	if err != nil {
 		logger.Error("poll capacity reader initialization failed", "component", "account_inventory")

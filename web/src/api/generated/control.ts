@@ -1238,6 +1238,50 @@ export interface NodeAccountQualityResponse {
   next_cursor: string | null;
 }
 
+/**
+ * @nullable
+ */
+export type NodeAccountRequestHistoryItemFailureClass = typeof NodeAccountRequestHistoryItemFailureClass[keyof typeof NodeAccountRequestHistoryItemFailureClass] | null;
+
+
+export const NodeAccountRequestHistoryItemFailureClass = {
+  auth: 'auth',
+  quota: 'quota',
+  rate_limit: 'rate_limit',
+  upstream: 'upstream',
+  unknown: 'unknown',
+} as const;
+
+export interface NodeAccountRequestHistoryItem {
+  occurred_at: string;
+  model: string;
+  success: boolean;
+  /** @nullable */
+  failure_class: NodeAccountRequestHistoryItemFailureClass;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  duration_ms: number | null;
+  request_id: string;
+}
+
+export interface NodeAccountRequestHistoryResponse {
+  instance_id: string;
+  /**
+     * @minLength 3
+     * @maxLength 385
+     */
+  account_key: string;
+  /** @maxItems 100 */
+  items: NodeAccountRequestHistoryItem[];
+  /**
+     * @maxLength 8192
+     * @nullable
+     */
+  next_cursor: string | null;
+}
+
 export type NodeInventoryProviderStateMonitoringStatus = typeof NodeInventoryProviderStateMonitoringStatus[keyof typeof NodeInventoryProviderStateMonitoringStatus];
 
 
@@ -1465,6 +1509,23 @@ export const GetNodeAccountQualityQuality = {
   bad: 'bad',
   unknown: 'unknown',
 } as const;
+
+export type ListNodeAccountRequestHistoryParams = {
+/**
+ * @minLength 3
+ * @maxLength 385
+ */
+account_key: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @maxLength 8192
+ */
+cursor?: string;
+};
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -6832,6 +6893,169 @@ export function useGetNodeAccountQuality<TData = Awaited<ReturnType<typeof getNo
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetNodeAccountQualityQueryOptions(instanceId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listNodeAccountRequestHistoryResponse200 = {
+  data: NodeAccountRequestHistoryResponse
+  status: 200
+}
+
+export type listNodeAccountRequestHistoryResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listNodeAccountRequestHistoryResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listNodeAccountRequestHistoryResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listNodeAccountRequestHistoryResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listNodeAccountRequestHistoryResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listNodeAccountRequestHistoryResponseSuccess = (listNodeAccountRequestHistoryResponse200) & {
+  headers: Headers;
+};
+export type listNodeAccountRequestHistoryResponseError = (listNodeAccountRequestHistoryResponse400 | listNodeAccountRequestHistoryResponse401 | listNodeAccountRequestHistoryResponse403 | listNodeAccountRequestHistoryResponse404 | listNodeAccountRequestHistoryResponse503) & {
+  headers: Headers;
+};
+
+export type listNodeAccountRequestHistoryResponse = (listNodeAccountRequestHistoryResponseSuccess | listNodeAccountRequestHistoryResponseError)
+
+export const getListNodeAccountRequestHistoryUrl = (instanceId: string,
+    params: ListNodeAccountRequestHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/topology/nodes/${instanceId}/request-history?${stringifiedParams}` : `/api/topology/nodes/${instanceId}/request-history`
+}
+
+/**
+ * Requires an enabled super_admin session. Readonly, with a 5 second HTTP budget. History is limited to the current Inventory account and the retained seven-day event window.
+ * @summary Read recent request history for one account
+ */
+export const listNodeAccountRequestHistory = async (instanceId: string,
+    params: ListNodeAccountRequestHistoryParams, options?: RequestInit): Promise<listNodeAccountRequestHistoryResponse> => {
+
+  const res = await fetch(getListNodeAccountRequestHistoryUrl(instanceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listNodeAccountRequestHistoryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listNodeAccountRequestHistoryResponse
+}
+
+
+
+
+
+export const getListNodeAccountRequestHistoryQueryKey = (instanceId: string,
+    params?: ListNodeAccountRequestHistoryParams,) => {
+    return [
+    `/api/topology/nodes/${instanceId}/request-history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListNodeAccountRequestHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError = ErrorResponse>(instanceId: string,
+    params: ListNodeAccountRequestHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodeAccountRequestHistoryQueryKey(instanceId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>> = ({ signal }) => listNodeAccountRequestHistory(instanceId,params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNodeAccountRequestHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>>
+export type ListNodeAccountRequestHistoryQueryError = ErrorResponse
+
+
+export function useListNodeAccountRequestHistory<TData = Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: ListNodeAccountRequestHistoryParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAccountRequestHistory>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAccountRequestHistory>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAccountRequestHistory<TData = Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: ListNodeAccountRequestHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAccountRequestHistory>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAccountRequestHistory>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAccountRequestHistory<TData = Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: ListNodeAccountRequestHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read recent request history for one account
+ */
+
+export function useListNodeAccountRequestHistory<TData = Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: ListNodeAccountRequestHistoryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountRequestHistory>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNodeAccountRequestHistoryQueryOptions(instanceId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

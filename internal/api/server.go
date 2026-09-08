@@ -39,6 +39,9 @@ type Server struct {
 	accountQuality                interface {
 		ListAccountQuality(context.Context, assetstore.AccountQualityQuery) (assetstore.AccountQualityPage, error)
 	}
+	accountRequestHistory interface {
+		ListAccountRequestHistory(context.Context, assetstore.AccountRequestHistoryQuery) (assetstore.AccountRequestHistoryPage, error)
+	}
 }
 
 type requestIDContextKey struct{}
@@ -403,4 +406,10 @@ func (s *Server) SetAccountQualityReader(reader interface {
 	ListAccountQuality(context.Context, assetstore.AccountQualityQuery) (assetstore.AccountQualityPage, error)
 }) {
 	s.accountQuality = reader
+}
+
+func (s *Server) SetAccountRequestHistoryReader(reader interface {
+	ListAccountRequestHistory(context.Context, assetstore.AccountRequestHistoryQuery) (assetstore.AccountRequestHistoryPage, error)
+}) {
+	s.accountRequestHistory = reader
 }
