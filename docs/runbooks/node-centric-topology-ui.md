@@ -58,4 +58,4 @@ Loading是请求进行中；Empty仅表示成功返回无账号/无匹配；Unkn
 
 `00022_account_request_history_query_access.sql` 仅增加 `control_query_account_request_history_v1(uuid,text,timestamptz,text,integer)` 与EXECUTE授权。函数在同一statement内验证Inventory并按DB时间读取 `occurred_at >= statement_timestamp()-interval '7 days'` 且不晚于当前时间的事件，排序time DESC/hash DESC，keyset取limit+1。单次应用数据库查询；复用已有表和索引，runtime仍不能direct SELECT。跨页不冻结snapshot，retention可能移除已过期事件。
 
-该入口不启动collector，也不改变retention。HTTP queue仍是destructive pop/no-ACK；事件可能未被采到，因此空History不能证明账号从未收到请求，七天History也不是完整账本。限制沿用[采集runbook](account-request-quality.md)。未来发布先应用query-access migration，再更新API/Web；生产回滚保留forward schema，Down只在隔离测试中删除该函数。本轮不部署，证据见[Request History validation](../../openspec/changes/add-account-request-history/planning-validation.md)。
+该入口不启动collector，也不改变retention。HTTP queue仍是destructive pop/no-ACK；事件可能未被采到，因此空History不能证明账号从未收到请求，七天History也不是完整账本。限制沿用[采集runbook](account-request-quality.md)。未来发布先应用query-access migration，再更新API/Web；生产回滚保留forward schema，Down只在隔离测试中删除该函数。本轮不部署，证据见[Request History validation](../../openspec/changes/archive/2026-09-08-add-account-request-history/planning-validation.md)。

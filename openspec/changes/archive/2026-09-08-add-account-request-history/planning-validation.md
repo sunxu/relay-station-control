@@ -66,7 +66,7 @@ npm run build
 - UI明确区分未选、loading、empty、unavailable、populated及404，Node切换清选择/取消/隔离。
 - runtime仅安全函数EXECUTE；00022只加query-access function，Down只drop该签名；无persistence/index变化。
 - 无mutation/raw/detail/chart/export/search/date-picker/新监控平台，未扩scope到quota/inspection/automation。
-- destructive-pop/no-ACK与缺失事件限制保留；History不是完整账本，见更新的[Topology runbook](../../../docs/runbooks/node-centric-topology-ui.md)及[采集runbook](../../../docs/runbooks/account-request-quality.md)。
+- destructive-pop/no-ACK与缺失事件限制保留；History不是完整账本，见更新的[Topology runbook](../../../../docs/runbooks/node-centric-topology-ui.md)及[采集runbook](../../../../docs/runbooks/account-request-quality.md)。
 - 实现完成等待Architecture + Implementation Final Review，不push、不deploy、不archive。
 
 ## Local commits and handoff
