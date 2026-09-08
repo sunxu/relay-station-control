@@ -43,6 +43,9 @@ type AccountInventoryCursorFilters struct {
 	Lifecycle   string
 	BasicStatus string
 	Email       string
+	Window      string
+	Quality     string
+	Scope       string
 }
 
 func (AccountInventoryCursorFilters) Format(state fmt.State, _ rune) {
@@ -74,6 +77,9 @@ type normalizedAccountInventoryCursorFilters struct {
 	Lifecycle   string `json:"lifecycle"`
 	BasicStatus string `json:"basic_status"`
 	Email       string `json:"email"`
+	Window      string `json:"window,omitempty"`
+	Quality     string `json:"quality,omitempty"`
+	Scope       string `json:"scope,omitempty"`
 }
 
 func NewAccountInventoryCursorCodec(keyring *authn.Keyring) (*AccountInventoryCursorCodec, error) {
@@ -224,6 +230,9 @@ func normalizeAccountInventoryCursorFilters(filters AccountInventoryCursorFilter
 		Lifecycle:   strings.ToLower(strings.TrimSpace(filters.Lifecycle)),
 		BasicStatus: strings.ToLower(strings.TrimSpace(filters.BasicStatus)),
 		Email:       strings.ToLower(strings.TrimSpace(filters.Email)),
+		Window:      strings.ToLower(strings.TrimSpace(filters.Window)),
+		Quality:     strings.ToLower(strings.TrimSpace(filters.Quality)),
+		Scope:       strings.ToLower(strings.TrimSpace(filters.Scope)),
 	}
 }
 
@@ -241,6 +250,15 @@ func validAccountInventoryCursorFilters(filters AccountInventoryCursorFilters) b
 	switch normalized.BasicStatus {
 	case "", "reported_active", "disabled", "unavailable", "error", "unknown":
 	default:
+		return false
+	}
+	if normalized.Window != "" && normalized.Window != "15m" && normalized.Window != "1h" {
+		return false
+	}
+	if normalized.Quality != "" && normalized.Quality != "good" && normalized.Quality != "degraded" && normalized.Quality != "bad" && normalized.Quality != "unknown" {
+		return false
+	}
+	if normalized.Scope != "" && normalized.Scope != "node-account-quality" {
 		return false
 	}
 	return normalized.Email == "" || validAccountInventoryCursorIdentity(normalized.Email, 320)

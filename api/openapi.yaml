@@ -1417,12 +1417,45 @@ paths:
           in: query
           description: Inventory lifecycle filter. Omit to include all lifecycle states.
           schema: {type: string, enum: [present, suspected_missing, missing, out_of_scope]}
+        - name: basic_status
+          in: query
+          description: Last status reported by the Node.
+          schema: {type: string, enum: [reported_active, disabled, unavailable, error, unknown]}
         - name: limit
           in: query
           schema: {type: integer, minimum: 1, maximum: 100, default: 25}
         - name: cursor
           in: query
           schema: {type: string, maxLength: 2048}
+      responses:
+        "200":
+          description: Account quality page.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/NoStore"}
+            X-Request-ID: {$ref: "#/components/headers/RequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NodeAccountQualityResponse"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+
+  /api/topology/nodes/{instance_id}/account-quality/query:
+    post:
+      operationId: queryNodeAccountQuality
+      summary: Query account request quality with protected filters
+      description: Requires an enabled super_admin session and CSRF token. Readonly, with a 5 second HTTP budget.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NodeAccountQualityQueryRequest"}
       responses:
         "200":
           description: Account quality page.
@@ -3221,7 +3254,7 @@ components:
     NodeAccountQualityItem:
       type: object
       additionalProperties: false
-      required: [account_key, email, provider, quality, request_count, success_count, failure_count, success_rate, p95_latency_ms, last_success_at, last_failure_at, last_failure_class]
+      required: [account_key, email, provider, quality, request_count, success_count, failure_count, success_rate, p95_latency_ms, last_success_at, last_failure_at, last_failure_class, inventory, recent_requests]
       properties:
         account_key: {type: string}
         email: {type: string}
@@ -3235,6 +3268,26 @@ components:
         last_success_at: {type: [string, "null"], format: date-time}
         last_failure_at: {type: [string, "null"], format: date-time}
         last_failure_class: {type: [string, "null"], enum: [auth, quota, rate_limit, upstream, unknown, null]}
+        inventory:
+          $ref: "#/components/schemas/AccountInventoryItem"
+        recent_requests:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/NodeAccountRequestHistoryItem"
+
+    NodeAccountQualityQueryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        window: {type: string, enum: [15m, 1h], default: 15m}
+        provider: {type: string, maxLength: 64, pattern: "^[a-z0-9][a-z0-9._-]*$"}
+        lifecycle: {type: string, enum: [present, suspected_missing, missing, out_of_scope]}
+        basic_status: {type: string, enum: [reported_active, disabled, unavailable, error, unknown]}
+        quality: {type: string, enum: [good, degraded, bad, unknown]}
+        email: {type: string, maxLength: 320, format: email}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        cursor: {type: string, maxLength: 2048}
 
     NodeAccountQualityResponse:
       type: object

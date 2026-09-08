@@ -1188,6 +1188,34 @@ export const NodeAccountQualityItemLastFailureClass = {
   unknown: 'unknown',
 } as const;
 
+/**
+ * @nullable
+ */
+export type NodeAccountRequestHistoryItemFailureClass = typeof NodeAccountRequestHistoryItemFailureClass[keyof typeof NodeAccountRequestHistoryItemFailureClass] | null;
+
+
+export const NodeAccountRequestHistoryItemFailureClass = {
+  auth: 'auth',
+  quota: 'quota',
+  rate_limit: 'rate_limit',
+  upstream: 'upstream',
+  unknown: 'unknown',
+} as const;
+
+export interface NodeAccountRequestHistoryItem {
+  occurred_at: string;
+  model: string;
+  success: boolean;
+  /** @nullable */
+  failure_class: NodeAccountRequestHistoryItemFailureClass;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  duration_ms: number | null;
+  request_id: string;
+}
+
 export interface NodeAccountQualityItem {
   account_key: string;
   email: string;
@@ -1216,6 +1244,69 @@ export interface NodeAccountQualityItem {
   last_failure_at: string | null;
   /** @nullable */
   last_failure_class: NodeAccountQualityItemLastFailureClass;
+  inventory: AccountInventoryItem;
+  /** @maxItems 10 */
+  recent_requests: NodeAccountRequestHistoryItem[];
+}
+
+export type NodeAccountQualityQueryRequestWindow = typeof NodeAccountQualityQueryRequestWindow[keyof typeof NodeAccountQualityQueryRequestWindow];
+
+
+export const NodeAccountQualityQueryRequestWindow = {
+  '15m': '15m',
+  '1h': '1h',
+} as const;
+
+export type NodeAccountQualityQueryRequestLifecycle = typeof NodeAccountQualityQueryRequestLifecycle[keyof typeof NodeAccountQualityQueryRequestLifecycle];
+
+
+export const NodeAccountQualityQueryRequestLifecycle = {
+  present: 'present',
+  suspected_missing: 'suspected_missing',
+  missing: 'missing',
+  out_of_scope: 'out_of_scope',
+} as const;
+
+export type NodeAccountQualityQueryRequestBasicStatus = typeof NodeAccountQualityQueryRequestBasicStatus[keyof typeof NodeAccountQualityQueryRequestBasicStatus];
+
+
+export const NodeAccountQualityQueryRequestBasicStatus = {
+  reported_active: 'reported_active',
+  disabled: 'disabled',
+  unavailable: 'unavailable',
+  error: 'error',
+  unknown: 'unknown',
+} as const;
+
+export type NodeAccountQualityQueryRequestQuality = typeof NodeAccountQualityQueryRequestQuality[keyof typeof NodeAccountQualityQueryRequestQuality];
+
+
+export const NodeAccountQualityQueryRequestQuality = {
+  good: 'good',
+  degraded: 'degraded',
+  bad: 'bad',
+  unknown: 'unknown',
+} as const;
+
+export interface NodeAccountQualityQueryRequest {
+  window?: NodeAccountQualityQueryRequestWindow;
+  /**
+     * @maxLength 64
+     * @pattern ^[a-z0-9][a-z0-9._-]*$
+     */
+  provider?: string;
+  lifecycle?: NodeAccountQualityQueryRequestLifecycle;
+  basic_status?: NodeAccountQualityQueryRequestBasicStatus;
+  quality?: NodeAccountQualityQueryRequestQuality;
+  /** @maxLength 320 */
+  email?: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  limit?: number;
+  /** @maxLength 2048 */
+  cursor?: string;
 }
 
 export type NodeAccountQualityResponseWindow = typeof NodeAccountQualityResponseWindow[keyof typeof NodeAccountQualityResponseWindow];
@@ -1236,34 +1327,6 @@ export interface NodeAccountQualityResponse {
      * @nullable
      */
   next_cursor: string | null;
-}
-
-/**
- * @nullable
- */
-export type NodeAccountRequestHistoryItemFailureClass = typeof NodeAccountRequestHistoryItemFailureClass[keyof typeof NodeAccountRequestHistoryItemFailureClass] | null;
-
-
-export const NodeAccountRequestHistoryItemFailureClass = {
-  auth: 'auth',
-  quota: 'quota',
-  rate_limit: 'rate_limit',
-  upstream: 'upstream',
-  unknown: 'unknown',
-} as const;
-
-export interface NodeAccountRequestHistoryItem {
-  occurred_at: string;
-  model: string;
-  success: boolean;
-  /** @nullable */
-  failure_class: NodeAccountRequestHistoryItemFailureClass;
-  /**
-     * @minimum 0
-     * @nullable
-     */
-  duration_ms: number | null;
-  request_id: string;
 }
 
 export interface NodeAccountRequestHistoryResponse {
@@ -1532,6 +1595,10 @@ quality?: GetNodeAccountQualityQuality;
  */
 lifecycle?: GetNodeAccountQualityLifecycle;
 /**
+ * Last status reported by the Node.
+ */
+basic_status?: GetNodeAccountQualityBasicStatus;
+/**
  * @minimum 1
  * @maximum 100
  */
@@ -1568,6 +1635,17 @@ export const GetNodeAccountQualityLifecycle = {
   suspected_missing: 'suspected_missing',
   missing: 'missing',
   out_of_scope: 'out_of_scope',
+} as const;
+
+export type GetNodeAccountQualityBasicStatus = typeof GetNodeAccountQualityBasicStatus[keyof typeof GetNodeAccountQualityBasicStatus];
+
+
+export const GetNodeAccountQualityBasicStatus = {
+  reported_active: 'reported_active',
+  disabled: 'disabled',
+  unavailable: 'unavailable',
+  error: 'error',
+  unknown: 'unknown',
 } as const;
 
 export type ListNodeAccountRequestHistoryParams = {
@@ -7000,6 +7078,132 @@ export function useGetNodeAccountQuality<TData = Awaited<ReturnType<typeof getNo
 
 
 
+
+export type queryNodeAccountQualityResponse200 = {
+  data: NodeAccountQualityResponse
+  status: 200
+}
+
+export type queryNodeAccountQualityResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type queryNodeAccountQualityResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type queryNodeAccountQualityResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type queryNodeAccountQualityResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type queryNodeAccountQualityResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type queryNodeAccountQualityResponseSuccess = (queryNodeAccountQualityResponse200) & {
+  headers: Headers;
+};
+export type queryNodeAccountQualityResponseError = (queryNodeAccountQualityResponse400 | queryNodeAccountQualityResponse401 | queryNodeAccountQualityResponse403 | queryNodeAccountQualityResponse404 | queryNodeAccountQualityResponse503) & {
+  headers: Headers;
+};
+
+export type queryNodeAccountQualityResponse = (queryNodeAccountQualityResponseSuccess | queryNodeAccountQualityResponseError)
+
+export const getQueryNodeAccountQualityUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/topology/nodes/${instanceId}/account-quality/query`
+}
+
+/**
+ * Requires an enabled super_admin session and CSRF token. Readonly, with a 5 second HTTP budget.
+ * @summary Query account request quality with protected filters
+ */
+export const queryNodeAccountQuality = async (instanceId: string,
+    nodeAccountQualityQueryRequest: NodeAccountQualityQueryRequest, options?: RequestInit): Promise<queryNodeAccountQualityResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getQueryNodeAccountQualityUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeAccountQualityQueryRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryNodeAccountQualityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryNodeAccountQualityResponse
+}
+
+
+
+
+
+export const getQueryNodeAccountQualityMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queryNodeAccountQuality>>, TError,QueryNodeAccountQualityMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof queryNodeAccountQuality>>, TError,QueryNodeAccountQualityMutationVariables, TContext> => {
+
+const mutationKey = ['queryNodeAccountQuality'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof queryNodeAccountQuality>>, QueryNodeAccountQualityMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  queryNodeAccountQuality(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QueryNodeAccountQualityMutationResult = NonNullable<Awaited<ReturnType<typeof queryNodeAccountQuality>>>
+    export type QueryNodeAccountQualityMutationBody = NodeAccountQualityQueryRequest
+    export type QueryNodeAccountQualityMutationError = ErrorResponse
+    export type QueryNodeAccountQualityMutationVariables = {instanceId: string;data: NodeAccountQualityQueryRequest}
+
+    /**
+ * @summary Query account request quality with protected filters
+ */
+export const useQueryNodeAccountQuality = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queryNodeAccountQuality>>, TError,QueryNodeAccountQualityMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof queryNodeAccountQuality>>,
+        TError,
+        QueryNodeAccountQualityMutationVariables,
+        TContext
+      > => {
+      return useMutation(getQueryNodeAccountQualityMutationOptions(options), queryClient);
+    }
 
 export type listNodeAccountRequestHistoryResponse200 = {
   data: NodeAccountRequestHistoryResponse

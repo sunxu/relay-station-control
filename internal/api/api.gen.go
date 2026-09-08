@@ -756,6 +756,99 @@ func (e NodeAccountQualityItemQuality) Valid() bool {
 	}
 }
 
+// Defines values for NodeAccountQualityQueryRequestBasicStatus.
+const (
+	NodeAccountQualityQueryRequestBasicStatusDisabled       NodeAccountQualityQueryRequestBasicStatus = "disabled"
+	NodeAccountQualityQueryRequestBasicStatusError          NodeAccountQualityQueryRequestBasicStatus = "error"
+	NodeAccountQualityQueryRequestBasicStatusReportedActive NodeAccountQualityQueryRequestBasicStatus = "reported_active"
+	NodeAccountQualityQueryRequestBasicStatusUnavailable    NodeAccountQualityQueryRequestBasicStatus = "unavailable"
+	NodeAccountQualityQueryRequestBasicStatusUnknown        NodeAccountQualityQueryRequestBasicStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityQueryRequestBasicStatus enum.
+func (e NodeAccountQualityQueryRequestBasicStatus) Valid() bool {
+	switch e {
+	case NodeAccountQualityQueryRequestBasicStatusDisabled:
+		return true
+	case NodeAccountQualityQueryRequestBasicStatusError:
+		return true
+	case NodeAccountQualityQueryRequestBasicStatusReportedActive:
+		return true
+	case NodeAccountQualityQueryRequestBasicStatusUnavailable:
+		return true
+	case NodeAccountQualityQueryRequestBasicStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountQualityQueryRequestLifecycle.
+const (
+	NodeAccountQualityQueryRequestLifecycleMissing          NodeAccountQualityQueryRequestLifecycle = "missing"
+	NodeAccountQualityQueryRequestLifecycleOutOfScope       NodeAccountQualityQueryRequestLifecycle = "out_of_scope"
+	NodeAccountQualityQueryRequestLifecyclePresent          NodeAccountQualityQueryRequestLifecycle = "present"
+	NodeAccountQualityQueryRequestLifecycleSuspectedMissing NodeAccountQualityQueryRequestLifecycle = "suspected_missing"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityQueryRequestLifecycle enum.
+func (e NodeAccountQualityQueryRequestLifecycle) Valid() bool {
+	switch e {
+	case NodeAccountQualityQueryRequestLifecycleMissing:
+		return true
+	case NodeAccountQualityQueryRequestLifecycleOutOfScope:
+		return true
+	case NodeAccountQualityQueryRequestLifecyclePresent:
+		return true
+	case NodeAccountQualityQueryRequestLifecycleSuspectedMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountQualityQueryRequestQuality.
+const (
+	NodeAccountQualityQueryRequestQualityBad      NodeAccountQualityQueryRequestQuality = "bad"
+	NodeAccountQualityQueryRequestQualityDegraded NodeAccountQualityQueryRequestQuality = "degraded"
+	NodeAccountQualityQueryRequestQualityGood     NodeAccountQualityQueryRequestQuality = "good"
+	NodeAccountQualityQueryRequestQualityUnknown  NodeAccountQualityQueryRequestQuality = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityQueryRequestQuality enum.
+func (e NodeAccountQualityQueryRequestQuality) Valid() bool {
+	switch e {
+	case NodeAccountQualityQueryRequestQualityBad:
+		return true
+	case NodeAccountQualityQueryRequestQualityDegraded:
+		return true
+	case NodeAccountQualityQueryRequestQualityGood:
+		return true
+	case NodeAccountQualityQueryRequestQualityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountQualityQueryRequestWindow.
+const (
+	NodeAccountQualityQueryRequestWindowN15m NodeAccountQualityQueryRequestWindow = "15m"
+	NodeAccountQualityQueryRequestWindowN1h  NodeAccountQualityQueryRequestWindow = "1h"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityQueryRequestWindow enum.
+func (e NodeAccountQualityQueryRequestWindow) Valid() bool {
+	switch e {
+	case NodeAccountQualityQueryRequestWindowN15m:
+		return true
+	case NodeAccountQualityQueryRequestWindowN1h:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeAccountQualityResponseWindow.
 const (
 	NodeAccountQualityResponseWindowN15m NodeAccountQualityResponseWindow = "15m"
@@ -1155,6 +1248,33 @@ func (e GetNodeAccountQualityParamsLifecycle) Valid() bool {
 	case GetNodeAccountQualityParamsLifecyclePresent:
 		return true
 	case GetNodeAccountQualityParamsLifecycleSuspectedMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetNodeAccountQualityParamsBasicStatus.
+const (
+	GetNodeAccountQualityParamsBasicStatusDisabled       GetNodeAccountQualityParamsBasicStatus = "disabled"
+	GetNodeAccountQualityParamsBasicStatusError          GetNodeAccountQualityParamsBasicStatus = "error"
+	GetNodeAccountQualityParamsBasicStatusReportedActive GetNodeAccountQualityParamsBasicStatus = "reported_active"
+	GetNodeAccountQualityParamsBasicStatusUnavailable    GetNodeAccountQualityParamsBasicStatus = "unavailable"
+	GetNodeAccountQualityParamsBasicStatusUnknown        GetNodeAccountQualityParamsBasicStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the GetNodeAccountQualityParamsBasicStatus enum.
+func (e GetNodeAccountQualityParamsBasicStatus) Valid() bool {
+	switch e {
+	case GetNodeAccountQualityParamsBasicStatusDisabled:
+		return true
+	case GetNodeAccountQualityParamsBasicStatusError:
+		return true
+	case GetNodeAccountQualityParamsBasicStatusReportedActive:
+		return true
+	case GetNodeAccountQualityParamsBasicStatusUnavailable:
+		return true
+	case GetNodeAccountQualityParamsBasicStatusUnknown:
 		return true
 	default:
 		return false
@@ -1742,12 +1862,14 @@ type NodeAccountQualityItem struct {
 	AccountKey       string                                  `json:"account_key"`
 	Email            string                                  `json:"email"`
 	FailureCount     int64                                   `json:"failure_count"`
+	Inventory        AccountInventoryItem                    `json:"inventory"`
 	LastFailureAt    *time.Time                              `json:"last_failure_at"`
 	LastFailureClass *NodeAccountQualityItemLastFailureClass `json:"last_failure_class"`
 	LastSuccessAt    *time.Time                              `json:"last_success_at"`
 	P95LatencyMs     *float64                                `json:"p95_latency_ms"`
 	Provider         string                                  `json:"provider"`
 	Quality          NodeAccountQualityItemQuality           `json:"quality"`
+	RecentRequests   []NodeAccountRequestHistoryItem         `json:"recent_requests"`
 	RequestCount     int64                                   `json:"request_count"`
 	SuccessCount     int64                                   `json:"success_count"`
 	SuccessRate      *float64                                `json:"success_rate"`
@@ -1758,6 +1880,30 @@ type NodeAccountQualityItemLastFailureClass string
 
 // NodeAccountQualityItemQuality defines model for NodeAccountQualityItem.Quality.
 type NodeAccountQualityItemQuality string
+
+// NodeAccountQualityQueryRequest defines model for NodeAccountQualityQueryRequest.
+type NodeAccountQualityQueryRequest struct {
+	BasicStatus *NodeAccountQualityQueryRequestBasicStatus `json:"basic_status,omitempty"`
+	Cursor      *string                                    `json:"cursor,omitempty"`
+	Email       *openapi_types.Email                       `json:"email,omitempty"`
+	Lifecycle   *NodeAccountQualityQueryRequestLifecycle   `json:"lifecycle,omitempty"`
+	Limit       *int                                       `json:"limit,omitempty"`
+	Provider    *string                                    `json:"provider,omitempty"`
+	Quality     *NodeAccountQualityQueryRequestQuality     `json:"quality,omitempty"`
+	Window      *NodeAccountQualityQueryRequestWindow      `json:"window,omitempty"`
+}
+
+// NodeAccountQualityQueryRequestBasicStatus defines model for NodeAccountQualityQueryRequest.BasicStatus.
+type NodeAccountQualityQueryRequestBasicStatus string
+
+// NodeAccountQualityQueryRequestLifecycle defines model for NodeAccountQualityQueryRequest.Lifecycle.
+type NodeAccountQualityQueryRequestLifecycle string
+
+// NodeAccountQualityQueryRequestQuality defines model for NodeAccountQualityQueryRequest.Quality.
+type NodeAccountQualityQueryRequestQuality string
+
+// NodeAccountQualityQueryRequestWindow defines model for NodeAccountQualityQueryRequest.Window.
+type NodeAccountQualityQueryRequestWindow string
 
 // NodeAccountQualityResponse defines model for NodeAccountQualityResponse.
 type NodeAccountQualityResponse struct {
@@ -2238,8 +2384,11 @@ type GetNodeAccountQualityParams struct {
 
 	// Lifecycle Inventory lifecycle filter. Omit to include all lifecycle states.
 	Lifecycle *GetNodeAccountQualityParamsLifecycle `form:"lifecycle,omitempty" json:"lifecycle,omitempty"`
-	Limit     *int                                  `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor    *string                               `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// BasicStatus Last status reported by the Node.
+	BasicStatus *GetNodeAccountQualityParamsBasicStatus `form:"basic_status,omitempty" json:"basic_status,omitempty"`
+	Limit       *int                                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor      *string                                 `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // GetNodeAccountQualityParamsWindow defines parameters for GetNodeAccountQuality.
@@ -2250,6 +2399,15 @@ type GetNodeAccountQualityParamsQuality string
 
 // GetNodeAccountQualityParamsLifecycle defines parameters for GetNodeAccountQuality.
 type GetNodeAccountQualityParamsLifecycle string
+
+// GetNodeAccountQualityParamsBasicStatus defines parameters for GetNodeAccountQuality.
+type GetNodeAccountQualityParamsBasicStatus string
+
+// QueryNodeAccountQualityParams defines parameters for QueryNodeAccountQuality.
+type QueryNodeAccountQualityParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
 
 // ListNodeDuplicateHistoryParams defines parameters for ListNodeDuplicateHistory.
 type ListNodeDuplicateHistoryParams struct {
@@ -2330,6 +2488,9 @@ type RebindRelayNodeJSONRequestBody = RebindRelayNodeRequest
 
 // UnbindRelayNodeJSONRequestBody defines body for UnbindRelayNode for application/json ContentType.
 type UnbindRelayNodeJSONRequestBody = UnbindRelayNodeRequest
+
+// QueryNodeAccountQualityJSONRequestBody defines body for QueryNodeAccountQuality for application/json ContentType.
+type QueryNodeAccountQualityJSONRequestBody = NodeAccountQualityQueryRequest
 
 // AsAdministratorActivationStartRequest returns the union data inside the AdministratorActivationRequest as a AdministratorActivationStartRequest
 func (t AdministratorActivationRequest) AsAdministratorActivationStartRequest() (AdministratorActivationStartRequest, error) {
@@ -2753,6 +2914,9 @@ type ServerInterface interface {
 	// GetNodeAccountQuality Read account request quality for one Node
 	// (GET /api/topology/nodes/{instance_id}/account-quality)
 	GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params GetNodeAccountQualityParams)
+	// QueryNodeAccountQuality Query account request quality with protected filters
+	// (POST /api/topology/nodes/{instance_id}/account-quality/query)
+	QueryNodeAccountQuality(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params QueryNodeAccountQualityParams)
 	// ListNodeDuplicateHistory Read occurrences historically involving this Node
 	// (GET /api/topology/nodes/{instance_id}/duplicate-history)
 	ListNodeDuplicateHistory(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeDuplicateHistoryParams)
@@ -2999,6 +3163,12 @@ func (_ Unimplemented) ListUnresolvedRelayBindings(w http.ResponseWriter, r *htt
 // GetNodeAccountQuality Read account request quality for one Node
 // (GET /api/topology/nodes/{instance_id}/account-quality)
 func (_ Unimplemented) GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params GetNodeAccountQualityParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// QueryNodeAccountQuality Query account request quality with protected filters
+// (POST /api/topology/nodes/{instance_id}/account-quality/query)
+func (_ Unimplemented) QueryNodeAccountQuality(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params QueryNodeAccountQualityParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4535,6 +4705,19 @@ func (siw *ServerInterfaceWrapper) GetNodeAccountQuality(w http.ResponseWriter, 
 		return
 	}
 
+	// ------------- Optional query parameter "basic_status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "basic_status", r.URL.Query(), &params.BasicStatus, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "basic_status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "basic_status", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "limit" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -4563,6 +4746,60 @@ func (siw *ServerInterfaceWrapper) GetNodeAccountQuality(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetNodeAccountQuality(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryNodeAccountQuality operation middleware
+func (siw *ServerInterfaceWrapper) QueryNodeAccountQuality(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params QueryNodeAccountQualityParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryNodeAccountQuality(w, r, instanceId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5034,6 +5271,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/account-quality", wrapper.GetNodeAccountQuality)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/topology/nodes/{instance_id}/account-quality/query", wrapper.QueryNodeAccountQuality)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/request-history", wrapper.ListNodeAccountRequestHistory)
