@@ -10,7 +10,7 @@
 
 ## Implementation and Validation
 
-用户后续明确要求“提交规划文档，再实施、测试”，本轮实施已授权，本地运行环境仍不部署。规划提交 `e34a353`，Control 实现提交 `473af11`。
+用户后续明确要求“提交规划文档，再实施、测试”，当时实施已授权，本地运行环境尚不部署。规划提交 `e34a353`，Control 实现提交 `473af11`。
 
 - Control：删除环境变量解析及可配置Cookie字段，以 `Config.CookieSecure()` 按Environment派生；所有构造路径一致，unknown环境/keyring/production MFA限制保留。删除dev进程loopback限制，Compose宿主loopback映射负责网络边界；不引入新开关。旧变量在当前代码中只作为退休回归测试输入；固定旧revision的历史回滚fixture仍保留旧binary所需变量，不能以新契约修改旧binary验收。
 - ops：删除TLS服务、初始化、listener和证书要求，Gateway公共HTTP入口保留。Control operations变为单服务，Gateway继续应用+proxy，旧Control pair pending的update/directory/recovery-drill均显式拒绝。首次拓扑转换需完整发布、无pending和私有备份，不能绕过same-schema gate；历史证书/卷不删除。详见ops `dev/OPERATIONS.md`。System Design已记录仅本地dev的部署例外。
@@ -47,7 +47,7 @@ RELAY_DEV_CONTAINER_TEST=1 python3 -m unittest discover -s dev -p 'test_*.py'
 
 首次独立代码审查曾报告PASS，随后Final Review发现1项P2：legacy TLS pending在prepared/applying的recover入口中先改写owner，之后才拒绝不兼容记录。此前仅内部校验测试通过，不能证明入口无副作用。Architecture PASS，Implementation当时BLOCKED；后续修复与验收见下节。变更无新增API/DB/collector/Node/Gateway产品能力，staging/production边界未放宽。
 
-实施与验收6/7项完成；3.3实际部署未执行，不可宣称TLS已从当前本地运行环境移除，不archive。两仓分阶段本地提交，未push；本轮修复复核通过，后续部署仍待执行。
+当时实施与验收6/7项完成；3.3实际部署未执行，不可宣称TLS已从当前本地运行环境移除，不archive。两仓分阶段本地提交，未push；本轮修复复核通过，后续部署仍待执行。
 
 ### Final Review P2 Reconciliation
 
@@ -61,4 +61,27 @@ RELAY_DEV_CONTAINER_TEST=1 python3 -m unittest discover -s dev -p 'test_*.py'
 
 最终65 tests / 39.952s，全部PASS、无skip，包括真实隔离容器更新/失败回滚/中断恢复。首次沙箱内运行3个Docker构建因缓存权限失败；获准环境重跑通过，不计首次为PASS。此次仅ops恢复顺序及测试、Control证据文档变更，复用上文已通过的Control Go/PG/race/make证据，无需重跑无关构建。
 
-主Agent复核确认legacy拒绝先于pending修改，两个触发条件独立覆盖，原P2已关闭：Architecture PASS、Implementation PASS，当前无已知P1/P2。change strict PASS、all strict 18/18 PASS、两仓diff check PASS。6/7任务完成，3.3仍未部署；未push、未archive。
+主Agent复核确认legacy拒绝先于pending修改，两个触发条件独立覆盖，原P2已关闭：Architecture PASS、Implementation PASS，当前无已知P1/P2。change strict PASS、all strict 18/18 PASS、两仓diff check PASS。修复验收时6/7任务完成，3.3仍未部署；未push、未archive。
+
+### Local HTTP Deployment — PASS
+
+2026-09-09 Asia/Shanghai，用户要求继续后完成3.3。Control部署revision `7025629d79d3253b6e10182f8eaf0a4960d47be7`，镜像 `sha256:4fa27bbdf3e1461e4c1a678cb58b741287f2c426c5b9ba7f90fa3c212a8ed5e8`；ops部署revision `445ad330d28ae028e0d979c4899c76592706a642`。Docker构建PASS，以真实revision标注，不绕过单服务same-schema gate。
+
+持有既有RuntimeLock且确认无pending后，复用Operations备份Control/Gateway数据库与匹配配置，pg_restore --list通过（不声称完整还原演练）。备份目录使用UTC时间戳，因此日期前缀为前一天：
+
+- `/Users/keedle/.relay-station/dev/backups/20260908T172618Z-control-7af4a4f8`
+- `/Users/keedle/.relay-station/dev/backups/20260908T172619Z-gateway-31afaca9`
+
+前者 `full-release.json` 保存阶段与不变量，最终phase=complete。首次拓扑转换按完整发布执行：更新私有override中的Control镜像并移除TLS服务配置；同步Gateway HTTP nginx配置；仅force-recreate Control和gateway-proxy，显式核对project/service标签后停止并移除control-tls/control-tls-init两个退役容器。不使用down -v/remove-orphans，不删除数据或证书volume，不运行migration。
+
+部署后实际断言全部PASS：
+
+- Control HTTP UI与health、Gateway HTTP UI与health、两个Node health返回200；八个长运行服务均healthy。
+- 新会话HTTP登录成功，Cookie为non-Secure/HttpOnly/SameSite Strict；session读取成功，错误/缺失CSRF、跨源和错误scheme logout均403；正确logout204，撤销后session401。未输出或提交凭据、Cookie、CSRF。
+- Gateway `/internal/v1/api-account-directory` 返回403；127.0.0.1:18443/18444均不可连接；新公开入口均绑定loopback。
+- Gateway应用、两个Node、数据库、Redis及未参与发布的init容器ID/image/config摘要完全不变；两个Node各3个账号文件及原TLS证书逐文件hash不变。
+- Control管理员/Node/Binding/Inventory记录数量不变；Goose保持25，所有原project数据/证书卷仍存在。未对持续采集的事件总数作不合理的恒等断言。
+
+当前入口：Control `http://127.0.0.1:18080/`，Gateway `http://127.0.0.1:18082/`，Node管理 `http://127.0.0.1:18319/management.html`、`http://127.0.0.1:18320/management.html`。旧临时local-stack.sh不作为执行入口，沿用仓库devctl及正式runbook。
+
+7/7任务完成。文档对账后change strict PASS、all strict 18/18 PASS、两仓diff check PASS。本地部署完成，未push、未archive。

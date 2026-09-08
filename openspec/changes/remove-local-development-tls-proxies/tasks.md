@@ -7,4 +7,4 @@
 ## 3. Validation and Delivery
 - [x] 3.1 Go/PG/race、make test build、ops测试与strict/diff
 - [x] 3.2 独立审查、证据对账及本地提交
-- [ ] 3.3 备份后更新本地runtime，HTTP/隔离/数据保留验收
+- [x] 3.3 备份后更新本地runtime，HTTP/隔离/数据保留验收
