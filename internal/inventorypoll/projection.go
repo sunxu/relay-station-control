@@ -124,6 +124,12 @@ func normalizeEmail(value string) (string, error) {
 	return normalized, nil
 }
 
+// NormalizeAccountIdentity exposes the existing inventory canonical identity rule
+// to other read models without introducing another account identity.
+func NormalizeAccountIdentity(provider, email string) (string, string, string, error) {
+	return normalizeAccountIdentity(provider, email)
+}
+
 func normalizeAccountIdentity(provider, email string) (string, string, string, error) {
 	normalizedProvider, err := normalizeProvider(provider)
 	if err != nil {

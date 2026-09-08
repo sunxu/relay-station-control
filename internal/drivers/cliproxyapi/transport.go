@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,15 +20,17 @@ const (
 	DefaultConnectTimeout = 3 * time.Second
 	DefaultRequestTimeout = 15 * time.Second
 
-	healthPath    = "/healthz"
-	inventoryPath = "/v0/management/auth-files"
+	healthPath     = "/healthz"
+	inventoryPath  = "/v0/management/auth-files"
+	usageQueuePath = "/v0/management/usage-queue"
 )
 
 type Operation string
 
 const (
-	OperationHealth    Operation = "health"
-	OperationInventory Operation = "account_inventory"
+	OperationHealth     Operation = "health"
+	OperationInventory  Operation = "account_inventory"
+	OperationUsageQueue Operation = "usage_queue"
 )
 
 type FailureReason string
@@ -170,7 +173,11 @@ func (t *safeTransport) getAccountInventory(ctx context.Context, managementKey s
 	return t.get(ctx, OperationInventory, managementKey)
 }
 
-func (t *safeTransport) get(ctx context.Context, operation Operation, managementKey string) (*httpResponse, error) {
+func (t *safeTransport) getUsageQueue(ctx context.Context, managementKey string, count int) (*httpResponse, error) {
+	return t.get(ctx, OperationUsageQueue, managementKey, count)
+}
+
+func (t *safeTransport) get(ctx context.Context, operation Operation, managementKey string, counts ...int) (*httpResponse, error) {
 	if ctx == nil {
 		return nil, &RequestError{Operation: operation, Reason: FailureRequestRejected}
 	}
@@ -194,11 +201,21 @@ func (t *safeTransport) get(ctx context.Context, operation Operation, management
 		if managementKey == "" {
 			return nil, &RequestError{Operation: operation, Reason: FailureRequestRejected}
 		}
+	case OperationUsageQueue:
+		path = usageQueuePath
+		if managementKey == "" || len(counts) != 1 || counts[0] < 1 || counts[0] > 100 {
+			return nil, &RequestError{Operation: operation, Reason: FailureRequestRejected}
+		}
 	default:
 		return nil, &RequestError{Operation: operation, Reason: FailureRequestRejected}
 	}
 	host := net.JoinHostPort(endpoint.hostname, endpoint.port)
 	requestURL := &url.URL{Scheme: endpoint.scheme, Host: host, Path: endpoint.basePath + path}
+	if operation == OperationUsageQueue {
+		query := requestURL.Query()
+		query.Set("count", strconv.Itoa(counts[0]))
+		requestURL.RawQuery = query.Encode()
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
 	if err != nil {
 		return nil, &RequestError{Operation: operation, Reason: FailureRequestRejected}
@@ -206,6 +223,8 @@ func (t *safeTransport) get(ctx context.Context, operation Operation, management
 	request.Header.Set("User-Agent", "relay-station-control/cliproxyapi-readonly")
 	if operation == OperationInventory {
 		request.Header.Set("X-Management-Key", managementKey)
+	} else if operation == OperationUsageQueue {
+		request.Header.Set("Authorization", "Bearer "+managementKey)
 	}
 	response, err := t.client.Do(request)
 	if err != nil {
@@ -232,7 +251,7 @@ func (t *safeTransport) get(ctx context.Context, operation Operation, management
 		return &httpResponse{StatusCode: response.StatusCode, Header: projectedHeader, Body: http.NoBody}, nil
 	}
 	limit := t.healthLimit
-	if operation == OperationInventory {
+	if operation == OperationInventory || operation == OperationUsageQueue {
 		limit = t.inventoryLimit
 	}
 	body, readErr := io.ReadAll(io.LimitReader(response.Body, limit+1))
