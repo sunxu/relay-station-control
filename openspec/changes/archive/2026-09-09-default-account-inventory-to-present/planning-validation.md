@@ -26,3 +26,13 @@
 ## Canonical Rebase（2026-09-09）
 
 归档consolidate-account-inventory-into-topology后，本change的React账号页MODIFIED delta基于最新canonical重新对齐，保留所有新场景及默认present/查看缺失验收。旧独立页面、无Node时手动查询及禁止只读详情等已被后续已批准契约取代，不能在未来归档本change时恢复。仅修订文档，不改变本change的API/lifecycle默认值或生产实现，不归档本change。
+
+## Final Review reconciliation（2026-09-09）
+
+- Architecture：PASS；Implementation：PASS；code blockers：none；9/9 tasks complete。结论来自本轮主 Agent 与独立后端 Agent 的只读评审；用户随后授权继续归档收口。
+- 实际实现提交 `5065a5d` 已进入 main，且包含于现有本地部署的 `7be7b76`。Final Review 发生于实现进入 main 和本地部署之后，属于 review-after-landing / review-after-local-deployment；不将早期自查追认为 Final Review。
+- 上述两个阶段的未提交/不 push/不部署文字记录的是当时状态，不代表当前状态。后续独立页面已删除，统一 Topology 保留 present 默认、missing/全部入口、显式筛选、Node 切换默认首页和迟到响应隔离；当前组合 POST/store v3 来自后续已归档 change，v2 为本 change 历史实现而非当前唯一调用路径。
+- 本轮前端专项：`npm test -- --run src/pages/TopologyView.test.tsx src/pages/TopologyConsolidation.test.tsx src/api/account-list-transport.test.ts`，3 files / 36 tests PASS。日志 `/Volumes/DevRAM/tmp/present-final-review-web.log`。
+- `openspec validate default-account-inventory-to-present --type change --strict --no-interactive` PASS；all strict 18/18 PASS；`git diff --check` PASS。PG/race/完整 build 复核已有证据，本轮没有重跑，也没有宣称新执行。
+- 复核确认省略 lifecycle=all、筛选前置于分页、游标绑定、SECURITY DEFINER/固定 search_path/runtime EXECUTE/PUBLIC revoke、不新增直接 SELECT、Unknown 与 Unavailable 分离，以及 Inventory truth/数据面不变。
+- 非阻塞的过时交互和 v2/current v3 说明已在 proposal/design 补齐。归档使用标准 CLI，同步两个 canonical specs；此轮不改产品实现、不重新部署。

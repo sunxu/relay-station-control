@@ -136,6 +136,7 @@ Control SHALL在已认证管理员的Topology内提供唯一账号UI，支持Pro
 
 /topology?instance_id首次进入或选择另一Node MUST自动默认第一页，StrictMode不得重复提交；无Node不查询。编辑筛选 MUST清空cursor/结果/详情，只在显式查询时提交；翻页使用当前过滤的cursor历史。MUST使用现有Topology组合POST、CSRF/加密cursor/逐页审计，保留原Inventory HTTP API。email/cursor MUST仅在内存与body，离开时丢弃，不能写入URL、浏览器存储或持久查询缓存。失败不自动重放，允许手动重试；切换Node取消旧请求，旧响应不得污染新Node。
 
+页面 MUST 默认使用lifecycle=present；管理员可选择其它既有生命周期或清空查询全部，仅改变读取过滤，不删除记录或修改Inventory truth。
 #### Scenario: 深链接和StrictMode
 - **WHEN** 打开携带instance_id的Topology，包括StrictMode
 - **THEN** 默认present/15m/25首页只提交一次，失败展示真实状态且不自动循环；无效Node不回退其他Node
@@ -187,6 +188,16 @@ Control SHALL在已认证管理员的Topology内提供唯一账号UI，支持Pro
 #### Scenario: 首次加载后切换 Node 或翻页
 - **WHEN** 切换Node或前后翻页
 - **THEN** Node切换默认首页且隔离旧响应，翻页使用当前过滤cursor，初始URL不覆盖选择
+
+#### Scenario: 默认只查询当前账号
+
+- **WHEN** 管理员首次进入页面并由深链接或手动动作发起查询
+- **THEN** 请求使用 lifecycle=present 和默认第一页，其它初始化及 StrictMode 规则保持不变
+
+#### Scenario: 查看缺失或全部账号
+
+- **WHEN** 管理员选择 missing 或清空生命周期筛选
+- **THEN** 页面重置 cursor 且不自动提交；点击查询后分别提交 lifecycle=missing 或不传 lifecycle，并可显示既有缺失记录
 
 ### Requirement: query观测 MUST 低基数且不泄露身份
 
