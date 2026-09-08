@@ -17,3 +17,18 @@ Control SHALL 只持久化event_hash、可选request_id、node_id、provider、a
 #### Scenario: Legacy and duplicate compatibility
 - **WHEN** 旧writer省略子原因、非Antigravity事件、成功事件或已有hash重放
 - **THEN** 旧值保持NULL且不猜测；success为NULL；不修改旧event或hash，不新增第二次计数
+
+
+安全子原因 MUST只表示事件解析结果，不代表availability已确认状态。普通403保留failure_class=auth与forbidden子原因，原Quality/History/Incidents继续处理；availability仅在fresh runtime error/unavailable旁证下确认FORBIDDEN。事件存储仍按node_id+event_hash幂等，MUST NOT为修复availability去重而改原taxonomy/hash/计数；availability的独立请求计数另按同Node/account非空request_id去重，不假设event_hash或request_id全局唯一。无request_id多个hash不能单独确认账号故障。
+
+#### Scenario: Multiple events for one request
+- **WHEN** 多个不同event_hash携带同一个request_id
+- **THEN** 原事件存储与质量计数保持原契约；availability只算一份请求证据，retry/replay不能凑数
+
+#### Scenario: Missing request identifier
+- **WHEN** 多个失败event均无request_id
+- **THEN** 正常保留已有事件/分类，但不能靠hash数量确认availability；一个已分类失败加fresh runtime error/unavailable才可走交叉确认
+
+#### Scenario: Ordinary forbidden remains visible to incidents
+- **WHEN** 普通403的runtime仍active，即使有两个不同request_id
+- **THEN** Request Quality仍按auth、Incidents仍按原规则聚合；availability为UNKNOWN/pending_confirmation而非FORBIDDEN

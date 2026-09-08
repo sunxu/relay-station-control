@@ -33,15 +33,33 @@ Control 已有 Inventory promotion/fencing、Provider 双维度 freshness/health
 顺序：
 1. 前提不满足 → UNKNOWN，safe reason按 `stale|incomplete|node_collection_failed|not_present|unsupported_mode|unproven`，不新建/恢复故障。
 2. 合格证据明确disabled → DISABLED，不新建故障，不把人为关闭视为恢复。
-3. 已确认且尚未被新恢复证据清除的认证故障 → ACCOUNT_BLOCKED > TOKEN_INVALID > FORBIDDEN。多个reason可有独立ACTIVE occurrence，表格展示最高优先级，不因换reason自动resolve其他reason。
-4. 有待确认的一次故障、runtime error/unavailable、未来retry或相互冲突的证据 → UNKNOWN（reason=`pending_confirmation|runtime_unavailable|retry_wait|conflicting_evidence`），不得显示Available。
+3. 按下述各reason专属条件已确认、且尚未被新恢复证据清除的认证故障 → ACCOUNT_BLOCKED > TOKEN_INVALID > FORBIDDEN；普通403必须有fresh runtime error/unavailable交叉证据，不能仅由请求数量确认FORBIDDEN。当前FORBIDDEN展示同样要求当前fresh runtime error/unavailable旁证；若既有FORBIDDEN ACTIVE后runtime转active但尚不足恢复条件，当前显示UNKNOWN/pending_confirmation，只保留原ACTIVE历史、不新建/重发告警，等待既有成功或两次健康观察恢复。多个reason可有独立ACTIVE occurrence，表格仅在符合各reason当前证据门槛者中展示最高优先级，不因换reason自动resolve其他reason。
+4. 有待确认故障（包括任意数量普通403但runtime仍active、无request_id且没有runtime旁证的失败）、runtime error/unavailable、未来retry或相互冲突的证据 → UNKNOWN（reason=`pending_confirmation|runtime_unavailable|retry_wait|conflicting_evidence`），不得显示Available。
 5. 无待确认/当前故障，fresh完整file_active → AVAILABLE；无请求也可AVAILABLE，Request Quality仍可Unknown。
 
 这是证据状态，不修改Inventory lifecycle/basic_status/Binding/Duplicate。UNKNOWN因DB/API不可读则HTTP503/UI Unavailable，而不是伪造业务UNKNOWN row；仅在成功读取到stale/incomplete等事实时返回UNKNOWN。
 
 ### 4. Confirmation and current failure
 
-去抖固定，不增加配置：同账号同reason在最近15分钟内至少2个不同 `(node_id,event_hash)` 的失败，且严格晚于最近已知成功/恢复水位；或1个失败 + 同一新鲜完整runtime观察明确error/unavailable，且两者位于15分钟且没有更新成功；或两个不同成功promotion source identity的连续runtime观察均给出相同明确token/blocked/forbidden子原因。单次401/403且runtime active只进入pending_confirmation UNKNOWN，不创建occurrence。
+确认窗口仍固定最近15分钟，不增加配置。先区分安全原因分类与账号级故障确认：`auth_failure_reason=forbidden`不等于账号状态FORBIDDEN，事件分类本身不得创建occurrence。
+
+请求证据独立性：
+- 对同Node/account，有非空request_id时按request_id去重；同request_id永远只算一份请求证据，不论event_hash、model、重试或重放记录有多少。request_id只在此作用域内作为保守去重键，不宣称上游全局唯一；同ID的相互冲突结果/原因不按latest/first wins选择，不能用作独立失败确认。
+- 仅请求证据的确认必须至少两个不同、非空request_id，且同reason、严格晚于最近已知成功/恢复水位；此路径仅适用于token_invalid/account_blocked，不适用于普通403。
+- 无request_id（NULL/缺失/空字符串）的记录不进入“两份独立请求”计数；两个或更多event_hash也不够。允许一个明确分类的request failure与同窗口fresh完整runtime error/unavailable交叉确认；无需为缺ID生成替代request_id。
+- event_hash继续只是既有事件落库幂等键/诊断定位；不更改hash或既有Request Quality计数。availability确认不得把replay/retry/duplicate当作新增请求。
+
+各reason确认条件（均受前述scope/freshness/disabled门槛约束，无更新成功或冲突证据）：
+
+| Reason | 请求确认路径 | Runtime交叉路径 |
+| --- | --- | --- |
+| token_invalid | 两个不同request_id的401/明确token代码 | 一个401/明确token失败（可无request_id）+ fresh账号级runtime error/unavailable |
+| account_blocked | 两个不同request_id的明确blocked白名单代码，不能使用普通403代替 | 一个明确blocked失败（可无request_id）+ fresh账号级runtime error/unavailable |
+| forbidden | 禁止仅凭普通403数量确认，即使request_id不同 | 一个普通403（可无request_id）+ fresh账号级runtime error/unavailable → FORBIDDEN Warning |
+
+不保留runtime-only故障确认路径：即使两个不同完整runtime source都携带明确token/blocked代码，也必须有相应request failure才能走交叉确认；runtime source数量不能替代独立请求或无ID所需的交叉证据。没有请求失败时只为UNKNOWN/pending_confirmation、不告警。runtime旁证必须属于同Node同account的合格fresh完整账号观察，不是Node管理HTTP故障。旁证必须由该账号明确runtime status=error或unavailable=true支持；仅future next_retry_after造成的折叠basic_status=unavailable不算认证故障旁证，仍为UNKNOWN/retry_wait。
+
+普通403 + runtime active永远处于UNKNOWN/pending_confirmation，不创建FORBIDDEN，不因次数或持续时间升级；普通403永远不直接判blocked。明确blocked code按原确认去抖成立后为ACCOUNT_BLOCKED Critical；此次不放宽token/blocked的去抖。runtime仅有error/unavailable但没有匹配失败仍是UNKNOWN、不告警。已有Incidents仍可按原auth taxonomy展示普通403失败，不受availability更严格确认条件反向过滤。
 
 不同reason不得凑数；重复pop/insert、重复reconcile和同一poll重试不能计为第二份证据。只接受账号身份已resolved且在当前Inventory的请求；unresolved/event-only/其他Node/Provider忽略。future事件不参与，窗口包含下边界，旧于窗口的迟到事件不确认。事件时间相同的success/failure不能证明先后，保守不恢复；hash仅用于确定性排序，不代表因果顺序。
 
@@ -52,9 +70,9 @@ Control 已有 Inventory promotion/fencing、Provider 双维度 freshness/health
 恢复必须有新证据且严格晚于该reason最后确认失败：
 - 同账号成功请求，时间晚于所有已知该reason event/runtime失败且没有更新的相反证据，可resolve该reason；若Inventory同时stale/不完整，occurrence可按成功证据RESOLVED，但展示仍UNKNOWN，不能直接AVAILABLE。
 - 无流量或缺少成功请求时，至少两个不同source identity、连续的fresh完整file_active promotion，均晚于故障，disabled=false/unavailable=false/retry不在未来。一次fresh active只累计恢复候选，不直接消除已确认故障。
-- 任何中间明确失败、degraded/不完整、missing、disabled或过期打断连续恢复；恢复次数按源snapshot/poll身份累计，不能按20秒reconcile累计；两次必须来自既有5分钟调度的相邻槽；跳槽/间隔不为5分钟即重置，避免reconciler停机期间的失败被最新current覆盖后误计连续。超过fresh窗口也不能算连续。
+- 任何中间明确失败、degraded/不完整、missing、disabled或过期打断连续恢复；仅因等待第二个健康source而展示UNKNOWN不属于源证据失效，不能重置已经合格的第一次健康观察；恢复次数按源snapshot/poll身份累计，不能按20秒reconcile累计；两次必须来自既有5分钟调度的相邻槽；跳槽/间隔不为5分钟即重置，避免reconciler停机期间的失败被最新current覆盖后误计连续。超过fresh窗口也不能算连续。
 
-同一个健康snapshot回放、重启、retain后current poll外键变NULL，都不能重复计数：保留已处理source UUID（不做cascade FK）与source scheduled/observed watermark。迟到且不晚于已记录恢复水位的故障不能重开；恢复后新的合格故障创建新的occurrence UUID，保留旧RESOLVED记录，不把旧行改回ACTIVE。
+同一个健康snapshot回放、重启、retain后current poll外键变NULL，都不能重复计数：保留已处理source UUID（不做cascade FK）与source scheduled/observed watermark。迟到且不晚于已记录恢复水位的故障不能重开；已用来确认故障的request_id也不能因换hash、重启或旧event清理再次作为新的请求证据；恢复后新的合格故障创建新的occurrence UUID，保留旧RESOLVED记录，不把旧行改回ACTIVE。
 
 DISABLED、missing、停止监控或更换Node不是成功，不自动resolve旧ACTIVE。已有ACTIVE在这些状态下只作为历史未解故障保留，不重复通知、不升级；UI明确标注当前UNKNOWN/DISABLED与既有未解故障历史，不能把旧ACTIVE显示为本轮新确认故障，不隐藏持久历史。恢复不改变既有Incidents：它仍按最近窗口失败次数只读计算。
 
@@ -67,13 +85,13 @@ DISABLED、missing、停止监控或更换Node不是成功，不自动resolve旧
 
 每次对某账号先INSERT checkpoint ON CONFLICT DO NOTHING，再SELECT FOR UPDATE；在同一事务、同一DB snapshot读取current/provider/events并判定、更新checkpoint及插入/resolve occurrence。使用SERIALIZABLE或既有REPEATABLE READ+完整锁策略，serialization/deadlock按现有有限重试。相同source/窗口结果无变化不刷新Since、不新增occurrence。失败事务不推进任何watermark；retry/restart从DB恢复，partial unique是最后防线。跨账号固定node/key顺序、有界批量100、按keyset推进，不能永远只扫前100。
 
-confirm摘要保留最多两份独立event/source键与时间，不复制event body。每次判定在15分钟已有有界索引范围取证并与checkpoint水位比较；不使用max occurred_at作为唯一ingestion游标从而漏掉窗口内迟到事件。首次部署缺少safe字段时UNKNOWN直到新采集，旧历史不追造告警。
+confirm摘要保留最多两份确认依据及时间：请求证据保存非空request_id与event_hash诊断引用（无ID交叉路径明确标记缺失），runtime证据保存source identity。已使用request_id随保留的occurrence确认摘要持久保留；后续确认排除这些已消费ID，不能仅依赖会被7天retention删除的event。无需新增全量请求去重历史表，不修改事件PK；已确认ID的重放不能凭新hash/new timestamp反复重开。摘要不复制event body。每次判定在15分钟已有有界索引范围取证并与checkpoint水位比较；不使用max occurred_at作为唯一ingestion游标从而漏掉窗口内迟到事件。首次部署缺少safe字段时UNKNOWN直到新采集，旧历史不追造告警。
 
 ### 7. Lifecycle, alert delivery and security
 
 复用 Inventory 生命周期成功finalize/startup/周期reconcile回调（当前默认20秒，30秒lease不改），作为独立有界availability分支；不另建scheduler/queue，不新开Google/Node调用。每分支独立超时和错误处理，availability失败不能阻断poll finalize、duplicate reconciliation或数据面。请求成功/失败落库后最迟下一轮reconcile读取，不新增destructive consumer。服务关闭遵守context取消，checkpoint/occurrence结果仅以DB提交为准。
 
-告警的可持久事实就是occurrence表，TOKEN_INVALID/ACCOUNT_BLOCKED=Critical、FORBIDDEN=Warning。UNKNOWN永远不告警；other/runtime_unavailable无告警映射，不因持续时间、重复次数或重启升级为Warning/Critical。只允许这三个明确reason进入确认分支，other不得累计到确认阈值。不引入通知投递/Outbox系统；现有observer可在提交后输出固定reason/severity/transition的日志，不能输出账号/Token/raw。日志投递不是exactly-once承诺，commit后进程崩溃不丢DB occurrence。用户可从只读API查看所有ACTIVE/RESOLVED事实。
+告警的可持久事实就是occurrence表，TOKEN_INVALID/ACCOUNT_BLOCKED=Critical、FORBIDDEN=Warning。UNKNOWN永远不告警；other/runtime_unavailable无告警映射，不因持续时间、重复次数或重启升级为Warning/Critical。只允许这三个明确reason按各自确认条件进入创建分支；forbidden必须有request failure与fresh runtime error/unavailable交叉依据，other不得累计到确认阈值。不引入通知投递/Outbox系统；现有observer可在提交后输出固定reason/severity/transition的日志，不能输出账号/Token/raw。日志投递不是exactly-once承诺，commit后进程崩溃不丢DB occurrence。用户可从只读API查看所有ACTIVE/RESOLVED事实。
 
 所有新增query/write函数owner=migrator，SECURITY DEFINER、固定pg_catalog、PUBLIC revoke、runtime仅EXECUTE；runtime无新增表或现有provider/events的direct SELECT/写入。readonly函数STABLE；写函数VOLATILE。新增版本化finalize/event-insert/read wrapper而不改旧签名，旧调用字段为NULL；当前版本writer原子保存新元数据。SQL migration文件不可改旧编号，generated Go/TS/sqlc正常make generate。
 
@@ -104,3 +122,10 @@ readonly GET `/api/topology/nodes/{instance_id}/account-availability-occurrences
 A1已由用户明确关闭：UNKNOWN永远不告警，第一版不做other/runtime_unavailable告警。六态保持不变，occurrence reason只允许token_invalid/account_blocked/forbidden；other仍可作为normalization安全子原因，但无告警、严重度或自动升级路径。runtime error/unavailable仍可作为明确认证失败的旁证，不能单独生成other故障。
 
 历史ACTIVE遇UNKNOWN不伪造RESOLVED，也不重发或升级通知；状态只解释当前证据是否足够，旧occurrence继续作为此前已确认故障的历史记录。该处理不改变冻结的成功/两次健康观察恢复规则。本轮不实施。
+
+
+## Architecture P1 corrections
+
+P1-1：确认请求以同Node/account的不同非空request_id计数，event_hash不证明独立请求；无ID只允许请求+runtime交叉证据，不以多个hash凑数。既有Request Quality落库/计数语义不变。
+
+P1-2：普通403+active只为UNKNOWN/pending_confirmation，普通403+fresh runtime error/unavailable才可确认FORBIDDEN Warning；明确blocked白名单按既有去抖确认ACCOUNT_BLOCKED Critical。UNKNOWN与other不告警、恢复/六态/数据源边界保持不变。

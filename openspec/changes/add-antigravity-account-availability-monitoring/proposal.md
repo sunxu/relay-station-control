@@ -5,7 +5,7 @@ Phase 3/4 的 Inventory 证明账号是否存在及最近 runtime 观察，Reque
 ## What Changes
 
 - 只支持 provider=antigravity 且由现有 auth-files runtime 响应证明 source=file 的账号；沿用 node_id + canonical account_key，跨 Node 独立。
-- 固定 AVAILABLE/TOKEN_INVALID/ACCOUNT_BLOCKED/FORBIDDEN/UNKNOWN/DISABLED 六种展示状态，采用新鲜完整证据、去抖和明确恢复规则。
+- 固定 AVAILABLE/TOKEN_INVALID/ACCOUNT_BLOCKED/FORBIDDEN/UNKNOWN/DISABLED 六种展示状态，采用新鲜完整证据、按request_id去重的请求证据及明确恢复规则；普通403只在fresh runtime error/unavailable旁证下确认FORBIDDEN，不能凭数量或event_hash确认账号故障。
 - 在现有 auth-files 与 usage normalization 边界仅提取固定安全枚举；Request Quality 原 failure_class 五类不变，附加可空 auth_failure_reason。历史 auth 不回填、不猜测。
 - 在 Control PostgreSQL 增加最小 availability checkpoint 与 occurrence 持久状态，复用既有 reconciliation 生命周期与受限查询函数；不是修改现有只读 Incidents 的状态机。
 - 现有账号 workspace 增加 Availability/Reason/Since；复用 History/Incidents 入口，另以只读 availability occurrence 列表展示 ACTIVE/RESOLVED。
