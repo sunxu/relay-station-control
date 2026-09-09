@@ -182,8 +182,38 @@ func (s *Server) getNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 		s.topologyReadError(w, r, err)
 		return
 	}
+	// One bounded read for the page; non-Antigravity accounts remain outside this capability.
+	availability := make(map[string]assetstore.AccountAvailability)
+	keys := make([]string, 0, len(page.Items))
+	for _, item := range page.Items {
+		if item.Provider == "antigravity" {
+			keys = append(keys, item.AccountKey)
+		}
+	}
+	if len(keys) > 0 {
+		if s.accountAvailability == nil {
+			s.writeError(w, r, authn.ErrUnavailable)
+			return
+		}
+		availability, err = s.accountAvailability.BatchAccountAvailability(ctx, nodeID, keys)
+		if err != nil {
+			s.topologyReadError(w, r, err)
+			return
+		}
+		// A missing row could be a concurrent Inventory change; never fabricate Unknown.
+		for _, key := range keys {
+			if _, ok := availability[key]; !ok {
+				s.writeError(w, r, authn.ErrUnavailable)
+				return
+			}
+		}
+	}
 	items := make([]NodeAccountQualityItem, 0, len(page.Items))
 	for _, item := range page.Items {
+		var availabilityItem *AccountAvailability
+		if value, ok := availability[item.AccountKey]; ok {
+			availabilityItem = &AccountAvailability{State: AccountAvailabilityState(value.State), Reason: AccountAvailabilityReason(value.Reason), Since: value.Since}
+		}
 		stats := item.Stats
 		var lastClass *NodeAccountQualityItemLastFailureClass
 		if stats.LastFailureClass != nil {
@@ -199,7 +229,7 @@ func (s *Server) getNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 			}
 			recent = append(recent, NodeAccountRequestHistoryItem{OccurredAt: event.OccurredAt, Model: event.Model, Success: event.Success, FailureClass: class, DurationMs: event.DurationMS, RequestId: event.RequestID})
 		}
-		items = append(items, NodeAccountQualityItem{AccountKey: item.AccountKey, Email: item.Email, Provider: item.Provider, Quality: NodeAccountQualityItemQuality(item.Quality), RequestCount: stats.RequestCount, SuccessCount: stats.SuccessCount, FailureCount: stats.FailureCount, SuccessRate: stats.SuccessRate, P95LatencyMs: stats.P95LatencyMS, LastSuccessAt: stats.LastSuccessAt, LastFailureAt: stats.LastFailureAt, LastFailureClass: lastClass, Inventory: accountInventoryResponseItem(item.Inventory), RecentRequests: recent})
+		items = append(items, NodeAccountQualityItem{AccountKey: item.AccountKey, Email: item.Email, Provider: item.Provider, Quality: NodeAccountQualityItemQuality(item.Quality), RequestCount: stats.RequestCount, SuccessCount: stats.SuccessCount, FailureCount: stats.FailureCount, SuccessRate: stats.SuccessRate, P95LatencyMs: stats.P95LatencyMS, LastSuccessAt: stats.LastSuccessAt, LastFailureAt: stats.LastFailureAt, LastFailureClass: lastClass, Inventory: accountInventoryResponseItem(item.Inventory), RecentRequests: recent, Availability: availabilityItem})
 	}
 	var next *string
 	if page.HasMore && len(page.Items) > 0 {

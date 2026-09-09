@@ -130,16 +130,18 @@ type ProbeObservation struct {
 }
 
 type AccountObservation struct {
-	Provider           string
-	Email              string
-	State              AccountState
-	OccurrenceCount    uint32
-	SuccessCount       uint64
-	FailedCount        uint64
-	RecentRequestCount uint64
-	LastRefreshUnix    int64
-	NextRetryUnix      int64
-	UpdatedAtUnix      int64
+	Provider                    string
+	Email                       string
+	State                       AccountState
+	OccurrenceCount             uint32
+	SuccessCount                uint64
+	FailedCount                 uint64
+	RecentRequestCount          uint64
+	LastRefreshUnix             int64
+	NextRetryUnix               int64
+	UpdatedAtUnix               int64
+	AvailabilityRuntimeEvidence *string
+	AuthFailureReason           *string
 }
 
 func (AccountObservation) Format(state fmt.State, _ rune) {

@@ -15,6 +15,93 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AccountAvailabilityReason.
+const (
+	AccountAvailabilityReasonAccountBlocked       AccountAvailabilityReason = "account_blocked"
+	AccountAvailabilityReasonAvailable            AccountAvailabilityReason = "available"
+	AccountAvailabilityReasonConflictingEvidence  AccountAvailabilityReason = "conflicting_evidence"
+	AccountAvailabilityReasonDisabled             AccountAvailabilityReason = "disabled"
+	AccountAvailabilityReasonForbidden            AccountAvailabilityReason = "forbidden"
+	AccountAvailabilityReasonIncomplete           AccountAvailabilityReason = "incomplete"
+	AccountAvailabilityReasonNodeCollectionFailed AccountAvailabilityReason = "node_collection_failed"
+	AccountAvailabilityReasonNotPresent           AccountAvailabilityReason = "not_present"
+	AccountAvailabilityReasonPendingConfirmation  AccountAvailabilityReason = "pending_confirmation"
+	AccountAvailabilityReasonRetryWait            AccountAvailabilityReason = "retry_wait"
+	AccountAvailabilityReasonRuntimeUnavailable   AccountAvailabilityReason = "runtime_unavailable"
+	AccountAvailabilityReasonStale                AccountAvailabilityReason = "stale"
+	AccountAvailabilityReasonTokenInvalid         AccountAvailabilityReason = "token_invalid"
+	AccountAvailabilityReasonUnproven             AccountAvailabilityReason = "unproven"
+	AccountAvailabilityReasonUnsupportedMode      AccountAvailabilityReason = "unsupported_mode"
+)
+
+// Valid indicates whether the value is a known member of the AccountAvailabilityReason enum.
+func (e AccountAvailabilityReason) Valid() bool {
+	switch e {
+	case AccountAvailabilityReasonAccountBlocked:
+		return true
+	case AccountAvailabilityReasonAvailable:
+		return true
+	case AccountAvailabilityReasonConflictingEvidence:
+		return true
+	case AccountAvailabilityReasonDisabled:
+		return true
+	case AccountAvailabilityReasonForbidden:
+		return true
+	case AccountAvailabilityReasonIncomplete:
+		return true
+	case AccountAvailabilityReasonNodeCollectionFailed:
+		return true
+	case AccountAvailabilityReasonNotPresent:
+		return true
+	case AccountAvailabilityReasonPendingConfirmation:
+		return true
+	case AccountAvailabilityReasonRetryWait:
+		return true
+	case AccountAvailabilityReasonRuntimeUnavailable:
+		return true
+	case AccountAvailabilityReasonStale:
+		return true
+	case AccountAvailabilityReasonTokenInvalid:
+		return true
+	case AccountAvailabilityReasonUnproven:
+		return true
+	case AccountAvailabilityReasonUnsupportedMode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountAvailabilityState.
+const (
+	ACCOUNTBLOCKED AccountAvailabilityState = "ACCOUNT_BLOCKED"
+	AVAILABLE      AccountAvailabilityState = "AVAILABLE"
+	DISABLED       AccountAvailabilityState = "DISABLED"
+	FORBIDDEN      AccountAvailabilityState = "FORBIDDEN"
+	TOKENINVALID   AccountAvailabilityState = "TOKEN_INVALID"
+	UNKNOWN        AccountAvailabilityState = "UNKNOWN"
+)
+
+// Valid indicates whether the value is a known member of the AccountAvailabilityState enum.
+func (e AccountAvailabilityState) Valid() bool {
+	switch e {
+	case ACCOUNTBLOCKED:
+		return true
+	case AVAILABLE:
+		return true
+	case DISABLED:
+		return true
+	case FORBIDDEN:
+		return true
+	case TOKENINVALID:
+		return true
+	case UNKNOWN:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AccountInventoryBasicStatus.
 const (
 	AccountInventoryBasicStatusDisabled       AccountInventoryBasicStatus = "disabled"
@@ -329,13 +416,13 @@ func (e CrossNodeDuplicateOccurrenceStatus) Valid() bool {
 
 // Defines values for CrossNodeDuplicateOccurrenceSummarySeverity.
 const (
-	Critical CrossNodeDuplicateOccurrenceSummarySeverity = "Critical"
+	CrossNodeDuplicateOccurrenceSummarySeverityCritical CrossNodeDuplicateOccurrenceSummarySeverity = "Critical"
 )
 
 // Valid indicates whether the value is a known member of the CrossNodeDuplicateOccurrenceSummarySeverity enum.
 func (e CrossNodeDuplicateOccurrenceSummarySeverity) Valid() bool {
 	switch e {
-	case Critical:
+	case CrossNodeDuplicateOccurrenceSummarySeverityCritical:
 		return true
 	default:
 		return false
@@ -657,6 +744,63 @@ func (e MfaMethod) Valid() bool {
 	case RecoveryCode:
 		return true
 	case Totp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountAvailabilityOccurrenceItemReason.
+const (
+	NodeAccountAvailabilityOccurrenceItemReasonAccountBlocked NodeAccountAvailabilityOccurrenceItemReason = "account_blocked"
+	NodeAccountAvailabilityOccurrenceItemReasonForbidden      NodeAccountAvailabilityOccurrenceItemReason = "forbidden"
+	NodeAccountAvailabilityOccurrenceItemReasonTokenInvalid   NodeAccountAvailabilityOccurrenceItemReason = "token_invalid"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountAvailabilityOccurrenceItemReason enum.
+func (e NodeAccountAvailabilityOccurrenceItemReason) Valid() bool {
+	switch e {
+	case NodeAccountAvailabilityOccurrenceItemReasonAccountBlocked:
+		return true
+	case NodeAccountAvailabilityOccurrenceItemReasonForbidden:
+		return true
+	case NodeAccountAvailabilityOccurrenceItemReasonTokenInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountAvailabilityOccurrenceItemSeverity.
+const (
+	NodeAccountAvailabilityOccurrenceItemSeverityCritical NodeAccountAvailabilityOccurrenceItemSeverity = "Critical"
+	NodeAccountAvailabilityOccurrenceItemSeverityWarning  NodeAccountAvailabilityOccurrenceItemSeverity = "Warning"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountAvailabilityOccurrenceItemSeverity enum.
+func (e NodeAccountAvailabilityOccurrenceItemSeverity) Valid() bool {
+	switch e {
+	case NodeAccountAvailabilityOccurrenceItemSeverityCritical:
+		return true
+	case NodeAccountAvailabilityOccurrenceItemSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAccountAvailabilityOccurrenceItemStatus.
+const (
+	NodeAccountAvailabilityOccurrenceItemStatusACTIVE   NodeAccountAvailabilityOccurrenceItemStatus = "ACTIVE"
+	NodeAccountAvailabilityOccurrenceItemStatusRESOLVED NodeAccountAvailabilityOccurrenceItemStatus = "RESOLVED"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountAvailabilityOccurrenceItemStatus enum.
+func (e NodeAccountAvailabilityOccurrenceItemStatus) Valid() bool {
+	switch e {
+	case NodeAccountAvailabilityOccurrenceItemStatusACTIVE:
+		return true
+	case NodeAccountAvailabilityOccurrenceItemStatusRESOLVED:
 		return true
 	default:
 		return false
@@ -1188,6 +1332,24 @@ func (e TotpEnrollmentPeriodSeconds) Valid() bool {
 	}
 }
 
+// Defines values for ListNodeAccountAvailabilityOccurrencesParamsStatus.
+const (
+	ListNodeAccountAvailabilityOccurrencesParamsStatusACTIVE   ListNodeAccountAvailabilityOccurrencesParamsStatus = "ACTIVE"
+	ListNodeAccountAvailabilityOccurrencesParamsStatusRESOLVED ListNodeAccountAvailabilityOccurrencesParamsStatus = "RESOLVED"
+)
+
+// Valid indicates whether the value is a known member of the ListNodeAccountAvailabilityOccurrencesParamsStatus enum.
+func (e ListNodeAccountAvailabilityOccurrencesParamsStatus) Valid() bool {
+	switch e {
+	case ListNodeAccountAvailabilityOccurrencesParamsStatusACTIVE:
+		return true
+	case ListNodeAccountAvailabilityOccurrencesParamsStatusRESOLVED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetNodeAccountQualityParamsWindow.
 const (
 	GetNodeAccountQualityParamsWindowN15m GetNodeAccountQualityParamsWindow = "15m"
@@ -1337,6 +1499,19 @@ func (e ListNodeAccountQualityIncidentsParamsFailureClass) Valid() bool {
 		return false
 	}
 }
+
+// AccountAvailability defines model for AccountAvailability.
+type AccountAvailability struct {
+	Reason AccountAvailabilityReason `json:"reason"`
+	Since  *time.Time                `json:"since"`
+	State  AccountAvailabilityState  `json:"state"`
+}
+
+// AccountAvailabilityReason defines model for AccountAvailability.Reason.
+type AccountAvailabilityReason string
+
+// AccountAvailabilityState defines model for AccountAvailability.State.
+type AccountAvailabilityState string
 
 // AccountInventoryBasicStatus Last status reported by the Relay Node, not current schedulability.
 type AccountInventoryBasicStatus string
@@ -1831,6 +2006,36 @@ type MfaMethod string
 // NewPassword defines model for NewPassword.
 type NewPassword = string
 
+// NodeAccountAvailabilityOccurrenceItem defines model for NodeAccountAvailabilityOccurrenceItem.
+type NodeAccountAvailabilityOccurrenceItem struct {
+	AccountKey    string                                        `json:"account_key"`
+	ConfirmedAt   time.Time                                     `json:"confirmed_at"`
+	FirstSeenAt   time.Time                                     `json:"first_seen_at"`
+	InstanceId    openapi_types.UUID                            `json:"instance_id"`
+	LastFailureAt time.Time                                     `json:"last_failure_at"`
+	OccurrenceId  openapi_types.UUID                            `json:"occurrence_id"`
+	Reason        NodeAccountAvailabilityOccurrenceItemReason   `json:"reason"`
+	ResolvedAt    *time.Time                                    `json:"resolved_at"`
+	Severity      NodeAccountAvailabilityOccurrenceItemSeverity `json:"severity"`
+	Status        NodeAccountAvailabilityOccurrenceItemStatus   `json:"status"`
+}
+
+// NodeAccountAvailabilityOccurrenceItemReason defines model for NodeAccountAvailabilityOccurrenceItem.Reason.
+type NodeAccountAvailabilityOccurrenceItemReason string
+
+// NodeAccountAvailabilityOccurrenceItemSeverity defines model for NodeAccountAvailabilityOccurrenceItem.Severity.
+type NodeAccountAvailabilityOccurrenceItemSeverity string
+
+// NodeAccountAvailabilityOccurrenceItemStatus defines model for NodeAccountAvailabilityOccurrenceItem.Status.
+type NodeAccountAvailabilityOccurrenceItemStatus string
+
+// NodeAccountAvailabilityOccurrenceResponse defines model for NodeAccountAvailabilityOccurrenceResponse.
+type NodeAccountAvailabilityOccurrenceResponse struct {
+	InstanceId openapi_types.UUID                      `json:"instance_id"`
+	Items      []NodeAccountAvailabilityOccurrenceItem `json:"items"`
+	NextCursor *string                                 `json:"next_cursor"`
+}
+
 // NodeAccountQualityIncidentItem defines model for NodeAccountQualityIncidentItem.
 type NodeAccountQualityIncidentItem struct {
 	AccountKey    string                                     `json:"account_key"`
@@ -1860,6 +2065,7 @@ type NodeAccountQualityIncidentResponse struct {
 // NodeAccountQualityItem defines model for NodeAccountQualityItem.
 type NodeAccountQualityItem struct {
 	AccountKey       string                                  `json:"account_key"`
+	Availability     *AccountAvailability                    `json:"availability,omitempty"`
 	Email            string                                  `json:"email"`
 	FailureCount     int64                                   `json:"failure_count"`
 	Inventory        AccountInventoryItem                    `json:"inventory"`
@@ -2375,6 +2581,17 @@ type UnbindRelayNodeParams struct {
 	// XCSRFToken Random proof bound to the current administrator session.
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
 }
+
+// ListNodeAccountAvailabilityOccurrencesParams defines parameters for ListNodeAccountAvailabilityOccurrences.
+type ListNodeAccountAvailabilityOccurrencesParams struct {
+	AccountKey *string                                             `form:"account_key,omitempty" json:"account_key,omitempty"`
+	Status     *ListNodeAccountAvailabilityOccurrencesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit      *int                                                `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor     *string                                             `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListNodeAccountAvailabilityOccurrencesParamsStatus defines parameters for ListNodeAccountAvailabilityOccurrences.
+type ListNodeAccountAvailabilityOccurrencesParamsStatus string
 
 // GetNodeAccountQualityParams defines parameters for GetNodeAccountQuality.
 type GetNodeAccountQualityParams struct {
@@ -2911,6 +3128,9 @@ type ServerInterface interface {
 	// ListUnresolvedRelayBindings List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
 	// (GET /api/relay-bindings/unresolved)
 	ListUnresolvedRelayBindings(w http.ResponseWriter, r *http.Request)
+	// ListNodeAccountAvailabilityOccurrences Read persisted Antigravity availability occurrences
+	// (GET /api/topology/nodes/{instance_id}/account-availability-occurrences)
+	ListNodeAccountAvailabilityOccurrences(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountAvailabilityOccurrencesParams)
 	// GetNodeAccountQuality Read account request quality for one Node
 	// (GET /api/topology/nodes/{instance_id}/account-quality)
 	GetNodeAccountQuality(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params GetNodeAccountQualityParams)
@@ -3157,6 +3377,12 @@ func (_ Unimplemented) UnbindRelayNode(w http.ResponseWriter, r *http.Request, p
 // ListUnresolvedRelayBindings List all active bindings whose target Account has disappeared from the current fresh Directory snapshot
 // (GET /api/relay-bindings/unresolved)
 func (_ Unimplemented) ListUnresolvedRelayBindings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListNodeAccountAvailabilityOccurrences Read persisted Antigravity availability occurrences
+// (GET /api/topology/nodes/{instance_id}/account-availability-occurrences)
+func (_ Unimplemented) ListNodeAccountAvailabilityOccurrences(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ListNodeAccountAvailabilityOccurrencesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4635,6 +4861,87 @@ func (siw *ServerInterfaceWrapper) ListUnresolvedRelayBindings(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// ListNodeAccountAvailabilityOccurrences operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeAccountAvailabilityOccurrences(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListNodeAccountAvailabilityOccurrencesParams
+
+	// ------------- Optional query parameter "account_key" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "account_key", r.URL.Query(), &params.AccountKey, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "account_key"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_key", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeAccountAvailabilityOccurrences(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetNodeAccountQuality operation middleware
 func (siw *ServerInterfaceWrapper) GetNodeAccountQuality(w http.ResponseWriter, r *http.Request) {
 
@@ -5280,6 +5587,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/incidents", wrapper.ListNodeAccountQualityIncidents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/account-availability-occurrences", wrapper.ListNodeAccountAvailabilityOccurrences)
 	})
 
 	return r

@@ -227,7 +227,17 @@ func main() {
 		os.Exit(1)
 	}
 	crossNodeDuplicateTrigger := newCrossNodeDuplicateOwnershipReconciliationTrigger(crossNodeDuplicateReconciler, environmentIdentity.ID, logger)
-	inventoryPollRuntime, err := newAccountInventoryPollRuntime(pool, nodeDrivers, inventoryPollConfig, logger, crossNodeDuplicateTrigger)
+	accountAvailability, err := assetstore.NewAccountAvailabilityRepository(pool)
+	if err != nil {
+		logger.Error("account availability initialization failed", "component", "account_availability")
+		os.Exit(1)
+	}
+	availabilityTrigger := newAccountAvailabilityReconciliationTrigger(accountAvailability, logger)
+	lifecycleTrigger := func(ctx context.Context) {
+		availabilityTrigger(ctx)
+		crossNodeDuplicateTrigger(ctx)
+	}
+	inventoryPollRuntime, err := newAccountInventoryPollRuntime(pool, nodeDrivers, inventoryPollConfig, logger, lifecycleTrigger)
 	if err != nil {
 		logger.Error("account inventory poll initialization failed", "component", "account_inventory_poll", "reason", "initialization_failed")
 		os.Exit(1)
@@ -354,6 +364,7 @@ func main() {
 		logger.Error("account request quality reader initialization failed", "component", "account_request_quality")
 		os.Exit(1)
 	}
+	apiServer.SetAccountAvailabilityReader(accountAvailability)
 	apiServer.SetAccountQualityReader(accountQuality)
 	apiServer.SetAccountQualityIncidentsReader(accountQuality)
 	apiServer.SetAccountRequestHistoryReader(accountQuality)

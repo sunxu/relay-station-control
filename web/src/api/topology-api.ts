@@ -1,4 +1,4 @@
-import { getNodeAccountQuality, queryNodeAccountQuality, listNodeAccountRequestHistory, listNodeAccountQualityIncidents, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
+import { getNodeAccountQuality, queryNodeAccountQuality, listNodeAccountRequestHistory, listNodeAccountQualityIncidents, listNodeAccountAvailabilityOccurrences, getNodeInventoryProviderStates, getNodeRelayBinding, listCrossNodeDuplicateOccurrences, listCrossNodeDuplicateOccurrenceEvidence, listNodeDuplicateHistory } from "./generated/control";
 import type { GetNodeAccountQualityParams, NodeAccountQualityQueryRequest, NodeAccountQualityResponse, ListNodeAccountRequestHistoryParams, NodeAccountRequestHistoryResponse, ListNodeAccountQualityIncidentsParams, NodeAccountQualityIncidentResponse } from "./generated/control";
 import type { IncidentFailureClass } from "./account-quality-incidents-types";
 import type { AccountQualityFilter, AccountQualityLifecycle, AccountQualityWindow } from "./account-quality-types";
@@ -37,6 +37,7 @@ export const generatedTopologyApi: TopologyApi = {
     const params: ListNodeAccountQualityIncidentsParams = { provider, failure_class: failureClass, cursor, limit: 25 };
     return read<NodeAccountQualityIncidentResponse>(listNodeAccountQualityIncidents(id, params, { signal, cache: "no-store", credentials: "same-origin" }));
   },
+  accountAvailabilityOccurrences: (id: string, accountKey: string, status, cursor, signal) => read(listNodeAccountAvailabilityOccurrences(id, { account_key: accountKey, status, cursor, limit: 25 }, { signal, cache: "no-store", credentials: "same-origin" })),
   providers: (id, signal) => read(getNodeInventoryProviderStates(id, { signal, cache: "no-store", credentials: "same-origin" })),
   binding: (id, signal) => read(getNodeRelayBinding(id, { signal, cache: "no-store", credentials: "same-origin" })),
   currentDuplicates: (id, cursor, signal) => read(listCrossNodeDuplicateOccurrences({ status: "ACTIVE", instance_id: id, cursor, limit: 25 }, { signal, cache: "no-store", credentials: "same-origin" })),

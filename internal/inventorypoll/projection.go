@@ -327,6 +327,9 @@ func projectProvider(providerName string, provider drivers.ProviderObservation) 
 			!validSourceUnix(account.NextRetryUnix) || !validSourceUnix(account.UpdatedAtUnix) {
 			return providerProjection{}, ErrInvalidObservation
 		}
+		if !validAvailabilityRuntimeEvidence(account.AvailabilityRuntimeEvidence) || !validAuthFailureReason(account.AuthFailureReason) {
+			return providerProjection{}, ErrInvalidObservation
+		}
 		group := groups[key]
 		if group == nil {
 			group = &groupedAccount{email: normalizedEmail}
@@ -359,13 +362,37 @@ func projectProvider(providerName string, provider drivers.ProviderObservation) 
 		projection.candidates = append(projection.candidates, SnapshotCandidate{
 			Provider: providerName, AccountKey: key, Email: group.email, BasicStatus: account.State,
 			SuccessCount: account.SuccessCount, FailedCount: account.FailedCount,
-			RecentRequestCount: account.RecentRequestCount,
-			LastRefreshUnix:    nullableSourceUnix(account.LastRefreshUnix),
-			NextRetryUnix:      nullableSourceUnix(account.NextRetryUnix),
-			UpdatedAtUnix:      nullableSourceUnix(account.UpdatedAtUnix),
+			RecentRequestCount:          account.RecentRequestCount,
+			LastRefreshUnix:             nullableSourceUnix(account.LastRefreshUnix),
+			NextRetryUnix:               nullableSourceUnix(account.NextRetryUnix),
+			UpdatedAtUnix:               nullableSourceUnix(account.UpdatedAtUnix),
+			AvailabilityRuntimeEvidence: account.AvailabilityRuntimeEvidence,
+			AuthFailureReason:           account.AuthFailureReason,
 		})
 	}
 	return projection, nil
+}
+
+func validAvailabilityRuntimeEvidence(value *string) bool {
+	if value == nil {
+		return true
+	}
+	switch *value {
+	case "file_active", "file_disabled", "file_error", "file_unavailable", "file_unknown":
+		return true
+	}
+	return false
+}
+
+func validAuthFailureReason(value *string) bool {
+	if value == nil {
+		return true
+	}
+	switch *value {
+	case "token_invalid", "account_blocked", "forbidden", "other":
+		return true
+	}
+	return false
 }
 
 func groupOccurrenceCount(records []drivers.AccountObservation) (uint32, error) {

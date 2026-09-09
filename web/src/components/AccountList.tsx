@@ -1,6 +1,7 @@
 import { Button, Empty, Flex, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { formatDateTime } from "../time";
+import type { AccountAvailability } from "../api/account-availability-types";
 
 const { Text } = Typography;
 
@@ -37,6 +38,7 @@ export interface AccountListRow {
   provider_last_complete_at?: string | null;
   provider_degraded?: boolean;
   snapshot_freshness?: string;
+  availability?: AccountAvailability | null;
 }
 
 export interface AccountListProps {
@@ -76,6 +78,9 @@ export function AccountList({ rows, loading = false, unavailable = false, onSele
     { title: "Provider", dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
     { title: "状态", key: "status", render: (_, row) => <Flex vertical gap={2}><Tag>{row.lifecycle}</Tag><Text type="secondary">{row.basic_status}</Text></Flex> },
     { title: "质量", dataIndex: "quality", render: (value: AccountListRow["quality"]) => <Tag color={qualityColor(value)}>{qualityLabel(value)}</Tag> },
+    { title: "Availability", key: "availability", render: (_, row) => row.availability ? <Tag color={row.availability.state === "AVAILABLE" ? "green" : row.availability.state === "UNKNOWN" || row.availability.state === "DISABLED" ? "default" : "red"}>{row.availability.state}</Tag> : "—" },
+    { title: "Reason", key: "availability-reason", render: (_, row) => row.availability?.reason || "—" },
+    { title: "Since", key: "availability-since", render: (_, row) => formatDateTime(row.availability?.since) },
     { title: "最近请求", key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at)}</Text>}</Flex> },
     { title: "成功率", dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
     { title: "Requests", dataIndex: "request_count" },

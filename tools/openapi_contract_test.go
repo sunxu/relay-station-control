@@ -146,6 +146,7 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodPost, "/api/topology/nodes/{instance_id}/account-quality/query"}:        "queryNodeAccountQuality",
 		{http.MethodGet, "/api/topology/nodes/{instance_id}/request-history"}:              "listNodeAccountRequestHistory",
 		{http.MethodGet, "/api/topology/nodes/{instance_id}/incidents"}:                   "listNodeAccountQualityIncidents",
+		{http.MethodGet, "/api/topology/nodes/{instance_id}/account-availability-occurrences"}: "listNodeAccountAvailabilityOccurrences",
 		{http.MethodGet, "/api/account-inventory/nodes/{instance_id}/providers"}:           "getNodeInventoryProviderStates",
 	}
 

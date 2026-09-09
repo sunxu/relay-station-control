@@ -42,7 +42,7 @@ SELECT * FROM public.control_finalize_account_inventory_poll_run(
 );
 
 -- name: FinalizeAccountInventoryPollRunWithLifecycle :one
-SELECT * FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
+SELECT * FROM public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(
     sqlc.arg(poll_run_id)::uuid,
     sqlc.arg(lease_fencing_token)::uuid,
     sqlc.arg(transport_success)::boolean,

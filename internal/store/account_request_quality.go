@@ -17,16 +17,17 @@ import (
 type AccountRequestQualityRepository struct{ pool *pgxpool.Pool }
 
 type accountRequestQualityWireEvent struct {
-	EventHash    string    `json:"event_hash"`
-	RequestID    string    `json:"request_id"`
-	NodeID       uuid.UUID `json:"node_id"`
-	Provider     string    `json:"provider"`
-	AccountKey   *string   `json:"account_key"`
-	Model        string    `json:"model"`
-	OccurredAt   time.Time `json:"occurred_at"`
-	DurationMS   *int64    `json:"duration_ms"`
-	Success      bool      `json:"success"`
-	FailureClass *string   `json:"failure_class"`
+	EventHash         string    `json:"event_hash"`
+	RequestID         string    `json:"request_id"`
+	NodeID            uuid.UUID `json:"node_id"`
+	Provider          string    `json:"provider"`
+	AccountKey        *string   `json:"account_key"`
+	Model             string    `json:"model"`
+	OccurredAt        time.Time `json:"occurred_at"`
+	DurationMS        *int64    `json:"duration_ms"`
+	Success           bool      `json:"success"`
+	FailureClass      *string   `json:"failure_class"`
+	AuthFailureReason *string   `json:"auth_failure_reason"`
 }
 
 var _ requestquality.Store = (*AccountRequestQualityRepository)(nil)
@@ -47,13 +48,13 @@ func (r *AccountRequestQualityRepository) InsertRequestEvents(ctx context.Contex
 	}
 	wire := make([]accountRequestQualityWireEvent, len(events))
 	for i, event := range events {
-		wire[i] = accountRequestQualityWireEvent{EventHash: event.EventHash, RequestID: event.RequestID, NodeID: event.NodeID, Provider: event.Provider, AccountKey: event.AccountKey, Model: event.Model, OccurredAt: event.OccurredAt, DurationMS: event.DurationMS, Success: event.Success, FailureClass: event.FailureClass}
+		wire[i] = accountRequestQualityWireEvent{EventHash: event.EventHash, RequestID: event.RequestID, NodeID: event.NodeID, Provider: event.Provider, AccountKey: event.AccountKey, Model: event.Model, OccurredAt: event.OccurredAt, DurationMS: event.DurationMS, Success: event.Success, FailureClass: event.FailureClass, AuthFailureReason: event.AuthFailureReason}
 	}
 	data, err := json.Marshal(wire)
 	if err != nil {
 		return err
 	}
-	_, err = r.pool.Exec(ctx, `SELECT public.control_insert_account_request_quality_events_v1($1::jsonb)`, data)
+	_, err = r.pool.Exec(ctx, `SELECT public.control_insert_account_request_quality_events_v2($1::jsonb)`, data)
 	return err
 }
 

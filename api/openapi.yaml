@@ -1542,6 +1542,42 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
 
+
+  /api/topology/nodes/{instance_id}/account-availability-occurrences:
+    get:
+      operationId: listNodeAccountAvailabilityOccurrences
+      summary: Read persisted Antigravity availability occurrences
+      description: Requires super_admin. Readonly historical facts, including accounts no longer present. Does not change the Request History membership gate. Failures are unavailable, never empty.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - name: account_key
+          in: query
+          schema: {type: string, minLength: 3, maxLength: 385}
+        - name: status
+          in: query
+          schema: {type: string, enum: [ACTIVE, RESOLVED], default: ACTIVE}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+        - name: cursor
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 8192}
+      responses:
+        "200":
+          description: Bounded occurrence page, ordered by confirmed_at and occurrence_id descending.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/NoStore"}
+            X-Request-ID: {$ref: "#/components/headers/RequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NodeAccountAvailabilityOccurrenceResponse"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+
 components:
   securitySchemes:
     SessionCookie:
@@ -3251,6 +3287,45 @@ components:
           type: [string, "null"]
           maxLength: 512
 
+    AccountAvailability:
+      type: [object, "null"]
+      additionalProperties: false
+      required: [state, reason, since]
+      properties:
+        state: {type: string, enum: [AVAILABLE, TOKEN_INVALID, ACCOUNT_BLOCKED, FORBIDDEN, UNKNOWN, DISABLED]}
+        reason:
+          type: string
+          enum: [available, token_invalid, account_blocked, forbidden, disabled, stale, incomplete, node_collection_failed, not_present, unsupported_mode, unproven, pending_confirmation, runtime_unavailable, retry_wait, conflicting_evidence]
+        since: {type: [string, "null"], format: date-time}
+
+    NodeAccountAvailabilityOccurrenceItem:
+      type: object
+      additionalProperties: false
+      required: [occurrence_id, instance_id, account_key, reason, severity, status, first_seen_at, last_failure_at, confirmed_at, resolved_at]
+      properties:
+        occurrence_id: {type: string, format: uuid}
+        instance_id: {type: string, format: uuid}
+        account_key: {type: string}
+        reason: {type: string, enum: [token_invalid, account_blocked, forbidden]}
+        severity: {type: string, enum: [Critical, Warning]}
+        status: {type: string, enum: [ACTIVE, RESOLVED]}
+        first_seen_at: {type: string, format: date-time}
+        last_failure_at: {type: string, format: date-time}
+        confirmed_at: {type: string, format: date-time}
+        resolved_at: {type: [string, "null"], format: date-time}
+
+    NodeAccountAvailabilityOccurrenceResponse:
+      type: object
+      additionalProperties: false
+      required: [instance_id, items, next_cursor]
+      properties:
+        instance_id: {type: string, format: uuid}
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/NodeAccountAvailabilityOccurrenceItem"}
+        next_cursor: {type: [string, "null"], maxLength: 8192}
+
     NodeAccountQualityItem:
       type: object
       additionalProperties: false
@@ -3270,6 +3345,8 @@ components:
         last_failure_class: {type: [string, "null"], enum: [auth, quota, rate_limit, upstream, unknown, null]}
         inventory:
           $ref: "#/components/schemas/AccountInventoryItem"
+        availability:
+          $ref: "#/components/schemas/AccountAvailability"
         recent_requests:
           type: array
           maxItems: 10

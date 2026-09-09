@@ -2,9 +2,9 @@
 
 ## Current phase
 
-仅规划，未实施、未写migration、未运行业务测试、未commit/push/deploy/archive。原A1已由用户决策关闭；原Architecture结论因本轮两个P1重新复核，不将历史PASS等同于当前批准或实施授权。用户明确要求本轮停在Architecture Review。
+实现阶段已完成；本轮进行Implementation Final Review。已写入additive migration、只读API/UI与生命周期接线；尚未commit、push、deploy或archive。原A1已由用户决策关闭，UNKNOWN永远不告警，other/runtime_unavailable不创建availability occurrence。
 
-## Acceptance matrix（以下均为未来实施验收，不是已执行PASS）
+## Acceptance matrix（实施验收结果）
 
 | ID | Fixture / assertion | Verification |
 | --- | --- | --- |
@@ -27,7 +27,7 @@
 | A17 | Availability/Reason/Since六态，系统时区；Node切换取消，不加mutation | frontend |
 | A18 | 100账号/10000events batch有界、>100账号不会永久饥饿，无N+1 | PG性能/调用计数 |
 | A19 | lifecycle回调超时/cancel不影响Inventory、Binding、Duplicate、Gateway数据面 | wiring/race/regression |
-| A20 | other/runtime unavailable持续15分钟以上/100次reconcile/restart仍UNKNOWN且零告警；旧ACTIVE遇UNKNOWN不重发、不升级、不虚假resolve | PG/race/UI，未来实施验收 |
+| A20 | other/runtime unavailable持续15分钟以上/100次reconcile/restart仍UNKNOWN且零告警；旧ACTIVE遇UNKNOWN不重发、不升级、不虚假resolve | PG/race/UI |
 | A21 | 同request_id的多个不同event_hash + active → 只一份证据，不确认 | evaluator/真实PG |
 | A22 | 同reason两个不同非空request_id → 两份请求证据，仅token/blocked可用 | evaluator/真实PG |
 | A23 | 无request_id的两个不同event_hash + active → 不确认 | evaluator/真实PG |
@@ -45,8 +45,12 @@
 - `openspec validate add-antigravity-account-availability-monitoring --type change --strict --no-interactive`：PASS。
 - `openspec validate --all --strict`：18/18 PASS。
 - `git diff --check`：PASS；新文档另检查行尾空白。
-- 本轮不运行PG/race/make test build；这些只列为批准后实施验收，未宣称已通过。
-- `git status --short`：仅本change内6个已跟踪规划文档修改，无产品或migration文件修改。
+- `go test -race ./internal/authfailure ./internal/drivers/cliproxyapi ./internal/requestquality ./internal/api ./cmd/control`：PASS。
+- `go test -race ./internal/store -run 'Test(AccountAvailability|AntigravityAvailability)' -count=1 -v`：真实PostgreSQL PASS，availability专项及metadata finalize PASS；100账号/10002事件reconcile 384ms，100账号batch 7.1ms，occurrence分页单次查询约0.8–2.7ms。
+- `npm test -- --run`：22 files / 133 tests PASS；`npm run typecheck`：PASS；`npm run build`：PASS。
+- `make test build`：PASS（Go模块缓存使用 `/Volumes/DevRAM/go-mod`，其余缓存按AGENTS配置）。
+- `openspec validate add-antigravity-account-availability-monitoring --type change --strict --no-interactive`：PASS；`openspec validate --all --strict`：18/18 PASS；`git diff --check`：PASS。
+- `git status --short`：仅当前change的实现、测试、migration、generated/API/UI与文档修改；未修改CLIProxy仓库。
 
 ## Architecture Review
 
@@ -58,7 +62,7 @@
 
 前轮Architecture PASS仅是历史结论；本轮按用户P1要求重新评审。P1-1已将独立请求条件改为同Node/account内至少两个不同非空request_id（仅token/blocked请求路径），同ID多个hash永远只一份、无ID不能只凭hash确认；无ID仍可通过request+runtime交叉确认。P1-2已将FORBIDDEN限定为普通403+fresh runtime error/unavailable，重复403+active保持UNKNOWN；blocked白名单原确认门槛不放宽。
 
-本轮独立Architecture复审与主Agent复核：PASS，P1-1/P1-2均关闭，无剩余blocker；Implementation：NOT STARTED。A21–A31只是未来验收定义，不代表已运行PG或业务测试。只修改规划，不实施、不提交、不部署。
+本轮独立Architecture复审与主Agent复核：PASS，P1-1/P1-2均关闭，无剩余blocker。A21–A31已纳入实现与真实PG/解析测试证据。本轮已完成实现与验证，未提交、未部署、未归档。
 
 
 ## P1 re-review evidence
@@ -68,4 +72,12 @@
 - 同ID永久只一份；确认摘要保留已用request_id，重启/恢复/retention后换hash不再充当新请求，无新增全量历史身份/去重系统。
 - 首次runtime健康但尚待第二份恢复证据的UNKNOWN展示不重置健康source计数；旧FORBIDDEN ACTIVE不能使当前active runtime仍被展示为FORBIDDEN。既有恢复阈值和历史保留不变。
 - 同步范围：proposal、design、availability spec、request-quality delta、tasks、acceptance matrix；新增A21–A31覆盖用户七项必需场景及重放/兼容/旧ACTIVE/runtime-only负例。
-- 最终change strict PASS、all strict 18/18 PASS、git diff --check PASS；仅6个规划文档修改，4项规划任务完成，实施任务仍待执行。本轮未运行PG/race/make test build，未实施、提交或部署。
+- 最终change strict PASS、all strict 18/18 PASS、git diff --check PASS；实现任务2.1–5.6全部完成。
+
+## Implementation Final Review
+
+- Architecture Contract：PASS；实现保持 Antigravity file-only、六态、UNKNOWN永不告警、三种occurrence reason与request_id交叉确认规则。
+- Implementation：PASS；source projection、nullable安全字段、受控migration、checkpoint/occurrence evaluator、生命周期接线、只读API/UI与ACL均已实现并通过对应测试。
+- 兼容性边界：CLIProxy零修改；usage queue、collector、event主schema、retention、failure taxonomy及Inventory/Binding/Duplicate truth未改变；无Prometheus/Grafana、quota、inspection或mutation。
+- Blockers：无。非阻塞事项：真实测试需使用可写模块缓存目录，已在验证命令中显式设置 `/Volumes/DevRAM/go-mod`；不影响产品运行时契约。
+- Final Review 结论：PASS，change可进入提交/后续发布审批；本轮不commit、push、deploy或archive。

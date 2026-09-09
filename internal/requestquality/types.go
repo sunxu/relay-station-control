@@ -10,16 +10,17 @@ import (
 
 // Event is the entire persisted projection. A nil AccountKey is unresolved.
 type Event struct {
-	EventHash    string
-	RequestID    string
-	NodeID       uuid.UUID
-	Provider     string
-	AccountKey   *string
-	Model        string
-	OccurredAt   time.Time
-	DurationMS   *int64
-	Success      bool
-	FailureClass *string
+	EventHash         string
+	RequestID         string
+	NodeID            uuid.UUID
+	Provider          string
+	AccountKey        *string
+	Model             string
+	OccurredAt        time.Time
+	DurationMS        *int64
+	Success           bool
+	FailureClass      *string
+	AuthFailureReason *string
 }
 
 // Identity is current auth-files evidence, not an historical assignment.

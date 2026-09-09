@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/sunxu/relay-station-control/internal/authfailure"
 	"io"
 	"net/mail"
 	"strconv"
@@ -77,9 +78,18 @@ func Normalize(nodeID uuid.UUID, raw []byte, identities []Identity) (Event, erro
 		summary = readString(record, "error", "error_message", "errorMessage")
 	}
 	var class *string
+	var authReason *string
 	if failed {
 		v := classifyFailure(status, summary)
 		class = &v
+		if provider == "antigravity" {
+			reason := authfailure.Classify(status, []byte(summary))
+			authReason = &reason
+			if reason != "other" {
+				v = "auth"
+				class = &v
+			}
+		}
 	}
 	requestID := readString(record, "request_id", "requestId", "id")
 	// This is CPA buildEventHash's normalized content identity, not a raw JSON hash
@@ -93,7 +103,7 @@ func Normalize(nodeID uuid.UUID, raw []byte, identities []Identity) (Event, erro
 	if duration != nil {
 		parts = append(parts, strconv.FormatInt(*duration, 10))
 	}
-	event := Event{EventHash: hashString(strings.Join(parts, "|")), RequestID: requestID, NodeID: nodeID, Provider: provider, AccountKey: key, Model: model, OccurredAt: occurred.UTC(), DurationMS: duration, Success: !failed, FailureClass: class}
+	event := Event{EventHash: hashString(strings.Join(parts, "|")), RequestID: requestID, NodeID: nodeID, Provider: provider, AccountKey: key, Model: model, OccurredAt: occurred.UTC(), DurationMS: duration, Success: !failed, FailureClass: class, AuthFailureReason: authReason}
 	// Invalid PostgreSQL text must not poison retries of all valid events in the batch.
 	for _, v := range []string{event.RequestID, event.Provider, event.Model} {
 		if !utf8.ValidString(v) || strings.ContainsRune(v, 0) {
@@ -203,4 +213,9 @@ func classifyFailure(status int64, summary string) string {
 		return "upstream"
 	}
 	return "unknown"
+}
+
+func classifyAntigravityAuthReason(status int64, summary string) (string, bool) {
+	reason := authfailure.Classify(status, []byte(summary))
+	return reason, reason != "other"
 }

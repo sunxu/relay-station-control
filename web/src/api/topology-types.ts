@@ -10,12 +10,13 @@ import type {
 import type { AccountListApi, AccountQualityApi } from "./account-quality-types";
 import type { AccountRequestHistoryApi } from "./account-request-history-types";
 import type { AccountQualityIncidentsApi } from "./account-quality-incidents-types";
+import type { AccountAvailabilityApi } from "./account-availability-types";
 
 export type TopologyProviderState = NodeInventoryProviderState;
 export type TopologyOccurrence = CrossNodeDuplicateOccurrenceSummary;
 export type TopologyBinding = NodeRelayBindingResponse;
 
-export interface TopologyApi extends AccountQualityApi, AccountListApi, AccountRequestHistoryApi, AccountQualityIncidentsApi {
+export interface TopologyApi extends AccountQualityApi, AccountListApi, AccountRequestHistoryApi, AccountQualityIncidentsApi, AccountAvailabilityApi {
   providers(instanceId: string, signal?: AbortSignal): Promise<NodeInventoryProviderStatesResponse>;
   binding(instanceId: string, signal?: AbortSignal): Promise<NodeRelayBindingResponse>;
   currentDuplicates(instanceId: string, cursor?: string, signal?: AbortSignal): Promise<CrossNodeDuplicateOccurrenceListResponse>;

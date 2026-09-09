@@ -1164,6 +1164,99 @@ export interface CrossNodeDuplicateOccurrenceEvidenceListResponse {
   next_cursor?: string | null;
 }
 
+export type AccountAvailabilityState = typeof AccountAvailabilityState[keyof typeof AccountAvailabilityState];
+
+
+export const AccountAvailabilityState = {
+  AVAILABLE: 'AVAILABLE',
+  TOKEN_INVALID: 'TOKEN_INVALID',
+  ACCOUNT_BLOCKED: 'ACCOUNT_BLOCKED',
+  FORBIDDEN: 'FORBIDDEN',
+  UNKNOWN: 'UNKNOWN',
+  DISABLED: 'DISABLED',
+} as const;
+
+export type AccountAvailabilityReason = typeof AccountAvailabilityReason[keyof typeof AccountAvailabilityReason];
+
+
+export const AccountAvailabilityReason = {
+  available: 'available',
+  token_invalid: 'token_invalid',
+  account_blocked: 'account_blocked',
+  forbidden: 'forbidden',
+  disabled: 'disabled',
+  stale: 'stale',
+  incomplete: 'incomplete',
+  node_collection_failed: 'node_collection_failed',
+  not_present: 'not_present',
+  unsupported_mode: 'unsupported_mode',
+  unproven: 'unproven',
+  pending_confirmation: 'pending_confirmation',
+  runtime_unavailable: 'runtime_unavailable',
+  retry_wait: 'retry_wait',
+  conflicting_evidence: 'conflicting_evidence',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AccountAvailability = {
+  state: AccountAvailabilityState;
+  reason: AccountAvailabilityReason;
+  /** @nullable */
+  since: string | null;
+} | null;
+
+export type NodeAccountAvailabilityOccurrenceItemReason = typeof NodeAccountAvailabilityOccurrenceItemReason[keyof typeof NodeAccountAvailabilityOccurrenceItemReason];
+
+
+export const NodeAccountAvailabilityOccurrenceItemReason = {
+  token_invalid: 'token_invalid',
+  account_blocked: 'account_blocked',
+  forbidden: 'forbidden',
+} as const;
+
+export type NodeAccountAvailabilityOccurrenceItemSeverity = typeof NodeAccountAvailabilityOccurrenceItemSeverity[keyof typeof NodeAccountAvailabilityOccurrenceItemSeverity];
+
+
+export const NodeAccountAvailabilityOccurrenceItemSeverity = {
+  Critical: 'Critical',
+  Warning: 'Warning',
+} as const;
+
+export type NodeAccountAvailabilityOccurrenceItemStatus = typeof NodeAccountAvailabilityOccurrenceItemStatus[keyof typeof NodeAccountAvailabilityOccurrenceItemStatus];
+
+
+export const NodeAccountAvailabilityOccurrenceItemStatus = {
+  ACTIVE: 'ACTIVE',
+  RESOLVED: 'RESOLVED',
+} as const;
+
+export interface NodeAccountAvailabilityOccurrenceItem {
+  occurrence_id: string;
+  instance_id: string;
+  account_key: string;
+  reason: NodeAccountAvailabilityOccurrenceItemReason;
+  severity: NodeAccountAvailabilityOccurrenceItemSeverity;
+  status: NodeAccountAvailabilityOccurrenceItemStatus;
+  first_seen_at: string;
+  last_failure_at: string;
+  confirmed_at: string;
+  /** @nullable */
+  resolved_at: string | null;
+}
+
+export interface NodeAccountAvailabilityOccurrenceResponse {
+  instance_id: string;
+  /** @maxItems 100 */
+  items: NodeAccountAvailabilityOccurrenceItem[];
+  /**
+     * @maxLength 8192
+     * @nullable
+     */
+  next_cursor: string | null;
+}
+
 export type NodeAccountQualityItemQuality = typeof NodeAccountQualityItemQuality[keyof typeof NodeAccountQualityItemQuality];
 
 
@@ -1245,6 +1338,7 @@ export interface NodeAccountQualityItem {
   /** @nullable */
   last_failure_class: NodeAccountQualityItemLastFailureClass;
   inventory: AccountInventoryItem;
+  availability?: AccountAvailability | null;
   /** @maxItems 10 */
   recent_requests: NodeAccountRequestHistoryItem[];
 }
@@ -1699,6 +1793,33 @@ export const ListNodeAccountQualityIncidentsFailureClass = {
   quota: 'quota',
   rate_limit: 'rate_limit',
   upstream: 'upstream',
+} as const;
+
+export type ListNodeAccountAvailabilityOccurrencesParams = {
+/**
+ * @minLength 3
+ * @maxLength 385
+ */
+account_key?: string;
+status?: ListNodeAccountAvailabilityOccurrencesStatus;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @minLength 1
+ * @maxLength 8192
+ */
+cursor?: string;
+};
+
+export type ListNodeAccountAvailabilityOccurrencesStatus = typeof ListNodeAccountAvailabilityOccurrencesStatus[keyof typeof ListNodeAccountAvailabilityOccurrencesStatus];
+
+
+export const ListNodeAccountAvailabilityOccurrencesStatus = {
+  ACTIVE: 'ACTIVE',
+  RESOLVED: 'RESOLVED',
 } as const;
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -7519,6 +7640,169 @@ export function useListNodeAccountQualityIncidents<TData = Awaited<ReturnType<ty
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListNodeAccountQualityIncidentsQueryOptions(instanceId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listNodeAccountAvailabilityOccurrencesResponse200 = {
+  data: NodeAccountAvailabilityOccurrenceResponse
+  status: 200
+}
+
+export type listNodeAccountAvailabilityOccurrencesResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listNodeAccountAvailabilityOccurrencesResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listNodeAccountAvailabilityOccurrencesResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listNodeAccountAvailabilityOccurrencesResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listNodeAccountAvailabilityOccurrencesResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listNodeAccountAvailabilityOccurrencesResponseSuccess = (listNodeAccountAvailabilityOccurrencesResponse200) & {
+  headers: Headers;
+};
+export type listNodeAccountAvailabilityOccurrencesResponseError = (listNodeAccountAvailabilityOccurrencesResponse400 | listNodeAccountAvailabilityOccurrencesResponse401 | listNodeAccountAvailabilityOccurrencesResponse403 | listNodeAccountAvailabilityOccurrencesResponse404 | listNodeAccountAvailabilityOccurrencesResponse503) & {
+  headers: Headers;
+};
+
+export type listNodeAccountAvailabilityOccurrencesResponse = (listNodeAccountAvailabilityOccurrencesResponseSuccess | listNodeAccountAvailabilityOccurrencesResponseError)
+
+export const getListNodeAccountAvailabilityOccurrencesUrl = (instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/topology/nodes/${instanceId}/account-availability-occurrences?${stringifiedParams}` : `/api/topology/nodes/${instanceId}/account-availability-occurrences`
+}
+
+/**
+ * Requires super_admin. Readonly historical facts, including accounts no longer present. Does not change the Request History membership gate. Failures are unavailable, never empty.
+ * @summary Read persisted Antigravity availability occurrences
+ */
+export const listNodeAccountAvailabilityOccurrences = async (instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams, options?: RequestInit): Promise<listNodeAccountAvailabilityOccurrencesResponse> => {
+
+  const res = await fetch(getListNodeAccountAvailabilityOccurrencesUrl(instanceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listNodeAccountAvailabilityOccurrencesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listNodeAccountAvailabilityOccurrencesResponse
+}
+
+
+
+
+
+export const getListNodeAccountAvailabilityOccurrencesQueryKey = (instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams,) => {
+    return [
+    `/api/topology/nodes/${instanceId}/account-availability-occurrences`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListNodeAccountAvailabilityOccurrencesQueryOptions = <TData = Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError = ErrorResponse>(instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodeAccountAvailabilityOccurrencesQueryKey(instanceId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>> = ({ signal }) => listNodeAccountAvailabilityOccurrences(instanceId,params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNodeAccountAvailabilityOccurrencesQueryResult = NonNullable<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>>
+export type ListNodeAccountAvailabilityOccurrencesQueryError = ErrorResponse
+
+
+export function useListNodeAccountAvailabilityOccurrences<TData = Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError = ErrorResponse>(
+ instanceId: string,
+    params: undefined |  ListNodeAccountAvailabilityOccurrencesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAccountAvailabilityOccurrences<TData = Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>,
+          TError,
+          Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNodeAccountAvailabilityOccurrences<TData = Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read persisted Antigravity availability occurrences
+ */
+
+export function useListNodeAccountAvailabilityOccurrences<TData = Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError = ErrorResponse>(
+ instanceId: string,
+    params?: ListNodeAccountAvailabilityOccurrencesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNodeAccountAvailabilityOccurrences>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNodeAccountAvailabilityOccurrencesQueryOptions(instanceId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

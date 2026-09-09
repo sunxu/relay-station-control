@@ -203,16 +203,18 @@ func (CurrentAccountInventoryLifecycleItem) Format(state fmt.State, _ rune) {
 }
 
 type pollSnapshotItem struct {
-	Provider           string               `json:"provider"`
-	AccountKey         string               `json:"account_key"`
-	Email              string               `json:"email"`
-	BasicStatus        drivers.AccountState `json:"basic_status"`
-	SuccessCount       uint64               `json:"success_count"`
-	FailedCount        uint64               `json:"failed_count"`
-	RecentRequestCount uint64               `json:"recent_request_count"`
-	LastRefreshUnix    *int64               `json:"last_refresh_unix"`
-	NextRetryUnix      *int64               `json:"next_retry_unix"`
-	UpdatedAtUnix      *int64               `json:"updated_at_unix"`
+	Provider                    string               `json:"provider"`
+	AccountKey                  string               `json:"account_key"`
+	Email                       string               `json:"email"`
+	BasicStatus                 drivers.AccountState `json:"basic_status"`
+	SuccessCount                uint64               `json:"success_count"`
+	FailedCount                 uint64               `json:"failed_count"`
+	RecentRequestCount          uint64               `json:"recent_request_count"`
+	LastRefreshUnix             *int64               `json:"last_refresh_unix"`
+	NextRetryUnix               *int64               `json:"next_retry_unix"`
+	UpdatedAtUnix               *int64               `json:"updated_at_unix"`
+	AvailabilityRuntimeEvidence *string              `json:"availability_runtime_evidence"`
+	AuthFailureReason           *string              `json:"auth_failure_reason"`
 }
 
 type pollDuplicateEvidence struct {
@@ -309,7 +311,9 @@ func (repository *InventoryPollRepository) FinalizeFenced(
 			BasicStatus: item.BasicStatus, SuccessCount: item.SuccessCount,
 			FailedCount: item.FailedCount, RecentRequestCount: item.RecentRequestCount,
 			LastRefreshUnix: item.LastRefreshUnix, NextRetryUnix: item.NextRetryUnix,
-			UpdatedAtUnix: item.UpdatedAtUnix,
+			UpdatedAtUnix:               item.UpdatedAtUnix,
+			AvailabilityRuntimeEvidence: item.AvailabilityRuntimeEvidence,
+			AuthFailureReason:           item.AuthFailureReason,
 		})
 	}
 	duplicates := make([]pollDuplicateEvidence, 0, len(request.Duplicates))

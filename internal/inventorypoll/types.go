@@ -203,16 +203,18 @@ func (FinalizeRequest) Format(state fmt.State, _ rune) {
 // snapshot columns. A nil source time represents SQL NULL; observed/promotion
 // times are supplied exclusively by PostgreSQL.
 type SnapshotCandidate struct {
-	Provider           string
-	AccountKey         string
-	Email              string
-	BasicStatus        drivers.AccountState
-	SuccessCount       uint64
-	FailedCount        uint64
-	RecentRequestCount uint64
-	LastRefreshUnix    *int64
-	NextRetryUnix      *int64
-	UpdatedAtUnix      *int64
+	Provider                    string
+	AccountKey                  string
+	Email                       string
+	BasicStatus                 drivers.AccountState
+	SuccessCount                uint64
+	FailedCount                 uint64
+	RecentRequestCount          uint64
+	LastRefreshUnix             *int64
+	NextRetryUnix               *int64
+	UpdatedAtUnix               *int64
+	AvailabilityRuntimeEvidence *string
+	AuthFailureReason           *string
 }
 
 func (SnapshotCandidate) Format(state fmt.State, _ rune) {

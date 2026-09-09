@@ -247,13 +247,15 @@ func projectInventory(parsed InventoryObservation) drivers.InventoryObservation 
 	accountsByProvider := make(map[string][]drivers.AccountObservation, len(parsed.Providers))
 	for _, account := range parsed.Accounts {
 		projected := drivers.AccountObservation{
-			Provider:           account.Provider,
-			Email:              account.Email,
-			State:              drivers.AccountState(account.Status),
-			OccurrenceCount:    uint32(account.OccurrenceCount),
-			SuccessCount:       uint64(account.Success),
-			FailedCount:        uint64(account.Failed),
-			RecentRequestCount: uint64(account.RecentRequests),
+			Provider:                    account.Provider,
+			Email:                       account.Email,
+			State:                       drivers.AccountState(account.Status),
+			OccurrenceCount:             uint32(account.OccurrenceCount),
+			SuccessCount:                uint64(account.Success),
+			FailedCount:                 uint64(account.Failed),
+			RecentRequestCount:          uint64(account.RecentRequests),
+			AvailabilityRuntimeEvidence: account.AvailabilityRuntimeEvidence,
+			AuthFailureReason:           account.AuthFailureReason,
 		}
 		if account.LastRefresh != nil {
 			projected.LastRefreshUnix = account.LastRefresh.Unix()

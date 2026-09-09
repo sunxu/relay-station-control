@@ -291,6 +291,35 @@ func TestInventoryModeMatrix(t *testing.T) {
 	}
 }
 
+func TestAntigravityAvailabilityRuntimeEvidence(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+	policy := testPolicy(t, []string{"antigravity"}, nil)
+	for _, tc := range []struct {
+		name, record, want string
+	}{
+		{"active", `{"provider":"antigravity","email":"a@example.invalid","source":"file","status":"active","disabled":false,"unavailable":false}`, "file_active"},
+		{"disabled", `{"provider":"antigravity","email":"a@example.invalid","source":"file","status":"active","disabled":true,"unavailable":false}`, "file_disabled"},
+		{"unavailable", `{"provider":"antigravity","email":"a@example.invalid","source":"file","status":"active","disabled":false,"unavailable":true}`, "file_unavailable"},
+		{"error", `{"provider":"antigravity","email":"a@example.invalid","source":"file","status":"error","disabled":false,"unavailable":false}`, "file_error"},
+		{"memory", `{"provider":"antigravity","email":"a@example.invalid","source":"memory","status":"active","disabled":false,"unavailable":false}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseInventory(200, nil, bytes.NewBufferString(`{"files":[`+tc.record+`]}`), InventoryParseOptions{Policy: policy, Now: now})
+			if !got.ContractValid || len(got.Accounts) != 1 {
+				t.Fatalf("parse=%#v", got)
+			}
+			value := ""
+			if got.Accounts[0].AvailabilityRuntimeEvidence != nil {
+				value = *got.Accounts[0].AvailabilityRuntimeEvidence
+			}
+			if value != tc.want {
+				t.Fatalf("evidence=%q want=%q", value, tc.want)
+			}
+		})
+	}
+}
+
 func TestProviderPolicyAndIdentityClassification(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -547,6 +576,50 @@ func TestPinnedFixturesMatchPhaseZeroSourceWhenAvailable(t *testing.T) {
 		}
 		if sha256.Sum256(localBody) != sha256.Sum256(sourceBody) {
 			t.Fatalf("pinned fixture %s drifted from phase-0 source", entry.Name())
+		}
+	}
+}
+
+func TestAvailabilitySafeProjectionBoundary(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct{ name, extra, evidence, reason string }{
+		{"active", `"status":"active","disabled":false,"unavailable":false`, "file_active", ""},
+		{"missing flags", `"status":"active"`, "file_unknown", ""},
+		{"disabled", `"status":"active","disabled":true,"unavailable":false`, "file_disabled", ""},
+		{"runtime error", `"status":"error","disabled":false,"unavailable":false,"status_message":"invalid_grant"`, "file_error", "token_invalid"},
+		{"json block", `"status":"error","disabled":false,"unavailable":true,"status_message":"{\"error\":{\"code\":\"account_blocked\"}}"`, "file_unavailable", "account_blocked"},
+		{"negative", `"status":"active","disabled":false,"unavailable":false,"status_message":"not account_blocked"`, "file_active", ""},
+		{"retry", `"status":"active","disabled":false,"unavailable":false,"next_retry_after":"2099-01-01T00:00:00Z"`, "file_unknown", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"provider":"antigravity","email":"safe@example.invalid","source":"file","access_token":"TOKEN_CANARY","refresh_token":"TOKEN_CANARY",` + tc.extra + `}`)
+			parsed, err := parseAccount(raw, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.observation.AvailabilityRuntimeEvidence == nil || *parsed.observation.AvailabilityRuntimeEvidence != tc.evidence || (tc.reason == "" && parsed.observation.AuthFailureReason != nil) || (tc.reason != "" && (parsed.observation.AuthFailureReason == nil || *parsed.observation.AuthFailureReason != tc.reason)) {
+				t.Fatalf("projection mismatch evidence=%v reason=%v", parsed.observation.AvailabilityRuntimeEvidence, parsed.observation.AuthFailureReason)
+			}
+			encoded, err := json.Marshal(parsed.observation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), "TOKEN_CANARY") || strings.Contains(string(encoded), "status_message") {
+				t.Fatal("raw or Token projected")
+			}
+		})
+	}
+	for _, raw := range []string{
+		`{"provider":"antigravity","email":"safe@example.invalid","source":"memory","status":"active","disabled":false,"unavailable":false}`,
+		`{"provider":"antigravity","email":"safe@example.invalid","status":"active","disabled":false,"unavailable":false}`,
+		`{"provider":"openai","email":"safe@example.invalid","source":"file","status":"active","disabled":false,"unavailable":false}`,
+	} {
+		parsed, err := parseAccount([]byte(raw), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parsed.observation.AvailabilityRuntimeEvidence != nil || parsed.observation.AuthFailureReason != nil {
+			t.Fatal("unsupported source acquired availability proof")
 		}
 	}
 }

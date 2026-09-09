@@ -18,6 +18,7 @@ import (
 const authenticationResponseFloor = 250 * time.Millisecond
 
 type Server struct {
+	accountAvailability           assetstore.AccountAvailabilityReader
 	pollCapacity                  assetstore.InventoryPollCapacityReader
 	pollCapacityConfig            controlpoll.ValidatedConfig
 	pollCapacityEnabled           bool

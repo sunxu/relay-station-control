@@ -22,6 +22,7 @@ function emptyTopology(): TopologyApi {
     accountList: vi.fn(),
     accountQuality: vi.fn().mockResolvedValue({ instance_id: A, window: "15m", items: [], next_cursor: null }),
     requestHistory: vi.fn().mockResolvedValue({ instance_id: A, account_key: "openai:a@example.invalid", items: [], next_cursor: null }),
+    accountAvailabilityOccurrences: vi.fn().mockResolvedValue({ instance_id: A, items: [], next_cursor: null }),
     incidents: vi.fn().mockResolvedValue({ instance_id: A, items: [], next_cursor: null }),
     providers: vi.fn().mockResolvedValue({ instance_id: A, observed_at: observedAt, providers: [] }),
     binding: vi.fn().mockResolvedValue({ relay_node_id: A, resolution: "unbound", directory_freshness: "fresh", context_source: "none", observed_at: observedAt }),
@@ -152,7 +153,7 @@ it("renders account quality metrics and an unknown zero-request row", async () =
   expect(screen.getByText("Unknown")).toBeInTheDocument();
   const unknownRow = screen.getByText("b@example.invalid").closest("tr")!;
   expect(within(unknownRow).getByText("0")).toBeInTheDocument();
-  expect(within(unknownRow).getAllByText("—")).toHaveLength(4);
+  expect(within(unknownRow).getAllByText("—")).toHaveLength(7);
   expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), "present");
   expect(within(screen.getByRole("region", { name: "Account Quality" })).queryByRole("button", { name: /bind|disable|delete|quota|inspect/i })).not.toBeInTheDocument();
 });

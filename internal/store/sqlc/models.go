@@ -8,30 +8,70 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountAvailabilityCheckpoint struct {
+	NodeID                    pgtype.UUID        `json:"node_id"`
+	AccountKey                string             `json:"account_key"`
+	State                     string             `json:"state"`
+	Reason                    pgtype.Text        `json:"reason"`
+	Since                     pgtype.Timestamptz `json:"since"`
+	LastRuntimeSourceID       pgtype.UUID        `json:"last_runtime_source_id"`
+	LastRuntimeSourceAt       pgtype.Timestamptz `json:"last_runtime_source_at"`
+	LastRuntimeSlot           pgtype.Timestamptz `json:"last_runtime_slot"`
+	ConsecutiveHealthySources int16              `json:"consecutive_healthy_sources"`
+	LastFailureAt             pgtype.Timestamptz `json:"last_failure_at"`
+	LastSuccessAt             pgtype.Timestamptz `json:"last_success_at"`
+	RecoveryWatermark         pgtype.Timestamptz `json:"recovery_watermark"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AccountAvailabilityOccurrence struct {
+	OccurrenceID           pgtype.UUID        `json:"occurrence_id"`
+	NodeID                 pgtype.UUID        `json:"node_id"`
+	AccountKey             string             `json:"account_key"`
+	Reason                 string             `json:"reason"`
+	Severity               string             `json:"severity"`
+	Status                 string             `json:"status"`
+	FirstSeenAt            pgtype.Timestamptz `json:"first_seen_at"`
+	LastFailureAt          pgtype.Timestamptz `json:"last_failure_at"`
+	ConfirmedAt            pgtype.Timestamptz `json:"confirmed_at"`
+	ResolvedAt             pgtype.Timestamptz `json:"resolved_at"`
+	ConfirmationRequestID1 pgtype.Text        `json:"confirmation_request_id_1"`
+	ConfirmationRequestID2 pgtype.Text        `json:"confirmation_request_id_2"`
+	ConfirmationEventHash1 pgtype.Text        `json:"confirmation_event_hash_1"`
+	ConfirmationEventHash2 pgtype.Text        `json:"confirmation_event_hash_2"`
+	ConfirmationSourceID   pgtype.UUID        `json:"confirmation_source_id"`
+	ConfirmationSourceAt   pgtype.Timestamptz `json:"confirmation_source_at"`
+	RecoverySourceID       pgtype.UUID        `json:"recovery_source_id"`
+	RecoverySourceAt       pgtype.Timestamptz `json:"recovery_source_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+}
+
 type AccountInventory struct {
-	InstanceID              pgtype.UUID        `json:"instance_id"`
-	Provider                string             `json:"provider"`
-	AccountKey              string             `json:"account_key"`
-	NormalizedEmail         string             `json:"normalized_email"`
-	BasicStatus             string             `json:"basic_status"`
-	SuccessCount            int64              `json:"success_count"`
-	FailedCount             int64              `json:"failed_count"`
-	RecentRequestCount      int64              `json:"recent_request_count"`
-	LastRefreshAt           pgtype.Timestamptz `json:"last_refresh_at"`
-	NextRetryAt             pgtype.Timestamptz `json:"next_retry_at"`
-	SourceUpdatedAt         pgtype.Timestamptz `json:"source_updated_at"`
-	Lifecycle               string             `json:"lifecycle"`
-	ConsecutiveMissingCount int32              `json:"consecutive_missing_count"`
-	MissingSince            pgtype.Timestamptz `json:"missing_since"`
-	OutOfScopeSince         pgtype.Timestamptz `json:"out_of_scope_since"`
-	FirstSeenAt             pgtype.Timestamptz `json:"first_seen_at"`
-	LastSeenAt              pgtype.Timestamptz `json:"last_seen_at"`
-	CurrentPollRunID        pgtype.UUID        `json:"current_poll_run_id"`
-	CurrentScheduledAt      pgtype.Timestamptz `json:"current_scheduled_at"`
-	SourceObservedAt        pgtype.Timestamptz `json:"source_observed_at"`
-	SourceNodeVersion       string             `json:"source_node_version"`
-	SourceNodeCommit        string             `json:"source_node_commit"`
-	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	InstanceID                  pgtype.UUID        `json:"instance_id"`
+	Provider                    string             `json:"provider"`
+	AccountKey                  string             `json:"account_key"`
+	NormalizedEmail             string             `json:"normalized_email"`
+	BasicStatus                 string             `json:"basic_status"`
+	SuccessCount                int64              `json:"success_count"`
+	FailedCount                 int64              `json:"failed_count"`
+	RecentRequestCount          int64              `json:"recent_request_count"`
+	LastRefreshAt               pgtype.Timestamptz `json:"last_refresh_at"`
+	NextRetryAt                 pgtype.Timestamptz `json:"next_retry_at"`
+	SourceUpdatedAt             pgtype.Timestamptz `json:"source_updated_at"`
+	Lifecycle                   string             `json:"lifecycle"`
+	ConsecutiveMissingCount     int32              `json:"consecutive_missing_count"`
+	MissingSince                pgtype.Timestamptz `json:"missing_since"`
+	OutOfScopeSince             pgtype.Timestamptz `json:"out_of_scope_since"`
+	FirstSeenAt                 pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt                  pgtype.Timestamptz `json:"last_seen_at"`
+	CurrentPollRunID            pgtype.UUID        `json:"current_poll_run_id"`
+	CurrentScheduledAt          pgtype.Timestamptz `json:"current_scheduled_at"`
+	SourceObservedAt            pgtype.Timestamptz `json:"source_observed_at"`
+	SourceNodeVersion           string             `json:"source_node_version"`
+	SourceNodeCommit            string             `json:"source_node_commit"`
+	UpdatedAt                   pgtype.Timestamptz `json:"updated_at"`
+	AvailabilityRuntimeEvidence pgtype.Text        `json:"availability_runtime_evidence"`
+	AuthFailureReason           pgtype.Text        `json:"auth_failure_reason"`
 }
 
 type AccountInventoryCompactionRun struct {
@@ -290,32 +330,35 @@ type AccountInventoryScopeTransitionAudit struct {
 }
 
 type AccountInventorySnapshotItem struct {
-	PollRunID          pgtype.UUID        `json:"poll_run_id"`
-	InstanceID         pgtype.UUID        `json:"instance_id"`
-	Provider           string             `json:"provider"`
-	AccountKey         string             `json:"account_key"`
-	NormalizedEmail    string             `json:"normalized_email"`
-	BasicStatus        string             `json:"basic_status"`
-	SuccessCount       int64              `json:"success_count"`
-	FailedCount        int64              `json:"failed_count"`
-	RecentRequestCount int64              `json:"recent_request_count"`
-	LastRefreshAt      pgtype.Timestamptz `json:"last_refresh_at"`
-	NextRetryAt        pgtype.Timestamptz `json:"next_retry_at"`
-	SourceUpdatedAt    pgtype.Timestamptz `json:"source_updated_at"`
-	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
+	PollRunID                   pgtype.UUID        `json:"poll_run_id"`
+	InstanceID                  pgtype.UUID        `json:"instance_id"`
+	Provider                    string             `json:"provider"`
+	AccountKey                  string             `json:"account_key"`
+	NormalizedEmail             string             `json:"normalized_email"`
+	BasicStatus                 string             `json:"basic_status"`
+	SuccessCount                int64              `json:"success_count"`
+	FailedCount                 int64              `json:"failed_count"`
+	RecentRequestCount          int64              `json:"recent_request_count"`
+	LastRefreshAt               pgtype.Timestamptz `json:"last_refresh_at"`
+	NextRetryAt                 pgtype.Timestamptz `json:"next_retry_at"`
+	SourceUpdatedAt             pgtype.Timestamptz `json:"source_updated_at"`
+	ObservedAt                  pgtype.Timestamptz `json:"observed_at"`
+	AvailabilityRuntimeEvidence pgtype.Text        `json:"availability_runtime_evidence"`
+	AuthFailureReason           pgtype.Text        `json:"auth_failure_reason"`
 }
 
 type AccountRequestQualityEvent struct {
-	EventHash    string             `json:"event_hash"`
-	RequestID    string             `json:"request_id"`
-	NodeID       pgtype.UUID        `json:"node_id"`
-	Provider     string             `json:"provider"`
-	AccountKey   pgtype.Text        `json:"account_key"`
-	Model        string             `json:"model"`
-	OccurredAt   pgtype.Timestamptz `json:"occurred_at"`
-	DurationMs   pgtype.Int8        `json:"duration_ms"`
-	Success      bool               `json:"success"`
-	FailureClass pgtype.Text        `json:"failure_class"`
+	EventHash         string             `json:"event_hash"`
+	RequestID         string             `json:"request_id"`
+	NodeID            pgtype.UUID        `json:"node_id"`
+	Provider          string             `json:"provider"`
+	AccountKey        pgtype.Text        `json:"account_key"`
+	Model             string             `json:"model"`
+	OccurredAt        pgtype.Timestamptz `json:"occurred_at"`
+	DurationMs        pgtype.Int8        `json:"duration_ms"`
+	Success           bool               `json:"success"`
+	FailureClass      pgtype.Text        `json:"failure_class"`
+	AuthFailureReason pgtype.Text        `json:"auth_failure_reason"`
 }
 
 type AsyncJob struct {

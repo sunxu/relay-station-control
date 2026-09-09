@@ -127,3 +127,51 @@ func TestNormalizeFailuresAndMalformed(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeAuthFailureReasons(t *testing.T) {
+	node := uuid.New()
+	for _, tc := range []struct {
+		name, raw, want string
+	}{
+		{"token", `{"status":401,"failed":true}`, "token_invalid"},
+		{"grant", `{"failed":true,"fail_summary":"invalid_grant"}`, "token_invalid"},
+		{"blocked", `{"failed":true,"fail_summary":"account_suspended"}`, "account_blocked"},
+		{"blocked wins status", `{"status":401,"failed":true,"fail_summary":"account_blocked"}`, "account_blocked"},
+		{"forbidden", `{"status":403,"failed":true}`, "forbidden"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event, err := Normalize(node, append([]byte(`{"timestamp":"2026-09-08T00:00:00Z","provider":"antigravity",`), tc.raw[1:]...), nil)
+			if err != nil || event.AuthFailureReason == nil || *event.AuthFailureReason != tc.want {
+				t.Fatalf("reason=%v err=%v want=%s", event.AuthFailureReason, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestAvailabilityNormalizationCompatibility(t *testing.T) {
+	for _, tc := range []struct{ provider, fields, wantClass, wantReason string }{
+		{"antigravity", `"failed":true,"fail_status_code":429`, "rate_limit", "other"},
+		{"antigravity", `"failed":true,"fail_status_code":500`, "upstream", "other"},
+		{"antigravity", `"failed":true,"fail_summary":"quota_exceeded"`, "quota", "other"},
+		{"antigravity", `"failed":false,"fail_status_code":401,"fail_summary":"account_blocked"`, "", ""},
+		{"openai", `"failed":true,"fail_status_code":401`, "auth", ""},
+		{"openai", `"failed":true,"fail_summary":"account_suspended"`, "unknown", ""},
+		{"antigravity", `"failed":true,"fail_summary":"account is not account_blocked"`, "unknown", "other"},
+	} {
+		raw := []byte(`{"timestamp":"2026-09-08T00:00:00Z","provider":"` + tc.provider + `","request_id":"stable-request",` + tc.fields + `}`)
+		e, err := Normalize(uuid.New(), raw, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		class, reason := "", ""
+		if e.FailureClass != nil {
+			class = *e.FailureClass
+		}
+		if e.AuthFailureReason != nil {
+			reason = *e.AuthFailureReason
+		}
+		if class != tc.wantClass || reason != tc.wantReason || e.RequestID != "stable-request" {
+			t.Fatalf("provider=%s class=%s reason=%s", tc.provider, class, reason)
+		}
+	}
+}

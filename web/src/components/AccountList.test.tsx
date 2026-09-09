@@ -6,6 +6,13 @@ const row = (overrides: Partial<AccountListRow> = {}): AccountListRow => ({ acco
 const requests = (values: boolean[]) => values.map((success, i) => ({ occurred_at: `2026-09-08T00:0${i}:00Z`, model: "gpt", success, failure_class: success ? null : "auth", duration_ms: i, request_id: `r-${i}` }));
 
 describe("AccountList", () => {
+  it("renders all availability states without adding mutation controls", () => {
+    const states = ["AVAILABLE", "TOKEN_INVALID", "ACCOUNT_BLOCKED", "FORBIDDEN", "UNKNOWN", "DISABLED"] as const;
+    const reasons = ["available", "token_invalid", "account_blocked", "forbidden", "unproven", "disabled"] as const;
+    render(<AccountList rows={states.map((state, index) => row({ account_key: `openai:${index}@example.invalid`, email: `${index}@example.invalid`, availability: { state, reason: reasons[index]!, since: null } }))} />);
+    for (const state of states) expect(screen.getByText(state)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /bind|rebind|unbind|删除|修改/i })).not.toBeInTheDocument();
+  });
   it.each(["good", "degraded", "bad", "unknown"] as const)("renders quality %s", (quality) => { render(<AccountList rows={[row({ quality })]} />); expect(screen.getByText(quality.charAt(0).toUpperCase() + quality.slice(1))).toBeInTheDocument(); });
   it("renders success and failed outcomes", () => { render(<AccountList rows={[row({ recent_requests: requests([true, false]) })]} />); expect(screen.getByLabelText("Success")).toBeInTheDocument(); expect(screen.getByLabelText("Failed auth")).toBeInTheDocument(); });
   it("caps outcomes at ten", () => { render(<AccountList rows={[row({ recent_requests: requests(Array(12).fill(true)) })]} />); expect(screen.getAllByLabelText("Success")).toHaveLength(10); });

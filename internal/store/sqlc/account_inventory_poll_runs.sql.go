@@ -195,7 +195,7 @@ func (q *Queries) FinalizeAccountInventoryPollRun(ctx context.Context, arg Final
 }
 
 const finalizeAccountInventoryPollRunWithLifecycle = `-- name: FinalizeAccountInventoryPollRunWithLifecycle :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(
     $1::uuid,
     $2::uuid,
     $3::boolean,

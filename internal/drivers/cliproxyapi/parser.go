@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/sunxu/relay-station-control/internal/authfailure"
 	"io"
 	"net/http"
 	"regexp"
@@ -154,17 +155,19 @@ func (p ProviderPolicy) OutOfScopeProviders() []string {
 }
 
 type AccountObservation struct {
-	Provider        string
-	Email           string
-	Source          string
-	Status          BaseStatus
-	Success         int64
-	Failed          int64
-	RecentRequests  int
-	LastRefresh     *time.Time
-	NextRetryAfter  *time.Time
-	UpdatedAt       *time.Time
-	OccurrenceCount int
+	Provider                    string
+	Email                       string
+	Source                      string
+	Status                      BaseStatus
+	Success                     int64
+	Failed                      int64
+	RecentRequests              int
+	LastRefresh                 *time.Time
+	NextRetryAfter              *time.Time
+	UpdatedAt                   *time.Time
+	OccurrenceCount             int
+	AvailabilityRuntimeEvidence *string
+	AuthFailureReason           *string
 }
 
 // String and GoString prevent accidental fmt/log projection of the in-memory
@@ -313,11 +316,12 @@ func parseInventory(statusCode int, headers http.Header, body io.Reader, options
 }
 
 type parsedAccount struct {
-	observation AccountObservation
-	providerSet bool
-	emailSet    bool
-	sourceSet   bool
-	diskShape   bool
+	observation    AccountObservation
+	providerSet    bool
+	emailSet       bool
+	sourceSet      bool
+	diskShape      bool
+	unavailableSet bool
 }
 
 func parseAccount(encoded json.RawMessage, now time.Time) (parsedAccount, error) {
@@ -328,7 +332,9 @@ func parseAccount(encoded json.RawMessage, now time.Time) (parsedAccount, error)
 	result := parsedAccount{}
 	var upstreamStatus string
 	var disabled, unavailable bool
+	var disabledSet bool
 	var nextRetry *time.Time
+	var statusMessage json.RawMessage
 
 	for key, raw := range fields {
 		switch key {
@@ -380,12 +386,14 @@ func parseAccount(encoded json.RawMessage, now time.Time) (parsedAccount, error)
 				return parsedAccount{}, err
 			}
 			disabled = value
+			disabledSet = true
 		case "unavailable":
 			value, err := decodeBool(raw)
 			if err != nil {
 				return parsedAccount{}, err
 			}
 			unavailable = value
+			result.unavailableSet = true
 		case "success":
 			value, err := decodeCounter(raw)
 			if err != nil {
@@ -423,6 +431,12 @@ func parseAccount(encoded json.RawMessage, now time.Time) (parsedAccount, error)
 				return parsedAccount{}, err
 			}
 			result.observation.UpdatedAt = value
+		case "status_message":
+			// Keep only a bounded copy for the allowlisted Antigravity marker
+			// parser below. The value is never placed in the observation.
+			if len(raw) <= 8192 {
+				statusMessage = append(statusMessage[:0], raw...)
+			}
 		default:
 			// All non-allowlisted and future fields are discarded at the boundary.
 		}
@@ -432,7 +446,39 @@ func parseAccount(encoded json.RawMessage, now time.Time) (parsedAccount, error)
 	_, hasDisabled := fields["disabled"]
 	result.diskShape = result.providerSet && result.emailSet && hasStatus && hasDisabled
 	result.observation.Status = classifyBaseStatus(disabled, unavailable, upstreamStatus, nextRetry, now)
+	result.observation.AvailabilityRuntimeEvidence = availabilityRuntimeEvidence(result, upstreamStatus, disabled, disabledSet, unavailable, now)
+	if result.observation.Provider == "antigravity" && result.observation.AvailabilityRuntimeEvidence != nil {
+		evidence := *result.observation.AvailabilityRuntimeEvidence
+		// A healthy/disabled/unknown file observation has no authentication
+		// failure evidence. Only classify a marker when the bounded status
+		// message is present, or when runtime itself reports an error.
+		if evidence == "file_error" || evidence == "file_unavailable" || len(statusMessage) > 0 {
+			if reason := authfailure.Classify(0, statusMessage); reason != "" && (reason != "other" || evidence == "file_error" || evidence == "file_unavailable") {
+				result.observation.AuthFailureReason = &reason
+			}
+		}
+	}
 	return result, nil
+}
+
+func availabilityRuntimeEvidence(result parsedAccount, upstreamStatus string, disabled, disabledSet, unavailable bool, now time.Time) *string {
+	if result.observation.Provider != "antigravity" || result.observation.Source != "file" || !result.sourceSet || !result.providerSet || !result.emailSet {
+		return nil
+	}
+	value := "file_unknown"
+	switch {
+	case !result.diskShape || !disabledSet || !result.unavailableSet:
+		value = "file_unknown"
+	case disabled:
+		value = "file_disabled"
+	case unavailable:
+		value = "file_unavailable"
+	case strings.EqualFold(strings.TrimSpace(upstreamStatus), "error"):
+		value = "file_error"
+	case strings.EqualFold(strings.TrimSpace(upstreamStatus), "active") && (result.observation.NextRetryAfter == nil || !result.observation.NextRetryAfter.After(now)):
+		value = "file_active"
+	}
+	return &value
 }
 
 func decodeString(raw json.RawMessage) (string, error) {

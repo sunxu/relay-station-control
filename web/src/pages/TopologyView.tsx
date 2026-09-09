@@ -183,6 +183,7 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
       provider_last_complete_at: typeof inventory.provider_last_complete_at === "string" ? inventory.provider_last_complete_at : null,
       provider_degraded: inventory.provider_degraded === true,
       snapshot_freshness: typeof inventory.snapshot_freshness === "string" ? inventory.snapshot_freshness : undefined,
+      availability: (item as AccountQualityItem & { availability?: AccountListRow["availability"] }).availability,
     };
   });
   return <Flex vertical gap={16} data-testid="topology-view" className="topology-view" style={{ minWidth: 0 }}>
