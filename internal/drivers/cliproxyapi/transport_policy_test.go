@@ -22,7 +22,7 @@ func TestManagementTransportAllowsHTTPWithoutTargetPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transport, err := newSecureTransport(server.URL, validated, transportOptions{})
+	transport, err := newTransport(server.URL, validated, transportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestManagementTransportAllowsHTTPWithoutTargetPolicy(t *testing.T) {
 
 func TestManagementEndpointKeepsURLStructureValidation(t *testing.T) {
 	for _, endpoint := range []string{
-		"http://127.0.0.1:8080", "https://unlisted.invalid", "http://169.254.169.254", "https://[::1]:8443/base",
+		"http://127.0.0.1:8080", "http://169.254.169.254",
 	} {
 		if _, err := validateEndpoint(endpoint); err != nil {
 			t.Errorf("valid management endpoint rejected: %s", endpoint)

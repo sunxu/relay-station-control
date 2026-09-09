@@ -2,17 +2,8 @@ package cliproxyapi
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
-	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -200,28 +191,11 @@ func TestSecureTransportRejectsEveryRedirectWithoutSecondRequest(t *testing.T) {
 	}
 }
 
-func TestManagementTransportUnverifiedTLS(t *testing.T) {
-	for _, expired := range []bool{false, true} {
-		t.Run(fmt.Sprintf("expired=%t", expired), func(t *testing.T) {
-			until := time.Now().Add(time.Hour)
-			if expired {
-				until = time.Now().Add(-time.Hour)
-			}
-			cert, _ := makeServerCertificate(t, "unrelated.invalid", time.Now().Add(-2*time.Hour), until)
-			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, `{"status":"ok"}`) }))
-			server.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
-			server.StartTLS()
-			defer server.Close()
-			transport, err := newSecureTransport(server.URL, mustManagementConfig(t, nil, nil, nil), transportOptions{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			response, err := transport.getHealth(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			_ = response.Body.Close()
-		})
+func TestManagementTransportRejectsHTTPS(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	if _, err := newTransport(strings.Replace(server.URL, "http://", "https://", 1), mustManagementConfig(t, nil, nil, nil), transportOptions{}); err == nil {
+		t.Fatal("expected HTTPS endpoint rejection")
 	}
 }
 
@@ -375,7 +349,7 @@ func newCustomTimeoutTransportWithServer(t *testing.T, actualAddress string, res
 	config := mustManagementConfig(t, []string{"node.example.invalid"}, []string{"10.42.0.0/16"}, []string{"10.42.0.0/24"})
 	config.ConnectTimeout = connect
 	config.RequestTimeout = request
-	transport, err := newSecureTransport("http://node.example.invalid"+listenerPort(t, actualAddress)+basePath, config,
+	transport, err := newTransport("http://node.example.invalid"+listenerPort(t, actualAddress)+basePath, config,
 		transportOptions{Dialer: dialer})
 	if err != nil {
 		t.Fatalf("new transport: %v", err)
@@ -398,62 +372,6 @@ func assertRequestReason(t *testing.T, err error, want FailureReason) {
 	if !errors.As(err, &requestError) || requestError.Reason != want {
 		t.Fatalf("error=%v, want RequestError reason %q", err, want)
 	}
-}
-
-func makeServerCertificate(t *testing.T, dnsName string, notBefore, notAfter time.Time) (tls.Certificate, *x509.CertPool) {
-	t.Helper()
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	caTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "CLIProxyAPI transport test CA"},
-		NotBefore:             time.Now().Add(-24 * time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageCertSign,
-	}
-	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca, err := x509.ParseCertificate(caDER)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leafTemplate := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: dnsName},
-		DNSNames:     []string{dnsName},
-		NotBefore:    notBefore,
-		NotAfter:     notAfter,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-	}
-	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, ca, &leafKey.PublicKey, caKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leafKeyDER, err := x509.MarshalPKCS8PrivateKey(leafKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	certificate, err := tls.X509KeyPair(
-		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: leafKeyDER}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	roots := x509.NewCertPool()
-	roots.AddCert(ca)
-	return certificate, roots
 }
 
 func TestValidatedTimeoutsMatchSharedBounds(t *testing.T) {

@@ -181,7 +181,7 @@ func (driver *Driver) ListAccountInventory(ctx context.Context, request drivers.
 }
 
 func (driver *Driver) transport(endpoint string) (*safeTransport, error) {
-	return newSecureTransport(endpoint, driver.management, transportOptions{
+	return newTransport(endpoint, driver.management, transportOptions{
 		Dialer: driver.dialer,
 	})
 }

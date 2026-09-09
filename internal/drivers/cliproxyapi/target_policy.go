@@ -32,7 +32,7 @@ func validateEndpoint(raw string) (validatedEndpoint, error) {
 		return validatedEndpoint{}, &ConfigurationError{Reason: ConfigurationInvalidEndpoint}
 	}
 	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if scheme != "http" {
 		return validatedEndpoint{}, &ConfigurationError{Reason: ConfigurationInvalidEndpoint}
 	}
 	hostname := strings.ToLower(parsed.Hostname())
@@ -42,9 +42,6 @@ func validateEndpoint(raw string) (validatedEndpoint, error) {
 	port := parsed.Port()
 	if port == "" {
 		port = "80"
-		if scheme == "https" {
-			port = "443"
-		}
 	} else {
 		value, parseErr := strconv.ParseUint(port, 10, 16)
 		if parseErr != nil || value == 0 {

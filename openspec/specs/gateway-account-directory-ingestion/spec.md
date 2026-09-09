@@ -329,26 +329,26 @@ Control SHALL 默认关闭 Directory runtime；显式启用后由产品进程运
 - **WHEN** runtime先执行ReconcileTick再执行WorkOnce，列表前项缓慢或失败，后项合法
 - **THEN** 通过每项RunGatewayOnce中的共同ScheduleCurrent调度，不额外执行ScheduleTick；后项继续处理并使用轮到时的DB当前槽，同槽不重复、不回填历史，取消和既有预算保持不变
 
-### Requirement: Directory transport SHALL 直接支持HTTP和不验证证书的HTTPS
+### Requirement: Directory transport SHALL 仅使用内部HTTP
 
-Directory SHALL 直接使用登记的HTTP/HTTPS endpoint，不检查origin白名单、CIDR/DNS许可或HTTP opt-in。HTTPS MUST 不验证证书链、有效期和主机名；此行为 MUST 与Control的Gateway/Node管理出站策略一致，不影响Control入站或数据面。客户端仍须解析HTTP/HTTPS请求URL，保留既有资产登记契约、Bearer token认证及响应完整性验证。
+Directory SHALL 直接使用登记的 HTTP endpoint，不检查origin白名单、CIDR/DNS许可或HTTP opt-in。内部 `https://` endpoint MUST 在 runtime 启动/构造校验阶段拒绝，不得发出请求或保留双协议分支；不保留内部 CA、certificate 或 hostname-validation 配置。此行为 MUST 与Control的Gateway/Node管理出站策略一致，不影响Control入站或数据面。客户端仍须解析 HTTP 请求URL，保留既有资产登记契约、Bearer token认证及响应完整性验证。
 
-HTTP明文传输以及HTTPS不认证服务端的事实 MUST 记录在Runbook。TLS握手失败 MUST NOT 自动降级为HTTP；所有redirect MUST 拒绝；超时、响应大小及账号数上限不变。
+HTTP 明文传输依赖受限内部网络与 service authentication；不提供对可监听 east-west 流量攻击者的机密性保护。所有 redirect MUST 拒绝；超时、响应大小及账号数上限不变。
 
 #### Scenario: HTTP直接成功
 - **WHEN** 已登记HTTP目标返回合法source且reader token有效，未配置任何transport许可列表
 - **THEN** 正常完成fetch、验证和durable finalize，freshness按成功DB观测推进
 
-#### Scenario: HTTPS证书不验证
-- **WHEN** HTTPS目标分别使用自签名、未知CA、过期或主机名不匹配证书，TLS握手可完成且token/source合法
-- **THEN** Directory请求成功，不因上述证书属性拒绝；Node管理客户端采用相同策略，范围外客户端保持原策略
+#### Scenario: 内部 HTTPS endpoint 被拒绝
+- **WHEN** Directory runtime 配置为 `https://` endpoint
+- **THEN** 配置校验失败且不得发起 Directory 请求
 
-#### Scenario: 无效URL或TLS握手失败
-- **WHEN** 请求URL无法解析、协议不是HTTP/HTTPS，或TLS握手无法完成
-- **THEN** 记录既有配置/请求失败，不刷新freshness，也不自动改用HTTP
+#### Scenario: 无效URL
+- **WHEN** 请求URL无法解析或协议不是HTTP
+- **THEN** 记录既有配置/请求失败，不刷新freshness
 
-#### Scenario: 双协议redirect拒绝
-- **WHEN** HTTP或HTTPS目标返回任意redirect
+#### Scenario: HTTP redirect拒绝
+- **WHEN** HTTP目标返回任意redirect
 - **THEN** 不跟随，不向新目标转发token，沿用原失败分类
 
 #### Scenario: Secret丢失与轮换

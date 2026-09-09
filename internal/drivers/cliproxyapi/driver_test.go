@@ -183,16 +183,17 @@ func TestDriverFailsBeforeSecretDNSOrNetworkAndConstructorIsDormant(t *testing.T
 	target := drivers.NodeTarget{
 		InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI,
 		DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1,
-		ManagementEndpoint:    "https://node.example.invalid",
+		ManagementEndpoint:    "ftp://node.example.invalid",
 		ReaderSecretReference: drivers.NewSecretReference("file://unknown/canary"),
 		Capabilities:          []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead},
 	}
 	invalidPolicy := drivers.InventoryRequest{Target: target}
 	observation, err := driver.ListAccountInventory(context.Background(), invalidPolicy)
-	if err == nil || observation.Reason != drivers.ReasonContractInvalid || secretResolver.calls.Load() != 0 || dnsResolver.callCount() != 0 {
+	if err == nil || observation.Reason != drivers.ReasonTargetRejected || secretResolver.calls.Load() != 0 || dnsResolver.callCount() != 0 {
 		t.Fatalf("policy ordering = %#v, %v, secret=%d dns=%d", observation, err, secretResolver.calls.Load(), dnsResolver.callCount())
 	}
 	validPolicy := invalidPolicy
+	validPolicy.Target.ManagementEndpoint = "http://node.example.invalid"
 	validPolicy.ProviderPolicy = drivers.ProviderPolicySnapshot{VersionID: uuid.New(), ActiveProviders: []string{"antigravity"}}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()

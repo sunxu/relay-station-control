@@ -3,7 +3,6 @@ package cliproxyapi
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -87,10 +86,10 @@ type safeTransport struct {
 	client         *http.Client
 }
 
-// newSecureTransport performs startup validation and constructs an isolated HTTP
+// newTransport performs startup validation and constructs an isolated HTTP
 // stack. It never consults proxy environment variables and never shares a
 // cookie jar or the process-wide default transport.
-func newSecureTransport(endpoint string, config rootdrivers.ValidatedManagementConfig, options transportOptions) (*safeTransport, error) {
+func newTransport(endpoint string, config rootdrivers.ValidatedManagementConfig, options transportOptions) (*safeTransport, error) {
 	validated, err := validateEndpoint(endpoint)
 	if err != nil {
 		return nil, err
@@ -117,10 +116,6 @@ func newSecureTransport(endpoint string, config rootdrivers.ValidatedManagementC
 	if result.inventoryLimit <= 0 {
 		result.inventoryLimit = rootdrivers.DefaultInventoryResponseBytes
 	}
-	tlsConfig := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: true, // management transport intentionally does not authenticate the peer
-	}
 	transport := &http.Transport{
 		Proxy:                  nil,
 		DialContext:            result.dialContext,
@@ -133,8 +128,6 @@ func newSecureTransport(endpoint string, config rootdrivers.ValidatedManagementC
 		ResponseHeaderTimeout:  requestTimeout,
 		ExpectContinueTimeout:  0,
 		MaxResponseHeaderBytes: 64 << 10,
-		TLSClientConfig:        tlsConfig,
-		TLSNextProto:           make(map[string]func(string, *tls.Conn) http.RoundTripper),
 	}
 	result.client = &http.Client{
 		Transport: transport,

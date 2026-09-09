@@ -4,7 +4,7 @@
 
 Relay Station internal network is a trusted transport domain. Internal HTTP does not provide confidentiality against an attacker capable of sniffing east-west traffic; token confidentiality therefore depends on network isolation.
 
-所有 local/staging/production 的 service-to-service HTTP 调用 MUST 使用 `http://`。范围包括：Control→Gateway Directory、Control→CLIProxyAPI `/healthz`、Control→CLIProxyAPI `/v0/management/auth-files`、Gateway→Relay Node AI data API 以及其它明确属于 Relay Station 内部的 HTTP API。PostgreSQL、Redis 和外部上游协议不在本契约内。
+Control/management-plane 的内部 HTTP endpoint MUST 在 local/staging/production 使用 `http://`。范围仅包括 Control→Gateway Directory、Control→CLIProxyAPI `/healthz` 和 `/v0/management/auth-files`。Gateway→Relay Node AI endpoint、Gateway→generic upstream/Account、Sub2API Account `base_url`、generic HTTP client、外部 HTTPS、OAuth、payment、update/download API、PostgreSQL、Redis 和其它数据面/外部协议不在本契约内。
 
 Gateway Directory 的服务认证与路由授权独立于传输：保留 `relay_control_reader` 独立 high-entropy token，只允许精确 `GET /internal/v1/api-account-directory`；其它 method/path 默认拒绝。Gateway public ingress MUST 拒绝 `/internal/v1/*`，内部 listener 只绑定 private Docker network/VPC/防火墙允许的管理地址。
 
@@ -14,7 +14,7 @@ Browser/external ingress→Control 不由本 change 强制改为 HTTP。已有 p
 
 ## Current runtime and rollback boundary
 
-Control、Gateway 和 Ops 当前版本的内部 endpoint MUST 使用 `http://`。内部 endpoint validator MUST 拒绝 `https://`；runtime configuration 不得接受内部 HTTPS endpoint，部署模板不得生成内部 HTTPS endpoint。当前版本不得保留 scheme-dependent 的 HTTP/HTTPS runtime branch，也不得保留 CA、certificate 或 hostname-validation 的内部 runtime 配置。删除 internal TLS proxy、internal certificate/CA/hostname validation、mTLS future requirement 及“HTTP 仅 local 例外”的门禁。
+Control 当前版本的管理 endpoint MUST 使用 `http://`。Control management endpoint validator MUST 拒绝 `https://`；Control runtime configuration 不得接受内部 HTTPS management endpoint，部署模板不得为这些管理调用生成 HTTPS。当前 Control management runtime 不得保留 scheme-dependent 的 HTTP/HTTPS branch，也不得保留其 CA、certificate 或 hostname-validation 配置。Gateway Directory server 无需新增 scheme validator；Gateway data-plane upstream 不受本 change 约束。删除属于 Control management-plane 的 internal TLS proxy、certificate/CA/hostname validation、mTLS future requirement 及“HTTP 仅 local 例外”的门禁。
 
 历史 HTTPS 支持只能存在于 old released binaries/images、Git history、archived deployment configuration 以及 certificate backup/rollback material。当前版本不得为了 rollback 继续接受 `https://`；回滚必须通过部署 old application/deployment version 实现，而不是依赖当前 runtime 的双协议兼容。
 
@@ -42,7 +42,7 @@ Compose/private network、VPC、firewall、Security Group 和 ingress ACL 必须
 
 ## Required acceptance after Architecture approval
 
-- 每类内部调用在 local/staging/production 的配置和代码都选择 HTTP。
+- Control 管理调用在 local/staging/production 的配置和代码都选择 HTTP；Gateway data-plane upstream 继续由 Sub2API 原生 transport 决定。
 - 公网无法访问内部管理路由；精确 token/method/path 授权仍生效。
 - HTTP client 无 proxy、无 redirect，超时和响应限制保持。
 - Browser production HTTPS/Secure Cookie 行为未被改变。

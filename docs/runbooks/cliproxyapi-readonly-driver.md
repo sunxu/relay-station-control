@@ -18,7 +18,7 @@ Driver 只表示一次内存观察。`/healthz` 成功不代表账号池完整�
 只有在以下条件全部满足时，Account Inventory runtime 才能构造并调用 Driver：
 
 1. 资产的 `node_type` 为固定 `cliproxyapi`，Driver 合约版本与代码登记值相同，并声明需要的 `management_health_read` 或 `management_account_inventory_read` capability。
-2. management endpoint 是无 query/fragment/userinfo 的绝对 `http` 或 `https` URL。两种 scheme 均可直接使用；HTTPS 不验证证书链、有效期或 hostname。
+2. management endpoint 是无 query/fragment/userinfo 的绝对 `http` URL。当前版本拒绝内部 `https://` endpoint；历史 HTTPS 仅属于旧版本回滚材料。
 3. opaque Secret 引用映射到容器中的安全普通文件。映射和 Secret 文件不得是 symlink/目录，owner 必须是 root 或 Control 运行 UID，group/other 不得具有任何权限，内容必须非空且有界。
 
 任一资产、endpoint、Secret 或 capability 缺失、矛盾、越界或未登记值都必须 fail closed，不得把 Secret 引用文本当作 Key，不得从数据库字符串动态加载 Driver。旧 DNS/CIDR/CA 配置不再作为启动门禁。
@@ -44,7 +44,7 @@ Driver registry 启动只校验登记、Secret mapping 和运行时预算；每�
 - Control 与 Node management 接口使用独立网络路径；Gateway 和浏览器不能访问该接口。
 - Driver 的专用 Transport 固定为无代理、无 Cookie jar、无自动重试、拒绝所有重定向。`HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` 及小写变体不能影响它。
 - Driver 直接使用登记 endpoint 的标准 DNS 与拨号行为；不执行 DNS、IP、CIDR、特殊地址或 SSRF 目标许可检查。
-- HTTPS 使用专用 transport 的 `InsecureSkipVerify`，不验证证书链、有效期或 hostname；HTTP/HTTPS 均不自动降级或跟随重定向。
+- Internal HTTP 使用专用 transport，不读取代理环境变量、不自动降级或跟随重定向；内部网络隔离与 Management Key 负责边界保护。
 - 若在 Node 前方放置反向代理，只允许上述两个精确 GET；auth-files 路径的认证 header 不得被记录，其他 method/path 应在边缘层拒绝。
 
 ## 4. 限制、失败与恢复
@@ -56,7 +56,7 @@ Driver registry 启动只校验登记、Secret mapping 和运行时预算；每�
 故障恢复不需要清理缓存或重启：
 
 1. 修复 Secret 文件权限/内容、endpoint、路由或上游服务；
-2. 使用下一次 runtime attempt 重新执行 Secret、URL、HTTP/TLS 握手与响应契约检查；
+2. 使用下一次 runtime attempt 重新执行 Secret、HTTP URL 与响应契约检查；
 3. 不要为未知结果手工重放或将 Driver 登记为 durable-job Executor。
 
 Control/Driver/management 网络停止时，只读观察暂停；Gateway 与 Relay Node 已有数据面请求应继续。
@@ -71,7 +71,7 @@ Control/Driver/management 网络停止时，只读观察暂停；Gateway 与 Rel
 ## 6. 发布与回滚
 
 1. 先验证 registry、Secret 映射、endpoint 结构和预算，再发布 Control。非法核心配置应在 listener 前失败；退役 DNS/CIDR/CA 变量不作为门禁。
-2. 在隔离测试服务完成 HTTP/HTTPS、错误证书仍可连接、redirect、proxy、body/record limit 和 timeout/cancel 验收。
+2. 在隔离测试服务完成 HTTP-only、HTTPS 配置拒绝、redirect、proxy、body/record limit 和 timeout/cancel 验收。
 3. 官方镜像或真实测试 Node 冒烟最多两个 Node，所有 management 请求串行，任意相邻请求间隔至少 `10s`。不修改 Node 配置或账号。
 4. 应用回滚只回退 Control 二进制和 Driver 配置；若回退到旧版本，必须同时恢复旧 DNS/CIDR/CA 策略和有效证书配置，否则停止受影响 Driver。当前 runtime 的 forward migration 必须保留，不执行数据库 down。具体 runtime 停止、回滚和租约处理见 [Gateway Directory runtime 运行手册](gateway-directory-runtime.md)。
 
@@ -97,11 +97,11 @@ OpenSpec 验证使用已安装 CLI，同样不需要 Node 凭据：
 openspec validate --specs --strict
 ```
 
-官方镜像/真实 Node 冒烟不是 dry run；只能使用受控验收脚本执行，不得为了手工调试绕过 Secret、固定路径、TLS 握手、响应上限或 `10s` 限速。
+官方镜像/真实 Node 冒烟不是 dry run；只能使用受控验收脚本执行，不得为了手工调试绕过 Secret、固定路径、HTTP-only 校验、响应上限或 `10s` 限速。
 
 ## 8. 官方镜像/受控 Node 冒烟
 
-`deploy/acceptance/cliproxyapi-readonly-smoke.sh` 是本 change 唯一允许的直接 management 冒烟入口。它最多接受两个 Node，用全局锁防止并发，并调用与 Control 相同的 Go Driver/Secret resolver/URL/TLS/parser 路径。每次请求结束后无条件等待 `10s`，包括 HTTP 失败和超时。它仅输出 node 序号、固定 result/reason、mode 和有界计数；原始 body/header/error 只在有界内存中处理，不落盘。
+`deploy/acceptance/cliproxyapi-readonly-smoke.sh` 是本 change 唯一允许的直接 management 冒烟入口。它最多接受两个 Node，用全局锁防止并发，并调用与 Control 相同的 Go Driver/Secret resolver/HTTP URL/parser 路径。每次请求结束后无条件等待 `10s`，包括 HTTP 失败和超时。它仅输出 node 序号、固定 result/reason、mode 和有界计数；原始 body/header/error 只在有界内存中处理，不落盘。
 
 不得使用 `ops/phase0ctl check` 或 `deploy/acceptance/control-auth-e2e.sh data-plane|all` 代替本冒烟：它们的 health/auth-files/models 管理请求不具备该全局 `10s` 间隔。
 

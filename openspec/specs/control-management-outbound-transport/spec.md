@@ -2,17 +2,21 @@
 
 ## Purpose
 
-统一 Control 对 Gateway Directory 与 CLIProxyAPI Node 的管理出站传输边界，明确 HTTP/HTTPS、目标与证书验证、Secret 隔离、固定接口、失败限制及旧配置退役的契约，同时保持入站认证和原生数据面职责不变。
+统一 Control 对 Gateway Directory 与 CLIProxyAPI Node 的管理出站传输边界，明确内部 HTTP-only、Secret 隔离、固定接口、失败限制及旧配置退役的契约，同时保持入站认证和原生数据面职责不变。
 
 ## Requirements
 
 ### Requirement: Control Gateway和Node管理出站 SHALL 使用统一传输边界
 
-Control当前及未来Gateway/Node管理客户端 SHALL 直接允许HTTP/HTTPS，不施加origin、DNS、IP、CIDR许可列表、特殊地址拒绝或DNS重绑定校验。HTTPS MUST 不验证证书链、有效期或主机名。此契约 MUST NOT 改变Control入站TLS/认证、Gateway到Node数据面或模型提供商连接，亦不授权新增管理写操作。客户端 MUST 保留固定接口、Secret隔离、禁止redirect、无代理策略、超时和响应限制及数据契约验证；TLS握手失败不得自动降级HTTP。
+Control当前及未来 Gateway/Node 管理客户端 SHALL 仅使用 `http://`，不得接受内部 `https://` endpoint；配置校验 MUST 在客户端启动或构造阶段拒绝 HTTPS。不得保留 HTTP/HTTPS 双协议 runtime branch、CA、certificate 或 hostname-validation 内部配置。此契约 MUST NOT 改变Control入站TLS/认证、Gateway到Node数据面或模型提供商连接，亦不授权新增管理写操作。客户端 MUST 保留固定接口、Secret隔离、禁止redirect、无代理策略、超时和响应限制及数据契约验证。
 
 #### Scenario: 当前和后续管理客户端
 - **WHEN** Gateway Directory、Node健康/账号/版本观察或后续批准的管理客户端执行请求
 - **THEN** 均遵守相同传输策略，无额外网络许可或证书验证配置，操作能力仍受原契约限制
+
+#### Scenario: 内部 HTTPS endpoint 被拒绝
+- **WHEN** Control 被配置为使用内部 `https://` Gateway Directory 或 CLIProxyAPI endpoint
+- **THEN** 配置校验在客户端启动或构造阶段失败，且不得发出网络请求
 
 #### Scenario: 范围外链路
 - **WHEN** 验证Control入站登录/TLS及Gateway到Node数据面配置

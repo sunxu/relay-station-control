@@ -3,7 +3,6 @@ package gatewaydirectory
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -64,7 +63,6 @@ func NewClient(managementOrigin string, secretResolver rootdrivers.SecretResolve
 		DisableKeepAlives:  true,
 		DisableCompression: true,
 		MaxConnsPerHost:    1,
-		TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}, // Management outbound contract: deployment owns target trust.
 	}
 	return &Client{
 		baseURL: baseURL,
@@ -155,7 +153,7 @@ func validateManagementOrigin(raw string) (*url.URL, error) {
 		parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
 	}
-	if scheme := strings.ToLower(parsed.Scheme); scheme != "https" && scheme != "http" {
+	if strings.ToLower(parsed.Scheme) != "http" {
 		return nil, &FetchError{Reason: rootdrivers.ReasonTLSRejected, Retryable: false}
 	}
 	if parsed.Path != "" && parsed.Path != "/" {
@@ -165,7 +163,7 @@ func validateManagementOrigin(raw string) (*url.URL, error) {
 		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
 	}
 	normalized := *parsed
-	normalized.Scheme = strings.ToLower(parsed.Scheme)
+	normalized.Scheme = "http"
 	normalized.Path = ""
 	normalized.RawPath = ""
 	return &normalized, nil

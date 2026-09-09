@@ -2,21 +2,25 @@
 
 ## ADDED Requirements
 
-### Requirement: Internal service-to-service transport is HTTP
+### Requirement: Control-managed management endpoints are HTTP-only
 
-Relay Station internal service-to-service calls in local, staging, and production SHALL use `http://`. This includes Control→Gateway Directory, Control→CLIProxyAPI management endpoints, Gateway→Relay Node APIs, and other Relay Station internal HTTP APIs. PostgreSQL, Redis, external OAuth, and upstream provider transport are outside this requirement.
+Control-managed Gateway Directory and CLIProxyAPI management/health endpoints in local, staging, and production SHALL use `http://`. Gateway→Relay Node AI endpoints, Gateway generic Account/upstream transport, Sub2API Account `base_url`, generic HTTP clients, external HTTPS, OAuth, payment, update/download APIs, PostgreSQL, and Redis are outside this requirement.
 
-#### Scenario: Internal calls in every environment
-- **WHEN** a supported deployment environment configures an internal Relay Station endpoint
+#### Scenario: Control management calls in every environment
+- **WHEN** a supported deployment environment configures a Control→Gateway Directory or Control→CLIProxyAPI management endpoint
 - **THEN** the endpoint uses HTTP and no production-only HTTPS/TLS requirement rejects it
 
 #### Scenario: HTTPS internal endpoint is rejected
-- **WHEN** the current Control, Gateway, or Ops runtime is configured with an `https://` Relay Station internal endpoint
-- **THEN** configuration validation rejects it before the internal client or service starts using that endpoint
+- **WHEN** current Control runtime is configured with `https://` for Gateway Directory or CLIProxyAPI management/health
+- **THEN** Control configuration/client construction rejects it before any request is sent
 
 #### Scenario: Deployment templates are HTTP-only
-- **WHEN** a current deployment template generates a Control→Gateway Directory, Control→CLIProxyAPI management, or Gateway→Relay Node internal endpoint
+- **WHEN** a current deployment template generates a Control→Gateway Directory or Control→CLIProxyAPI management endpoint
 - **THEN** the generated endpoint is `http://` and the template does not expose an internal HTTPS/TLS option
+
+#### Scenario: Gateway upstream scheme remains native
+- **WHEN** a Gateway Account/upstream uses a scheme supported by Sub2API
+- **THEN** this change does not reject, rewrite, classify, or otherwise alter that endpoint based on Relay Station topology
 
 #### Scenario: Gateway Directory authentication over private HTTP
 - **WHEN** Control calls `GET /internal/v1/api-account-directory` over private HTTP with the dedicated `relay_control_reader` token
@@ -24,7 +28,7 @@ Relay Station internal service-to-service calls in local, staging, and productio
 
 ### Requirement: Internal network and route isolation remain mandatory
 
-Deployments MUST restrict internal management listeners to private Docker/VPC/firewall/Security Group paths. Public ingress MUST reject `/internal/v1/*`; the dedicated service token, Management Key, Secret injection, no-proxy transport, redirect rejection, timeouts, response limits, and logging redaction MUST remain.
+Deployments MUST restrict Control-managed management listeners to private Docker/VPC/firewall/Security Group paths. Public ingress MUST reject `/internal/v1/*`; the dedicated service token, Management Key, Secret injection, no-proxy transport, redirect rejection, timeouts, response limits, and logging redaction MUST remain.
 
 #### Scenario: Public internal route denial
 - **WHEN** a public Gateway ingress receives any `/internal/v1/*` request

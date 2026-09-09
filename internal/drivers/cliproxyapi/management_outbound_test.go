@@ -16,7 +16,7 @@ func TestManagementTransportDoesNotFilterTargetAddresses(t *testing.T) {
 			// All connections are redirected by the test dialer to the local fixture.
 			// No actual metadata/link-local/external service is contacted.
 			dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
-			transport, err := newSecureTransport(endpoint, mustManagementConfig(t, nil, nil, nil), transportOptions{Dialer: dialer})
+			transport, err := newTransport(endpoint, mustManagementConfig(t, nil, nil, nil), transportOptions{Dialer: dialer})
 			if err != nil {
 				t.Fatal(err)
 			}

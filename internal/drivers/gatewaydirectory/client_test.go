@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"io"
 	"net/http"
@@ -46,27 +45,6 @@ func writeTestSecretResolver(t *testing.T, reference, token string) rootdrivers.
 	return resolver
 }
 
-func trustTestServerCertificate(t *testing.T, server *httptest.Server) {
-	t.Helper()
-	if server == nil || server.TLS == nil || len(server.TLS.Certificates) == 0 || len(server.TLS.Certificates[0].Certificate) == 0 {
-		t.Fatal("missing test server certificate")
-	}
-	path := filepath.Join(t.TempDir(), "directory-server.pem")
-	file, err := os.Create(path)
-	if err != nil {
-		t.Fatalf("create certificate file: %v", err)
-	}
-	if err := pem.Encode(file, &pem.Block{Type: "CERTIFICATE", Bytes: server.TLS.Certificates[0].Certificate[0]}); err != nil {
-		_ = file.Close()
-		t.Fatalf("encode certificate file: %v", err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatalf("close certificate file: %v", err)
-	}
-	t.Setenv("SSL_CERT_FILE", path)
-	t.Setenv("SSL_CERT_DIR", "")
-}
-
 func requireFetchReason(t *testing.T, err error, want rootdrivers.Reason) {
 	t.Helper()
 	var fetchErr *FetchError
@@ -102,11 +80,10 @@ func TestClientFetchAndTransportGuards(t *testing.T) {
 
 	t.Run("redirect rejected", func(t *testing.T) {
 		resolver := writeTestSecretResolver(t, "file://gateway-directory/reader", "reader-token")
-		server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			http.Redirect(writer, request, "https://example.invalid/redirect", http.StatusFound)
 		}))
 		defer server.Close()
-		trustTestServerCertificate(t, server)
 
 		client, err := NewClient(server.URL, resolver)
 		if err != nil {
@@ -145,7 +122,7 @@ func TestClientFetchAndTransportGuards(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if request.URL.Path != directoryPath {
 				t.Fatalf("path = %s, want %s", request.URL.Path, directoryPath)
 			}
@@ -156,7 +133,6 @@ func TestClientFetchAndTransportGuards(t *testing.T) {
 			_, _ = writer.Write(body)
 		}))
 		defer server.Close()
-		trustTestServerCertificate(t, server)
 
 		client, err := NewClient(server.URL, resolver)
 		if err != nil {
@@ -187,12 +163,11 @@ func TestClientFetchAndTransportGuards(t *testing.T) {
 
 	t.Run("body limit", func(t *testing.T) {
 		resolver := writeTestSecretResolver(t, "file://gateway-directory/reader", "reader-token")
-		server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write(bytes.Repeat([]byte("x"), int(DefaultBodyLimitBytes)+1))
 		}))
 		defer server.Close()
-		trustTestServerCertificate(t, server)
 
 		client, err := NewClient(server.URL, resolver)
 		if err != nil {

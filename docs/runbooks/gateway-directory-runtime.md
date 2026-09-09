@@ -38,9 +38,9 @@ runtime仅通过有效run/fencing限定的`control_query_gateway_directory_targe
 
 ### 管理出站传输
 
-Control的Gateway/Node管理出站直接支持HTTP/HTTPS，不检查origin/DNS/IP/CIDR或特殊地址，不验证HTTPS证书链、有效期、主机名。HTTP明文传输；HTTPS不认证服务端身份，部署方负责目标和网络可信性。固定接口、认证、无代理、禁止redirect、响应验证与限制仍生效；Control入站和数据面不变。
+Control 的 Gateway Directory 管理出站当前版本仅支持内部 HTTP；HTTPS endpoint 在启动配置校验阶段拒绝。内部 HTTP 建立在受限网络与 service authentication 之上，不提供对可监听 east-west 流量攻击者的机密性保护。固定接口、认证、无代理、禁止 redirect、响应验证与限制仍生效；Control 入站和数据面不变。
 
-Node旧`CONTROL_CLIPROXYAPI_MANAGEMENT_DNS`、`CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS`、`CONTROL_CLIPROXYAPI_PLAIN_HTTP_CIDRS`、`CONTROL_CLIPROXYAPI_CA_FILE`均被忽略，不再提供限制。回滚旧版本前恢复其所需旧配置与证书，否则停用受影响采集。
+Node 旧 `CONTROL_CLIPROXYAPI_MANAGEMENT_DNS`、`CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS`、`CONTROL_CLIPROXYAPI_PLAIN_HTTP_CIDRS`、`CONTROL_CLIPROXYAPI_CA_FILE` 均被忽略，不再提供限制。当前版本不接受内部 HTTPS；回滚旧版本前恢复其所需旧配置与证书，否则停用受影响采集。
 
 ### 验证与故障定位
 

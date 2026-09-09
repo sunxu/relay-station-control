@@ -2,7 +2,7 @@
 
 ## 目标与阶段
 
-这是 Relay Station 的跨仓库架构契约修订，目标是把 local、staging、production 的所有内部 service-to-service HTTP 接口统一为 HTTP。该 change 先完成 Architecture Review；通过后才允许修改实现、部署和验收资料。
+这是 Relay Station 的跨仓库架构契约修订，目标是把 local、staging、production 的 Control/management-plane 内部 HTTP 接口统一为 HTTP。该 change 先完成 Architecture Review；通过后才允许修改实现、部署和验收资料。
 
 ## 受影响仓库
 
@@ -13,11 +13,11 @@
 
 ## 用户与运营结果
 
-运营人员在所有部署环境使用受限内部网络中的 HTTP 完成：Control→Gateway Directory、Control→Relay Node 管理接口、Gateway→Relay Node 数据接口及其它 Relay Station 内部 HTTP 调用。浏览器或外部 ingress 到 Control 的 HTTPS/Secure Cookie 策略保持独立，由现有入口配置决定。
+运营人员在所有部署环境使用受限内部网络中的 HTTP 完成 Control→Gateway Directory 与 Control→CLIProxyAPI `/healthz`、`/v0/management/auth-files` 管理调用。Gateway→Relay Node AI、Gateway generic Account/upstream、Sub2API `base_url`、外部 HTTPS 与浏览器 ingress 不受本 change 约束；浏览器 HTTPS/Secure Cookie 策略保持独立。
 
 ## 非目标
 
-本 change 不改变 PostgreSQL/Redis 协议、Gateway Account/Group routing、数据面调度、CLIProxyAPI credential/scheduler、请求语义、API payload、数据库 schema、迁移数据或 mTLS；不新增内部 TLS proxy、证书/CA/hostname 校验，也不以 production 环境自动强制内部 HTTPS。
+本 change 不改变 Gateway→Relay Node AI endpoint、Gateway generic upstream/Account URL scheme、Sub2API Account `base_url`、generic HTTP client、外部 HTTPS、OAuth、payment、update/download API、PostgreSQL/Redis、Gateway Account/Group routing、数据面调度、CLIProxyAPI credential/scheduler、请求语义、API payload、数据库 schema、迁移数据或 mTLS；不新增内部 TLS proxy、证书/CA/hostname 校验，也不以 production 环境自动强制内部 HTTPS。
 
 ## 安全与兼容影响
 
