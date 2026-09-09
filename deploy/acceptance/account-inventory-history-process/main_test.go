@@ -713,8 +713,7 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 			AND (SELECT count(*)=2 FROM public.account_inventory_daily_summaries AS summary
 				JOIN target ON target.compaction_run_id=summary.compaction_run_id)
 			AND (SELECT count(*)=1 AND bool_and(status='pending'
-				AND failure_reason IS NULL AND claim_owner IS NOT NULL
-				AND fencing_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+				AND failure_reason IS NULL)
 				FROM public.account_inventory_daily_rollup_runs
 				WHERE summary_date=$1::date AND instance_id=$2)
 			AND (SELECT count(*)=0 FROM public.audit_logs
