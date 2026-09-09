@@ -2,7 +2,7 @@
 
 ## Current phase
 
-实现阶段已完成；本轮进行Implementation Final Review。已写入additive migration、只读API/UI与生命周期接线；尚未commit、push、deploy或archive。原A1已由用户决策关闭，UNKNOWN永远不告警，other/runtime_unavailable不创建availability occurrence。
+实现阶段已完成，最新正式 Final Review 已通过。Architecture 与 Implementation 均 PASS，P1-1 legacy v1 wrapper/ACL 与 P1-2 strict success watermark 均 CLOSED；当前无 blocker。尚未commit、push、deploy或archive。原A1已由用户决策关闭，UNKNOWN永远不告警，other/runtime_unavailable不创建availability occurrence。
 
 ## Acceptance matrix（实施验收结果）
 
@@ -77,7 +77,21 @@
 ## Implementation Final Review
 
 - Architecture Contract：PASS；实现保持 Antigravity file-only、六态、UNKNOWN永不告警、三种occurrence reason与request_id交叉确认规则。
-- Implementation：PASS；source projection、nullable安全字段、受控migration、checkpoint/occurrence evaluator、生命周期接线、只读API/UI与ACL均已实现并通过对应测试。
+- Implementation：PASS；最新正式 Final Review 已确认 P1-1/P1-2 均关闭。
 - 兼容性边界：CLIProxy零修改；usage queue、collector、event主schema、retention、failure taxonomy及Inventory/Binding/Duplicate truth未改变；无Prometheus/Grafana、quota、inspection或mutation。
 - Blockers：无。非阻塞事项：真实测试需使用可写模块缓存目录，已在验证命令中显式设置 `/Volumes/DevRAM/go-mod`；不影响产品运行时契约。
-- Final Review 结论：PASS，change可进入提交/后续发布审批；本轮不commit、push、deploy或archive。
+- Final Review 结论：PASS；当前无 blocker。
+
+## 历史复审与 P1 修复时间线
+
+- 后续人工复审将 legacy v1 wrapper 的无条件清空、未 promotion 账号清空以及 legacy function ACL 识别为 P1-1，原 PASS 不再代表当前最终状态。
+- 当前修复要求：仅成功返回 finalized row 且 `current_poll_run_id = target_poll_run_id` 时清空 availability metadata；stale/fenced/no-op 与 `promotion_applied=false` 保持 metadata；canonical non-lifecycle 与 legacy functions 不授予 runtime EXECUTE。
+- 上述问题已完成修复并通过最新正式 Final Review；本节保留历史时间线，不改变已批准架构。
+
+## Final Review P1 regression repair
+
+- P1-1：additive migration 以同签名 wrapper 保持旧 v1 finalize API，调用保留的 legacy body 后，按 poll snapshot account keys 将 `account_inventory.availability_runtime_evidence` 与 `auth_failure_reason` 明确置 NULL；v2 writer 不受影响。真实PG `TestLegacyV1FinalizeClearsAvailabilityMetadataPostgres` PASS，且确认清空后 evaluator 不返回 AVAILABLE。
+- P1-2：evaluator 在候选入口以 `failure.occurred_at > latest_success_at` 排除同时间及更早失败；request_id确认、无ID交叉路径和三种 reason 共用该门槛。真实PG `TestAccountAvailabilityFailuresMustFollowSuccessWatermarkPostgres` PASS，覆盖 A/B/C 三种场景。
+- 新增 P1 regression 与 relevant targeted race：PASS（真实 PostgreSQL）。完整 availability race 扩展运行曾出现 `account_inventory_poll_runs_times_ordered` fixture failure；该问题属于父版本既有 fixture 时间边界，与本 Antigravity availability 产品实现无关，因此记录为 non-blocker，不宣称完整扩展 race suite PASS。后续如需修复，应单独建立 test-only change/commit。
+- 最终验证：targeted PostgreSQL、relevant targeted race、`make test build`、change/all OpenSpec strict、`git diff --check` 均 PASS；当前无 blocker。
+- 本轮未修改架构、API contract、CLIProxy、collector、event schema、retention、failure taxonomy；未push、未deploy、未archive。
