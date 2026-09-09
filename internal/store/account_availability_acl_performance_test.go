@@ -23,6 +23,19 @@ func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
 	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.proname IN ('control_query_account_availability_v1','control_query_account_availability_occurrences_v1','control_reconcile_account_availability_v1','control_insert_account_request_quality_events_v2','control_finalize_account_inventory_poll_run_v2','control_finalize_account_inventory_poll_run_with_lifecycle_v2') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog'] AND r.rolname='relay_control_migrator' AND NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')`).Scan(&functions); err != nil || functions != 6 {
 		t.Fatalf("secured functions=%d err=%v", functions, err)
 	}
+	var lifecycleExec, nonLifecycleExec, legacyExec, legacyLifecycleExec, publicLegacyExec bool
+	aclQuery := `SELECT
+		has_function_privilege('relay_control_runtime', 'public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE'),
+		has_function_privilege('relay_control_runtime', 'public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE'),
+		has_function_privilege('relay_control_runtime', 'public.control_finalize_account_inventory_poll_run_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE'),
+		has_function_privilege('relay_control_runtime', 'public.control_finalize_account_inventory_poll_run_with_lifecycle_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE'),
+		has_function_privilege('public', 'public.control_finalize_account_inventory_poll_run_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE')`
+	if err := f.db.owner.QueryRow(ctx, aclQuery).Scan(&lifecycleExec, &nonLifecycleExec, &legacyExec, &legacyLifecycleExec, &publicLegacyExec); err != nil {
+		t.Fatal(err)
+	}
+	if !lifecycleExec || nonLifecycleExec || legacyExec || legacyLifecycleExec || publicLegacyExec {
+		t.Fatalf("legacy ACL lifecycle=%v non_lifecycle=%v legacy=%v legacy_lifecycle=%v public_legacy=%v", lifecycleExec, nonLifecycleExec, legacyExec, legacyLifecycleExec, publicLegacyExec)
+	}
 	for _, q := range []struct {
 		sql  string
 		args []any

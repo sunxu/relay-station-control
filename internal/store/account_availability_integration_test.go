@@ -198,6 +198,44 @@ func TestAccountAvailabilityConfirmationPostgres(t *testing.T) {
 	}
 }
 
+func TestAccountAvailabilityFailuresMustFollowSuccessWatermarkPostgres(t *testing.T) {
+	fa := newAvailabilityFixture(t, 1)
+	t0 := fa.now.Add(-3 * time.Minute)
+	// Case A: the failure at the success timestamp is discarded; only one
+	// strictly-later request remains, which is insufficient to confirm.
+	fa.event(t, 0, "success-a", "success-a", "", t0)
+	fa.event(t, 0, "failure-a", "failure-a", "token_invalid", t0)
+	fa.event(t, 0, "failure-b", "failure-b", "token_invalid", t0.Add(time.Second))
+	fa.reconcile(t)
+
+	// Case B: an equal-time no-request-id failure cannot pair with a later
+	// runtime error because the request evidence is not strictly after success.
+	fb := newAvailabilityFixture(t, 1)
+	t0 = fb.now.Add(-3 * time.Minute)
+	fb.event(t, 0, "success-b", "success-b", "", t0)
+	fb.event(t, 0, "", "failure-no-id", "token_invalid", t0)
+	fb.clock(t, "file_error", nil, t0.Add(time.Second), t0.Truncate(5*time.Minute))
+	fb.reconcile(t)
+
+	// Case C: two distinct request IDs strictly after success still confirm.
+	fc := newAvailabilityFixture(t, 1)
+	t0 = fc.now.Add(-3 * time.Minute)
+	fc.event(t, 0, "success-c", "success-c", "", t0)
+	fc.event(t, 0, "failure-c1", "failure-c1", "token_invalid", t0.Add(time.Second))
+	fc.event(t, 0, "failure-c2", "failure-c2", "token_invalid", t0.Add(2*time.Second))
+	fc.reconcile(t)
+
+	if got := fa.occurrences(t, 0, "ACTIVE"); len(got) != 0 {
+		t.Fatalf("equal-time failure contributed confirmation: %+v", got)
+	}
+	if got := fb.occurrences(t, 0, "ACTIVE"); len(got) != 0 {
+		t.Fatalf("equal-time no-id failure contributed cross confirmation: %+v", got)
+	}
+	if got := fc.occurrences(t, 0, "ACTIVE"); len(got) != 1 || got[0].Reason != "token_invalid" {
+		t.Fatalf("strictly-later failures did not confirm: %+v", got)
+	}
+}
+
 func TestAccountAvailabilityRecoveryRestartAndRetentionPostgres(t *testing.T) {
 	f := newAvailabilityFixture(t, 2)
 	f.event(t, 0, "r1", "f1", "token_invalid", f.now.Add(-5*time.Minute))
