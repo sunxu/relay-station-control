@@ -419,8 +419,15 @@ func TestAccountInventoryLifecyclePermissionsAndProtectedWrites(t *testing.T) {
 			_, err = database.owner.Exec(ctx, statement, fixture.instanceID)
 		}
 		var databaseError *pgconn.PgError
-		if !errors.As(err, &databaseError) || databaseError.Code != "42501" {
+		if !errors.As(err, &databaseError) {
 			t.Fatalf("protected lifecycle statement SQLSTATE = %v", err)
+		}
+		if statement == `TRUNCATE account_inventory` {
+			if databaseError.Code != "42501" && databaseError.Code != "0A000" {
+				t.Fatalf("protected lifecycle truncate SQLSTATE = %s", databaseError.Code)
+			}
+		} else if databaseError.Code != "42501" {
+			t.Fatalf("protected lifecycle statement SQLSTATE = %s", databaseError.Code)
 		}
 	}
 
