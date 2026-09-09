@@ -2,7 +2,7 @@
 
 ## Current phase
 
-实现阶段已完成，最新正式 Final Review 已通过。Architecture 与 Implementation 均 PASS，P1-1 legacy v1 wrapper/ACL 与 P1-2 strict success watermark 均 CLOSED；当前无 blocker。尚未commit、push、deploy或archive。原A1已由用户决策关闭，UNKNOWN永远不告警，other/runtime_unavailable不创建availability occurrence。
+实现阶段已完成，最新正式 Final Review 已通过。Architecture 与 Implementation 均 PASS，P1-1 legacy v1 wrapper/ACL 与 P1-2 strict success watermark 均 CLOSED；当前无 blocker。实现已提交并推送，change 已归档于 `21d9c9668d3814d613c5cc69bbc4296d749f09be`；本地 Control 已部署到 `835fb3a`。原A1已由用户决策关闭，UNKNOWN永远不告警，other/runtime_unavailable不创建availability occurrence。
 
 ## Acceptance matrix（实施验收结果）
 
