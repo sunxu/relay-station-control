@@ -257,6 +257,28 @@ main() {
       sed -nE 's/^--- FAIL: (TestAccountInventoryLifecycle[A-Za-z0-9_]*).*/\1/p' \
         "$runtime_directory/store-core.log" | head -n 1
     )"
+    failed_class=''
+    if grep -Fq 'protected lifecycle statement SQLSTATE' "$runtime_directory/store-core.log"; then
+      failed_class='protected_write'
+    elif grep -Fq ' execute = ' "$runtime_directory/store-core.log"; then
+      failed_class='function_acl_mismatch'
+    elif grep -Fq 'runtime or registrar received direct scope transition audit table privileges' "$runtime_directory/store-core.log"; then
+      failed_class='audit_acl_mismatch'
+    elif grep -Fq 'bounded lifecycle read rows=' "$runtime_directory/store-core.log"; then
+      failed_class='bounded_read'
+    elif grep -Fq 'lifecycle metric rows=' "$runtime_directory/store-core.log"; then
+      failed_class='metrics_read'
+    elif grep -Fq 'future lifecycle-aware activation was accepted' "$runtime_directory/store-core.log"; then
+      failed_class='future_activation'
+    elif grep -Fq 'missing or invalid scope transition reason was accepted' "$runtime_directory/store-core.log"; then
+      failed_class='reason_validation'
+    elif grep -Fq 'protected lifecycle migration down accepted nonempty state' "$runtime_directory/store-core.log"; then
+      failed_class='migration_down_guard'
+    fi
+    if [ -n "$failed_test" ] && [ -n "$failed_class" ]; then
+      echo "account_inventory_lifecycle_postgres=failed reason=lifecycle_store_core_gate_failed failed_test=$failed_test failed_class=$failed_class request_count=0" >&2
+      exit 1
+    fi
     if [ -n "$failed_test" ]; then
       fixed_test_failure 'lifecycle_store_core_gate_failed' "$failed_test"
     fi
