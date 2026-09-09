@@ -20,6 +20,11 @@ fixed_failure() {
   exit 1
 }
 
+fixed_test_failure() {
+  echo "account_inventory_lifecycle_postgres=failed reason=$1 failed_test=$2 request_count=0" >&2
+  exit 1
+}
+
 compose() {
   docker compose --project-name "$project_name" --file "$compose_file" "$@"
 }
@@ -190,7 +195,7 @@ run_policy_mutation_switch_gate() {
 }
 
 main() {
-  local port test_list test_name
+  local port test_list test_name failed_test
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
   command -v docker >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
@@ -248,6 +253,13 @@ main() {
       go test ./internal/store -run '^TestAccountInventoryLifecycle' -count=1
   ) >"$runtime_directory/store-core.log" 2>&1
   then
+    failed_test="$(
+      sed -nE 's/^--- FAIL: (TestAccountInventoryLifecycle[A-Za-z0-9_]*).*/\1/p' \
+        "$runtime_directory/store-core.log" | head -n 1
+    )"
+    if [ -n "$failed_test" ]; then
+      fixed_test_failure 'lifecycle_store_core_gate_failed' "$failed_test"
+    fi
     fixed_failure 'lifecycle_store_core_gate_failed'
   fi
   if ! (
