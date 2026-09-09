@@ -26,7 +26,7 @@ Architecture Review: PASS。P0/P1/P2 = 0。Implementation readiness: READY。Cha
 
 - 前一轮 Architecture Final Review：REQUEST CHANGES（要求并发协议与 ACTIVE persistence redesign）。
 - 本轮 scope reduction 后 Architecture Final Review：PASS。P0/P1/P2 = 0。
-- Change approved for implementation, but implementation has NOT started。
+- Architecture/Implementation Final Review：PASS；P0/P1/P2 = 0；无 blocker。
 
 ## Implementation evidence
 
@@ -41,3 +41,13 @@ Architecture Review: PASS。P0/P1/P2 = 0。Implementation readiness: READY。Cha
 - runtime error after success：success 严格晚于 failure，随后 `file_error` 且 source_at 更晚，occurrence 仍 RESOLVED。
 - FORBIDDEN runtime-only：ACTIVE occurrence 的 `last_failure_at` 在 file_error/file_unavailable 后保持不变。
 - FORBIDDEN active projection：runtime 切回 file_active 且 Inventory fresh/complete/healthy 时 current 为 `UNKNOWN/pending_confirmation`，ACTIVE occurrence 保留。
+
+## Runtime acceptance — 2026-09-09
+
+- IMPLEMENTED / COMMITTED / RUNTIME ACCEPTED。
+- Control revision：`402e0d355fb147c3b60e5681e48956e4c22dba62`。
+- Control image digest：`sha256:2c2897d677e53838605fe0121617c2da7aa9716b9732bf1f17125579b884eba2`。
+- Local PostgreSQL migration version：`27`。
+- P0/P1/P2 = 0。
+- A–G runtime acceptance 全部 PASS：file_active 不恢复 confirmed fault；runtime-only watermark 保持；严格 success watermark recovery；equal timestamp 不恢复；current projection 与 stale/disabled 语义正确。
+- `standardize-internal-http-transport runtime acceptance complete` 为其它 change 的历史文案；本 change 的 runtime acceptance complete。

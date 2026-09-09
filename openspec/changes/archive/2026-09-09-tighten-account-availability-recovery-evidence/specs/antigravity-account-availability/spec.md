@@ -22,6 +22,10 @@
 - **WHEN** 故障后没有成功请求，仅有连续或重复 fresh complete `file_active` observation
 - **THEN** occurrence 保持 ACTIVE，不执行无流量恢复
 
+#### Scenario: Projection evidence does not change lifecycle
+- **WHEN** Inventory stale/incomplete 或合格观察为 DISABLED，或 current projection 因 ACTIVE fault 显示 UNKNOWN/DISABLED
+- **THEN** occurrence lifecycle 不因这些 projection evidence 改变；若独立存在满足既有 guards 的 qualified success，仍按 success recovery rule 处理
+
 #### Scenario: Recurrence and late evidence
 - **WHEN** 已 RESOLVED 后收到迟到或重复失败
 - **THEN** 既有 recurrence、late-evidence 与 occurrence identity 行为保持不变；本 change 不重新定义其 confirmation
