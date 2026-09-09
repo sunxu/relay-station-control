@@ -735,6 +735,54 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 		}
 		select {
 		case <-ctx.Done():
+			if !stateObserved && faultStage == "rollup" {
+				diagnosticContext, diagnosticCancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+				defer diagnosticCancel()
+				var compactionReady, sourceDeleted, providerSummaryReady bool
+				var dailySummaryReady, rollupNotCompleted, auditClean bool
+				err := ownerPool.QueryRow(diagnosticContext, `WITH target AS (
+					SELECT * FROM public.account_inventory_compaction_runs
+					WHERE summary_date=$1::date AND instance_id=$2
+				) SELECT
+					(SELECT count(*)=1 AND bool_and(status='completed' AND source_snapshot_count=2
+						AND deleted_snapshot_count=2 AND octet_length(source_checksum)=32) FROM target),
+					(SELECT count(*)=0 FROM public.account_inventory_snapshot_items AS item
+						JOIN public.account_inventory_poll_runs AS poll ON poll.poll_run_id=item.poll_run_id
+						WHERE poll.instance_id=$2),
+					(SELECT count(*)=1 FROM public.account_inventory_daily_provider_summaries AS summary
+						JOIN target ON target.compaction_run_id=summary.compaction_run_id),
+					(SELECT count(*)=2 FROM public.account_inventory_daily_summaries AS summary
+						JOIN target ON target.compaction_run_id=summary.compaction_run_id),
+					(SELECT count(*)=1 AND bool_and(status<>'completed' AND failure_reason IS NULL)
+						FROM public.account_inventory_daily_rollup_runs
+						WHERE summary_date=$1::date AND instance_id=$2),
+					(SELECT count(*)=0 FROM public.audit_logs
+						WHERE category='account_inventory_history'
+						  AND action='account_inventory_history.failed'
+						  AND details->>'instance'=$2::uuid::text
+						  AND details->>'summary_date'=$1::date::text
+						  AND details->>'phase'='rollup_fail_pending')`,
+					fixture.summaryDate, fixture.instanceID).Scan(
+					&compactionReady, &sourceDeleted, &providerSummaryReady,
+					&dailySummaryReady, &rollupNotCompleted, &auditClean,
+				)
+				if err == nil {
+					switch {
+					case !compactionReady:
+						t.Fatal("history process terminal internal timed out class=rollup_compaction_not_ready")
+					case !sourceDeleted:
+						t.Fatal("history process terminal internal timed out class=rollup_source_not_deleted")
+					case !providerSummaryReady:
+						t.Fatal("history process terminal internal timed out class=rollup_provider_summary_not_ready")
+					case !dailySummaryReady:
+						t.Fatal("history process terminal internal timed out class=rollup_daily_summary_not_ready")
+					case !rollupNotCompleted:
+						t.Fatal("history process terminal internal timed out class=rollup_state_invalid")
+					case !auditClean:
+						t.Fatal("history process terminal internal timed out class=rollup_failure_audit_present")
+					}
+				}
+			}
 			if stateObserved {
 				if faultStage == "retention" {
 					metricsContext, metricsCancel := context.WithTimeout(context.Background(), httpRequestTimeout)

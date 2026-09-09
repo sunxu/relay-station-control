@@ -528,6 +528,24 @@ verify_terminal_internal_source_preserved() {
     if grep -Fq 'class=runtime_not_stopped' "$runtime_directory/${label}-terminal-internal.log"; then
       fixed_failure "${label}_runtime_not_stopped"
     fi
+    if grep -Fq 'class=rollup_compaction_not_ready' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_compaction_not_ready"
+    fi
+    if grep -Fq 'class=rollup_source_not_deleted' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_source_not_deleted"
+    fi
+    if grep -Fq 'class=rollup_provider_summary_not_ready' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_provider_summary_not_ready"
+    fi
+    if grep -Fq 'class=rollup_daily_summary_not_ready' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_daily_summary_not_ready"
+    fi
+    if grep -Fq 'class=rollup_state_invalid' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_state_invalid"
+    fi
+    if grep -Fq 'class=rollup_failure_audit_present' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_failure_audit_present"
+    fi
     if grep -Fq 'class=state_not_ready' "$runtime_directory/${label}-terminal-internal.log"; then
       fixed_failure "${label}_terminal_state_not_ready"
     fi
