@@ -183,14 +183,21 @@ BEGIN
    SELECT e.* FROM scoped e WHERE NOT e.success AND e.auth_failure_reason IN ('token_invalid','account_blocked','forbidden')
     AND e.occurred_at >= moment-interval '15 minutes'
     AND e.occurred_at > COALESCE(cp.recovery_watermark,'-infinity'::timestamptz)
-    AND e.occurred_at >= COALESCE(success_at,'-infinity'::timestamptz)
+    AND e.occurred_at > COALESCE(success_at,'-infinity'::timestamptz)
     AND (e.request_id='' OR NOT EXISTS (SELECT 1 FROM scoped x WHERE x.request_id=e.request_id AND (x.success OR x.auth_failure_reason IS DISTINCT FROM e.auth_failure_reason)))
     AND (e.request_id='' OR NOT EXISTS (SELECT 1 FROM public.account_availability_occurrences o WHERE o.node_id=k.instance_id AND o.account_key=k.account_key AND e.request_id IN(o.confirmation_request_id_1,o.confirmation_request_id_2)))
   ) SELECT COALESCE(jsonb_agg(jsonb_build_object('request_id',u.request_id,'event_hash',u.event_hash,'reason',u.auth_failure_reason,'at',u.occurred_at) ORDER BY u.occurred_at,u.event_hash),'[]'::jsonb) INTO events FROM usable u;
   SELECT EXISTS(SELECT 1 FROM public.account_request_quality_events e JOIN public.account_request_quality_events x ON x.node_id=e.node_id AND x.account_key=e.account_key AND x.request_id=e.request_id
-   WHERE e.node_id=k.instance_id AND e.account_key=k.account_key AND e.request_id<>'' AND e.provider='antigravity' AND e.occurred_at BETWEEN moment-interval '15 minutes' AND moment AND e.occurred_at>=COALESCE(success_at,'-infinity'::timestamptz)
+   WHERE e.node_id=k.instance_id AND e.account_key=k.account_key AND e.request_id<>'' AND e.provider='antigravity' AND e.occurred_at BETWEEN moment-interval '15 minutes' AND moment AND e.occurred_at>COALESCE(success_at,'-infinity'::timestamptz)
    AND x.occurred_at BETWEEN moment-interval '7 days' AND moment AND NOT e.success AND e.auth_failure_reason IN ('token_invalid','account_blocked','forbidden') AND (x.success OR x.auth_failure_reason IS DISTINCT FROM e.auth_failure_reason)) INTO conflict;
-  pending:=jsonb_array_length(events)>0 OR conflict;
+  -- Equal-time failures are excluded from confirmation, but remain pending
+  -- evidence so a concurrent success/failure cannot be presented as healthy.
+  pending:=jsonb_array_length(events)>0 OR conflict OR EXISTS(
+   SELECT 1 FROM public.account_request_quality_events e
+   WHERE e.node_id=k.instance_id AND e.account_key=k.account_key AND e.provider='antigravity'
+     AND NOT e.success AND e.auth_failure_reason IN ('token_invalid','account_blocked','forbidden')
+     AND e.occurred_at BETWEEN moment-interval '15 minutes' AND moment
+     AND e.occurred_at = success_at);
   SELECT max((e->>'at')::timestamptz) INTO latest_failure FROM jsonb_array_elements(events)e;
   latest_failure:=greatest(cp.last_failure_at,latest_failure);
   new_source:=cp.last_runtime_source_at IS NULL OR
@@ -239,7 +246,7 @@ BEGIN
     SELECT o.reason INTO new_reason FROM public.account_availability_occurrences o WHERE o.node_id=k.instance_id AND o.account_key=k.account_key AND o.status='ACTIVE' AND (o.reason<>'forbidden' OR runtime_error)
     ORDER BY CASE o.reason WHEN 'account_blocked' THEN 1 WHEN 'token_invalid' THEN 2 ELSE 3 END LIMIT 1;
     IF new_reason IS NOT NULL THEN new_state:=upper(new_reason);
-    ELSIF conflict OR pending AND COALESCE(latest_failure,'-infinity'::timestamptz)>COALESCE(recovery_at,'-infinity'::timestamptz) OR EXISTS(SELECT 1 FROM public.account_availability_occurrences o WHERE o.node_id=k.instance_id AND o.account_key=k.account_key AND o.status='ACTIVE') THEN new_reason:=CASE WHEN conflict THEN 'conflicting_evidence' ELSE 'pending_confirmation' END;
+    ELSIF conflict OR pending OR EXISTS(SELECT 1 FROM public.account_availability_occurrences o WHERE o.node_id=k.instance_id AND o.account_key=k.account_key AND o.status='ACTIVE') THEN new_reason:=CASE WHEN conflict THEN 'conflicting_evidence' ELSE 'pending_confirmation' END;
     ELSIF runtime_error THEN new_reason:=CASE WHEN src.auth_reason IN ('token_invalid','account_blocked','forbidden') THEN 'pending_confirmation' ELSE 'runtime_unavailable' END;
     ELSIF src.runtime_evidence='file_active' AND COALESCE(src.auth_reason,'other')='other' THEN new_state:='AVAILABLE';new_reason:='available';
     ELSE new_reason:=CASE WHEN src.retry_at>moment THEN 'retry_wait' WHEN src.auth_reason IN ('token_invalid','account_blocked','forbidden') THEN 'pending_confirmation' ELSE 'unproven' END; END IF;
@@ -1019,11 +1026,118 @@ GRANT EXECUTE ON FUNCTION public.control_finalize_account_inventory_poll_run_v2(
 ALTER FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) OWNER TO relay_control_migrator;
 REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) TO relay_control_runtime;
+
+-- Preserve the v1 writer contract while ensuring a rollback to an older
+-- Control cannot inherit v2-only availability metadata. The legacy bodies are
+-- retained under private names and wrapped with the same public signatures.
+DO $$ BEGIN EXECUTE 'ALTER FUNCTION public.control_finalize_account_inventory_poll_run(
+    uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,
+    text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb
+) RENAME TO control_finalize_account_inventory_poll_run_v1_legacy'; END $$;
+DO $$ BEGIN EXECUTE 'ALTER FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(
+    uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,
+    text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb
+) RENAME TO control_finalize_account_inventory_poll_run_with_lifecycle_v1_legacy'; END $$;
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION public.control_finalize_account_inventory_poll_run(
+    target_poll_run_id uuid, expected_fencing_token uuid,
+    result_transport_success boolean, result_response_shape_valid boolean,
+    result_contract_valid boolean, result_inventory_mode text,
+    result_node_identity_complete boolean, result_snapshot_complete boolean,
+    result_degraded boolean, result_result text, result_reason text,
+    result_source_record_count integer, result_identifiable_record_count integer,
+    result_unidentified_record_count integer, result_unsupported_provider_count integer,
+    result_out_of_scope_provider_count integer, result_node_version text,
+    result_node_commit text, provider_results jsonb, snapshot_items jsonb,
+    duplicate_evidence jsonb
+) RETURNS SETOF public.account_inventory_poll_runs
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+DECLARE
+    finalized_record public.account_inventory_poll_runs%ROWTYPE;
+BEGIN
+    SELECT * INTO finalized_record FROM public.control_finalize_account_inventory_poll_run_v1_legacy(
+        target_poll_run_id, expected_fencing_token, result_transport_success,
+        result_response_shape_valid, result_contract_valid, result_inventory_mode,
+        result_node_identity_complete, result_snapshot_complete, result_degraded,
+        result_result, result_reason, result_source_record_count,
+        result_identifiable_record_count, result_unidentified_record_count,
+        result_unsupported_provider_count, result_out_of_scope_provider_count,
+        result_node_version, result_node_commit, provider_results, snapshot_items,
+        duplicate_evidence);
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+    RETURN NEXT finalized_record;
+    UPDATE public.account_inventory AS account
+    SET availability_runtime_evidence = NULL, auth_failure_reason = NULL
+    WHERE account.instance_id = finalized_record.instance_id
+      AND account.current_poll_run_id = target_poll_run_id
+      AND account.account_key IN (SELECT value->>'account_key' FROM jsonb_array_elements(snapshot_items) AS item(value));
+END;
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(
+    target_poll_run_id uuid, expected_fencing_token uuid,
+    result_transport_success boolean, result_response_shape_valid boolean,
+    result_contract_valid boolean, result_inventory_mode text,
+    result_node_identity_complete boolean, result_snapshot_complete boolean,
+    result_degraded boolean, result_result text, result_reason text,
+    result_source_record_count integer, result_identifiable_record_count integer,
+    result_unidentified_record_count integer, result_unsupported_provider_count integer,
+    result_out_of_scope_provider_count integer, result_node_version text,
+    result_node_commit text, provider_results jsonb, snapshot_items jsonb,
+    duplicate_evidence jsonb
+) RETURNS SETOF public.account_inventory_poll_runs
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+DECLARE
+    finalized_record public.account_inventory_poll_runs%ROWTYPE;
+BEGIN
+    SELECT * INTO finalized_record FROM public.control_finalize_account_inventory_poll_run_with_lifecycle_v1_legacy(
+        target_poll_run_id, expected_fencing_token, result_transport_success,
+        result_response_shape_valid, result_contract_valid, result_inventory_mode,
+        result_node_identity_complete, result_snapshot_complete, result_degraded,
+        result_result, result_reason, result_source_record_count,
+        result_identifiable_record_count, result_unidentified_record_count,
+        result_unsupported_provider_count, result_out_of_scope_provider_count,
+        result_node_version, result_node_commit, provider_results, snapshot_items,
+        duplicate_evidence);
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+    RETURN NEXT finalized_record;
+    UPDATE public.account_inventory AS account
+    SET availability_runtime_evidence = NULL, auth_failure_reason = NULL
+    WHERE account.instance_id = finalized_record.instance_id
+      AND account.current_poll_run_id = target_poll_run_id
+      AND account.account_key IN (SELECT value->>'account_key' FROM jsonb_array_elements(snapshot_items) AS item(value));
+END;
+$$;
+-- +goose StatementEnd
+
+ALTER FUNCTION public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) OWNER TO relay_control_migrator;
+ALTER FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) OWNER TO relay_control_migrator;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) TO relay_control_runtime;
+GRANT EXECUTE ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) TO relay_control_runtime;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM relay_control_runtime;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC, relay_control_runtime;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC, relay_control_runtime;
 -- +goose Down
 DROP FUNCTION public.control_query_account_availability_occurrences_v1(uuid,text,text,timestamptz,uuid,integer);
 DROP FUNCTION public.control_query_account_availability_v1(uuid,text[]);
 DROP FUNCTION public.control_finalize_account_inventory_poll_run_v2(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb);
 DROP FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb);
+DROP FUNCTION public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb);
+DROP FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb);
+ALTER FUNCTION public.control_finalize_account_inventory_poll_run_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) RENAME TO control_finalize_account_inventory_poll_run;
+ALTER FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) RENAME TO control_finalize_account_inventory_poll_run_with_lifecycle;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC, relay_control_runtime;
+REVOKE ALL ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.control_finalize_account_inventory_poll_run_with_lifecycle(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb) TO relay_control_runtime;
 DROP FUNCTION public.control_insert_account_request_quality_events_v2(jsonb);
 DROP FUNCTION public.control_reconcile_account_availability_v1(uuid,text);
 DROP FUNCTION public.control_account_availability_source_v1(uuid,text[]);
