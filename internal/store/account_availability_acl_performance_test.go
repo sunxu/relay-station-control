@@ -64,6 +64,10 @@ func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
 		t.Fatalf("legacy backfilled=%v err=%v", reason, err)
 	}
 	var count int
+	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_request_quality_events WHERE auth_failure_reason IS NOT NULL`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	beforeAuthReasonCount := count
 	if err := runAssetGoose(t, ctx, "../..", f.db.ownerURL, "down"); err != nil {
 		t.Fatal(err)
 	}
@@ -76,8 +80,8 @@ func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
 	if err := runAssetGoose(t, ctx, "../..", f.db.ownerURL, "up"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_request_quality_events WHERE auth_failure_reason IS NOT NULL`).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("Up backfilled=%d %v", count, err)
+	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_request_quality_events WHERE auth_failure_reason IS NOT NULL`).Scan(&count); err != nil || count != beforeAuthReasonCount {
+		t.Fatalf("Up changed auth failure reasons=%d before=%d %v", count, beforeAuthReasonCount, err)
 	}
 	f.reconcile(t)
 	f.state(t, 0, "UNKNOWN")

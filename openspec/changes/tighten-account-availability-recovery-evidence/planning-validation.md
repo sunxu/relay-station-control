@@ -27,3 +27,17 @@ Architecture Review: PASS。P0/P1/P2 = 0。Implementation readiness: READY。Cha
 - 前一轮 Architecture Final Review：REQUEST CHANGES（要求并发协议与 ACTIVE persistence redesign）。
 - 本轮 scope reduction 后 Architecture Final Review：PASS。P0/P1/P2 = 0。
 - Change approved for implementation, but implementation has NOT started。
+
+## Implementation evidence
+
+- Migration：`migrations/00027_tighten_account_availability_recovery_evidence.sql`；`00026` 未修改。
+- PostgreSQL availability suite：`go test ./internal/store -run '^TestAccountAvailability.*Postgres$' -count=1`：PASS。
+- Relevant race：`go test -race ./internal/store -run '^TestAccountAvailability(RecoveryEvidence|FreshnessDisabledAndConcurrency)Postgres$' -count=1`：PASS。
+- Full `make test build`：PASS。
+- Scope：request writer、event schema、collector、usage queue、CLIProxyAPI、Gateway、Binding、Duplicate Ownership 未修改。
+
+## P1 regression evidence
+
+- runtime error after success：success 严格晚于 failure，随后 `file_error` 且 source_at 更晚，occurrence 仍 RESOLVED。
+- FORBIDDEN runtime-only：ACTIVE occurrence 的 `last_failure_at` 在 file_error/file_unavailable 后保持不变。
+- FORBIDDEN active projection：runtime 切回 file_active 且 Inventory fresh/complete/healthy 时 current 为 `UNKNOWN/pending_confirmation`，ACTIVE occurrence 保留。

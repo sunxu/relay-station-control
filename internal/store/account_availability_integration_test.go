@@ -284,11 +284,78 @@ func TestAccountAvailabilityRecoveryRestartAndRetentionPostgres(t *testing.T) {
 	}
 	f.clock(t, "file_active", nil, f.now.Add(-6*time.Second), slot.Add(15*time.Minute))
 	f.reconcile(t)
-	if len(f.occurrences(t, 0, "ACTIVE")) != 0 {
-		t.Fatal("adjacent healthy sources did not recover")
+	if len(f.occurrences(t, 0, "ACTIVE")) != 1 {
+		t.Fatal("file_active incorrectly recovered occurrence")
 	}
-	if len(f.occurrences(t, 0, "RESOLVED")) != 2 {
-		t.Fatal("history lost")
+	if len(f.occurrences(t, 0, "RESOLVED")) != 1 {
+		t.Fatal("history changed without success recovery")
+	}
+}
+
+func TestAccountAvailabilityRecoveryEvidencePostgres(t *testing.T) {
+	f := newAvailabilityFixture(t, 4)
+	base := f.now.Add(-3 * time.Minute)
+	// Confirm TOKEN_INVALID and ACCOUNT_BLOCKED independently.
+	f.event(t, 0, "ti-1", "ti-1", "token_invalid", base)
+	f.event(t, 0, "ti-2", "ti-2", "token_invalid", base.Add(time.Second))
+	f.event(t, 1, "ab-1", "ab-1", "account_blocked", base)
+	f.event(t, 1, "ab-2", "ab-2", "account_blocked", base.Add(time.Second))
+	f.event(t, 3, "ti3-1", "ti3-1", "token_invalid", base)
+	f.event(t, 3, "ti3-2", "ti3-2", "token_invalid", base.Add(time.Second))
+	f.event(t, 2, "forbidden-1", "forbidden-1", "forbidden", base)
+	f.clock(t, "file_unavailable", nil, base.Add(time.Second), base.Truncate(5*time.Minute))
+	f.reconcile(t)
+	for _, i := range []int{0, 1, 2, 3} {
+		if len(f.occurrences(t, i, "ACTIVE")) != 1 {
+			t.Fatalf("account %d not active", i)
+		}
+	}
+	// Runtime-only evidence must not advance either failure watermark.
+	beforeTI := f.occurrences(t, 0, "ACTIVE")[0].LastFailureAt
+	beforeAB := f.occurrences(t, 1, "ACTIVE")[0].LastFailureAt
+	beforeForbidden := f.occurrences(t, 2, "ACTIVE")[0].LastFailureAt
+	f.clock(t, "file_error", nil, f.now.Add(-time.Minute), f.now.Truncate(5*time.Minute))
+	f.reconcile(t)
+	if got := f.occurrences(t, 0, "ACTIVE")[0].LastFailureAt; !got.Equal(beforeTI) {
+		t.Fatalf("runtime-only advanced token watermark: %v -> %v", beforeTI, got)
+	}
+	if got := f.occurrences(t, 1, "ACTIVE")[0].LastFailureAt; !got.Equal(beforeAB) {
+		t.Fatalf("runtime-only advanced blocked watermark: %v -> %v", beforeAB, got)
+	}
+	afterForbidden := f.occurrences(t, 2, "ACTIVE")[0].LastFailureAt
+	if !afterForbidden.Equal(beforeForbidden) {
+		t.Fatalf("runtime-only advanced forbidden watermark: %v -> %v", beforeForbidden, afterForbidden)
+	}
+	// file_active is not recovery evidence for either reason.
+	f.clock(t, "file_active", nil, f.now.Add(-30*time.Second), f.now.Truncate(5*time.Minute))
+	f.reconcile(t)
+	if len(f.occurrences(t, 0, "ACTIVE")) != 1 || len(f.occurrences(t, 1, "ACTIVE")) != 1 || len(f.occurrences(t, 2, "ACTIVE")) != 1 {
+		t.Fatal("file_active recovered fault")
+	}
+	// Active FORBIDDEN with active runtime remains UNKNOWN/pending while occurrence stays ACTIVE.
+	availability, err := f.repo.BatchAccountAvailability(context.Background(), f.node, []string{f.keys[2]})
+	if err != nil || availability[f.keys[2]].State != "UNKNOWN" || availability[f.keys[2]].Reason != "pending_confirmation" {
+		t.Fatalf("forbidden active projection=%+v err=%v", availability[f.keys[2]], err)
+	}
+	// A qualified success strictly after last_failure resolves despite runtime-only state.
+	f.event(t, 0, "ti-success", "ti-success", "", f.now.Add(-20*time.Second))
+	f.reconcile(t)
+	if len(f.occurrences(t, 0, "ACTIVE")) != 0 || len(f.occurrences(t, 0, "RESOLVED")) != 1 {
+		t.Fatal("success did not recover token fault")
+	}
+	// Equal timestamp success does not recover a confirmed fault.
+	f.event(t, 1, "ab-equal", "ab-equal", "", f.occurrences(t, 1, "ACTIVE")[0].LastFailureAt)
+	f.reconcile(t)
+	if len(f.occurrences(t, 1, "ACTIVE")) != 1 {
+		t.Fatal("equal timestamp success recovered blocked fault")
+	}
+	// Runtime-only evidence after a qualified success must not block recovery.
+	t1 := f.occurrences(t, 3, "ACTIVE")[0].LastFailureAt
+	f.event(t, 3, "ti3-success", "ti3-success", "", t1.Add(time.Second))
+	f.clock(t, "file_error", nil, f.now.Add(-10*time.Second), f.now.Truncate(5*time.Minute))
+	f.reconcile(t)
+	if len(f.occurrences(t, 3, "ACTIVE")) != 0 || len(f.occurrences(t, 3, "RESOLVED")) != 1 {
+		t.Fatal("runtime-only blocked qualified success recovery")
 	}
 }
 
