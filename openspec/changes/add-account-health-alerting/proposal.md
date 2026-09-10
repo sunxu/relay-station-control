@@ -15,7 +15,7 @@ Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Archite
 ### New Capabilities
 - `account-health-alerting`：Token projection、Problem Accounts、DingTalk 生命周期与运行时验收。
 ### Modified Capabilities
-- `durable-job`：增加默认 false 的 job-kind execution policy `allow_unknown_effect_replay`，仅 dingtalk_alert_delivery 启用；在剩余五次 Execute 总预算内允许 unknown result 经原退避/lease/fencing 重放。未启用者保持 Verify-first，不扩大 replay_safe、不伪造 effect_not_applied。增量位于 `specs/durable-job/spec.md`，本轮不实施。
+- `durable-job`：增加默认 false 的 job-kind execution policy `allow_unknown_effect_replay`，仅 dingtalk_alert_delivery 启用；在剩余五次 Execute 总预算内允许 unknown result 经原退避/lease/fencing 重放。未启用者保持 Verify-first，不扩大 replay_safe、不伪造 effect_not_applied。字段作为 async_job_kinds 的默认 false 布尔策略，在 enqueue 时快照到 async_jobs；Worker/Reconciler 依据每条 job 持久化值执行。重复 enqueue、Registry/Catalog 与 DB catalog、job recovery 的策略兼容性检查均包含该字段；不匹配 fail closed。allow_unknown_effect_replay=true 必须要求 replay_safe=true，非法组合拒绝注册/持久化。增量位于 `specs/durable-job/spec.md`，本轮不实施。
 
 本 change 不改变 Phase 4 领域确认、恢复、identity 和 duplicate eligibility。实施归档前须按本 change 的明确覆盖范围统一现行安全/OpenAPI/UI 文档，并修正已被最新 recovery 决定废止的陈旧文字；历史 archive/migrations 保持原样。
 

@@ -586,7 +586,7 @@ duplicate delivery = accepted
 
 重复发送同一 occurrence transition 的通知是允许的安全副作用；它不授权 unknown-result replay。该授权仅来自独立 job-kind execution policy `allow_unknown_effect_replay`，默认 false，Phase 5 仅 dingtalk_alert_delivery 启用。不得按 job kind 名称硬编码分支或把 unknown 伪装为 effect_not_applied。
 
-HTTP timeout、write 后 connection reset 或 running lease 过期导致外部结果未知时，启用该 policy 且剩余 Execute budget > 0 才能经现有恢复/退避机制进入 retry_wait，后续正常 claim 获得新 execution lease/fencing token 后重放。保留 job_id、operation_id、payload、payload hash、idempotency key；总 Execute attempts <= 5，耗尽 failed。未启用 policy 的所有 job 保持 Verify-first。完整增量见 [durable-job spec](../durable-job/spec.md)。
+HTTP timeout、write 后 connection reset 或 running lease 过期导致外部结果未知时，启用该 policy 且剩余 Execute budget > 0 才能经现有恢复/退避机制进入 retry_wait，后续正常 claim 获得新 execution lease/fencing token 后重放。保留 job_id、operation_id、payload、payload hash、idempotency key；总 Execute attempts <= 5，耗尽 failed。未启用 policy 的所有 job 保持 Verify-first。该 boolean 在 enqueue 时由 async_job_kinds definition/catalog 快照到 async_jobs，Worker/Reconciler 必须依据持久化 job policy 且先通过 registry/catalog/job consistency check；重复 enqueue 也比较该字段。allow_unknown_effect_replay=true REQUIRES replay_safe=true，非法组合拒绝注册/持久化；job snapshot 与当前 registry 不匹配时 fail closed，不继承新权限。完整增量见 [durable-job spec](../durable-job/spec.md)。
 
 DingTalk executor 不进入：
 
@@ -1107,10 +1107,12 @@ Phase 5 MUST 至少验证：
 33. same unknown result（HTTP timeout / write 后 connection reset / running lease expired）：DingTalk policy=true → 有预算时 retry_wait/replay；普通 job policy=false/未配置 → 不直接 replay、Verify-first
 34. unknown replay 保留 job_id/operation_id/payload/hash/idempotency key/backoff，新 claim 使用新有效 lease/fencing；第五次后 failed，旧 worker 不得提交
 35. policy 默认 false、仅 DingTalk 注册启用；不扩大 replay_safe，不按 kind 名硬编码，不伪造 effect_not_applied，不引入新状态/queue/outbox/retry engine
+36. replay_safe=false + allow_unknown_effect_replay=true → Go Registry / DB catalog 与 job persistence / catalog compatibility validation 均拒绝；DingTalk true/true 合法
+37. enqueue 将 catalog policy 快照到 job；同 key 重入队比较此字段；Registry/Catalog 与 DB catalog 不匹配、existing job snapshot != current registry policy → fail closed / policy mismatch，Worker/Reconciler 不按新权限执行旧 job，不覆盖 snapshot
 
 #### Scenario: 完整运行时验收
 - **WHEN** Phase 5 准备声明验收通过
-- **THEN** 逐项执行本节 35 项并留证，不把文档冻结当运行时 PASS
+- **THEN** 逐项执行本节 37 项并留证，不把文档冻结当运行时 PASS
 
 ### Requirement: Phase 5 SHALL enforce Explicit non-goals
 

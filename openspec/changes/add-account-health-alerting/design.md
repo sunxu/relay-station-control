@@ -1,7 +1,11 @@
 # Design
 
 ## Context
-核对基线：Control `f4173242aef83afd95d3240573c68eb4299987a2`，Ops `a4f01f80c588f32a51625315f09d252045652edc`，两仓库 GitHub main，2026-09-10。本轮修订核对 HEAD：Control `b870d8132d1fbad4a2b105d509b9bd2daf977cee`，Ops `5956d9822cb2e71a05c4a6618bd1e7b2f998e393`。Detailed Requirements = FROZEN；Architecture Review = SEPARATELY TRACKED（未据需求冻结声明 PASS/APPROVED）；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
+Requirements freeze implementation baseline：Control `f4173242aef83afd95d3240573c68eb4299987a2`；前置 Ops 路线规划基线：`a4f01f80c588f32a51625315f09d252045652edc`。这些是需求冻结前的既有基线，不是本 change 的最终提交或 Architecture Review 通过证据。
+
+Architecture Review target：评审时两个仓库 main 上当前已提交的 Phase 5 requirement documents。Exact reviewed repository SHAs SHALL 在评审批准后的独立 Architecture Review evidence/status update commit 中记录；本 change 不硬编码自身最终 commit SHA，amend 不要求更新自引用 SHA。
+
+Detailed Requirements = FROZEN；Architecture Review = SEPARATELY TRACKED（未据需求冻结声明 PASS/APPROVED）；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
 
 现有实现接入点：
 
@@ -53,6 +57,23 @@ ACTIVE/RESOLVED 使用 spec 固定四种 key；recurrence 产生新 occurrence I
 
 Phase 5 仅增加一个默认 false 的 job-kind execution policy `allow_unknown_effect_replay`，仅 DingTalk 启用；不扩大 replay_safe，不使用 kind-name 条件硬编码。Worker Execute 的 timeout/write 后 reset 等未知结果，以及 Reconciler 接管 running expired lease，按该 policy 和剩余预算决定 retry_wait；普通 job 保持 Verify-first，unknown 不伪装为 effect_not_applied。复用原 durable backoff 和有界扫描，不新建状态、retry engine、queue/outbox。恢复更新仍须取得有效恢复 lease/fencing；后续 Execute 必须正常 claim 新 execution lease/token。job_id、operation_id、payload/hash、idempotency key 均不变，Execute 最多五次、耗尽 failed；已有取消请求或终止期限仍阻止重放，未知效果不得伪装为安全取消。完整行为以本 change 的 durable-job 增量 spec 为准。
 
+### Persisted execution-policy snapshot
+`allow_unknown_effect_replay` 只作为现有 execution policy 的一个 boolean 扩展，沿用 Timeout、LeaseDuration、HeartbeatInterval、MaxAttempts、MaxVerifyAttempts、ReplaySafe、AllowRollback 的 per-job snapshot 模式：
+
+```text
+job-kind definition / async_job_kinds.allow_unknown_effect_replay (boolean, default false)
+→ enqueue snapshot
+async_jobs.allow_unknown_effect_replay (boolean, copied from validated job-kind at enqueue)
+→ Worker / Reconciler read persisted job policy after compatibility validation
+```
+
+只有 dingtalk_alert_delivery 的 definition/catalog 为 true；普通 job 默认 false。enqueue 在既有 EnqueueTx 中复制字段，不新增事务或 enqueue logic。同幂等键重入队的 execution-policy compatibility check、Registry.Catalog 与 DB catalog comparison、Worker/Reconciler job-policy comparison 都必须包含此字段。Worker/Reconciler MUST 以 job 上持久化的 snapshot 授权重放，不能由当前进程 registry/config 动态改变旧 job 权限；job snapshot 与当前 registry/catalog 不一致时 fail closed / policy mismatch，不覆盖 snapshot、不继续按新权限执行。
+
+Invariant：`allow_unknown_effect_replay=true` REQUIRES `replay_safe=true`。Go Registry validation、DB catalog/schema constraint 或等价持久化校验（catalog 与 job snapshot 均覆盖）、catalog compatibility validation MUST 拒绝 false/true 非法组合。DingTalk 固定 true/true；普通 job 保持 unknown replay=false，Verify-first 不变。此处冻结的是架构契约，本轮不写 migration/SQL。后续验收必须覆盖非法组合 registration/persistence rejected，以及旧 job snapshot 与新 registry 不匹配时 Worker/Recovery/重复 enqueue 均 fail closed。
+
+不新增 execution policy table、policy DSL、notification table/outbox、delivery ledger、workflow engine、job state、DingTalk 专用 retry engine 或 RBAC；不按 job kind 名硬编码行为。
+
+### Delivery payload and transport
 payload 是 spec 列明的 transition-time display snapshot；完整 email 允许，Secret 和动态 Token/Quality 诊断不得加入。重试使用原快照。ACTIVE/RESOLVED 之间 rename 允许名称不同；不保存 display history。复用 lease/fencing/backoff/restart recovery；投递失败不修改 occurrence。
 
 独立标准 HTTPS client，不复用 internal management client；显式关闭 proxy（忽略 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY），拒绝所有 redirects，total timeout 5s。仅从受控部署配置读取 DINGTALK_WEBHOOK_URL 和可选 DINGTALK_SIGNING_SECRET，不提供 API/UI 动态 URL、allowlist/CIDR/DNS pinning。URL 未配置正常启动；非法配置启动失败。发送时按 DingTalk signing contract 在内存构造签名，URL/query/原始响应不落日志或 DB。
@@ -69,14 +90,14 @@ POST 成功后未提交 succeeded 即 crash 可造成重复通知，这是通过
 新查询使用 SECURITY DEFINER、fixed search_path=pg_catalog、owner relay_control_migrator、REVOKE EXECUTE FROM PUBLIC、GRANT EXECUTE TO relay_control_runtime；runtime 无新增底表直接权限。继续唯一 super_admin 与既有会话/请求防护；不新增 RBAC。
 
 ## Migration, rollout and rollback
-不在本文档交付中编造 migration 编号或实施 SQL。实施使用下一个可用 forward Goose migration，read-model 与 delivery concern 分开；不修改任何历史 migration，不新增领域表/Token表/通知表/outbox/config表。后续实施仅增加 read functions/ACL、transition-returning reconciliation contracts、job-kind registration 及既有 execution-policy/recovery contracts 的必要 additive 扩展，具体存储映射留待实施评审；本轮不定义或修改 SQL/schema；索引仅在实际 EXPLAIN/acceptance 证明需要时增加。
+不在本文档交付中编造 migration 编号或实施 SQL。实施使用下一个可用 forward Goose migration，read-model 与 delivery concern 分开；不修改任何历史 migration，不新增领域表/Token表/通知表/outbox/config表。后续实施仅增加 read functions/ACL、transition-returning reconciliation contracts、job-kind registration 及既有 execution-policy/recovery contracts 的必要 additive 扩展，allow_unknown_effect_replay 在 async_job_kinds 的布尔定义及 async_jobs 的 enqueue snapshot 持久化语义已在上节冻结；后续实施按该契约编写 additive migration，本轮不修改 migration 或 SQL/schema；索引仅在实际 EXPLAIN/acceptance 证明需要时增加。
 
 先升级 additive schema，核验 runtime ACL 与旧 v1，然后部署匹配 registry/worker 和 API/UI；DingTalk 初始关闭，完成隔离验收后按部署授权配置 Secret。发布 pin 与 phase_4_closed 不因文档冻结而变更。
 
 回滚停止新 enqueue 与 delivery worker，保留 forward schema、occurrences/jobs/events/outbox。仅取消 URL 配置不应被假定为安全处理已有 queued jobs 的完整回滚方案；必须验证 worker 暂停和恢复路径。旧 binary 可能不识别新 kind，先完成兼容性/停机排空决策再回滚，不删 registry 或未处理证据，不执行 production destructive down。重新启用处理既有 durable jobs，仍不扫描补发从未 enqueue 的 ACTIVE。
 
 ## Validation and reconciliation
-spec 的全部 35 项 runtime acceptance 是未来实施门槛，tasks 记录未完成状态。重点验证时间边界、退化证据、并发/同事务故障注入、commit ambiguity、restart/lease replay、HTTP/业务响应分类、第五次失败终态、proxy 环境与 redirect、Secret-negative、完整邮箱、ACL/no-store/auth、API pagination、UI 复用。
+spec 的全部 37 项 runtime acceptance 是未来实施门槛，tasks 记录未完成状态。重点验证时间边界、退化证据、并发/同事务故障注入、commit ambiguity、restart/lease replay、HTTP/业务响应分类、第五次失败终态、proxy 环境与 redirect、Secret-negative、完整邮箱、ACL/no-store/auth、API pagination、UI 复用。
 
 仓库 canonical Availability 中 `Active runtime after previously confirmed forbidden` scenario 仍有“两次健康观察恢复”的旧句，与最新 `Recovery SHALL require newer independent evidence` 冲突。实施时仅统一现行文档到最新 success-only recovery，不修改历史 archive，不恢复旧 SQL 语义。durable-job canonical 的空 production registry 是旧 foundation 范围，Phase 5 增量显式扩展为固定 DingTalk kind，并仅增加一个默认关闭的 unknown-result replay policy；未启用该 policy 的 job kind 继续保持现有 Verify-first 语义。
 

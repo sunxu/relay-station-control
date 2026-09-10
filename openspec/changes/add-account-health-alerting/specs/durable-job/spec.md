@@ -3,9 +3,13 @@
 ### Requirement: Job-kind SHALL explicitly opt in to unknown-effect replay
 Control SHALL 为 job-kind 定义独立 execution policy `allow_unknown_effect_replay`，默认 false；Phase 5 仅 `dingtalk_alert_delivery` 启用。策略 MUST 通过既有 registration/execution-policy contract 显式声明并保持一致，不得通过 `if job_kind == dingtalk...` 硬编码，不得扩大 `replay_safe` 定义。仅 replay_safe=true 不授权未知结果重放。
 
-策略 MUST 沿用既有幂等键/执行策略一致性校验；重启、重入队或注册不匹配不得默默改变既有 job 的执行授权。未启用者必须保持现有 Verify-first；unknown 不得伪装为 effect_not_applied。
+策略 MUST 沿用现有 per-job persisted execution-policy snapshot 模式：async_job_kinds.allow_unknown_effect_replay 为 boolean、default false；async_jobs.allow_unknown_effect_replay 为 boolean，在 enqueue 时从已验证的 job-kind definition/catalog 复制到具体 job，与既有 Timeout/LeaseDuration/HeartbeatInterval/MaxAttempts/MaxVerifyAttempts/ReplaySafe/AllowRollback 一起持久化。以上为本轮冻结的架构契约，不是 migration 实现。
 
-启用策略只改变未知效果下的重放许可，不新增状态、retry engine、领域表、queue、notification outbox 或 workflow。job_id、operation_id、payload、payload hash、idempotency key、durable backoff 与 lease/fencing contract MUST 保持。DingTalk 的 max Execute attempts=5（包括第一次和重启后的重放），预算耗尽 failed；重复外部通知是明确接受的 at-least-once 行为，不保证永久失败下最终送达。
+同幂等键重入队的 execution-policy compatibility check、Registry/Catalog 与 DB catalog comparison、Worker/Reconciler 的 job-policy consistency check MUST 包含该字段。Worker/Reconciler MUST 依据 job 上的持久化 snapshot，而非当前进程 registry/config 动态授予旧 job replay 权限；snapshot 与当前 registry/catalog policy 不同 MUST fail closed / policy mismatch，不得覆盖 snapshot 或按新权限继续执行。重启、重入队或注册变化不得默默改变既有授权。未启用者保持 Verify-first；unknown 不得伪装为 effect_not_applied。
+
+Invariant：allow_unknown_effect_replay=true REQUIRES replay_safe=true。Go Registry validation、DB catalog/schema constraint 或等价 validation（同时覆盖 catalog 与 job snapshot 持久化）、catalog compatibility validation MUST fail closed，拒绝 replay_safe=false / allow_unknown_effect_replay=true。DingTalk 固定 replay_safe=true、allow_unknown_effect_replay=true；普通 job 缺省 unknown replay=false。
+
+启用策略只改变未知效果下的重放许可，不新增状态、retry engine、领域表、execution policy table、policy DSL、queue、notification table/outbox、delivery ledger、workflow engine 或 RBAC。job_id、operation_id、payload、payload hash、idempotency key、durable backoff 与 lease/fencing contract MUST 保持。DingTalk 的 max Execute attempts=5（包括第一次和重启后的重放），预算耗尽 failed；重复外部通知是明确接受的 at-least-once 行为，不保证永久失败下最终送达。
 
 #### Scenario: 默认关闭与单一启用
 - **WHEN** 注册普通 job 时缺省/关闭 policy，或注册 Phase 5 DingTalk job
@@ -14,6 +18,22 @@ Control SHALL 为 job-kind 定义独立 execution policy `allow_unknown_effect_r
 #### Scenario: 重放隔离对照
 - **WHEN** DingTalk 与普通 job 遇到同样的 HTTP timeout、write 后 connection reset 或 running lease expiry
 - **THEN** DingTalk 在预算内可进入 retry_wait 后由新有效 lease/token 执行；普通 job 不直接重放，保持 Verify-first；均不得伪造外部效果
+
+#### Scenario: Enqueue 快照与幂等兼容
+- **WHEN** 合法 job-kind 入队后，以相同幂等键及相同内容重入队，或只改变 allow_unknown_effect_replay 后重入队
+- **THEN** 初次 enqueue 将 definition/catalog 的 boolean 复制到 async_jobs；完全匹配返回原 job，不匹配拒绝且保留原 snapshot，不创建新 job 或修改原授权
+
+#### Scenario: 非法策略组合拒绝
+- **WHEN** replay_safe=false 且 allow_unknown_effect_replay=true 被提交到 Go Registry、DB catalog/job 持久化或 catalog compatibility validation
+- **THEN** 每个入口均 fail closed，registration / persistence rejected；不能通过绕过某个校验层启用更强执行授权
+
+#### Scenario: Registry 与 DB catalog 比较
+- **WHEN** Registry/Catalog 与 DB catalog 的 allow_unknown_effect_replay 不一致，包括 false/true 或 true/false
+- **THEN** compatibility validation 拒绝该 catalog，不得基于不一致定义执行或恢复任务
+
+#### Scenario: 旧 job 不继承当前 registry 权限
+- **WHEN** 已持久化 job snapshot policy 与当前 registry/catalog policy 不同，包括重启后或 registry/config 更新后，Worker 或 Reconciler 尝试执行/恢复
+- **THEN** fail closed / policy mismatch，不按新 registry 权限 Execute/replay，不修改旧 snapshot；只有兼容性验证通过后才可依据持久化 job policy 处理
 
 ## MODIFIED Requirements
 
@@ -41,7 +61,7 @@ Control SHALL 将任务状态限制为 `pending|running|verifying|retry_wait|rol
 - **THEN** 数据库拒绝操作并保留原任务证据
 
 #### Scenario: 显式 policy 允许未知结果重试
-- **WHEN** 有效 Worker 的 Execute 遇 timeout 或 write 后 connection reset 等未知外部结果，job-kind 启用 allow_unknown_effect_replay，仍有 Execute budget 且无取消/期限阻止
+- **WHEN** 有效 Worker 的 Execute 遇 timeout 或 write 后 connection reset 等未知外部结果，job snapshot 启用 allow_unknown_effect_replay 且通过 policy consistency check，仍有 Execute budget 且无取消/期限阻止
 - **THEN** 在现有 fenced 事务中将同一任务转为 retry_wait，持久化退避与事件；后续正常 claim 后再次 Execute，不先验证、不伪造 effect_not_applied
 
 #### Scenario: 缺省策略不放宽
@@ -49,7 +69,7 @@ Control SHALL 将任务状态限制为 `pending|running|verifying|retry_wait|rol
 - **THEN** 不得直接 retry Execute，仍进入既有 Verify-first 路径；只有证明效果未生效且原重试条件满足才允许重放
 
 ### Requirement: Reconciler 对未知结果先验证再恢复
-Control MUST 扫描 lease 已过期的 running、verifying 或 rolling-back 任务。未启用 allow_unknown_effect_replay 的 job MUST 使用新的恢复 lease 调用任务类型注册的 Verify 能力。仅对已启用该 policy 的 running expired-lease job，Reconciler SHALL 取得新的有效恢复 lease/fencing 后，在剩余 Execute budget 且无取消/期限阻止时按原持久退避进入 retry_wait；否则 failed。后续执行必须正常 Worker claim 新 execution lease/fencing，不得在恢复扫描内直接 Execute。Reconciler MUST 依据可证明的 `effect_applied`、`effect_not_applied`、`effect_partial_or_rollback_required` 或 `effect_unknown` 结果推进；未启用 policy 时，在未证明先前操作未生效时 MUST NOT 直接再次 Execute。该例外只授权明确启用 policy 的 unknown-result replay，不扩大 replay_safe；普通 verifying/rolling_back 规则保持。
+Control MUST 扫描 lease 已过期的 running、verifying 或 rolling-back 任务。通过 policy consistency check 且持久化 snapshot 未启用 allow_unknown_effect_replay 的 job MUST 使用新的恢复 lease 调用任务类型注册的 Verify 能力。仅对通过 policy consistency check 且持久化 snapshot 已启用该 policy 的 running expired-lease job，Reconciler SHALL 取得新的有效恢复 lease/fencing 后，在剩余 Execute budget 且无取消/期限阻止时按原持久退避进入 retry_wait；否则 failed。后续执行必须正常 Worker claim 新 execution lease/fencing，不得在恢复扫描内直接 Execute。Reconciler MUST 依据可证明的 `effect_applied`、`effect_not_applied`、`effect_partial_or_rollback_required` 或 `effect_unknown` 结果推进；未启用 policy 时，在未证明先前操作未生效时 MUST NOT 直接再次 Execute。该例外只授权明确启用 policy 的 unknown-result replay，不扩大 replay_safe；普通 verifying/rolling_back 规则保持。
 
 #### Scenario: 外部效果已生效但回写前崩溃
 - **WHEN** 未启用 policy 的 Worker 已完成操作但在提交任务成功前崩溃，Verify 使用稳定 operation ID 证明效果已经生效
