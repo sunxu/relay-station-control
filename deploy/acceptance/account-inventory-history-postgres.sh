@@ -168,6 +168,22 @@ run_store_probe() {
     go test ./internal/store \
       -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryHistoryCrashRecoveryMatrix|TestAccountInventoryHistorySecurityBoundaryMatrix|TestAccountInventoryHistoryAggregateSchemaConstraintAndProtectionGateMatrix|TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert|TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource|TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls|TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing|TestAccountInventoryHistoryExpiredLeaseRequiresReconcileAcrossCompactionPhases|TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope|TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume|TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates|TestAccountInventoryHistoryRetentionEligibilityBoundaries|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection|TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy|TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition|TestInventorySnapshotContractFailureFinalizesWithoutPromotion|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary|TestAccountInventoryHistorySensitiveCanaryDatabaseSinks|TestAccountInventoryHistoryCapacityOneTenFifty|TestAccountInventoryRowsFailClosed)$' \
       -count=1 >"$runtime_directory/store-main-path.log" 2>&1; then
+    failed_test="$(
+      awk '
+        /^--- FAIL: Test[A-Za-z0-9_]+([[:space:]]|\()/ {
+          name=$3
+          sub(/\(.*/, "", name)
+          if (name ~ /^Test[A-Za-z0-9_]+$/) {
+            print name
+            exit
+          }
+        }
+      ' "$runtime_directory/store-main-path.log"
+    )"
+    if [ -n "$failed_test" ]; then
+      echo "account_inventory_history_postgres=failed reason=postgres_compaction_main_path_failed failed_test=$failed_test" >&2
+      exit 1
+    fi
     fixed_failure 'postgres_compaction_main_path_failed'
   fi
 }
