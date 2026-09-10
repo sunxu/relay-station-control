@@ -94,3 +94,66 @@ Runtime Acceptance: NOT STARTED
 - 全部 47 个 implementation tasks 保持未勾选；未执行 runtime tests、migration、部署或 acceptance。
 - P0: 0；P1: 0；P2: 0（本 amendment 文档自检，不替代正式 re-review approval）。
 - Phase 4 compatibility / Phase 5 internal consistency / Phase 6 boundary / Phase 7 boundary / Minimalism：PASS（契约层）。
+
+## Formal Re-review Approval — direct success (2026-09-10)
+
+批准来源：用户明确确认 direct-success amendment 正式 re-review 完成，并授权记录下列 PASS。以上首次 PASS、preflight gap、REOPENED 与 amendment 过程全部保留；本节为最新批准状态。
+
+### Stable reviewed baseline
+
+更新前四仓 `git status --short` 均为空；已核对 `git rev-parse HEAD` 与 `git log -1 --oneline`：
+
+- Reviewed Control SHA: `53b5a31ffe76156c8143e8ed65cef3728eaf0f46` — `docs(phase5): amend direct success architecture contract`
+- Reviewed Ops SHA: `c7a35c00ca7fe5c9f4bc27586ecc9b1002c3f910` — `docs(phase5): align direct success architecture amendment`
+- Gateway compatibility baseline: `6b045698e6e5e62e35dbd103abf20c1407f8a0bb`
+- CLIProxyAPI compatibility baseline: `273d624c70f6eb8bdd7b049df396c306acd3f8d0`
+
+Reviewed Control/Ops SHAs 指向已提交的 amendment commits，不是本 approval/status update 自身最终 SHA。Gateway/CLIProxyAPI 保持 unchanged compatibility baseline。
+
+### Approved contract checks
+
+1. Direct-success：ExecuteSucceeded 表示本次同步 Execute 已获得足够成功证据；只有 persisted allow_direct_success=true、job policy compatibility 通过且当前 running lease/fencing 有效，才允许 Worker running→succeeded。复用 StatusSucceeded/EventSucceeded，event from_status=running、to_status=succeeded、actor=worker；未授权或旧/过期 Worker 不得提交成功。
+2. Persisted policy：allow_direct_success 默认 false，仅 Phase 5 DingTalk 启用；async_job_kinds→EnqueueTx snapshot→async_jobs→Worker/Reconciler。Definition/CatalogEntry/Job、DB catalog/read-write mapping、policyMatches、同 key enqueue 与 Registry/Catalog/DB/Worker/Reconciler compatibility 全覆盖，registry/config 不改变旧 job 授权。
+3. 两个 policy 独立：direct success 只授权已知成功跳过 Verify；unknown-effect replay 只授权未知结果有界重新 Execute。保留 unknown⇒replay_safe，不加 direct⇒replay_safe；synthetic direct=true/unknown=false/replay_safe=false 合法，不能 unknown replay。
+4. 三条路径：DingTalk HTTP+business 成功→ExecuteSucceeded→直接 succeeded；DingTalk unknown→unknown-replay policy；普通 job unknown→既有 Verify-first。DingTalk replay_safe/unknown/direct=true、rollback_allowed=false、Execute 最多5次、job10s/HTTP5s，不进入 verifying；普通未授权 ExecuteSucceeded fail closed。
+5. Minimalism：amendment 仅一个 disposition 加一个 persisted boolean。不新增状态、事件类型、execution-mode enum、policy table/DSL、通知状态机、专用 queue/retry framework、verification receipt 或 delivery ledger；Token、Duplicate、同事务 EnqueueTx 及 Phase 4/6/7 边界不变。
+
+### Approval and current status
+
+```text
+Detailed Requirements: FROZEN
+Architecture Re-Review: PASS
+Architecture Review: PASS
+Implementation readiness: READY
+Implementation: NOT STARTED
+Runtime Acceptance: NOT STARTED
+
+P0: 0
+P1: 0
+P2: 0
+
+Direct-success contract: PASS
+Unknown-effect replay isolation: PASS
+Ordinary Verify-first: PASS
+Persisted policy snapshot: PASS
+Fencing / lease boundary: PASS
+Phase 4 compatibility: PASS
+Phase 5 internal consistency: PASS
+Phase 6 boundary: PASS
+Phase 7 boundary: PASS
+Minimalism: PASS
+
+Phase 6: PLANNED / NOT STARTED
+Phase 7: PLANNED / NOT STARTED
+```
+
+本轮仅记录批准，不实现 Slice A；47 个 implementation tasks 全部保持未勾选。正式架构批准不等于 production implementation 或 Runtime Acceptance 通过。
+
+### Re-review status-update validation
+
+- 当前 change OpenSpec strict：PASS；全仓 strict：20 passed / 0 failed。
+- Markdown fences 与 30 个本地引用路径检查：PASS；Ops YAML parse 与五项 Phase 5 拆分状态检查：PASS。
+- 历史 evidence 前缀与 HEAD 原文完全一致，仅追加本次批准；47 个 task 条目内容及未勾选状态完全不变。
+- Control/Ops git diff --check：PASS；仅 approval/status Markdown 与 compatibility metadata 变更。
+- production changed = false；migration changed = false；test implementation changed = false；archive changed = false；Gateway changed = false；CLIProxyAPI changed = false。
+- 未执行 production build/runtime tests、migration、deploy acceptance；未 commit/push。

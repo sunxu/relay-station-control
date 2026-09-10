@@ -1,6 +1,6 @@
 # Tasks
 
-Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation / Runtime Acceptance = NOT STARTED。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation / Runtime Acceptance = NOT STARTED。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
 
 以下全部是待实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 

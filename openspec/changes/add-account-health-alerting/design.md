@@ -5,7 +5,7 @@ Requirements freeze implementation baseline：Control `f4173242aef83afd95d324057
 
 Architecture Review target：评审时两个仓库 main 上当前已提交的 Phase 5 requirement documents。历史批准的 exact reviewed repository SHAs 已记录于独立的 [Architecture Review evidence](./planning-validation.md)；本 change 不硬编码自身最终 commit SHA，amend 不要求更新自引用 SHA。
 
-Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
 
 现有实现接入点：
 
@@ -58,7 +58,7 @@ ACTIVE/RESOLVED 使用 spec 固定四种 key；recurrence 产生新 occurrence I
 Phase 5 增加两个独立默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 DingTalk 启用；不扩大 replay_safe，不使用 kind-name 条件硬编码。Worker Execute 的 timeout/write 后 reset 等未知结果，以及 Reconciler 接管 running expired lease，仅按 allow_unknown_effect_replay 和剩余预算决定 retry_wait；普通 job 保持 Verify-first，unknown 不伪装为 effect_not_applied。复用原 durable backoff 和有界扫描，不新建状态、retry engine、queue/outbox。恢复更新仍须取得有效恢复 lease/fencing；后续 Execute 必须正常 claim 新 execution lease/token。job_id、operation_id、payload/hash、idempotency key 均不变，Execute 最多五次、耗尽 failed；已有取消请求或终止期限仍阻止重放，未知效果不得伪装为安全取消。完整行为以本 change 的 durable-job 增量 spec 为准。
 
 ### Direct-success amendment
-Slice A preflight 确认现有 ExecuteDisposition 无成功结果，Worker、DB lifecycle/event/fenced-transition 仅经 verifying 完成 succeeded；本节冻结最小扩展，尚待重新评审，不代表实施授权。
+Slice A preflight 确认现有 ExecuteDisposition 无成功结果，Worker、DB lifecycle/event/fenced-transition 仅经 verifying 完成 succeeded；本节冻结的最小扩展已正式 re-review PASS，证据见 planning-validation.md；本轮仅记录批准，不开始实施。
 
 新增通用 `ExecuteSucceeded`，仅表示 Executor 从本次同步 Execute 获得足以确认操作成功的结果，且 job kind 被显式授权跳过 Verify。DingTalk HTTP 与 business response 均成功才返回此结果；未知结果、可重试无效果、needs verification 均不能冒充成功。
 

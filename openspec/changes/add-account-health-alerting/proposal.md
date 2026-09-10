@@ -1,9 +1,9 @@
 # Proposal
 
 ## Phase and outcome
-Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。本 change 是待实施的正式项目记录，不代表代码已实现或 runtime acceptance 已通过。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
+Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。本 change 是待实施的正式项目记录，不代表代码已实现或 runtime acceptance 已通过。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
 
-历史正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。本次为 direct-success Architecture Review amendment；历史 PASS 不代表本修订已批准，不开始实施。
+历史正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。direct-success amendment 已正式 re-review PASS；批准记录见该 evidence，本次仅更新 approval/status，不开始实施。
 
 ## Why
 当前 Inventory、Request Quality、Availability 与 Duplicate occurrences 已提供持久事实，但尚无本阶段统一 Token projection、Problem Accounts 与事务可靠通知集成。复用这些事实及 durable jobs，避免第二套健康状态与通知存储。
