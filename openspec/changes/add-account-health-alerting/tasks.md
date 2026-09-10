@@ -61,9 +61,9 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [ ] 4.7 完成 proxy env、redirect、DB/job/API/UI/audit/log/metrics/trace Secret-negative 测试，错误字符串不得泄漏 URL/query。
 
 ## 5. UI
-- [ ] 5.1 新增 Problems 只读列表与过滤/分页，多个 issues 一行，Critical/Warning 与 Since 排序。
+- [x] 5.1 新增 Problems 只读列表与过滤/分页，多个 issues 一行，Critical/Warning 与 Since 排序。
 - [ ] 5.2 扩展现有 Account Quality/Inventory detail 的 Token 与 Expected Valid Until；复用 occurrence history 与系统时区。
-- [ ] 5.3 前端验证完整邮箱、UNKNOWN 与 Unavailable 区别、缺失/retired/disabled Availability ACTIVE 保留、duplicate 按领域 current membership 展开，不做 N+1 聚合。
+- [x] 5.3 前端验证完整邮箱、UNKNOWN 与 Unavailable 区别、缺失/retired/disabled Availability ACTIVE 保留、duplicate 按领域 current membership 展开，不做 N+1 聚合。
 
 ## 6. Acceptance and delivery
 - [ ] 6.1 验证 clean install 与现有数据库 forward upgrade、v1 兼容、function owner/search_path/PUBLIC/runtime ACL；生产不 destructive down。
