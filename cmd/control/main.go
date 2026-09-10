@@ -298,6 +298,12 @@ func main() {
 		logger.Error("durable job catalog mismatch", "component", "jobs", "reason", "registry_mismatch")
 		os.Exit(1)
 	}
+	if dingtalkConfig.Enabled() {
+		// No Redis publisher is configured; the existing Worker polls PostgreSQL.
+		// This only suppresses wake publication, not the durable notification job.
+		accountAvailability.SetNotificationDelivery(jobRegistry, false)
+		crossNodeDuplicateLifecycle.SetNotificationDelivery(jobRegistry, false)
+	}
 	bootID := uuid.NewString()
 	jobLogger := jobSlogLogger{logger: logger}
 	worker, err := controljobs.NewWorker(jobRepository, jobRegistry, controljobs.WorkerConfig{

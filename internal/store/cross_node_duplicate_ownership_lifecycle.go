@@ -152,6 +152,7 @@ type crossNodeDuplicateEvidenceRow struct {
 type CrossNodeDuplicateOwnershipLifecycleRepository struct {
 	pool          *pgxpool.Pool
 	alertObserver CrossNodeDuplicateOwnershipAlertObserver
+	notifications *notificationDelivery
 }
 
 // NewCrossNodeDuplicateOwnershipLifecycleRepository constructs a repository
@@ -233,11 +234,59 @@ func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) Evaluate(
 		// nothing was written, so it is safe to roll back.
 		return nil, nil
 	}
+	if repository.notifications != nil &&
+		((result.Created && result.Status == "ACTIVE") || result.Status == "RESOLVED") {
+		if err := repository.enqueueDuplicateNotificationTx(ctx, tx, repository.notifications, environmentID, accountKey, result); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	repository.observeAlertTransition(ctx, environmentID, accountKey, result)
 	return result, nil
+}
+
+func (repository *CrossNodeDuplicateOwnershipLifecycleRepository) enqueueDuplicateNotificationTx(
+	ctx context.Context, tx pgx.Tx, delivery *notificationDelivery, environmentID, accountKey string,
+	result *CrossNodeDuplicateOwnershipEvaluation,
+) error {
+	if delivery == nil || delivery.registry == nil {
+		return nil
+	}
+	provider, email, ok := strings.Cut(accountKey, ":")
+	if !ok || provider != "antigravity" {
+		return nil
+	}
+	var environmentName string
+	var instanceIDs []pgtype.UUID
+	var nodeNames []string
+	if err := tx.QueryRow(ctx, `
+		SELECT environment_name, instance_ids, node_names
+		FROM public.control_notification_display_snapshot_v1($1, $2)`,
+		environmentID, result.AffectedNodes).Scan(&environmentName, &instanceIDs, &nodeNames); err != nil {
+		return err
+	}
+	if len(instanceIDs) != len(nodeNames) {
+		return errors.New("store: notification display snapshot has mismatched node arrays")
+	}
+	// result.AffectedNodes is the authoritative membership snapshot. The display
+	// function only resolves names for those IDs; sort the complete pair by
+	// canonical instance UUID so names remain positional.
+	ids := make([]uuid.UUID, len(instanceIDs))
+	for i, raw := range instanceIDs {
+		if !raw.Valid {
+			return errors.New("store: notification display snapshot returned an invalid instance_id")
+		}
+		ids[i] = uuidFromPG(raw)
+	}
+	return enqueueNotificationTx(ctx, tx, delivery, notificationTransition{
+		OccurrenceID: result.OccurrenceID, OccurrenceType: "CROSS_NODE_DUPLICATE_OWNERSHIP",
+		Transition: result.Status,
+		Reason:     "cross_node_duplicate_ownership", Severity: "Critical", EnvironmentID: environmentID,
+		EnvironmentName: environmentName, AccountKey: accountKey, Email: email, Provider: provider,
+		InstanceIDs: ids, NodeNames: nodeNames, StartedAt: result.FirstSeenAt, TransitionedAt: result.EvaluationAt,
+	})
 }
 
 // observeAlertTransition fires the alert observer exactly for the two

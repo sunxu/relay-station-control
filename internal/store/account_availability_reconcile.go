@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,15 +60,35 @@ func (r *AccountAvailabilityRepository) reconcileAvailabilityPage(ctx context.Co
 		return 0, node, account, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT node_id,account_key FROM public.control_reconcile_account_availability_v1($1,$2)`, nullableUUID(node), nullableText(account))
+	var rows pgx.Rows
+	if r.notifications == nil {
+		rows, err = tx.Query(ctx, `SELECT node_id,account_key FROM public.control_reconcile_account_availability_v1($1,$2)`, nullableUUID(node), nullableText(account))
+	} else {
+		rows, err = tx.Query(ctx, `SELECT node_id,account_key,transitions FROM public.control_reconcile_account_availability_v2($1,$2)`, nullableUUID(node), nullableText(account))
+	}
 	if err != nil {
 		return 0, node, account, err
 	}
 	count := 0
+	var transitions []notificationTransition
 	for rows.Next() {
-		if err := rows.Scan(&node, &account); err != nil {
-			rows.Close()
-			return 0, node, account, err
+		if r.notifications == nil {
+			if err := rows.Scan(&node, &account); err != nil {
+				rows.Close()
+				return 0, node, account, err
+			}
+		} else {
+			var encoded []byte
+			if err := rows.Scan(&node, &account, &encoded); err != nil {
+				rows.Close()
+				return 0, node, account, err
+			}
+			var pageTransitions []notificationTransition
+			if err := json.Unmarshal(encoded, &pageTransitions); err != nil {
+				rows.Close()
+				return 0, node, account, fmt.Errorf("store: decode availability notification transitions: %w", err)
+			}
+			transitions = append(transitions, pageTransitions...)
 		}
 		count++
 	}
@@ -74,6 +96,13 @@ func (r *AccountAvailabilityRepository) reconcileAvailabilityPage(ctx context.Co
 	rows.Close()
 	if err != nil {
 		return 0, node, account, err
+	}
+	if r.notifications != nil && len(transitions) > 0 {
+		for _, transition := range transitions {
+			if err := enqueueNotificationTx(ctx, tx, r.notifications, transition); err != nil {
+				return 0, node, account, err
+			}
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return 0, node, account, err

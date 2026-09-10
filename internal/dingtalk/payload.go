@@ -40,18 +40,20 @@ var (
 )
 
 var payloadSchema = jobs.Schema{Fields: map[string]jobs.Field{
-	"occurrence_id":    {Type: jobs.FieldUUID, Required: true},
-	"occurrence_type":  {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 32, Pattern: issueTypePattern},
-	"transition":       {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 8, Pattern: transitionPattern},
-	"reason":           {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 64, Pattern: reasonPattern},
-	"severity":         {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 8, Pattern: severityPattern},
-	"environment_id":   {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 128},
-	"environment_name": {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 256},
-	"account_key":      {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 256},
+	"occurrence_id":   {Type: jobs.FieldUUID, Required: true},
+	"occurrence_type": {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 32, Pattern: issueTypePattern},
+	"transition":      {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 8, Pattern: transitionPattern},
+	"reason":          {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 64, Pattern: reasonPattern},
+	"severity":        {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 8, Pattern: severityPattern},
+	"environment_id":  {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 128},
+	// Asset names permit 100 Unicode characters; schema bounds count UTF-8
+	// bytes. Account identity uses the existing Inventory 385-byte bound.
+	"environment_name": {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 400},
+	"account_key":      {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 385},
 	"email":            {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 320},
 	"provider":         {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 16, Pattern: providerPattern},
 	"instance_ids":     {Type: jobs.FieldStringArray, Required: true, MinLength: 1, MaxLength: 128, MaxItems: 128},
-	"node_names":       {Type: jobs.FieldStringArray, Required: true, MinLength: 1, MaxLength: 256, MaxItems: 128, AllowDuplicates: true, PreserveOrder: true},
+	"node_names":       {Type: jobs.FieldStringArray, Required: true, MinLength: 1, MaxLength: 400, MaxItems: 128, AllowDuplicates: true, PreserveOrder: true},
 	"started_at":       {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 64},
 	"transitioned_at":  {Type: jobs.FieldString, Required: true, MinLength: 1, MaxLength: 64},
 }}
@@ -118,7 +120,12 @@ func validatePayload(payload Payload) error {
 	if err != nil || transitioned.Before(started) {
 		return jobs.ErrInvalidPayload
 	}
-	if len(payload.InstanceIDs) == 0 || len(payload.InstanceIDs) != len(payload.NodeNames) {
+	if payload.InstanceIDs == nil || payload.NodeNames == nil || len(payload.InstanceIDs) != len(payload.NodeNames) {
+		return jobs.ErrInvalidPayload
+	}
+	// A resolved duplicate may have zero remaining confirmed owners. Preserve
+	// that authoritative membership instead of substituting historical nodes.
+	if len(payload.InstanceIDs) == 0 && (payload.OccurrenceType != "CROSS_NODE_DUPLICATE_OWNERSHIP" || payload.Transition != "RESOLVED") {
 		return jobs.ErrInvalidPayload
 	}
 	for _, instanceID := range payload.InstanceIDs {

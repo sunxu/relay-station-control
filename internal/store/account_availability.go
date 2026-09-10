@@ -54,7 +54,10 @@ type AccountAvailabilityReader interface {
 	ListAccountAvailabilityOccurrences(context.Context, AccountAvailabilityOccurrenceQuery) (AccountAvailabilityOccurrencePage, error)
 }
 
-type AccountAvailabilityRepository struct{ pool *pgxpool.Pool }
+type AccountAvailabilityRepository struct {
+	pool          *pgxpool.Pool
+	notifications *notificationDelivery
+}
 
 var _ AccountAvailabilityReader = (*AccountAvailabilityRepository)(nil)
 

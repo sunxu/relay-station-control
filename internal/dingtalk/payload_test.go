@@ -2,6 +2,7 @@ package dingtalk
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +10,82 @@ import (
 
 	"github.com/sunxu/relay-station-control/internal/jobs"
 )
+
+func TestPayloadAcceptsExistingDomainStringBounds(t *testing.T) {
+	var payload Payload
+	if err := json.Unmarshal(validPayloadJSON(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload.EnvironmentName = strings.Repeat("界", 100)
+	payload.NodeNames = []string{strings.Repeat("🌐", 100), strings.Repeat("界", 100)}
+	payload.Email = strings.Repeat("a", 300) + "@example.invalid"
+	payload.AccountKey = "antigravity:" + payload.Email
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := jobs.NewRegistry(Definition(noopExecutor{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := registry.ValidateAndHash(JobKind, 1, raw); err != nil {
+		t.Fatalf("valid domain snapshot rejected: %v", err)
+	}
+	if _, err := renderPayload(raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolvedDuplicateAllowsEmptyAuthoritativeMembership(t *testing.T) {
+	var payload Payload
+	if err := json.Unmarshal(validPayloadJSON(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload.OccurrenceType = "CROSS_NODE_DUPLICATE_OWNERSHIP"
+	payload.Reason = "cross_node_duplicate_ownership"
+	payload.Transition = "RESOLVED"
+	payload.InstanceIDs = []string{}
+	payload.NodeNames = []string{}
+	registry, err := jobs.NewRegistry(Definition(noopExecutor{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name       string
+		transition string
+		nilArrays  bool
+		valid      bool
+	}{
+		{"resolved zero owners", "RESOLVED", false, true},
+		{"active zero owners", "ACTIVE", false, false},
+		{"resolved null arrays", "RESOLVED", true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := payload
+			value.Transition = test.transition
+			if test.nilArrays {
+				value.InstanceIDs = nil
+				value.NodeNames = nil
+			}
+			raw, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, err = registry.ValidateAndHash(JobKind, 1, raw)
+			if test.valid && err != nil {
+				t.Fatal(err)
+			}
+			if !test.valid && !errors.Is(err, jobs.ErrInvalidPayload) {
+				t.Fatalf("expected invalid payload, got %v", err)
+			}
+			if test.valid {
+				if _, err := renderPayload(raw); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
 
 func validPayloadJSON() []byte {
 	return []byte(`{"occurrence_id":"018f80d8-2017-7b3e-93ec-10f4b3672f2a","occurrence_type":"TOKEN_INVALID","transition":"ACTIVE","reason":"token_invalid","severity":"Critical","environment_id":"env-1","environment_name":"Production","account_key":"account-1","email":"user@example.com","provider":"antigravity","instance_ids":["018f80d8-2017-7b3e-93ec-10f4b3672f2a","118f80d8-2017-7b3e-93ec-10f4b3672f2a"],"node_names":["node-free-001","node-free-002"],"started_at":"2026-09-11T08:00:00Z","transitioned_at":"2026-09-11T08:01:00Z"}`)

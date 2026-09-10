@@ -4,7 +4,7 @@ Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation rea
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
-Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43d` / `dc510ce` / `b7c4d11`，历史证据见 [Slice A](./slice-a-validation.md)、[Slice B](./slice-b-validation.md)、[Slice C](./slice-c-validation.md)。因 Slice D 依赖真实 production Executor，用户批准先完成 Slice E Executor foundation，再 review/commit 后恢复 Slice D；Architecture Review 保持 PASS。当前 Executor/config/registration 已完成 focused 验证，等待 Implementation Review，见 [Slice E evidence](./slice-e-executor-validation.md)。Slice D 仍未实施；通知事务集成、UI 与全 Phase 运行验收保持 open。本轮到 Executor foundation 停止。
+Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43d` / `dc510ce` / `b7c4d11`，历史证据见 [Slice A](./slice-a-validation.md)、[Slice B](./slice-b-validation.md)、[Slice C](./slice-c-validation.md)。因 Slice D 依赖真实 production Executor，用户批准先完成 Slice E Executor foundation；其正式 Implementation Re-review PASS 后已提交为 `ac21b99c2b70fd863fdf37ed492a89858352a54f`，见 [Slice E evidence](./slice-e-executor-validation.md)。以该提交为基线实施的 Slice D 已完成 focused 验证，尚未提交、等待 Implementation Review，见 [Slice D evidence](./slice-d-validation.md)。Architecture Review 保持 PASS；UI 与全 Phase 运行验收保持 open，本轮到 Slice D 停止。
 
 ## 1. Contract and compatibility
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
@@ -28,13 +28,13 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [x] 3.1d 在 Go Registry、DB catalog/job constraint 或等价 persistence validation、catalog compatibility validation 实施 allow_unknown_effect_replay => replay_safe，非法 false/true 组合全部 fail closed。
 - [x] 3.1e 增加 ExecuteSucceeded 与 allow_direct_success 默认 false（仅 DingTalk true）；在 Definition/CatalogEntry/Job、两表 BOOLEAN NOT NULL DEFAULT FALSE、EnqueueTx snapshot、policyMatches、DB mapping 及全部 compatibility 路径一致传递；不改变旧 job 授权。
 - [x] 3.1f 在 Worker 与 DB lifecycle/event/fenced-transition contracts 实施受 persisted direct policy 约束的 running→succeeded，复用既有 status/event、actor=worker；未授权返回成功 fail closed，不新增 direct⇒replay_safe invariant。
-- [ ] 3.2 增加 Availability additive transition contract，保留 v1/SERIALIZABLE/confirmation/recovery。
-- [ ] 3.3 在 Availability 既有事务中接入 jobs.EnqueueTx，覆盖 disabled/no backfill。
-- [ ] 3.4 增加 Duplicate transition-returning contract/adapter，保持 identity/membership/conservative recovery。
-- [ ] 3.5 在 Duplicate Evaluate 事务中 EnqueueTx，observer 保留为纯 observability。
-- [ ] 3.6 实现固定 key 与 transition-time snapshot；测试连续 ACTIVE、并发重试、recurrence、多个 issue、rename/不导致 lifecycle transition 的 membership 变化不重发；合法 RESOLVED 仍一次 intent。
-- [ ] 3.6a 验证 A/B/C→A absence_confirmed：只清 A duplicate issue、B/C ACTIVE 无通知；随后 B absence_confirmed 且合法恢复：清剩余 duplicate issues、一次 RESOLVED intent；其他 Availability issue 不受影响。
-- [ ] 3.7 故障注入验证 occurrence/job/event/outbox 全提交或全回滚，以及未知 commit 结果重试的幂等性。
+- [x] 3.2 增加 Availability additive transition contract，保留 v1/SERIALIZABLE/confirmation/recovery。
+- [x] 3.3 在 Availability 既有事务中接入 jobs.EnqueueTx，覆盖 disabled/no backfill。
+- [x] 3.4 增加 Duplicate transition-returning contract/adapter，保持 identity/membership/conservative recovery。
+- [x] 3.5 在 Duplicate Evaluate 事务中 EnqueueTx，observer 保留为纯 observability。
+- [x] 3.6 实现固定 key 与 transition-time snapshot；测试连续 ACTIVE、并发重试、recurrence、多个 issue、rename/不导致 lifecycle transition 的 membership 变化不重发；合法 RESOLVED 仍一次 intent。
+- [x] 3.6a 验证 A/B/C→A absence_confirmed：只清 A duplicate issue、B/C ACTIVE 无通知；随后 B absence_confirmed 且合法恢复：清剩余 duplicate issues、一次 RESOLVED intent；其他 Availability issue 不受影响。
+- [x] 3.7 故障注入验证 occurrence/job/event/outbox 全提交或全回滚，以及未知 commit 结果重试的幂等性。
 
 ## 3A. Cancellation amendment — future implementation after re-review
 
