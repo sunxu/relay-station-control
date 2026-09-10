@@ -55,6 +55,8 @@ ACTIVE/RESOLVED 使用 spec 固定四种 key；recurrence 产生新 occurrence I
 ### Delivery execution
 注册首个 production `dingtalk_alert_delivery` kind，payload schema 1、default timeout 10s（job execution budget；单次 HTTP total timeout 仍固定 5s）、max attempts 5（包括第一次）、replay_safe=true、allow_unknown_effect_replay=true、allow_direct_success=true、rollback_allowed=false。数据库 registration 与 Go registry 同步并检查兼容。框架如要求 verification attempts 字段，使用其合法默认值，但业务永不进入 verifying、rolling_back、rolled_back。
 
+Slice E implementation-level registration decision：用户本轮明确批准 LeaseDuration=30s、HeartbeatInterval=5s、MaxVerifyAttempts=1，后者仅满足 Registry 最小合法值，不建立 Verify/receipt polling 协议。这些数值不是先前 Architecture Review 的历史冻结值；Architecture Review 保持 PASS。实施顺序调整为真实 Executor foundation → review/commit → Slice D transaction integration → 后续运行验收，未新增 enqueue-only registry exception。官方协议依据与验证见 [Slice E Executor evidence](./slice-e-executor-validation.md)。
+
 Phase 5 增加两个独立默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 DingTalk 启用；不扩大 replay_safe，不使用 kind-name 条件硬编码。Worker Execute 的 timeout/write 后 reset 等未知结果，以及 Reconciler 接管 running expired lease，以真实未知结果为证据，并依据持久化 allow_unknown_effect_replay、剩余预算与锁内取消/期限检查决定 retry_wait，记录 effect_unknown_unverified；policy=true 本身不是 unknown evidence；普通 job 保持 Verify-first，unknown 不伪装为 effect_not_applied。复用原 durable backoff 和有界扫描，不新建状态、retry engine、queue/outbox。恢复更新仍须取得有效恢复 lease/fencing；后续 Execute 必须正常 claim 新 execution lease/token。job_id、operation_id、payload/hash、idempotency key 均不变，Execute 最多五次、耗尽 failed；已有取消请求或终止期限仍阻止重放，未知效果不得伪装为安全取消。完整行为以本 change 的 durable-job 增量 spec 为准。
 
 ### Direct-success amendment
@@ -115,6 +117,20 @@ Invariant：`allow_unknown_effect_replay=true` REQUIRES `replay_safe=true`。Go 
 
 ### Delivery payload and transport
 payload 是 spec 列明的 transition-time display snapshot；完整 email 允许，Secret 和动态 Token/Quality 诊断不得加入。重试使用原快照。ACTIVE/RESOLVED 之间 rename 允许名称不同；不保存 display history。复用 lease/fencing/backoff/restart recovery；投递失败不修改 occurrence。
+
+### Notification Identity / Payload Canonicalization amendment
+
+原因：Slice D current-baseline preflight 在 transactional EnqueueTx 实施前发现 deterministic identity 与 payload representation 缺口。本节是 narrow architecture amendment，待独立 re-review；保留既有 Architecture Review PASS 历史，不将本次文档记录视为 amendment approval。Slice E implementation 暂停，已有未提交代码不因此完成或自动符合新契约。
+
+- 固定四种 notification idempotency keys 保持 spec 原样。operation_id 使用 UUIDv5 / SHA-1 name-based UUID，namespace 固定 `94db90f6-d7e6-4cce-a045-890b63171d86`，name 为完整 idempotency_key 的 exact UTF-8 bytes：`uuid.NewSHA1(uuid.MustParse("94db90f6-d7e6-4cce-a045-890b63171d86"), []byte(idempotencyKey))`。不加入 salt、时间、名称或 attempt；不建立 identity service。
+- 同一已提交 logical occurrence transition 或 same-key durable replay 的 key、operation_id、canonical payload/hash 必须不变。完全回滚的 SERIALIZABLE/deadlock attempt 未产生 durable transition，不要求下一成功 attempt 复用其 occurrence_id、timestamp、payload 或 operation_id。未知 commit 结果不得直接假定已回滚并重建不同 snapshot 绕过既有幂等校验。
+- started_at / transitioned_at 来自 authoritative domain timestamps，wire encoding 为 `t.UTC().Format(time.RFC3339Nano)`：UTC、Z offset、canonical RFC3339Nano。Validator 必须精确校验 parse 后重新格式化与原文相等，拒绝等价但非 canonical 表示；不以 enqueue-time time.Now() 替代。发送时 signing timestamp 仍只是 transport material。
+- instance_ids / node_names 是等长 positional parallel arrays。按 canonical UUID ascending、unique 的 instance_ids 排序整个 pair，node_names[i] 属于 instance_ids[i]；名称允许重复，不独立排序。`[A,B] / ["Relay","Relay"]` 与 A→Zulu、B→Alpha 对应的 `[A,B] / ["Zulu","Alpha"]` 均合法；不同长度拒绝。此明确契约取代先前实现讨论中的 independent display collections 解释，不修改当前暂停的实现。
+- 现有 FieldStringArray 保持 sorted/unique 默认语义。后续只允许最小 additive primitive 或 explicit field policy 表达 ordered bounded strings、duplicates allowed；继续 Registry.ValidateAndHash，不建立第二套 canonicalizer/schema framework。
+- 四种通知 transition 的 enqueue priority 固定 50，不依赖 severity、ACTIVE/RESOLVED、领域或 retry path。
+- 既有 issue tuple 不变：TOKEN_INVALID/token_invalid/Critical；ACCOUNT_BLOCKED/account_blocked/Critical；FORBIDDEN/forbidden/Warning；CROSS_NODE_DUPLICATE_OWNERSHIP/cross_node_duplicate_ownership/Critical。mismatch 必须 ErrInvalidPayload。
+
+继续复用 jobs.EnqueueTx 与既有 durable jobs；不新增 notification/dedupe/operation table、identity service、第二 outbox、workflow engine、notification framework、状态或事件类型。实施验收要求见 [active spec](./specs/account-health-alerting/spec.md)，本次不勾 implementation tasks。
 
 独立标准 HTTPS client，不复用 internal management client；显式关闭 proxy（忽略 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY），拒绝所有 redirects，total timeout 5s。仅从受控部署配置读取 DINGTALK_WEBHOOK_URL 和可选 DINGTALK_SIGNING_SECRET，不提供 API/UI 动态 URL、allowlist/CIDR/DNS pinning。URL 未配置正常启动；非法配置启动失败。发送时按 DingTalk signing contract 在内存构造签名，URL/query/原始响应不落日志或 DB。
 

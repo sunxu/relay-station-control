@@ -236,3 +236,61 @@ Runtime Acceptance: NOT STARTED
 ```
 
 Stage 1 仅批准/status update，不修改既有 production/migration/test 工作树，不新增完成勾选。Stage 1 验证与文档提交完成后，仅恢复 amended Slice A；不得开始 Slice B，不将架构批准冒充 Implementation 或 Runtime Acceptance PASS。
+
+## Notification Identity / Payload Canonicalization — narrow architecture amendment
+
+Reason：Slice D current-baseline preflight found deterministic identity and payload representation gaps before transactional EnqueueTx implementation。
+
+当前 committed baselines（不是本 amendment 的 approval evidence 或自身 commit SHA）：
+
+- Control：`b7c4d11ec80b5143ef3f18171711b9499f33576d`
+- Ops：`dd3041f916dc16578f21790e71e49c3f751decda`
+- Gateway：`6b045698e6e5e62e35dbd103abf20c1407f8a0bb`
+- CLIProxyAPI：`273d624c70f6eb8bdd7b049df396c306acd3f8d0`
+
+用户本轮仅授权 active architecture/spec/evidence 文档。保留此前正式 Architecture Review PASS 历史；本 amendment 待 re-review，不记录新的正式 PASS。Implementation IN PROGRESS — PAUSED AT SLICE E；Runtime Acceptance NOT STARTED；Slice D 未实施。
+
+冻结内容见 [design amendment](./design.md#notification-identity--payload-canonicalization-amendment) 与 [notification spec](./specs/account-health-alerting/spec.md)：
+
+1. 完整 frozen notification key 的 exact UTF-8 bytes，以固定 namespace `94db90f6-d7e6-4cce-a045-890b63171d86` 生成 UUIDv5/SHA-1 operation_id；无额外 salt/time/attempt/name。同 key 相同，ACTIVE/RESOLVED 与不同 occurrence 不同。
+2. 稳定性针对同 committed transition / same-key durable replay，不针对已完全 rollback 的 SERIALIZABLE/deadlock attempt；不把 commit ambiguity 当作确定 rollback。
+3. started_at/transitioned_at 使用 authoritative domain time，UTC canonical RFC3339Nano + Z；builder 为 t.UTC().Format(time.RFC3339Nano)，validator 拒绝等价非 canonical 表示；无 enqueue-time 业务时间。
+4. 两个 Node arrays 明确 positional、等长；canonical UUID unique ascending 排序整个 pair，names 允许重复且不独立排序。此处 supersede 暂停前 independent collections 的实现解释；当前未提交代码不被修改或宣称符合新契约。
+5. 所有四种通知 transition 固定 enqueue priority=50；四类 issue/reason/severity 映射维持既有契约。保留 FieldStringArray 默认 sorted/unique；后续仅最小 additive opt-in，不新增 framework/table/state。
+
+本轮未新增或勾选 implementation tasks；既有未提交 Slice E production/migration/test 修改保持，不 revert、不继续修复、不 commit/push。不将该工作树整体称为 docs-only，也不将暂停前的局部测试结果作为新 amendment 实施验证。
+
+### Amendment documentation validation
+
+- OpenSpec current strict：PASS；all strict：20 passed / 0 failed。
+- 三个 amendment Markdown 文件的 fenced blocks、本地引用与引用 anchors：PASS（13 个本地引用）；git diff --check：PASS。
+- 停止子 Agent 后，以全部 tracked/untracked 文件 SHA-256 对比：本 amendment 仅改变 design.md、specs/account-health-alerting/spec.md、planning-validation.md；暂停时既有 production/migration/test 工作树原样保留，tasks.md 未改变。
+- 没有运行本 amendment 的 production tests、generate/build、migration 或 Runtime Acceptance。暂停前尚未完成验证的 review-fix 工作树不能作为新 parallel-array 契约的实施 evidence。
+
+Architecture amendment readiness for re-review：READY（文档就绪，非正式批准）。完成后 STOP，不恢复 Slice E code，不开始 Slice D，不 commit/push。
+
+## Formal Notification Identity / Payload Canonicalization Re-review Approval
+
+用户已正式完成本 amendment 的 Architecture Re-review。上节 READY 为批准前的历史记录；本节只记录正式结论，不修改已审 contract。评审对象是本工作树 active amendment 文档，前述四仓 committed implementation baselines 不冒充 amendment 自身的已提交 reviewed SHA。
+
+```text
+Notification Identity / Payload Canonicalization amendment
+Architecture Re-review: PASS
+Architecture Review overall: PASS
+P0: 0
+P1: 0
+P2: 0
+Implementation: IN PROGRESS / PAUSED AT SLICE E
+Runtime Acceptance: NOT STARTED
+```
+
+Reviewed contract：
+
+- operation_id：UUIDv5 / SHA-1；namespace=`94db90f6-d7e6-4cce-a045-890b63171d86`；name=exact UTF-8 bytes of complete frozen idempotency_key，无 salt/time/name/attempt。稳定性针对 committed logical transition / same-key durable replay，不要求完全 rollback 的 attempt 与后续成功 attempt 相同。
+- timestamp：authoritative domain time；UTC canonical RFC3339Nano、Z offset，canonical re-format equality required；不以 enqueue clock 生成业务时间。
+- node snapshot：instance_ids/node_names positional parallel arrays，same cardinality；instance_ids canonical UUID ascending unique，node_names preserve ID pairing，duplicates allowed，no independent lexical sorting。
+- priority：四种 notification transition 固定 50。
+- issue tuple：TOKEN_INVALID/token_invalid/Critical；ACCOUNT_BLOCKED/account_blocked/Critical；FORBIDDEN/forbidden/Warning；CROSS_NODE_DUPLICATE_OWNERSHIP/cross_node_duplicate_ownership/Critical。
+- new framework：NO；复用 jobs.EnqueueTx、Registry.ValidateAndHash 与既有 durable jobs，FieldStringArray 默认 sorted/unique 保持。
+
+本 approval 不是 Executor Implementation Review PASS。用户授权先仅提交 design/spec/本 evidence 三个文档，再恢复 Slice E payload review fixes；Slice E implementation 不提交，Slice D 不开始，Runtime Acceptance 不提前标记通过。

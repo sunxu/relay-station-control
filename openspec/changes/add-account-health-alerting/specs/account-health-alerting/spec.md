@@ -717,6 +717,21 @@ dingtalk:duplicate:<occurrence_id>:active
 dingtalk:duplicate:<occurrence_id>:resolved
 ```
 
+operation_id SHALL 为 UUIDv5 / SHA-1 name-based UUID。namespace UUID 固定 `94db90f6-d7e6-4cce-a045-890b63171d86`；name MUST 是完整 frozen idempotency_key 的 exact UTF-8 bytes。Go 对应：
+
+```go
+uuid.NewSHA1(
+    uuid.MustParse("94db90f6-d7e6-4cce-a045-890b63171d86"),
+    []byte(idempotencyKey),
+)
+```
+
+不得加入随机 salt、时间、node name 或 attempt number。同 key 必须得到同 operation_id；ACTIVE/RESOLVED 或不同 occurrence 的 key 必须产生不同 operation_id。
+
+稳定性范围 SHALL 是同一 **committed logical occurrence transition** 或 **same-key durable replay**：idempotency_key、operation_id、canonical payload、payload_hash 全部不变。已完全回滚的 SERIALIZABLE/deadlock attempt 没有 durable transition，不要求与下一成功 attempt 保持 occurrence_id、timestamp、payload、operation_id 相同。未知 commit outcome 不等于确定 rollback，不得绕过既有幂等兼容检查。
+
+四种 notification transition SHALL 均以 priority=50 enqueue；severity、transition、availability/duplicate 领域或 retry path 不得动态改变 priority。继续复用 jobs.EnqueueTx、Registry.ValidateAndHash 与 existing durable-job framework，不新增 identity service、operation/dedupe/notification table、第二 outbox、workflow engine 或 notification framework。
+
 不需要：
 
 - notification_sent
@@ -727,6 +742,14 @@ dingtalk:duplicate:<occurrence_id>:resolved
 #### Scenario: 幂等 intent
 - **WHEN** 同一 occurrence transition 被重复处理
 - **THEN** 固定 idempotency key 只创建一个逻辑 job，不建 dedupe 表
+
+#### Scenario: Stable operation identity and fixed priority
+- **WHEN** 同一 committed transition 重放，或分别构造 ACTIVE/RESOLVED 与不同 occurrence 的通知
+- **THEN** 同 key 使用相同 UUIDv5 operation_id 与 canonical payload/hash，不同 key 的 operation_id 不同；全部 priority=50
+
+#### Scenario: Rolled-back transaction retry
+- **WHEN** SERIALIZABLE/deadlock attempt 完全回滚后重新执行领域事务
+- **THEN** 不要求保留未提交 transition 的 identity/time/payload；一旦存在 committed transition 或 same-key durable replay，则必须保持上述稳定性
 
 ### Requirement: Phase 5 SHALL enforce Notification payload
 
@@ -751,6 +774,21 @@ Notification payload 是 transition-time display snapshot。
 - started_at
 - transitioned_at
 
+started_at 与 transitioned_at SHALL 使用 authoritative domain timestamp，编码严格为 `t.UTC().Format(time.RFC3339Nano)`：UTC only、canonical RFC3339Nano、Z offset。Validator MUST 拒绝任何与 parse 后 canonical re-format 不一致的 wire representation，包括语义等价的 `+08:00`、`+00:00` 或非 canonical 小数秒；不得使用 enqueue-time time.Now() 构造业务时间。发送时生成的 signing timestamp 仅属 transport material，不写入 durable payload。
+
+instance_ids 与 node_names SHALL 是 positional parallel arrays，`len(instance_ids) == len(node_names)`。instance_ids MUST 为 canonical UUID、ascending、unique；node_names[i] 属于 instance_ids[i]，保持对应 ID 排序，允许重复且 MUST NOT 独立 lexical sort。字符串仍须有界。现有 FieldStringArray 的 sorted/unique 默认契约保持不变；后续实现可用最小 additive primitive / explicit field policy 表达此 ordered strings collection，不新增 schema framework 或 canonicalizer。
+
+既有 issue/reason/severity mapping SHALL 严格一致（这是既有契约的重申）：
+
+| occurrence_type | reason | severity |
+|---|---|---|
+| TOKEN_INVALID | token_invalid | Critical |
+| ACCOUNT_BLOCKED | account_blocked | Critical |
+| FORBIDDEN | forbidden | Warning |
+| CROSS_NODE_DUPLICATE_OWNERSHIP | cross_node_duplicate_ownership | Critical |
+
+任何 tuple mismatch MUST 被拒绝为 jobs.ErrInvalidPayload，不发送语义冲突消息。
+
 不得包含动态诊断信息：
 
 - token_state
@@ -773,6 +811,18 @@ occurrence_id
 #### Scenario: 显示快照
 - **WHEN** ACTIVE 后资产改名再 RESOLVED
 - **THEN** 每条消息使用各自 transition-time display snapshot，以 occurrence_id 关联且无动态诊断/Secret
+
+#### Scenario: Canonical timestamp encoding
+- **WHEN** 输入 `2026-09-11T09:00:00+08:00`，或 canonical 值 `2026-09-11T01:00:00Z`
+- **THEN** 前者即使语义等价仍拒绝，后者允许；业务时间不由 enqueue clock 重新生成
+
+#### Scenario: Parallel node display snapshot
+- **WHEN** canonical UUID A<B，两个 Node 均名为 Relay，或 A→Zulu、B→Alpha
+- **THEN** 分别接受 `[A,B]/["Relay","Relay"]` 与 `[A,B]/["Zulu","Alpha"]`；保留重复名称及 positional pairing，不独立排序名称；`[A,B]/["A"]` 拒绝
+
+#### Scenario: Legacy array and issue tuple compatibility
+- **WHEN** 旧 FieldStringArray schema 收到重复值，或 notification tuple 的 reason/severity 与 occurrence_type 不一致
+- **THEN** 旧数组仍拒绝重复值；不合法 tuple 返回 jobs.ErrInvalidPayload，包括 TOKEN_INVALID/forbidden、TOKEN_INVALID/Warning、FORBIDDEN/token_invalid、FORBIDDEN/Critical、ACCOUNT_BLOCKED/Warning、duplicate/Warning
 
 ### Requirement: Phase 5 SHALL enforce DingTalk message
 
