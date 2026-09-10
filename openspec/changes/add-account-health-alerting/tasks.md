@@ -57,8 +57,8 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [x] 4.5d 对照验证 direct 默认 false/DingTalk true、enqueue snapshot、同 key/catalog/Worker/Reconciler policy mismatch；DB 直接调用也不能绕过持久化授权，旧/过期 Worker 成功响应不能提交。
 - [x] 4.5e 验证已知 DingTalk HTTP+business success→ExecuteSucceeded→succeeded、不进入 verifying；unknown DingTalk→unknown replay；普通 unknown/ExecuteNeedsVerification→Verify-first；普通未授权 ExecuteSucceeded→fail closed。
 - [x] 4.5f 验证 direct=true/unknown=false/replay_safe=false 与 direct=false/unknown=true/replay_safe=true 均允许注册；两个授权独立，保持 unknown⇒replay_safe，不新增状态/事件/执行模式/策略表。
-- [ ] 4.6 验证 Jobs UI 与 ERROR log 最终失败可见、healthz 不受影响、通知失败不修改 occurrence。
-- [ ] 4.7 完成 proxy env、redirect、DB/job/API/UI/audit/log/metrics/trace Secret-negative 测试，错误字符串不得泄漏 URL/query。
+- [x] 4.6 验证 Jobs UI 与 ERROR log 最终失败可见、healthz 不受影响、通知失败不修改 occurrence。
+- [x] 4.7 完成 proxy env、redirect、DB/job/API/UI/audit/log/metrics/trace Secret-negative 测试，错误字符串不得泄漏 URL/query。
 
 ## 5. UI
 - [x] 5.1 新增 Problems 只读列表与过滤/分页，多个 issues 一行，Critical/Warning 与 Since 排序。

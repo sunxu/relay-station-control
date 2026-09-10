@@ -55,7 +55,11 @@ func (adapter jobSlogLogger) Log(ctx context.Context, record controljobs.LogReco
 	if adapter.logger == nil {
 		return
 	}
-	adapter.logger.LogAttrs(ctx, slog.LevelInfo, "durable job lifecycle",
+	level := slog.LevelInfo
+	if record.Result == controljobs.ResultFailure {
+		level = slog.LevelError
+	}
+	adapter.logger.LogAttrs(ctx, level, "durable job lifecycle",
 		slog.String("component", string(record.Component)),
 		slog.String("action", string(record.Action)),
 		slog.String("result", string(record.Result)),
