@@ -1,9 +1,9 @@
 # Proposal
 
 ## Phase and outcome
-Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation = IN PROGRESS — PAUSED AT SLICE A；Runtime Acceptance = NOT STARTED。本 change 已开始实施，当前暂停等待 cancellation-race Architecture re-review；当前仅 Slice A durable-job 基础扩展，尚未交付下述完整产品能力或通过 runtime acceptance。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
+Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = IN PROGRESS；Runtime Acceptance = NOT STARTED。本 change 已开始实施，cancellation-race Architecture re-review 已正式通过；当前仅 Slice A durable-job 基础扩展，尚未交付下述完整产品能力或通过 runtime acceptance。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
 
-历史正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。direct-success amendment 的正式 re-review PASS 保留为历史；Slice A Implementation Review 发现 cancellation race contract gap，当前重新打开 Architecture Review，暂停实施。本轮仅修订架构文档，不修改已有 Slice A 实现。
+历史正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。direct-success amendment 的正式 re-review PASS 保留为历史；Slice A Implementation Review 发现 cancellation race contract gap，cancellation-race Architecture re-review 已正式 PASS，允许在 Stage 1 完成后恢复 Slice A。Stage 1 仅记录批准，不修改已有 Slice A 实现；Stage 2 仅实施已批准的 cancellation amendment。
 
 ## Why
 当前 Inventory、Request Quality、Availability 与 Duplicate occurrences 已提供持久事实，但尚无本阶段统一 Token projection、Problem Accounts 与事务可靠通知集成。复用这些事实及 durable jobs，避免第二套健康状态与通知存储。
@@ -17,7 +17,7 @@ Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Archite
 ### New Capabilities
 - `account-health-alerting`：Token projection、Problem Accounts、DingTalk 生命周期与运行时验收。
 ### Modified Capabilities
-- `durable-job`：增加两个彼此独立、默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 dingtalk_alert_delivery 启用；在剩余五次 Execute 总预算内允许 unknown result 经原退避/lease/fencing 重放。未启用者保持 Verify-first，不扩大 replay_safe、不伪造 effect_not_applied。字段作为 async_job_kinds 的默认 false 布尔策略，在 enqueue 时快照到 async_jobs；Worker/Reconciler 依据每条 job 持久化值执行。重复 enqueue、Registry/Catalog 与 DB catalog、job recovery 的策略兼容性检查均包含该字段；不匹配 fail closed。allow_unknown_effect_replay=true 必须要求 replay_safe=true，非法组合拒绝注册/持久化。另增通用 `ExecuteSucceeded`：本次同步 Execute 已确认成功、job 持久化 allow_direct_success=true 且 running lease/fencing 有效、锁内无取消请求时，Worker 才可用既有 StatusSucceeded/EventSucceeded 直接完成。该字段同样进入 Definition/CatalogEntry/Job、两表策略列、enqueue snapshot、DB mapping 与全部兼容性校验；未授权返回成功须 fail closed。两个 policy 互不授权，不新增 allow_direct_success ⇒ replay_safe invariant。增量位于 `specs/durable-job/spec.md`；当前暂停 Slice A 基础扩展，不注册 DingTalk 生产 job kind。
+- `durable-job`：增加两个彼此独立、默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 dingtalk_alert_delivery 启用；在剩余五次 Execute 总预算内允许 unknown result 经原退避/lease/fencing 重放。未启用者保持 Verify-first，不扩大 replay_safe、不伪造 effect_not_applied。字段作为 async_job_kinds 的默认 false 布尔策略，在 enqueue 时快照到 async_jobs；Worker/Reconciler 依据每条 job 持久化值执行。重复 enqueue、Registry/Catalog 与 DB catalog、job recovery 的策略兼容性检查均包含该字段；不匹配 fail closed。allow_unknown_effect_replay=true 必须要求 replay_safe=true，非法组合拒绝注册/持久化。另增通用 `ExecuteSucceeded`：本次同步 Execute 已确认成功、job 持久化 allow_direct_success=true 且 running lease/fencing 有效、锁内无取消请求时，Worker 才可用既有 StatusSucceeded/EventSucceeded 直接完成。该字段同样进入 Definition/CatalogEntry/Job、两表策略列、enqueue snapshot、DB mapping 与全部兼容性校验；未授权返回成功须 fail closed。两个 policy 互不授权，不新增 allow_direct_success ⇒ replay_safe invariant。增量位于 `specs/durable-job/spec.md`；Stage 1 完成后仅恢复 Slice A 基础扩展，不注册 DingTalk 生产 job kind。
 
 - Cancellation-race amendment：只新增窄 running→cancelled 授权与既有 immutable async_job_events.reason_code 的固定语义。policy 不是 evidence；当前 no-effect 且无 unresolved unknown 才能安全取消，VerifyEffectAbsent 消解此前 unknown；direct-success 并发取消 failed / cancel_after_effect_applied，不新增自动 rollback。详见 durable-job delta；本轮不新增状态、事件类型、policy、表、列或执行框架。
 

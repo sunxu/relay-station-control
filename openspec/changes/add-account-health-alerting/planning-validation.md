@@ -201,3 +201,38 @@ tasks.md 保留此前 7 个完成勾选作为旧 Slice A evidence，新增 3.1g�
 - 本轮未运行生产测试、build/generate、migration 或运行验收，未修复 full-store baseline failures；未 commit/push。
 
 Architecture re-review readiness: READY（文档已可供重审，不是批准）。Architecture Review 保持 REOPENED / CHANGES REQUIRED，Implementation readiness = NOT READY；恢复实施须另获 re-review PASS。
+
+## Formal Cancellation-race Architecture Re-review Approval
+
+Cancellation-race Architecture Re-review: PASS。以下为已审查的 amendment commits，不是本 approval/status commit 自身的 SHA；保留上文所有历史 PASS、reopen、发现与修订记录，以及既有 Slice A implementation evidence。
+
+- Reviewed Control SHA: `b209ad1c42034f98c759a3885191d404981147d8`
+- Reviewed Ops SHA: `0652f80a9a16c4481d452d918ae71d4d3d11067e`
+- Gateway compatibility baseline: `6b045698e6e5e62e35dbd103abf20c1407f8a0bb`
+- CLIProxyAPI compatibility baseline: `273d624c70f6eb8bdd7b049df396c306acd3f8d0`
+
+```text
+P0: 0
+P1: 0
+P2: 0
+Cancellation race contract: PASS
+running→cancelled narrow authorization: PASS
+policy/evidence separation: PASS
+unresolved unknown lifecycle: PASS
+VerifyEffectAbsent reset semantics: PASS
+prior unknown preservation: PASS
+direct-success cancellation race: PASS
+ordinary Verify-first compatibility: PASS
+Minimalism: PASS
+Phase 4 compatibility: PASS
+Phase 5 internal consistency: PASS
+Phase 6 boundary: PASS
+Phase 7 boundary: PASS
+Detailed Requirements: FROZEN
+Architecture Review: PASS
+Implementation readiness: READY
+Implementation: IN PROGRESS
+Runtime Acceptance: NOT STARTED
+```
+
+Stage 1 仅批准/status update，不修改既有 production/migration/test 工作树，不新增完成勾选。Stage 1 验证与文档提交完成后，仅恢复 amended Slice A；不得开始 Slice B，不将架构批准冒充 Implementation 或 Runtime Acceptance PASS。

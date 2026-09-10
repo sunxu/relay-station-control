@@ -1,10 +1,10 @@
 # Tasks
 
-Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation = IN PROGRESS — PAUSED AT SLICE A；Runtime Acceptance = NOT STARTED。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = IN PROGRESS；Runtime Acceptance = NOT STARTED。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
-Slice A：仅 durable-job 基础扩展已实施并完成 focused tests，Implementation Review 已发现 cancellation race contract gap，现暂停等待 Architecture re-review；不继续 Slice B～G。3.1a/3.1e 的通用持久化基础已完成，但包含真实 DingTalk 注册/启用，故整项仍未勾选；3.1、4.5a/4.5b/4.5d/4.5e 的真实投递部分及第 6 节全 Phase 验收仍待实施。证据见 [Slice A validation](./slice-a-validation.md)。 既有勾选仅保留此前 Slice A 验证记录，不表示本 amendment 已实现或通过；本轮不新增任何完成勾选。
+Slice A：仅 durable-job 基础扩展已实施并完成 focused tests，Implementation Review 已发现 cancellation race contract gap，现已正式 re-review PASS，Stage 1 完成后恢复 amended Slice A；不继续 Slice B～G。3.1a/3.1e 的通用持久化基础已完成，但包含真实 DingTalk 注册/启用，故整项仍未勾选；3.1、4.5a/4.5b/4.5d/4.5e 的真实投递部分及第 6 节全 Phase 验收仍待实施。证据见 [Slice A validation](./slice-a-validation.md)。 既有勾选仅保留此前 Slice A 验证记录，不表示本 amendment 已实现；Stage 1 不新增任何完成勾选。
 
 ## 1. Contract and compatibility
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
