@@ -107,7 +107,8 @@ func TestDurableJobExecutionPolicyForwardMigrationDefaultsAndOldJobs(t *testing.
 }
 
 func TestDurableJobExecutionPolicyDownIsForwardOnly(t *testing.T) {
-	database := newIsolatedJobDatabase(t)
+	// Exercise 00028's own guard, not a later forward-only catalog migration.
+	database := newIsolatedJobDatabase(t, "up-to", "28")
 	err := runAssetGoose(t, context.Background(), "../..", database.ownerURL, "down-to", "27")
 	if err == nil || !strings.Contains(err.Error(), "execution policy migration is forward-only") {
 		t.Fatalf("policy down error = %v", err)

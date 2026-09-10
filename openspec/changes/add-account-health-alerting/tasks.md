@@ -4,7 +4,7 @@ Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation rea
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
-Slice A：最终 Implementation Review 已由用户正式确认 PASS，并提交为 `2eee43d`，历史证据见 [Slice A validation](./slice-a-validation.md)。Slice B：最终 Implementation Review 已由用户正式确认 PASS，并提交为 `dc510ce`，历史证据见 [Slice B validation](./slice-b-validation.md)。Slice C：Problems DB/read-model、filters/keyset/ACL 与 POST API 已完成 focused 验证，等待 Implementation Review；证据见 [Slice C validation](./slice-c-validation.md)。到此停止，不继续 Slice D～G。3.1/3.1a/3.1e 仍含真实 DingTalk 注册/启用，保持 open；通知集成、UI 与全 Phase 运行验收仍未完成。
+Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43d` / `dc510ce` / `b7c4d11`，历史证据见 [Slice A](./slice-a-validation.md)、[Slice B](./slice-b-validation.md)、[Slice C](./slice-c-validation.md)。因 Slice D 依赖真实 production Executor，用户批准先完成 Slice E Executor foundation，再 review/commit 后恢复 Slice D；Architecture Review 保持 PASS。当前 Executor/config/registration 已完成 focused 验证，等待 Implementation Review，见 [Slice E evidence](./slice-e-executor-validation.md)。Slice D 仍未实施；通知事务集成、UI 与全 Phase 运行验收保持 open。本轮到 Executor foundation 停止。
 
 ## 1. Contract and compatibility
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
@@ -21,12 +21,12 @@ Slice A：最终 Implementation Review 已由用户正式确认 PASS，并提交
 - [x] 2.5 更新 sqlc adapter/OpenAPI generated clients（make generate），实现 API 及 400/401/403/503 测试。
 
 ## 3. Durable delivery integration
-- [ ] 3.1 添加 delivery migration 的 job-kind registration 与 Go registry/schema 校验（10s/5 Execute attempts/replay_safe/no rollback）；按已冻结的 async_job_kinds boolean default false 与 async_jobs enqueue snapshot 契约实施，保持 forward additive，不修改历史 migration。
-- [ ] 3.1a 为既有 job-kind execution policy 增加 allow_unknown_effect_replay，默认 false，仅 DingTalk 启用；enqueue 从 definition/catalog 复制到 job，沿用所有既有策略快照校验；不按 kind-name 硬编码、不扩大 replay_safe。
+- [x] 3.1 添加 delivery migration 的 job-kind registration 与 Go registry/schema 校验（10s/5 Execute attempts/replay_safe/no rollback）；按已冻结的 async_job_kinds boolean default false 与 async_jobs enqueue snapshot 契约实施，保持 forward additive，不修改历史 migration。
+- [x] 3.1a 为既有 job-kind execution policy 增加 allow_unknown_effect_replay，默认 false，仅 DingTalk 启用；enqueue 从 definition/catalog 复制到 job，沿用所有既有策略快照校验；不按 kind-name 硬编码、不扩大 replay_safe。
 - [x] 3.1b 在既有 Worker/Reconciler 集成 policy 的 unknown→retry_wait 有界恢复，保留所有稳定标识、payload/hash、退避、lease/fencing 和普通 job Verify-first；不新增状态或 retry engine。
 - [x] 3.1c 将两个 policy 字段加入重复 enqueue compatibility、Registry.Catalog/DB catalog comparison、Worker/Reconciler job-policy consistency；执行以持久化 job snapshot 为准，registry/config 不得动态改变旧授权。
 - [x] 3.1d 在 Go Registry、DB catalog/job constraint 或等价 persistence validation、catalog compatibility validation 实施 allow_unknown_effect_replay => replay_safe，非法 false/true 组合全部 fail closed。
-- [ ] 3.1e 增加 ExecuteSucceeded 与 allow_direct_success 默认 false（仅 DingTalk true）；在 Definition/CatalogEntry/Job、两表 BOOLEAN NOT NULL DEFAULT FALSE、EnqueueTx snapshot、policyMatches、DB mapping 及全部 compatibility 路径一致传递；不改变旧 job 授权。
+- [x] 3.1e 增加 ExecuteSucceeded 与 allow_direct_success 默认 false（仅 DingTalk true）；在 Definition/CatalogEntry/Job、两表 BOOLEAN NOT NULL DEFAULT FALSE、EnqueueTx snapshot、policyMatches、DB mapping 及全部 compatibility 路径一致传递；不改变旧 job 授权。
 - [x] 3.1f 在 Worker 与 DB lifecycle/event/fenced-transition contracts 实施受 persisted direct policy 约束的 running→succeeded，复用既有 status/event、actor=worker；未授权返回成功 fail closed，不新增 direct⇒replay_safe invariant。
 - [ ] 3.2 增加 Availability additive transition contract，保留 v1/SERIALIZABLE/confirmation/recovery。
 - [ ] 3.3 在 Availability 既有事务中接入 jobs.EnqueueTx，覆盖 disabled/no backfill。
@@ -43,10 +43,10 @@ Slice A：最终 Implementation Review 已由用户正式确认 PASS，并提交
 - [x] 3.1i focused unit/DB 对照覆盖 cancellation matrix A～E、true/false policy 不充当 evidence、prior unknown + later no-effect 保留风险、Verify marker 消解旧 unknown 但不消解其后的新 unknown、current unknown 与 direct-success 并发取消、无 proof/旧 fence 拒绝、deadline/max-attempt 阻止 replay、普通 Verify-first/永久失败回归；验证事件与状态原子提交。只在真实通过后勾选，不以旧 Slice A 测试替代。
 
 ## 4. DingTalk executor
-- [ ] 4.1 添加部署环境配置读取/校验，未配置正常启动，非法 HTTPS/signing 配置失败，Secret 不持久化。
-- [ ] 4.2 实现独立 direct HTTPS client、Proxy disabled、redirect rejected、HTTP total timeout 5s 与有界响应解析。
-- [ ] 4.3 实现 ACTIVE/RESOLVED 消息与可选签名，完整邮箱、Node names、occurrence correlation，无动态诊断。
-- [ ] 4.4 测试 DNS/connect/TLS/408/429/5xx/timeout/临时业务失败重试与永久拒绝/invalid response；HTTP 200 非充分成功条件。
+- [x] 4.1 添加部署环境配置读取/校验，未配置正常启动，非法 HTTPS/signing 配置失败，Secret 不持久化。
+- [x] 4.2 实现独立 direct HTTPS client、Proxy disabled、redirect rejected、HTTP total timeout 5s 与有界响应解析。
+- [x] 4.3 实现 ACTIVE/RESOLVED 消息与可选签名，完整邮箱、Node names、occurrence correlation，无动态诊断。
+- [x] 4.4 测试 DNS/connect/TLS/408/429/5xx/timeout/临时业务失败重试与永久拒绝/invalid response；HTTP 200 非充分成功条件。
 - [ ] 4.5 测试第五次失败终态、restart/lease/fencing、发送成功后 crash/replay 重复可接受；DingTalk 不进入 verify/rollback。
 - [ ] 4.5a 对照测试同一 timeout/write-reset/expired-running-lease：DingTalk policy=true 有预算时重放，普通 job policy=false/缺省必须 Verify-first；unknown 不伪装成未生效。
 - [ ] 4.5b 验证原 job/operation/payload/hash/key/持久退避不变，正常 claim 新 lease/token，旧 worker fenced，五次 Execute 耗尽 failed；取消/期限不被 policy 绕过。

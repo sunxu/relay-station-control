@@ -345,8 +345,12 @@ func TestDurableJobRuntimeCatalogAndStateBypassMatrix(t *testing.T) {
 	if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM async_job_kinds`).Scan(&initialKinds); err != nil {
 		t.Fatal(err)
 	}
-	if initialKinds != 0 {
-		t.Fatalf("production migration registered %d job kinds", initialKinds)
+	if initialKinds != 1 {
+		t.Fatalf("production migration registered %d job kinds, want the single DingTalk kind", initialKinds)
+	}
+	var productionKind string
+	if err := database.owner.QueryRow(ctx, `SELECT job_kind FROM async_job_kinds`).Scan(&productionKind); err != nil || productionKind != "dingtalk_alert_delivery" {
+		t.Fatalf("unexpected production catalog kind %q: %v", productionKind, err)
 	}
 
 	payload := []byte(`{"enabled":true,"mode":"safe","revision":1,"target_id":"2cf45c9d-ea70-4d1a-ae2b-550701c22a55"}`)

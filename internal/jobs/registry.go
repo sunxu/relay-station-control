@@ -33,6 +33,12 @@ type Field struct {
 	MaxLength int
 	Pattern   *regexp.Regexp
 	MaxItems  int
+	// AllowDuplicates preserves repeated display values in string arrays.
+	// The default retains the existing sorted, unique collection contract.
+	AllowDuplicates bool
+	// PreserveOrder opts out of lexical ordering for positional display arrays.
+	// It does not relax uniqueness unless AllowDuplicates is also enabled.
+	PreserveOrder bool
 }
 
 type Schema struct {
@@ -40,9 +46,12 @@ type Schema struct {
 }
 
 type Definition struct {
-	Kind                     string
-	SchemaVersion            int
-	Schema                   Schema
+	Kind          string
+	SchemaVersion int
+	Schema        Schema
+	// ValidatePayload optionally checks kind-specific semantics after schema
+	// canonicalization and before hashing/enqueue. It must not mutate the payload.
+	ValidatePayload          func([]byte) error
 	Timeout                  time.Duration
 	LeaseDuration            time.Duration
 	HeartbeatInterval        time.Duration
@@ -96,6 +105,9 @@ func (r *Registry) register(def Definition) error {
 		return fmt.Errorf("duplicate job kind")
 	}
 	for name, field := range def.Schema.Fields {
+		if (field.AllowDuplicates || field.PreserveOrder) && field.Type != FieldStringArray {
+			return fmt.Errorf("invalid payload schema")
+		}
 		if !fieldPattern.MatchString(name) || secretFieldPattern.MatchString(name) || !field.Type.valid() {
 			return fmt.Errorf("invalid payload schema")
 		}
@@ -195,6 +207,11 @@ func (r *Registry) ValidateAndHash(kind string, schemaVersion int, raw []byte) (
 	if err != nil {
 		return nil, [32]byte{}, Definition{}, err
 	}
+	if definition.ValidatePayload != nil {
+		if err := definition.ValidatePayload(bytes.Clone(canonical)); err != nil {
+			return nil, [32]byte{}, Definition{}, ErrInvalidPayload
+		}
+	}
 	return canonical, sha256.Sum256(canonical), definition, nil
 }
 
@@ -287,12 +304,16 @@ func (f Field) normalize(value any) (any, error) {
 			}
 			result[index] = text
 		}
-		if !sort.StringsAreSorted(result) {
+		if !f.PreserveOrder && !sort.StringsAreSorted(result) {
 			return nil, ErrInvalidPayload
 		}
-		for index := 1; index < len(result); index++ {
-			if result[index] == result[index-1] {
-				return nil, ErrInvalidPayload
+		if !f.AllowDuplicates {
+			seen := make(map[string]struct{}, len(result))
+			for _, text := range result {
+				if _, exists := seen[text]; exists {
+					return nil, ErrInvalidPayload
+				}
+				seen[text] = struct{}{}
 			}
 		}
 		return result, nil

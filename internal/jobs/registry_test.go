@@ -51,6 +51,132 @@ func TestProductionRegistryIsEmpty(t *testing.T) {
 	}
 }
 
+func TestStringArrayDuplicatesRequireExplicitOptIn(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		definition := testDefinition(nil)
+		field := definition.Schema.Fields["providers"]
+		field.AllowDuplicates = allow
+		definition.Schema.Fields["providers"] = field
+		registry, err := NewRegistry(definition)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload := bytes.Replace(validPayload(), []byte(`["a","b"]`), []byte(`["a","a"]`), 1)
+		canonical, hash, cloned, err := registry.ValidateAndHash(definition.Kind, 1, payload)
+		if !allow {
+			if !errors.Is(err, ErrInvalidPayload) {
+				t.Fatalf("default duplicate validation: %v", err)
+			}
+			continue
+		}
+		if err != nil || !cloned.Schema.Fields["providers"].AllowDuplicates {
+			t.Fatalf("opt-in lost: %v", err)
+		}
+		again, againHash, _, err := registry.ValidateAndHash(definition.Kind, 1, canonical)
+		if err != nil || !bytes.Equal(canonical, again) || hash != againHash {
+			t.Fatal("non-deterministic duplicate canonicalization")
+		}
+		for _, invalid := range []string{`["b","a"]`, `["a","a","a","a","a"]`, `["a","12345678901234567"]`} {
+			_, _, _, err := registry.ValidateAndHash(definition.Kind, 1, bytes.Replace(validPayload(), []byte(`["a","b"]`), []byte(invalid), 1))
+			if !errors.Is(err, ErrInvalidPayload) {
+				t.Fatalf("array bounds/order relaxed: %s", invalid)
+			}
+		}
+	}
+	definition := testDefinition(nil)
+	field := definition.Schema.Fields["mode"]
+	field.AllowDuplicates = true
+	definition.Schema.Fields["mode"] = field
+	if _, err := NewRegistry(definition); err == nil {
+		t.Fatal("non-array duplicate policy accepted")
+	}
+}
+
+func TestSemanticPayloadValidationUsesCanonicalInput(t *testing.T) {
+	definition := testDefinition(nil)
+	expected, err := definition.Schema.Canonicalize(validPayload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	definition.ValidatePayload = func(raw []byte) error {
+		called = true
+		if !bytes.Equal(raw, expected) {
+			t.Fatal("semantic validation received non-canonical input")
+		}
+		raw[0] = 'x' // Validator cannot mutate the canonical bytes to be hashed/stored.
+		return nil
+	}
+	registry, err := NewRegistry(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _, _, err := registry.ValidateAndHash(definition.Kind, 1, validPayload())
+	if err != nil || !called || !bytes.Equal(canonical, expected) {
+		t.Fatalf("semantic validation: %v", err)
+	}
+	definition.ValidatePayload = func([]byte) error { return errors.New("private validator detail") }
+	registry, err = NewRegistry(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, hash, _, err := registry.ValidateAndHash(definition.Kind, 1, validPayload())
+	if err != ErrInvalidPayload || canonical != nil || hash != [32]byte{} {
+		t.Fatalf("invalid semantics returned payload/hash: %v", err)
+	}
+}
+
+func TestStringArrayPreserveOrderCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		preserve, duplicates bool
+		values               string
+		valid                bool
+	}{
+		{"legacy unsorted", false, false, `["z","a"]`, false},
+		{"duplicates alone require sorting", false, true, `["z","a"]`, false},
+		{"ordered unique", true, false, `["z","a"]`, true},
+		{"ordered nonadjacent duplicates rejected", true, false, `["z","a","z"]`, false},
+		{"ordered repeated display", true, true, `["z","a","z"]`, true},
+		{"ordered still bounded", true, true, `["z","a","z","a","z"]`, false},
+		{"ordered strings still bounded", true, true, `["z","12345678901234567"]`, false},
+		{"ordered string controls rejected", true, true, `["z","a\n"]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			definition := testDefinition(nil)
+			field := definition.Schema.Fields["providers"]
+			field.PreserveOrder, field.AllowDuplicates = tc.preserve, tc.duplicates
+			definition.Schema.Fields["providers"] = field
+			registry, err := NewRegistry(definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw := bytes.Replace(validPayload(), []byte(`["a","b"]`), []byte(tc.values), 1)
+			canonical, hash, cloned, err := registry.ValidateAndHash(definition.Kind, 1, raw)
+			if !tc.valid {
+				if !errors.Is(err, ErrInvalidPayload) {
+					t.Fatalf("error = %v", err)
+				}
+				return
+			}
+			if err != nil || !bytes.Contains(canonical, []byte(tc.values)) || !cloned.Schema.Fields["providers"].PreserveOrder {
+				t.Fatalf("order policy lost: %s %v", canonical, err)
+			}
+			again, againHash, _, err := registry.ValidateAndHash(definition.Kind, 1, canonical)
+			if err != nil || !bytes.Equal(canonical, again) || hash != againHash {
+				t.Fatal("order/hash changed")
+			}
+		})
+	}
+	definition := testDefinition(nil)
+	field := definition.Schema.Fields["mode"]
+	field.PreserveOrder = true
+	definition.Schema.Fields["mode"] = field
+	if _, err := NewRegistry(definition); err == nil {
+		t.Fatal("non-array preserve-order accepted")
+	}
+}
+
 func TestStrictPayloadCanonicalizationAndHash(t *testing.T) {
 	registry, err := NewRegistry(testDefinition(nil))
 	if err != nil {

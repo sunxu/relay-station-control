@@ -146,6 +146,11 @@ func main() {
 		logger.Error("invalid control configuration", "component", "jobs", "reason", "invalid_runtime_config")
 		os.Exit(1)
 	}
+	dingtalkConfig, err := loadDingTalkConfig()
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "dingtalk", "reason", "invalid_runtime_config")
+		os.Exit(1)
+	}
 	inventoryPollConfig, err := loadAccountInventoryPollRuntimeConfig()
 	if err != nil {
 		logger.Error("invalid control configuration", "component", "account_inventory_poll", "reason", "invalid_runtime_config")
@@ -284,7 +289,11 @@ func main() {
 		logger.Error("durable job catalog unavailable", "component", "jobs")
 		os.Exit(1)
 	}
-	jobRegistry := controljobs.NewProductionRegistry()
+	jobRegistry, err := newProductionJobRegistry(dingtalkConfig)
+	if err != nil {
+		logger.Error("durable job registry initialization failed", "component", "jobs")
+		os.Exit(1)
+	}
 	if !jobCatalogMatches(jobKinds, jobRegistry.Catalog()) {
 		logger.Error("durable job catalog mismatch", "component", "jobs", "reason", "registry_mismatch")
 		os.Exit(1)

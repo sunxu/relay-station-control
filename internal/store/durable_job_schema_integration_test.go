@@ -518,7 +518,9 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	checkVersion("after-reup")
 	// Exercise the current adapter and its transaction-bound mutations only
 	// after upgrading; the legacy 00004 down/up assertions above remain intact.
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up"); err != nil {
+	// Pin the reviewed Slice A-C baseline so this test still reaches 00028's
+	// exact protected-down error instead of 00031's catalog guard.
+	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up-to", "30"); err != nil {
 		t.Fatal(err)
 	}
 	isolated, err := pgx.ConnectConfig(ctx, isolatedConfig)
