@@ -324,7 +324,9 @@ func TestAccountTokenHealthEmptyAccountsAndIncompleteSourcePostgres(t *testing.T
 
 func TestNodeAccountQualityV4AddsTokenProjectionWithoutChangingV1V2V3Postgres(t *testing.T) {
 	ctx := context.Background()
-	fixture := newAvailabilityFixture(t, 1)
+	// This fixture verifies migration 29's down contract, not the latest
+	// additive read function introduced by later slices.
+	fixture := newAvailabilityFixture(t, 1, "up-to", "29")
 	key := fixture.keys[0]
 	enableTokenQualityFixture(t, fixture.db, fixture.node)
 	setTokenRefreshAt(t, fixture.db, fixture.node, key, "0 seconds", "VALID")

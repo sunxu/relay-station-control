@@ -1257,6 +1257,166 @@ export interface NodeAccountAvailabilityOccurrenceResponse {
   next_cursor: string | null;
 }
 
+/**
+ * Filters the row's highest severity without hiding its other issues.
+ */
+export type ProblemAccountQueryRequestSeverity = typeof ProblemAccountQueryRequestSeverity[keyof typeof ProblemAccountQueryRequestSeverity];
+
+
+export const ProblemAccountQueryRequestSeverity = {
+  Critical: 'Critical',
+  Warning: 'Warning',
+} as const;
+
+/**
+ * Matches any active issue; the returned row retains all supported issues.
+ */
+export type ProblemAccountQueryRequestReason = typeof ProblemAccountQueryRequestReason[keyof typeof ProblemAccountQueryRequestReason];
+
+
+export const ProblemAccountQueryRequestReason = {
+  token_invalid: 'token_invalid',
+  account_blocked: 'account_blocked',
+  forbidden: 'forbidden',
+  cross_node_duplicate_ownership: 'cross_node_duplicate_ownership',
+} as const;
+
+export interface ProblemAccountQueryRequest {
+  /**
+     * @maxLength 64
+     * @pattern ^[a-z0-9][a-z0-9._-]*$
+     */
+  provider?: string;
+  node?: string;
+  /** Filters the row's highest severity without hiding its other issues. */
+  severity?: ProblemAccountQueryRequestSeverity;
+  /** Matches any active issue; the returned row retains all supported issues. */
+  reason?: ProblemAccountQueryRequestReason;
+  /**
+     * Exact business identity match, normalized to lowercase and trimmed; not a fuzzy search.
+     * @maxLength 320
+     */
+  email?: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  limit?: number;
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     */
+  cursor?: string;
+}
+
+export type ProblemAccountIssueType = typeof ProblemAccountIssueType[keyof typeof ProblemAccountIssueType];
+
+
+export const ProblemAccountIssueType = {
+  ProblemTokenInvalid: 'TOKEN_INVALID',
+  ProblemAccountBlocked: 'ACCOUNT_BLOCKED',
+  ProblemForbidden: 'FORBIDDEN',
+  ProblemCrossNodeDuplicateOwnership: 'CROSS_NODE_DUPLICATE_OWNERSHIP',
+} as const;
+
+export type ProblemAccountIssueReason = typeof ProblemAccountIssueReason[keyof typeof ProblemAccountIssueReason];
+
+
+export const ProblemAccountIssueReason = {
+  token_invalid: 'token_invalid',
+  account_blocked: 'account_blocked',
+  forbidden: 'forbidden',
+  cross_node_duplicate_ownership: 'cross_node_duplicate_ownership',
+} as const;
+
+export type ProblemAccountIssueSeverity = typeof ProblemAccountIssueSeverity[keyof typeof ProblemAccountIssueSeverity];
+
+
+export const ProblemAccountIssueSeverity = {
+  Critical: 'Critical',
+  Warning: 'Warning',
+} as const;
+
+export interface ProblemAccountIssue {
+  occurrence_id: string;
+  type: ProblemAccountIssueType;
+  reason: ProblemAccountIssueReason;
+  severity: ProblemAccountIssueSeverity;
+  since: string;
+}
+
+export type ProblemAccountItemProvider = typeof ProblemAccountItemProvider[keyof typeof ProblemAccountItemProvider];
+
+
+export const ProblemAccountItemProvider = {
+  antigravity: 'antigravity',
+} as const;
+
+export type ProblemAccountItemTokenState = typeof ProblemAccountItemTokenState[keyof typeof ProblemAccountItemTokenState];
+
+
+export const ProblemAccountItemTokenState = {
+  ProblemTokenValid: 'VALID',
+  ProblemTokenInvalidState: 'INVALID',
+  ProblemTokenUnknown: 'UNKNOWN',
+} as const;
+
+export type ProblemAccountItemHighestSeverity = typeof ProblemAccountItemHighestSeverity[keyof typeof ProblemAccountItemHighestSeverity];
+
+
+export const ProblemAccountItemHighestSeverity = {
+  Critical: 'Critical',
+  Warning: 'Warning',
+} as const;
+
+export interface ProblemAccountItem {
+  instance_id: string;
+  node_name: string;
+  /** @maxLength 385 */
+  account_key: string;
+  /** @maxLength 320 */
+  email: string;
+  provider: ProblemAccountItemProvider;
+  /**
+     * Stable ordering by severity, type, since and occurrence_id. No separate Problem lifecycle.
+     * @minItems 1
+     */
+  issues: ProblemAccountIssue[];
+  availability: AccountAvailability | null;
+  token_state: ProblemAccountItemTokenState;
+  /** @nullable */
+  last_refresh_at: string | null;
+  /**
+     * Expected Valid Until, not actual expiration; exactly last_refresh_at + 3599 seconds when present, including INVALID and UNKNOWN.
+     * @nullable
+     */
+  expected_valid_until: string | null;
+  /** @nullable */
+  next_retry_at: string | null;
+  /**
+     * Latest success in retained Request Quality evidence; optional diagnostic, not lifecycle truth.
+     * @nullable
+     */
+  last_success_at: string | null;
+  /**
+     * Latest failure in retained Request Quality evidence; optional diagnostic, not lifecycle truth.
+     * @nullable
+     */
+  last_failure_at: string | null;
+  highest_severity: ProblemAccountItemHighestSeverity;
+  oldest_active_since: string;
+}
+
+export interface ProblemAccountResponse {
+  /** @maxItems 100 */
+  items: ProblemAccountItem[];
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  next_cursor: string | null;
+}
+
 export type NodeAccountQualityItemQuality = typeof NodeAccountQualityItemQuality[keyof typeof NodeAccountQualityItemQuality];
 
 
@@ -7827,3 +7987,129 @@ export function useListNodeAccountAvailabilityOccurrences<TData = Awaited<Return
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export type queryProblemAccountsResponse200 = {
+  data: ProblemAccountResponse
+  status: 200
+}
+
+export type queryProblemAccountsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type queryProblemAccountsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type queryProblemAccountsResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type queryProblemAccountsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type queryProblemAccountsResponseSuccess = (queryProblemAccountsResponse200) & {
+  headers: Headers;
+};
+export type queryProblemAccountsResponseError = (queryProblemAccountsResponse400 | queryProblemAccountsResponse401 | queryProblemAccountsResponse403 | queryProblemAccountsResponse503) & {
+  headers: Headers;
+};
+
+export type queryProblemAccountsResponse = (queryProblemAccountsResponseSuccess | queryProblemAccountsResponseError)
+
+export const getQueryProblemAccountsUrl = () => {
+
+
+
+
+  return `/api/problem-accounts/query`
+}
+
+/**
+ * Read-only Antigravity occurrence/current-membership projection. Requires an enabled super_admin session and CSRF token; 5 second query budget. Email is ordinary business identity. Security rejections use existing authentication auditing.
+ * @summary Query confirmed account problems
+ */
+export const queryProblemAccounts = async (problemAccountQueryRequest: ProblemAccountQueryRequest, options?: RequestInit): Promise<queryProblemAccountsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getQueryProblemAccountsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(problemAccountQueryRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryProblemAccountsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryProblemAccountsResponse
+}
+
+
+
+
+
+export const getQueryProblemAccountsMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queryProblemAccounts>>, TError,QueryProblemAccountsMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof queryProblemAccounts>>, TError,QueryProblemAccountsMutationVariables, TContext> => {
+
+const mutationKey = ['queryProblemAccounts'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof queryProblemAccounts>>, QueryProblemAccountsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  queryProblemAccounts(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QueryProblemAccountsMutationResult = NonNullable<Awaited<ReturnType<typeof queryProblemAccounts>>>
+    export type QueryProblemAccountsMutationBody = ProblemAccountQueryRequest
+    export type QueryProblemAccountsMutationError = ErrorResponse
+    export type QueryProblemAccountsMutationVariables = {data: ProblemAccountQueryRequest}
+
+    /**
+ * @summary Query confirmed account problems
+ */
+export const useQueryProblemAccounts = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queryProblemAccounts>>, TError,QueryProblemAccountsMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof queryProblemAccounts>>,
+        TError,
+        QueryProblemAccountsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getQueryProblemAccountsMutationOptions(options), queryClient);
+    }

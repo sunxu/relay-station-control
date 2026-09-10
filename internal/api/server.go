@@ -18,6 +18,8 @@ import (
 const authenticationResponseFloor = 250 * time.Millisecond
 
 type Server struct {
+	problemAccounts               assetstore.ProblemAccountReader
+	problemAccountCursor          *assetstore.ProblemAccountCursorCodec
 	accountAvailability           assetstore.AccountAvailabilityReader
 	pollCapacity                  assetstore.InventoryPollCapacityReader
 	pollCapacityConfig            controlpoll.ValidatedConfig

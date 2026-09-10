@@ -372,6 +372,15 @@ func main() {
 	apiServer.SetAccountQualityReader(accountQuality)
 	apiServer.SetAccountQualityIncidentsReader(accountQuality)
 	apiServer.SetAccountRequestHistoryReader(accountQuality)
+	problemAccounts, err := assetstore.NewProblemAccountRepository(pool)
+	if err != nil {
+		logger.Error("problem account reader initialization failed", "component", "problem_accounts")
+		os.Exit(1)
+	}
+	if err := apiServer.SetProblemAccountReader(problemAccounts); err != nil {
+		logger.Error("problem account API initialization failed", "component", "problem_accounts")
+		os.Exit(1)
+	}
 	pollCapacity, err := assetstore.NewInventoryPollCapacityRepository(pool)
 	if err != nil {
 		logger.Error("poll capacity reader initialization failed", "component", "account_inventory")

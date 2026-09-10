@@ -1158,6 +1158,168 @@ func (e NodeInventoryProviderStateSnapshotFreshness) Valid() bool {
 	}
 }
 
+// Defines values for ProblemAccountIssueReason.
+const (
+	ProblemAccountIssueReasonAccountBlocked              ProblemAccountIssueReason = "account_blocked"
+	ProblemAccountIssueReasonCrossNodeDuplicateOwnership ProblemAccountIssueReason = "cross_node_duplicate_ownership"
+	ProblemAccountIssueReasonForbidden                   ProblemAccountIssueReason = "forbidden"
+	ProblemAccountIssueReasonTokenInvalid                ProblemAccountIssueReason = "token_invalid"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountIssueReason enum.
+func (e ProblemAccountIssueReason) Valid() bool {
+	switch e {
+	case ProblemAccountIssueReasonAccountBlocked:
+		return true
+	case ProblemAccountIssueReasonCrossNodeDuplicateOwnership:
+		return true
+	case ProblemAccountIssueReasonForbidden:
+		return true
+	case ProblemAccountIssueReasonTokenInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountIssueSeverity.
+const (
+	ProblemAccountIssueSeverityCritical ProblemAccountIssueSeverity = "Critical"
+	ProblemAccountIssueSeverityWarning  ProblemAccountIssueSeverity = "Warning"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountIssueSeverity enum.
+func (e ProblemAccountIssueSeverity) Valid() bool {
+	switch e {
+	case ProblemAccountIssueSeverityCritical:
+		return true
+	case ProblemAccountIssueSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountIssueType.
+const (
+	ProblemAccountBlocked              ProblemAccountIssueType = "ACCOUNT_BLOCKED"
+	ProblemCrossNodeDuplicateOwnership ProblemAccountIssueType = "CROSS_NODE_DUPLICATE_OWNERSHIP"
+	ProblemForbidden                   ProblemAccountIssueType = "FORBIDDEN"
+	ProblemTokenInvalid                ProblemAccountIssueType = "TOKEN_INVALID"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountIssueType enum.
+func (e ProblemAccountIssueType) Valid() bool {
+	switch e {
+	case ProblemAccountBlocked:
+		return true
+	case ProblemCrossNodeDuplicateOwnership:
+		return true
+	case ProblemForbidden:
+		return true
+	case ProblemTokenInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountItemHighestSeverity.
+const (
+	ProblemAccountItemHighestSeverityCritical ProblemAccountItemHighestSeverity = "Critical"
+	ProblemAccountItemHighestSeverityWarning  ProblemAccountItemHighestSeverity = "Warning"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountItemHighestSeverity enum.
+func (e ProblemAccountItemHighestSeverity) Valid() bool {
+	switch e {
+	case ProblemAccountItemHighestSeverityCritical:
+		return true
+	case ProblemAccountItemHighestSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountItemProvider.
+const (
+	Antigravity ProblemAccountItemProvider = "antigravity"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountItemProvider enum.
+func (e ProblemAccountItemProvider) Valid() bool {
+	switch e {
+	case Antigravity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountItemTokenState.
+const (
+	ProblemTokenInvalidState ProblemAccountItemTokenState = "INVALID"
+	ProblemTokenUnknown      ProblemAccountItemTokenState = "UNKNOWN"
+	ProblemTokenValid        ProblemAccountItemTokenState = "VALID"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountItemTokenState enum.
+func (e ProblemAccountItemTokenState) Valid() bool {
+	switch e {
+	case ProblemTokenInvalidState:
+		return true
+	case ProblemTokenUnknown:
+		return true
+	case ProblemTokenValid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountQueryRequestReason.
+const (
+	ProblemAccountQueryRequestReasonAccountBlocked              ProblemAccountQueryRequestReason = "account_blocked"
+	ProblemAccountQueryRequestReasonCrossNodeDuplicateOwnership ProblemAccountQueryRequestReason = "cross_node_duplicate_ownership"
+	ProblemAccountQueryRequestReasonForbidden                   ProblemAccountQueryRequestReason = "forbidden"
+	ProblemAccountQueryRequestReasonTokenInvalid                ProblemAccountQueryRequestReason = "token_invalid"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountQueryRequestReason enum.
+func (e ProblemAccountQueryRequestReason) Valid() bool {
+	switch e {
+	case ProblemAccountQueryRequestReasonAccountBlocked:
+		return true
+	case ProblemAccountQueryRequestReasonCrossNodeDuplicateOwnership:
+		return true
+	case ProblemAccountQueryRequestReasonForbidden:
+		return true
+	case ProblemAccountQueryRequestReasonTokenInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemAccountQueryRequestSeverity.
+const (
+	ProblemAccountQueryRequestSeverityCritical ProblemAccountQueryRequestSeverity = "Critical"
+	ProblemAccountQueryRequestSeverityWarning  ProblemAccountQueryRequestSeverity = "Warning"
+)
+
+// Valid indicates whether the value is a known member of the ProblemAccountQueryRequestSeverity enum.
+func (e ProblemAccountQueryRequestSeverity) Valid() bool {
+	switch e {
+	case ProblemAccountQueryRequestSeverityCritical:
+		return true
+	case ProblemAccountQueryRequestSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RecoveryCodesResponseRemaining.
 const (
 	N10 RecoveryCodesResponseRemaining = 10
@@ -2284,6 +2446,89 @@ type NormalizedAccountEmail = string
 // OperationReason defines model for OperationReason.
 type OperationReason = string
 
+// ProblemAccountIssue defines model for ProblemAccountIssue.
+type ProblemAccountIssue struct {
+	OccurrenceId openapi_types.UUID          `json:"occurrence_id"`
+	Reason       ProblemAccountIssueReason   `json:"reason"`
+	Severity     ProblemAccountIssueSeverity `json:"severity"`
+	Since        time.Time                   `json:"since"`
+	Type         ProblemAccountIssueType     `json:"type"`
+}
+
+// ProblemAccountIssueReason defines model for ProblemAccountIssue.Reason.
+type ProblemAccountIssueReason string
+
+// ProblemAccountIssueSeverity defines model for ProblemAccountIssue.Severity.
+type ProblemAccountIssueSeverity string
+
+// ProblemAccountIssueType defines model for ProblemAccountIssue.Type.
+type ProblemAccountIssueType string
+
+// ProblemAccountItem defines model for ProblemAccountItem.
+type ProblemAccountItem struct {
+	AccountKey   string               `json:"account_key"`
+	Availability *AccountAvailability `json:"availability"`
+	Email        string               `json:"email"`
+
+	// ExpectedValidUntil Expected Valid Until, not actual expiration; exactly last_refresh_at + 3599 seconds when present, including INVALID and UNKNOWN.
+	ExpectedValidUntil *time.Time                        `json:"expected_valid_until"`
+	HighestSeverity    ProblemAccountItemHighestSeverity `json:"highest_severity"`
+	InstanceId         openapi_types.UUID                `json:"instance_id"`
+
+	// Issues Stable ordering by severity, type, since and occurrence_id. No separate Problem lifecycle.
+	Issues []ProblemAccountIssue `json:"issues"`
+
+	// LastFailureAt Latest failure in retained Request Quality evidence; optional diagnostic, not lifecycle truth.
+	LastFailureAt *time.Time `json:"last_failure_at"`
+	LastRefreshAt *time.Time `json:"last_refresh_at"`
+
+	// LastSuccessAt Latest success in retained Request Quality evidence; optional diagnostic, not lifecycle truth.
+	LastSuccessAt     *time.Time                   `json:"last_success_at"`
+	NextRetryAt       *time.Time                   `json:"next_retry_at"`
+	NodeName          string                       `json:"node_name"`
+	OldestActiveSince time.Time                    `json:"oldest_active_since"`
+	Provider          ProblemAccountItemProvider   `json:"provider"`
+	TokenState        ProblemAccountItemTokenState `json:"token_state"`
+}
+
+// ProblemAccountItemHighestSeverity defines model for ProblemAccountItem.HighestSeverity.
+type ProblemAccountItemHighestSeverity string
+
+// ProblemAccountItemProvider defines model for ProblemAccountItem.Provider.
+type ProblemAccountItemProvider string
+
+// ProblemAccountItemTokenState defines model for ProblemAccountItem.TokenState.
+type ProblemAccountItemTokenState string
+
+// ProblemAccountQueryRequest defines model for ProblemAccountQueryRequest.
+type ProblemAccountQueryRequest struct {
+	Cursor *string `json:"cursor,omitempty"`
+
+	// Email Exact business identity match, normalized to lowercase and trimmed; not a fuzzy search.
+	Email    *string             `json:"email,omitempty"`
+	Limit    *int                `json:"limit,omitempty"`
+	Node     *openapi_types.UUID `json:"node,omitempty"`
+	Provider *string             `json:"provider,omitempty"`
+
+	// Reason Matches any active issue; the returned row retains all supported issues.
+	Reason *ProblemAccountQueryRequestReason `json:"reason,omitempty"`
+
+	// Severity Filters the row's highest severity without hiding its other issues.
+	Severity *ProblemAccountQueryRequestSeverity `json:"severity,omitempty"`
+}
+
+// ProblemAccountQueryRequestReason Matches any active issue; the returned row retains all supported issues.
+type ProblemAccountQueryRequestReason string
+
+// ProblemAccountQueryRequestSeverity Filters the row's highest severity without hiding its other issues.
+type ProblemAccountQueryRequestSeverity string
+
+// ProblemAccountResponse defines model for ProblemAccountResponse.
+type ProblemAccountResponse struct {
+	Items      []ProblemAccountItem `json:"items"`
+	NextCursor *string              `json:"next_cursor"`
+}
+
 // ProviderInventoryPolicy defines model for ProviderInventoryPolicy.
 type ProviderInventoryPolicy struct {
 	ActiveProviders     []ProviderName     `json:"active_providers"`
@@ -2594,6 +2839,12 @@ type ListJobsParams struct {
 	Limit       *int       `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// QueryProblemAccountsParams defines parameters for QueryProblemAccounts.
+type QueryProblemAccountsParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // BindRelayNodeParams defines parameters for BindRelayNode.
 type BindRelayNodeParams struct {
 	// XCSRFToken Random proof bound to the current administrator session.
@@ -2726,6 +2977,9 @@ type CompleteBootstrapJSONRequestBody = TotpConfirmationRequest
 
 // StartBootstrapJSONRequestBody defines body for StartBootstrap for application/json ContentType.
 type StartBootstrapJSONRequestBody = BootstrapStartRequest
+
+// QueryProblemAccountsJSONRequestBody defines body for QueryProblemAccounts for application/json ContentType.
+type QueryProblemAccountsJSONRequestBody = ProblemAccountQueryRequest
 
 // BindRelayNodeJSONRequestBody defines body for BindRelayNode for application/json ContentType.
 type BindRelayNodeJSONRequestBody = BindRelayNodeRequest
@@ -3140,6 +3394,9 @@ type ServerInterface interface {
 	// GetJob Read one durable Control job
 	// (GET /api/jobs/{job_id})
 	GetJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID)
+	// QueryProblemAccounts Query confirmed account problems
+	// (POST /api/problem-accounts/query)
+	QueryProblemAccounts(w http.ResponseWriter, r *http.Request, params QueryProblemAccountsParams)
 	// BindRelayNode Bind an unbound Relay Node to a fresh Gateway Account
 	// (POST /api/relay-bindings/bind)
 	BindRelayNode(w http.ResponseWriter, r *http.Request, params BindRelayNodeParams)
@@ -3371,6 +3628,12 @@ func (_ Unimplemented) ListJobs(w http.ResponseWriter, r *http.Request, params L
 // GetJob Read one durable Control job
 // (GET /api/jobs/{job_id})
 func (_ Unimplemented) GetJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// QueryProblemAccounts Query confirmed account problems
+// (POST /api/problem-accounts/query)
+func (_ Unimplemented) QueryProblemAccounts(w http.ResponseWriter, r *http.Request, params QueryProblemAccountsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4690,6 +4953,51 @@ func (siw *ServerInterfaceWrapper) GetJob(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// QueryProblemAccounts operation middleware
+func (siw *ServerInterfaceWrapper) QueryProblemAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params QueryProblemAccountsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryProblemAccounts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // BindRelayNode operation middleware
 func (siw *ServerInterfaceWrapper) BindRelayNode(w http.ResponseWriter, r *http.Request) {
 
@@ -5620,6 +5928,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/topology/nodes/{instance_id}/account-availability-occurrences", wrapper.ListNodeAccountAvailabilityOccurrences)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/problem-accounts/query", wrapper.QueryProblemAccounts)
 	})
 
 	return r

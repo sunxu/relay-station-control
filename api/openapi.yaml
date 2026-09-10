@@ -1578,6 +1578,33 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
 
+  /api/problem-accounts/query:
+    post:
+      operationId: queryProblemAccounts
+      summary: Query confirmed account problems
+      description: Read-only Antigravity occurrence/current-membership projection. Requires an enabled super_admin session and CSRF token; 5 second query budget. Email is ordinary business identity. Security rejections use existing authentication auditing.
+      tags: [topology]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProblemAccountQueryRequest"}
+      responses:
+        "200":
+          description: Confirmed problems, sorted by highest severity (Critical before Warning), oldest active time, email and instance_id. Diagnostic changes never resolve issues.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/NoStore"}
+            X-Request-ID: {$ref: "#/components/headers/RequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProblemAccountResponse"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+
 components:
   securitySchemes:
     SessionCookie:
@@ -3325,6 +3352,91 @@ components:
           maxItems: 100
           items: {$ref: "#/components/schemas/NodeAccountAvailabilityOccurrenceItem"}
         next_cursor: {type: [string, "null"], maxLength: 8192}
+
+    ProblemAccountQueryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider: {type: string, maxLength: 64, pattern: "^[a-z0-9][a-z0-9._-]*$"}
+        node: {type: string, format: uuid}
+        severity:
+          type: string
+          enum: [Critical, Warning]
+          description: Filters the row's highest severity without hiding its other issues.
+        reason:
+          type: string
+          enum: [token_invalid, account_blocked, forbidden, cross_node_duplicate_ownership]
+          description: Matches any active issue; the returned row retains all supported issues.
+        email:
+          type: string
+          maxLength: 320
+          description: Exact business identity match, normalized to lowercase and trimmed; not a fuzzy search.
+        limit: {type: integer, minimum: 1, maximum: 100, default: 25}
+        cursor: {type: string, minLength: 1, maxLength: 2048}
+
+    ProblemAccountIssue:
+      type: object
+      additionalProperties: false
+      required: [occurrence_id, type, reason, severity, since]
+      properties:
+        occurrence_id: {type: string, format: uuid}
+        type:
+          type: string
+          enum: [TOKEN_INVALID, ACCOUNT_BLOCKED, FORBIDDEN, CROSS_NODE_DUPLICATE_OWNERSHIP]
+          x-enum-varnames: [ProblemTokenInvalid, ProblemAccountBlocked, ProblemForbidden, ProblemCrossNodeDuplicateOwnership]
+        reason:
+          type: string
+          enum: [token_invalid, account_blocked, forbidden, cross_node_duplicate_ownership]
+        severity: {type: string, enum: [Critical, Warning]}
+        since: {type: string, format: date-time}
+
+    ProblemAccountItem:
+      type: object
+      additionalProperties: false
+      required: [instance_id, node_name, account_key, email, provider, issues, availability, token_state, last_refresh_at, expected_valid_until, next_retry_at, last_success_at, last_failure_at, highest_severity, oldest_active_since]
+      properties:
+        instance_id: {type: string, format: uuid}
+        node_name: {type: string}
+        account_key: {type: string, maxLength: 385}
+        email: {type: string, maxLength: 320}
+        provider: {type: string, enum: [antigravity]}
+        issues:
+          type: array
+          minItems: 1
+          description: Stable ordering by severity, type, since and occurrence_id. No separate Problem lifecycle.
+          items: {$ref: "#/components/schemas/ProblemAccountIssue"}
+        availability: {$ref: "#/components/schemas/AccountAvailability"}
+        token_state:
+          type: string
+          enum: [VALID, INVALID, UNKNOWN]
+          x-enum-varnames: [ProblemTokenValid, ProblemTokenInvalidState, ProblemTokenUnknown]
+        last_refresh_at: {type: [string, "null"], format: date-time}
+        expected_valid_until:
+          type: [string, "null"]
+          format: date-time
+          description: Expected Valid Until, not actual expiration; exactly last_refresh_at + 3599 seconds when present, including INVALID and UNKNOWN.
+        next_retry_at: {type: [string, "null"], format: date-time}
+        last_success_at:
+          type: [string, "null"]
+          format: date-time
+          description: Latest success in retained Request Quality evidence; optional diagnostic, not lifecycle truth.
+        last_failure_at:
+          type: [string, "null"]
+          format: date-time
+          description: Latest failure in retained Request Quality evidence; optional diagnostic, not lifecycle truth.
+        highest_severity: {type: string, enum: [Critical, Warning]}
+        oldest_active_since: {type: string, format: date-time}
+
+    ProblemAccountResponse:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/ProblemAccountItem"}
+        next_cursor: {type: [string, "null"], maxLength: 2048}
 
     NodeAccountQualityItem:
       type: object
