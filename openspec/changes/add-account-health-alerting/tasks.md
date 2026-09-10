@@ -4,7 +4,7 @@ Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation rea
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
-Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43d` / `dc510ce` / `b7c4d11`，历史证据见 [Slice A](./slice-a-validation.md)、[Slice B](./slice-b-validation.md)、[Slice C](./slice-c-validation.md)。因 Slice D 依赖真实 production Executor，用户批准先完成 Slice E Executor foundation；其正式 Implementation Re-review PASS 后已提交为 `ac21b99c2b70fd863fdf37ed492a89858352a54f`，见 [Slice E evidence](./slice-e-executor-validation.md)。以该提交为基线实施的 Slice D 已完成 focused 验证，尚未提交、等待 Implementation Review，见 [Slice D evidence](./slice-d-validation.md)。Architecture Review 保持 PASS；UI 与全 Phase 运行验收保持 open，本轮到 Slice D 停止。
+Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43d` / `dc510ce` / `b7c4d11`，历史证据见 [Slice A](./slice-a-validation.md)、[Slice B](./slice-b-validation.md)、[Slice C](./slice-c-validation.md)。因 Slice D 依赖真实 production Executor，用户批准先完成 Slice E Executor foundation；其正式 Implementation Re-review PASS 后已提交为 `ac21b99c2b70fd863fdf37ed492a89858352a54f`，见 [Slice E evidence](./slice-e-executor-validation.md)。Slice D 随后由用户正式确认 Implementation Review PASS（P0/P1/P2=0），并提交为 `187718223f62669e9c722187c0833f5478a5f313`；[Slice D evidence](./slice-d-validation.md) 保留提交前验证历史。本轮以该提交为基线，仅补 DingTalk runtime/restart/replay focused evidence；Architecture Review 保持 PASS，Problems UI 与正式 Runtime Acceptance 不在本轮范围。
 
 ## 1. Contract and compatibility
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
@@ -43,16 +43,19 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [x] 3.1i focused unit/DB 对照覆盖 cancellation matrix A～E、true/false policy 不充当 evidence、prior unknown + later no-effect 保留风险、Verify marker 消解旧 unknown 但不消解其后的新 unknown、current unknown 与 direct-success 并发取消、无 proof/旧 fence 拒绝、deadline/max-attempt 阻止 replay、普通 Verify-first/永久失败回归；验证事件与状态原子提交。只在真实通过后勾选，不以旧 Slice A 测试替代。
 
 ## 4. DingTalk executor
+
+本轮 4.5 / 4.5a / 4.5b / 4.5d / 4.5e 的 focused PostgreSQL 与回归证据见 [Slice E runtime validation](./slice-e-runtime-validation.md)；Tasks 36/50，不代表正式 Runtime Acceptance 或本轮 Implementation Review 已通过。
+
 - [x] 4.1 添加部署环境配置读取/校验，未配置正常启动，非法 HTTPS/signing 配置失败，Secret 不持久化。
 - [x] 4.2 实现独立 direct HTTPS client、Proxy disabled、redirect rejected、HTTP total timeout 5s 与有界响应解析。
 - [x] 4.3 实现 ACTIVE/RESOLVED 消息与可选签名，完整邮箱、Node names、occurrence correlation，无动态诊断。
 - [x] 4.4 测试 DNS/connect/TLS/408/429/5xx/timeout/临时业务失败重试与永久拒绝/invalid response；HTTP 200 非充分成功条件。
-- [ ] 4.5 测试第五次失败终态、restart/lease/fencing、发送成功后 crash/replay 重复可接受；DingTalk 不进入 verify/rollback。
-- [ ] 4.5a 对照测试同一 timeout/write-reset/expired-running-lease：DingTalk policy=true 有预算时重放，普通 job policy=false/缺省必须 Verify-first；unknown 不伪装成未生效。
-- [ ] 4.5b 验证原 job/operation/payload/hash/key/持久退避不变，正常 claim 新 lease/token，旧 worker fenced，五次 Execute 耗尽 failed；取消/期限不被 policy 绕过。
+- [x] 4.5 测试第五次失败终态、restart/lease/fencing、发送成功后 crash/replay 重复可接受；DingTalk 不进入 verify/rollback。
+- [x] 4.5a 对照测试同一 timeout/write-reset/expired-running-lease：DingTalk policy=true 有预算时重放，普通 job policy=false/缺省必须 Verify-first；unknown 不伪装成未生效。
+- [x] 4.5b 验证原 job/operation/payload/hash/key/持久退避不变，正常 claim 新 lease/token，旧 worker fenced，五次 Execute 耗尽 failed；取消/期限不被 policy 绕过。
 - [x] 4.5c 覆盖 false/true 非法组合在 registration/catalog/job persistence/compatibility 各入口拒绝；验证 enqueue snapshot、同 key policy 不匹配、catalog mismatch、重启/registry 更新后旧 job snapshot mismatch 在 Worker/Reconciler fail closed，不改旧权限。
-- [ ] 4.5d 对照验证 direct 默认 false/DingTalk true、enqueue snapshot、同 key/catalog/Worker/Reconciler policy mismatch；DB 直接调用也不能绕过持久化授权，旧/过期 Worker 成功响应不能提交。
-- [ ] 4.5e 验证已知 DingTalk HTTP+business success→ExecuteSucceeded→succeeded、不进入 verifying；unknown DingTalk→unknown replay；普通 unknown/ExecuteNeedsVerification→Verify-first；普通未授权 ExecuteSucceeded→fail closed。
+- [x] 4.5d 对照验证 direct 默认 false/DingTalk true、enqueue snapshot、同 key/catalog/Worker/Reconciler policy mismatch；DB 直接调用也不能绕过持久化授权，旧/过期 Worker 成功响应不能提交。
+- [x] 4.5e 验证已知 DingTalk HTTP+business success→ExecuteSucceeded→succeeded、不进入 verifying；unknown DingTalk→unknown replay；普通 unknown/ExecuteNeedsVerification→Verify-first；普通未授权 ExecuteSucceeded→fail closed。
 - [x] 4.5f 验证 direct=true/unknown=false/replay_safe=false 与 direct=false/unknown=true/replay_safe=true 均允许注册；两个授权独立，保持 unknown⇒replay_safe，不新增状态/事件/执行模式/策略表。
 - [ ] 4.6 验证 Jobs UI 与 ERROR log 最终失败可见、healthz 不受影响、通知失败不修改 occurrence。
 - [ ] 4.7 完成 proxy env、redirect、DB/job/API/UI/audit/log/metrics/trace Secret-negative 测试，错误字符串不得泄漏 URL/query。
