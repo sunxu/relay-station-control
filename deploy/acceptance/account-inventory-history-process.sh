@@ -540,6 +540,15 @@ verify_terminal_internal_source_preserved() {
     if grep -Fq 'class=rollup_daily_summary_not_ready' "$runtime_directory/${label}-terminal-internal.log"; then
       fixed_failure "${label}_daily_summary_not_ready"
     fi
+    if grep -Fq 'class=rollup_row_count_invalid' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_row_count_invalid"
+    fi
+    if grep -Fq 'class=rollup_unexpected_completed' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_unexpected_completed"
+    fi
+    if grep -Fq 'class=rollup_failure_reason_present' "$runtime_directory/${label}-terminal-internal.log"; then
+      fixed_failure "${label}_failure_reason_present"
+    fi
     if grep -Fq 'class=rollup_state_invalid' "$runtime_directory/${label}-terminal-internal.log"; then
       fixed_failure "${label}_state_invalid"
     fi

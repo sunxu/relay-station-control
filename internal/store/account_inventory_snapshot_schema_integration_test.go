@@ -105,10 +105,12 @@ func insertSnapshotPollFixtureWithProviders(
 		t.Fatal(err)
 	}
 	// A 299-second grace intentionally leaves the last second of every slot
-	// ineligible. Use the next aligned slot near that boundary so fixture
-	// claims cannot flake while retaining the production constraint shape.
+	// ineligible. If the fixture is too close to the boundary, wait until the
+	// next slot is current instead of inserting a future scheduled_at that
+	// violates account_inventory_poll_runs_times_ordered.
 	if !databaseNow.Before(slot.Add(295 * time.Second)) {
-		slot = slot.Add(5 * time.Minute)
+		time.Sleep(time.Until(slot.Add(5*time.Minute)) + 100*time.Millisecond)
+		slot = currentPollSlot(t, ctx, database.owner)
 	}
 	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs (
 		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,

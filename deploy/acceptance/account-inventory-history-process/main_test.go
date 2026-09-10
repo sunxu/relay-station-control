@@ -777,6 +777,26 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 					case !dailySummaryReady:
 						t.Fatal("history process terminal internal timed out class=rollup_daily_summary_not_ready")
 					case !rollupNotCompleted:
+						var rollupCount, completedCount, failureReasonCount int
+						detailErr := ownerPool.QueryRow(diagnosticContext, `SELECT
+							count(*),
+							count(*) FILTER (WHERE status='completed'),
+							count(*) FILTER (WHERE failure_reason IS NOT NULL)
+						FROM public.account_inventory_daily_rollup_runs
+						WHERE summary_date=$1::date AND instance_id=$2`,
+							fixture.summaryDate, fixture.instanceID).Scan(
+							&rollupCount, &completedCount, &failureReasonCount,
+						)
+						if detailErr == nil {
+							switch {
+							case rollupCount != 1:
+								t.Fatal("history process terminal internal timed out class=rollup_row_count_invalid")
+							case completedCount != 0:
+								t.Fatal("history process terminal internal timed out class=rollup_unexpected_completed")
+							case failureReasonCount != 0:
+								t.Fatal("history process terminal internal timed out class=rollup_failure_reason_present")
+							}
+						}
 						t.Fatal("history process terminal internal timed out class=rollup_state_invalid")
 					case !auditClean:
 						t.Fatal("history process terminal internal timed out class=rollup_failure_audit_present")
