@@ -174,7 +174,9 @@ SELECT
     default_max_attempts,
     default_max_verification_attempts,
     replay_safe,
-    rollback_allowed
+    rollback_allowed,
+    allow_unknown_effect_replay,
+    allow_direct_success
 FROM async_job_kinds
 WHERE lifecycle_status = 'active'
 ORDER BY job_kind;
@@ -210,3 +212,7 @@ SELECT COALESCE(
     0
 )::double precision AS oldest_pending_seconds
 FROM operation_outbox;
+
+-- name: GetActiveAsyncJobKind :one
+SELECT * FROM async_job_kinds
+WHERE job_kind = $1 AND payload_schema_version = $2 AND lifecycle_status = 'active';

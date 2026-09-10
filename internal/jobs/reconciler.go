@@ -93,12 +93,14 @@ func (r *Reconciler) Run(ctx context.Context) error {
 
 func (r *Reconciler) reconcile(ctx context.Context, lease Lease) {
 	if lease.ID == uuid.Nil || lease.OperationID == uuid.Nil || lease.Token == uuid.Nil ||
-		(lease.Status != StatusVerifying && lease.Status != StatusRollingBack) ||
-		lease.VerificationAttempt < 1 {
+		(lease.Status != StatusRunning && lease.Status != StatusVerifying && lease.Status != StatusRollingBack) ||
+		(lease.Status != StatusRunning && lease.VerificationAttempt < 1) {
 		return
 	}
 	action := ActionVerify
-	if lease.Status == StatusRollingBack {
+	if lease.Status == StatusRunning {
+		action = ActionClaim
+	} else if lease.Status == StatusRollingBack {
 		action = ActionRollback
 	}
 	definition, ok := r.registry.Lookup(lease.Kind)
@@ -125,6 +127,30 @@ func (r *Reconciler) reconcile(ctx context.Context, lease Lease) {
 			Event: EventFailed, Actor: ActorReconciler, ErrorCode: "payload_integrity_failed", ReleaseLease: true,
 		}
 		r.transition(ctx, lease.Kind, action, transition)
+		return
+	}
+	if lease.Status == StatusRunning {
+		transition := Transition{JobID: lease.ID, Token: lease.Token, From: []Status{StatusRunning}, Actor: ActorReconciler, ReleaseLease: true}
+		if !lease.AllowUnknownEffectReplay {
+			transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "replay_not_permitted"
+		} else {
+			// Only the opted-in expired-running recovery path emits the
+			// framework-owned unknown-effect proof. Ordinary jobs fail closed
+			// above and retain their Verify-first contract.
+			transition.ReasonCode = ReasonEffectUnknownUnverified
+			transition.ErrorCode = "execution_result_unknown"
+			if lease.CancelRequested {
+				transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "cancel_after_unknown_effect"
+			} else if lease.DeadlineExceeded {
+				transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "job_deadline_exceeded"
+			} else if lease.Attempt >= lease.MaxAttempts {
+				transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "max_attempts_exhausted"
+			} else {
+				transition.To, transition.Event, transition.ErrorCode = StatusRetryWait, EventRetryScheduled, "execution_result_unknown"
+				transition.RetryAfter = r.config.Retry.Delay(lease.Attempt)
+			}
+		}
+		r.transition(ctx, lease.Kind, ActionClaim, transition)
 		return
 	}
 	execution := Execution{JobID: lease.ID, OperationID: lease.OperationID, Kind: lease.Kind, Payload: canonical, Attempt: lease.Attempt, FencingToken: lease.Token}
@@ -160,8 +186,8 @@ func (r *Reconciler) reconcile(ctx context.Context, lease Lease) {
 }
 
 func (r *Reconciler) transition(ctx context.Context, kind string, action Action, transition Transition) {
-	err := r.repository.TransitionFenced(ctx, transition)
-	emitTransitionLog(ctx, r.logger, r.registry, ComponentReconciler, action, kind, transition.To, transition.ErrorCode, err)
+	outcome, err := r.repository.TransitionFenced(ctx, transition)
+	emitTransitionLog(ctx, r.logger, r.registry, ComponentReconciler, action, kind, outcome.Status, outcome.ErrorCode, err)
 }
 
 func (r *Reconciler) applyVerification(ctx context.Context, lease Lease, definition Definition, result VerifyResult) {
@@ -178,6 +204,11 @@ func (r *Reconciler) applyVerification(ctx context.Context, lease Lease, definit
 			transition.To, transition.Event = StatusSucceeded, EventSucceeded
 		}
 	case VerifyEffectAbsent:
+		// Verify is the only authority that can emit a verified-absence
+		// marker. The marker is retained for retry, safe cancellation, and
+		// fail-closed budget paths so the DB can resolve prior unknowns from
+		// the immutable event sequence.
+		transition.ReasonCode = ReasonEffectAbsentVerified
 		if lease.CancelRequested {
 			transition.To, transition.Event, transition.ErrorCode = StatusCancelled, EventCancelled, "cancel_verified_safe"
 		} else if definition.ReplaySafe && lease.Attempt < lease.MaxAttempts {

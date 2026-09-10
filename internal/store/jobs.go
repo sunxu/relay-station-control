@@ -84,15 +84,17 @@ type JobReader interface {
 }
 
 type JobKindPolicy struct {
-	JobKind                 string
-	PayloadSchemaVersion    int
-	Timeout                 time.Duration
-	LeaseDuration           time.Duration
-	HeartbeatInterval       time.Duration
-	MaxAttempts             int
-	MaxVerificationAttempts int
-	ReplaySafe              bool
-	RollbackAllowed         bool
+	JobKind                  string
+	PayloadSchemaVersion     int
+	Timeout                  time.Duration
+	LeaseDuration            time.Duration
+	HeartbeatInterval        time.Duration
+	MaxAttempts              int
+	MaxVerificationAttempts  int
+	ReplaySafe               bool
+	RollbackAllowed          bool
+	AllowUnknownEffectReplay bool
+	AllowDirectSuccess       bool
 }
 
 type JobRepository struct {
@@ -204,6 +206,7 @@ func (repository *JobRepository) JobKinds(ctx context.Context) ([]JobKindPolicy,
 			MaxAttempts:             int(row.DefaultMaxAttempts),
 			MaxVerificationAttempts: int(row.DefaultMaxVerificationAttempts),
 			ReplaySafe:              row.ReplaySafe, RollbackAllowed: row.RollbackAllowed,
+			AllowUnknownEffectReplay: row.AllowUnknownEffectReplay, AllowDirectSuccess: row.AllowDirectSuccess,
 		})
 	}
 	return policies, nil
@@ -275,6 +278,26 @@ func (store *JobTxStore) FindJobByIdempotencyKey(ctx context.Context, key string
 }
 
 func (store *JobTxStore) InsertBundle(ctx context.Context, bundle jobcore.EnqueueBundle) (jobcore.Job, error) {
+	// Check the immutable catalog before writing: the database copies its policy,
+	// while EnqueueTx supplied the independently validated registry snapshot.
+	kind, err := store.queries.GetActiveAsyncJobKind(ctx, generated.GetActiveAsyncJobKindParams{
+		JobKind: bundle.Job.Kind, PayloadSchemaVersion: int32(bundle.Job.SchemaVersion),
+	})
+	if err != nil {
+		return jobcore.Job{}, err
+	}
+	job := bundle.Job
+	if job.Timeout != time.Duration(kind.DefaultTimeoutSeconds)*time.Second ||
+		job.LeaseDuration != time.Duration(kind.LeaseSeconds)*time.Second ||
+		job.HeartbeatInterval != time.Duration(kind.HeartbeatIntervalSeconds)*time.Second ||
+		job.MaxAttempts != int(kind.DefaultMaxAttempts) ||
+		job.MaxVerifyAttempts != int(kind.DefaultMaxVerificationAttempts) ||
+		job.ReplaySafe != kind.ReplaySafe || job.AllowRollback != kind.RollbackAllowed ||
+		job.AllowUnknownEffectReplay != kind.AllowUnknownEffectReplay ||
+		job.AllowDirectSuccess != kind.AllowDirectSuccess ||
+		(kind.AllowUnknownEffectReplay && !kind.ReplaySafe) {
+		return jobcore.Job{}, jobcore.ErrConflict
+	}
 	row, err := store.queries.EnqueueAsyncJob(ctx, generated.EnqueueAsyncJobParams{
 		JobID: nullableUUID(bundle.Job.ID), IdempotencyKey: bundle.Job.IdempotencyKey,
 		JobKind: bundle.Job.Kind, PayloadSchemaVersion: int32(bundle.Job.SchemaVersion),
@@ -308,6 +331,9 @@ func coreJob(row generated.AsyncJob, err error) (jobcore.Job, error) {
 	if err != nil {
 		return jobcore.Job{}, err
 	}
+	if row.AllowUnknownEffectReplay && !row.ReplaySafe {
+		return jobcore.Job{}, ErrJobInconsistent
+	}
 	var hash [32]byte
 	if len(row.PayloadHash) != len(hash) {
 		return jobcore.Job{}, jobcore.ErrInvalidPayload
@@ -330,6 +356,7 @@ func coreJob(row generated.AsyncJob, err error) (jobcore.Job, error) {
 		HeartbeatInterval: time.Duration(row.HeartbeatIntervalSeconds) * time.Second,
 		MaxVerifyAttempts: int(row.MaxVerificationAttempts),
 		ReplaySafe:        row.ReplaySafe, AllowRollback: row.RollbackAllowed,
+		AllowUnknownEffectReplay: row.AllowUnknownEffectReplay, AllowDirectSuccess: row.AllowDirectSuccess,
 	}, nil
 }
 
@@ -376,16 +403,16 @@ func (repository *JobRepository) RenewLease(ctx context.Context, jobID, token uu
 	return lostLeaseError(err)
 }
 
-func (repository *JobRepository) TransitionFenced(ctx context.Context, transition jobcore.Transition) error {
+func (repository *JobRepository) TransitionFenced(ctx context.Context, transition jobcore.Transition) (jobcore.TransitionOutcome, error) {
 	if err := transition.Validate(); err != nil {
-		return err
+		return jobcore.TransitionOutcome{}, err
 	}
 	if len(transition.From) != 1 {
-		return jobcore.ErrInvalidTransition
+		return jobcore.TransitionOutcome{}, jobcore.ErrInvalidTransition
 	}
 	delay, err := retrySeconds(transition.RetryAfter)
 	if err != nil {
-		return err
+		return jobcore.TransitionOutcome{}, err
 	}
 	params := generated.TransitionAsyncJobFencedParams{
 		JobID: nullableUUID(transition.JobID), ExpectedStatus: string(transition.From[0]),
@@ -395,16 +422,28 @@ func (repository *JobRepository) TransitionFenced(ctx context.Context, transitio
 		ErrorSummary: pgtype.Text{}, ActorType: string(transition.Actor),
 		ReleaseLease: transition.ReleaseLease,
 	}
+	var outcome jobcore.TransitionOutcome
 	err = pgx.BeginTxFunc(ctx, repository.pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if _, transitionErr := generated.New(tx).TransitionAsyncJobFenced(ctx, params); transitionErr != nil {
+		row, transitionErr := generated.New(tx).TransitionAsyncJobFenced(ctx, params)
+		if transitionErr != nil {
 			return lostLeaseError(transitionErr)
+		}
+		outcome.Status = jobcore.Status(row.Status)
+		if row.ErrorCode.Valid {
+			outcome.ErrorCode = row.ErrorCode.String
 		}
 		if transition.Mutation != nil {
 			return transition.Mutation(ctx, tx)
 		}
 		return nil
 	})
-	return err
+	if err != nil {
+		return jobcore.TransitionOutcome{}, err
+	}
+	// The SQL function may rewrite the requested target under its row lock.
+	// Publish that outcome only after the transition, event, and optional
+	// mutation have all committed in the same transaction.
+	return outcome, nil
 }
 
 func (repository *JobRepository) ClaimRecoverable(ctx context.Context, request jobcore.ClaimRequest) (*jobcore.Lease, error) {
@@ -426,6 +465,7 @@ func (repository *JobRepository) ClaimRecoverable(ctx context.Context, request j
 		TimeoutSeconds: row.TimeoutSeconds, LeaseSeconds: row.LeaseSeconds,
 		HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds,
 		ReplaySafe:               row.ReplaySafe, RollbackAllowed: row.RollbackAllowed,
+		AllowUnknownEffectReplay: row.AllowUnknownEffectReplay, AllowDirectSuccess: row.AllowDirectSuccess,
 		AvailableAt: row.AvailableAt, DeadlineAt: row.DeadlineAt, StartedAt: row.StartedAt,
 		CompletedAt: row.CompletedAt, CancelRequestedAt: row.CancelRequestedAt,
 		ErrorCode: row.ErrorCode, ErrorSummary: row.ErrorSummary, LeaseOwner: row.LeaseOwner,

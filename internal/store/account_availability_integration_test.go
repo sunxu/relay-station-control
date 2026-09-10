@@ -21,10 +21,10 @@ type availabilityFixture struct {
 	now    time.Time
 }
 
-func newAvailabilityFixture(t *testing.T, n int) *availabilityFixture {
+func newAvailabilityFixture(t *testing.T, n int, migrationArgs ...string) *availabilityFixture {
 	t.Helper()
 	ctx := context.Background()
-	db := newIsolatedJobDatabase(t)
+	db := newIsolatedJobDatabase(t, migrationArgs...)
 	src := insertSnapshotPollFixtureWithProviders(t, ctx, db, []string{"antigravity"})
 	token := uuid.New()
 	setAvailabilityPollRunning(t, ctx, db, src.pollRunID, token)

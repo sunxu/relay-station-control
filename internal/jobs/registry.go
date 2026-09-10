@@ -40,18 +40,20 @@ type Schema struct {
 }
 
 type Definition struct {
-	Kind              string
-	SchemaVersion     int
-	Schema            Schema
-	Timeout           time.Duration
-	LeaseDuration     time.Duration
-	HeartbeatInterval time.Duration
-	MaxAttempts       int
-	MaxVerifyAttempts int
-	AllowRollback     bool
-	ReplaySafe        bool
-	ErrorCodes        map[string]struct{}
-	Executor          Executor
+	Kind                     string
+	SchemaVersion            int
+	Schema                   Schema
+	Timeout                  time.Duration
+	LeaseDuration            time.Duration
+	HeartbeatInterval        time.Duration
+	MaxAttempts              int
+	MaxVerifyAttempts        int
+	AllowRollback            bool
+	ReplaySafe               bool
+	AllowUnknownEffectReplay bool
+	AllowDirectSuccess       bool
+	ErrorCodes               map[string]struct{}
+	Executor                 Executor
 }
 
 type Registry struct {
@@ -86,6 +88,9 @@ func (r *Registry) register(def Definition) error {
 		def.HeartbeatInterval < time.Second || def.HeartbeatInterval >= def.LeaseDuration || def.HeartbeatInterval%time.Second != 0 ||
 		def.MaxAttempts < 1 || def.MaxAttempts > 100 || def.MaxVerifyAttempts < 1 || def.MaxVerifyAttempts > 100 {
 		return fmt.Errorf("invalid job definition")
+	}
+	if def.AllowUnknownEffectReplay && !def.ReplaySafe {
+		return fmt.Errorf("invalid execution policy: unknown-effect replay requires replay-safe")
 	}
 	if _, exists := r.definitions[def.Kind]; exists {
 		return fmt.Errorf("duplicate job kind")
@@ -141,15 +146,17 @@ func (r *Registry) Len() int {
 // a job kind. Catalog returns entries in deterministic kind/schema order so the
 // composition root can compare the complete database and process catalogs.
 type CatalogEntry struct {
-	Kind              string
-	SchemaVersion     int
-	Timeout           time.Duration
-	LeaseDuration     time.Duration
-	HeartbeatInterval time.Duration
-	MaxAttempts       int
-	MaxVerifyAttempts int
-	ReplaySafe        bool
-	AllowRollback     bool
+	Kind                     string
+	SchemaVersion            int
+	Timeout                  time.Duration
+	LeaseDuration            time.Duration
+	HeartbeatInterval        time.Duration
+	MaxAttempts              int
+	MaxVerifyAttempts        int
+	ReplaySafe               bool
+	AllowUnknownEffectReplay bool
+	AllowDirectSuccess       bool
+	AllowRollback            bool
 }
 
 func (r *Registry) Catalog() []CatalogEntry {
@@ -163,7 +170,8 @@ func (r *Registry) Catalog() []CatalogEntry {
 			Timeout: definition.Timeout, LeaseDuration: definition.LeaseDuration,
 			HeartbeatInterval: definition.HeartbeatInterval,
 			MaxAttempts:       definition.MaxAttempts, MaxVerifyAttempts: definition.MaxVerifyAttempts,
-			ReplaySafe: definition.ReplaySafe, AllowRollback: definition.AllowRollback,
+			ReplaySafe: definition.ReplaySafe, AllowUnknownEffectReplay: definition.AllowUnknownEffectReplay,
+			AllowDirectSuccess: definition.AllowDirectSuccess, AllowRollback: definition.AllowRollback,
 		})
 	}
 	sort.Slice(entries, func(left, right int) bool {

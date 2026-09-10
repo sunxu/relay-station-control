@@ -905,7 +905,7 @@ func TestAssetRegistryProtectedDownPreservesEnvironmentIdentity(t *testing.T) {
 	isolatedLocation.Path = "/" + databaseName
 	isolatedURL := isolatedLocation.String()
 	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up-to", "27"); err != nil {
 		t.Fatal(err)
 	}
 	isolated, err := pgx.ConnectConfig(ctx, isolatedConfig)
@@ -949,7 +949,7 @@ func TestAssetRegistryProtectedDownPreservesEnvironmentIdentity(t *testing.T) {
 	}
 	isolated.Close(ctx)
 
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up-to", "27"); err != nil {
 		t.Fatal(err)
 	}
 	isolated, err = pgx.ConnectConfig(ctx, isolatedConfig)

@@ -502,7 +502,8 @@ func TestAccountInventoryLifecyclePermissionsAndProtectedWrites(t *testing.T) {
 
 func TestAccountInventoryLifecycleMigrationDoesNotBackfillSnapshotHistory(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err != nil {
 		t.Fatal("empty lifecycle migration down failed")
 	}
@@ -702,7 +703,8 @@ func TestAccountInventoryLifecycleFailedPromotionAndAtomicRollbackDoNotChangeAcc
 
 func TestAccountInventoryLifecycleMigrationRejectsPreexistingFuturePolicyBinding(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err != nil {
 		t.Fatal("empty lifecycle migration down failed")
 	}

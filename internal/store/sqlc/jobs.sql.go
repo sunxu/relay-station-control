@@ -13,7 +13,7 @@ import (
 
 const claimExpiredAsyncJob = `-- name: ClaimExpiredAsyncJob :one
 SELECT
-    claimed.job_id, claimed.idempotency_key, claimed.job_kind, claimed.payload_schema_version, claimed.operation_id, claimed.payload, claimed.payload_hash, claimed.status, claimed.priority, claimed.attempt_count, claimed.verification_attempt, claimed.max_attempts, claimed.max_verification_attempts, claimed.timeout_seconds, claimed.lease_seconds, claimed.heartbeat_interval_seconds, claimed.replay_safe, claimed.rollback_allowed, claimed.available_at, claimed.deadline_at, claimed.started_at, claimed.completed_at, claimed.cancel_requested_at, claimed.error_code, claimed.error_summary, claimed.lease_owner, claimed.lease_fencing_token, claimed.lease_expires_at, claimed.created_at, claimed.updated_at,
+    claimed.job_id, claimed.idempotency_key, claimed.job_kind, claimed.payload_schema_version, claimed.operation_id, claimed.payload, claimed.payload_hash, claimed.status, claimed.priority, claimed.attempt_count, claimed.verification_attempt, claimed.max_attempts, claimed.max_verification_attempts, claimed.timeout_seconds, claimed.lease_seconds, claimed.heartbeat_interval_seconds, claimed.replay_safe, claimed.rollback_allowed, claimed.available_at, claimed.deadline_at, claimed.started_at, claimed.completed_at, claimed.cancel_requested_at, claimed.error_code, claimed.error_summary, claimed.lease_owner, claimed.lease_fencing_token, claimed.lease_expires_at, claimed.created_at, claimed.updated_at, claimed.allow_unknown_effect_replay, claimed.allow_direct_success,
     (claimed.deadline_at <= clock_timestamp())::boolean AS deadline_exceeded
 FROM public.control_claim_expired_async_job(
     $1::text,
@@ -57,6 +57,8 @@ type ClaimExpiredAsyncJobRow struct {
 	LeaseExpiresAt           pgtype.Timestamptz `json:"lease_expires_at"`
 	CreatedAt                pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	AllowUnknownEffectReplay bool               `json:"allow_unknown_effect_replay"`
+	AllowDirectSuccess       bool               `json:"allow_direct_success"`
 	DeadlineExceeded         bool               `json:"deadline_exceeded"`
 }
 
@@ -94,6 +96,8 @@ func (q *Queries) ClaimExpiredAsyncJob(ctx context.Context, arg ClaimExpiredAsyn
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 		&i.DeadlineExceeded,
 	)
 	return i, err
@@ -139,7 +143,7 @@ func (q *Queries) ClaimOutboxEvent(ctx context.Context, arg ClaimOutboxEventPara
 }
 
 const claimRunnableAsyncJob = `-- name: ClaimRunnableAsyncJob :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_claim_async_job(
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_claim_async_job(
     $1::text,
     $2::uuid
 )
@@ -184,12 +188,14 @@ func (q *Queries) ClaimRunnableAsyncJob(ctx context.Context, arg ClaimRunnableAs
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }
 
 const enqueueAsyncJob = `-- name: EnqueueAsyncJob :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_enqueue_async_job(
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_enqueue_async_job(
     $1::uuid,
     $2::text,
     $3::text,
@@ -264,12 +270,45 @@ func (q *Queries) EnqueueAsyncJob(ctx context.Context, arg EnqueueAsyncJobParams
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
+	)
+	return i, err
+}
+
+const getActiveAsyncJobKind = `-- name: GetActiveAsyncJobKind :one
+SELECT job_kind, payload_schema_version, default_timeout_seconds, lease_seconds, heartbeat_interval_seconds, default_max_attempts, default_max_verification_attempts, replay_safe, rollback_allowed, lifecycle_status, created_at, allow_unknown_effect_replay, allow_direct_success FROM async_job_kinds
+WHERE job_kind = $1 AND payload_schema_version = $2 AND lifecycle_status = 'active'
+`
+
+type GetActiveAsyncJobKindParams struct {
+	JobKind              string `json:"job_kind"`
+	PayloadSchemaVersion int32  `json:"payload_schema_version"`
+}
+
+func (q *Queries) GetActiveAsyncJobKind(ctx context.Context, arg GetActiveAsyncJobKindParams) (AsyncJobKind, error) {
+	row := q.db.QueryRow(ctx, getActiveAsyncJobKind, arg.JobKind, arg.PayloadSchemaVersion)
+	var i AsyncJobKind
+	err := row.Scan(
+		&i.JobKind,
+		&i.PayloadSchemaVersion,
+		&i.DefaultTimeoutSeconds,
+		&i.LeaseSeconds,
+		&i.HeartbeatIntervalSeconds,
+		&i.DefaultMaxAttempts,
+		&i.DefaultMaxVerificationAttempts,
+		&i.ReplaySafe,
+		&i.RollbackAllowed,
+		&i.LifecycleStatus,
+		&i.CreatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }
 
 const getAsyncJobByIdempotencyKey = `-- name: GetAsyncJobByIdempotencyKey :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_get_async_job_by_idempotency_key($1)
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_get_async_job_by_idempotency_key($1)
 `
 
 func (q *Queries) GetAsyncJobByIdempotencyKey(ctx context.Context, lookupKey string) (AsyncJob, error) {
@@ -306,6 +345,8 @@ func (q *Queries) GetAsyncJobByIdempotencyKey(ctx context.Context, lookupKey str
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }
@@ -460,7 +501,9 @@ SELECT
     default_max_attempts,
     default_max_verification_attempts,
     replay_safe,
-    rollback_allowed
+    rollback_allowed,
+    allow_unknown_effect_replay,
+    allow_direct_success
 FROM async_job_kinds
 WHERE lifecycle_status = 'active'
 ORDER BY job_kind
@@ -476,6 +519,8 @@ type ListActiveAsyncJobKindsRow struct {
 	DefaultMaxVerificationAttempts int32  `json:"default_max_verification_attempts"`
 	ReplaySafe                     bool   `json:"replay_safe"`
 	RollbackAllowed                bool   `json:"rollback_allowed"`
+	AllowUnknownEffectReplay       bool   `json:"allow_unknown_effect_replay"`
+	AllowDirectSuccess             bool   `json:"allow_direct_success"`
 }
 
 func (q *Queries) ListActiveAsyncJobKinds(ctx context.Context) ([]ListActiveAsyncJobKindsRow, error) {
@@ -497,6 +542,8 @@ func (q *Queries) ListActiveAsyncJobKinds(ctx context.Context) ([]ListActiveAsyn
 			&i.DefaultMaxVerificationAttempts,
 			&i.ReplaySafe,
 			&i.RollbackAllowed,
+			&i.AllowUnknownEffectReplay,
+			&i.AllowDirectSuccess,
 		); err != nil {
 			return nil, err
 		}
@@ -676,7 +723,7 @@ func (q *Queries) ListAsyncJobsPublic(ctx context.Context, arg ListAsyncJobsPubl
 }
 
 const lockAsyncJob = `-- name: LockAsyncJob :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_lock_async_job($1::uuid)
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_lock_async_job($1::uuid)
 `
 
 func (q *Queries) LockAsyncJob(ctx context.Context, jobID pgtype.UUID) (AsyncJob, error) {
@@ -713,12 +760,14 @@ func (q *Queries) LockAsyncJob(ctx context.Context, jobID pgtype.UUID) (AsyncJob
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }
 
 const renewAsyncJobLease = `-- name: RenewAsyncJobLease :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_renew_async_job_lease(
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_renew_async_job_lease(
     $1::uuid,
     $2::uuid,
     $3::integer
@@ -765,6 +814,8 @@ func (q *Queries) RenewAsyncJobLease(ctx context.Context, arg RenewAsyncJobLease
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }
@@ -809,7 +860,7 @@ func (q *Queries) RenewOutboxEventLease(ctx context.Context, arg RenewOutboxEven
 }
 
 const requestAsyncJobCancel = `-- name: RequestAsyncJobCancel :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_request_async_job_cancel(
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_request_async_job_cancel(
     $1::uuid,
     $2::text
 )
@@ -854,12 +905,14 @@ func (q *Queries) RequestAsyncJobCancel(ctx context.Context, arg RequestAsyncJob
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }
 
 const transitionAsyncJobFenced = `-- name: TransitionAsyncJobFenced :one
-SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at FROM public.control_transition_async_job_fenced(
+SELECT job_id, idempotency_key, job_kind, payload_schema_version, operation_id, payload, payload_hash, status, priority, attempt_count, verification_attempt, max_attempts, max_verification_attempts, timeout_seconds, lease_seconds, heartbeat_interval_seconds, replay_safe, rollback_allowed, available_at, deadline_at, started_at, completed_at, cancel_requested_at, error_code, error_summary, lease_owner, lease_fencing_token, lease_expires_at, created_at, updated_at, allow_unknown_effect_replay, allow_direct_success FROM public.control_transition_async_job_fenced(
     $1::uuid,
     $2::text,
     $3::uuid,
@@ -934,6 +987,8 @@ func (q *Queries) TransitionAsyncJobFenced(ctx context.Context, arg TransitionAs
 		&i.LeaseExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AllowUnknownEffectReplay,
+		&i.AllowDirectSuccess,
 	)
 	return i, err
 }

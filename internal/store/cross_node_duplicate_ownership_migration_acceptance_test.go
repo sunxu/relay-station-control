@@ -267,7 +267,8 @@ func TestCrossNodeDuplicateOwnershipEvidenceEvaluationSnapshotGuardMigrationUpDo
 // history of their own, so stepping down to 12 first un-applies them
 // cleanly before hitting 00013's guard.
 func TestCrossNodeDuplicateOwnershipMigrationDownFailsClosedWithHistory(t *testing.T) {
-	database := newIsolatedJobDatabase(t)
+	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	ctx := context.Background()
 	fixture := newCrossNodeDuplicateSchemaFixture(t, ctx, database)
 	now := time.Now().UTC().Truncate(time.Microsecond)

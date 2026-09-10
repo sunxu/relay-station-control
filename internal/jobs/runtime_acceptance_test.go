@@ -183,32 +183,32 @@ func (repository *crashRepository) RenewLease(_ context.Context, jobID, token uu
 	return nil
 }
 
-func (repository *crashRepository) TransitionFenced(ctx context.Context, transition Transition) error {
+func (repository *crashRepository) TransitionFenced(ctx context.Context, transition Transition) (TransitionOutcome, error) {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
 	if err := transition.Validate(); err != nil {
-		return err
+		return TransitionOutcome{}, err
 	}
 	if repository.transitionFailures > 0 {
 		repository.transitionFailures--
-		return errors.New("transition transaction interrupted")
+		return TransitionOutcome{}, errors.New("transition transaction interrupted")
 	}
 	if repository.job.ID != transition.JobID || repository.leaseToken != transition.Token || len(transition.From) != 1 || transition.From[0] != repository.job.Status || repository.job.Status.Terminal() {
-		return ErrLostLease
+		return TransitionOutcome{}, ErrLostLease
 	}
 	previous := repository.job
 	repository.job.Status = transition.To
 	if transition.Mutation != nil {
 		if err := transition.Mutation(ctx, fakeDBTX{}); err != nil {
 			repository.job = previous
-			return err
+			return TransitionOutcome{}, err
 		}
 	}
 	repository.transitions = append(repository.transitions, transition)
 	if transition.ReleaseLease {
 		repository.leaseToken = uuid.Nil
 	}
-	return nil
+	return TransitionOutcome{Status: transition.To, ErrorCode: transition.ErrorCode}, nil
 }
 
 func (repository *crashRepository) ClaimRecoverable(_ context.Context, request ClaimRequest) (*Lease, error) {
@@ -385,7 +385,7 @@ func TestNoNetworkCrashRecoveryMatrix(t *testing.T) {
 			t.Fatal("terminal job re-entered an executor")
 		}
 		terminal := repository.job.Status
-		if err := repository.TransitionFenced(context.Background(), Transition{
+		if _, err := repository.TransitionFenced(context.Background(), Transition{
 			JobID: repository.job.ID, From: []Status{StatusSucceeded}, To: StatusFailed,
 			Event: EventFailed, Actor: ActorSystem, ReleaseLease: true,
 		}); !errors.Is(err, ErrLostLease) || repository.job.Status != terminal {

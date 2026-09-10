@@ -59,7 +59,8 @@ func requireAccountInventoryReadonlyQueryMigrationVersion(
 
 func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
 	if _, err := database.owner.Exec(ctx, `INSERT INTO driver_capabilities(
 		node_type,driver_contract_version,capability

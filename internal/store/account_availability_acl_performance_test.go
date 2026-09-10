@@ -11,7 +11,8 @@ import (
 )
 
 func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
-	f := newAvailabilityFixture(t, 1)
+	// This roundtrip targets the Phase 4 recovery migration, not forward-only 00028.
+	f := newAvailabilityFixture(t, 1, "up-to", "27")
 	ctx := context.Background()
 	f.reconcile(t)
 	for _, table := range []string{"account_availability_checkpoints", "account_availability_occurrences", "account_inventory_provider_states", "account_request_quality_events"} {

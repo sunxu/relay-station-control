@@ -210,11 +210,12 @@ func (w *Worker) execute(parent context.Context, lease Lease) {
 }
 
 func (w *Worker) failClosed(ctx context.Context, lease Lease, code string) error {
-	err := w.repository.TransitionFenced(ctx, Transition{
+	transition := Transition{
 		JobID: lease.ID, Token: lease.Token, From: []Status{StatusRunning}, To: StatusFailed,
 		Event: EventFailed, Actor: ActorWorker, ErrorCode: code, ReleaseLease: true,
-	})
-	emitTransitionLog(ctx, w.logger, w.registry, ComponentWorker, ActionExecute, lease.Kind, StatusFailed, code, err)
+	}
+	outcome, err := w.repository.TransitionFenced(ctx, transition)
+	emitTransitionLog(ctx, w.logger, w.registry, ComponentWorker, ActionExecute, lease.Kind, outcome.Status, outcome.ErrorCode, err)
 	return err
 }
 
@@ -225,17 +226,49 @@ func (w *Worker) applyExecuteResult(ctx context.Context, lease Lease, definition
 		ErrorCode: code, ReleaseLease: true,
 	}
 	switch result.Disposition {
-	case ExecuteNeedsVerification, ExecuteResultUnknown:
+	case ExecuteSucceeded:
+		if !lease.AllowDirectSuccess {
+			transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "invalid_executor_result"
+			break
+		}
+		transition.To, transition.Event = StatusSucceeded, EventSucceeded
+	case ExecuteNeedsVerification:
 		transition.To = StatusVerifying
 		transition.Event = EventVerification
 		// Verification is separate from Execute. Releasing the lease makes the
 		// due verifying row immediately claimable by ClaimRecoverable without
 		// ever routing it through Execute again.
 		transition.ReleaseLease = true
-		if result.Disposition == ExecuteResultUnknown && transition.ErrorCode == "" {
-			transition.ErrorCode = "execution_result_unknown"
+	case ExecuteResultUnknown:
+		if !lease.AllowUnknownEffectReplay {
+			transition.To, transition.Event = StatusVerifying, EventVerification
+			// Ordinary jobs remain Verify-first. This is not a retry proof, so
+			// do not attach the unknown-replay reason to the verifying path.
+			if transition.ErrorCode == "" {
+				transition.ErrorCode = "execution_result_unknown"
+			}
+			break
+		}
+		// The framework, rather than the executor, owns this evidence. Keep
+		// it on every authorized unknown outcome, including a budget/deadline
+		// or cancellation failure selected before the fenced DB transition.
+		transition.ReasonCode = ReasonEffectUnknownUnverified
+		transition.ErrorCode = "execution_result_unknown"
+		if lease.CancelRequested {
+			transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "cancel_after_unknown_effect"
+		} else if lease.DeadlineExceeded {
+			transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "job_deadline_exceeded"
+		} else if lease.Attempt >= lease.MaxAttempts {
+			transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "max_attempts_exhausted"
+		} else {
+			transition.To, transition.Event, transition.ErrorCode = StatusRetryWait, EventRetryScheduled, "execution_result_unknown"
+			transition.RetryAfter = w.config.Retry.Delay(lease.Attempt)
 		}
 	case ExecuteRetryableNoEffect:
+		// This proof is scoped to the current Execute attempt. It never
+		// clears an earlier unknown proof; the DB decides cancellation
+		// convergence while holding the job lock.
+		transition.ReasonCode = ReasonExecuteRetryableNoEffect
 		if lease.Attempt >= lease.MaxAttempts {
 			transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "max_attempts_exhausted"
 		} else {
@@ -250,8 +283,8 @@ func (w *Worker) applyExecuteResult(ctx context.Context, lease Lease, definition
 	default:
 		transition.To, transition.Event, transition.ErrorCode = StatusFailed, EventFailed, "invalid_executor_result"
 	}
-	err := w.repository.TransitionFenced(ctx, transition)
-	emitTransitionLog(ctx, w.logger, w.registry, ComponentWorker, ActionExecute, lease.Kind, transition.To, transition.ErrorCode, err)
+	outcome, err := w.repository.TransitionFenced(ctx, transition)
+	emitTransitionLog(ctx, w.logger, w.registry, ComponentWorker, ActionExecute, lease.Kind, outcome.Status, outcome.ErrorCode, err)
 }
 
 func runWithLeaseHeartbeat[T any](parent context.Context, clock Clock, timeout, heartbeatInterval time.Duration, renew func(context.Context) error, operation func(context.Context) T) (T, bool) {
@@ -291,6 +324,9 @@ func runWithLeaseHeartbeat[T any](parent context.Context, clock Clock, timeout, 
 func allowedErrorCode(definition Definition, code string) string {
 	if code == "" {
 		return ""
+	}
+	if isFrameworkReasonCode(code) {
+		return "unclassified_executor_error"
 	}
 	if !codePattern.MatchString(code) {
 		return "unclassified_executor_error"

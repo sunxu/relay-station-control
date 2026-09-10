@@ -40,7 +40,8 @@ func TestDurableJobClosedConstraintMatrix(t *testing.T) {
 		"default_timeout_seconds": 30, "lease_seconds": 5,
 		"heartbeat_interval_seconds": 1, "default_max_attempts": 3,
 		"default_max_verification_attempts": 3, "replay_safe": true,
-		"rollback_allowed": true, "lifecycle_status": "active",
+		"rollback_allowed": true, "allow_unknown_effect_replay": false,
+		"allow_direct_success": false, "lifecycle_status": "active",
 		"created_at": time.Now().UTC(),
 	}
 	kindCases := []struct {
@@ -84,6 +85,7 @@ func TestDurableJobClosedConstraintMatrix(t *testing.T) {
 		"verification_attempt": 0, "max_attempts": 3, "max_verification_attempts": 3,
 		"timeout_seconds": 30, "lease_seconds": 5, "heartbeat_interval_seconds": 1,
 		"replay_safe": true, "rollback_allowed": true,
+		"allow_unknown_effect_replay": false, "allow_direct_success": false,
 		"available_at": now, "deadline_at": now.Add(24 * time.Hour),
 		"started_at": nil, "completed_at": nil, "cancel_requested_at": nil,
 		"error_code": nil, "error_summary": nil, "lease_owner": nil,
@@ -815,7 +817,7 @@ func TestDurableJobIdempotencyAtomicBundleAndCancellation(t *testing.T) {
 	if err != nil || retryLease.ID != retryJob.Job.ID {
 		t.Fatalf("retry cancellation fixture: %+v/%v", retryLease, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: retryLease.ID, Token: retryLease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusRetryWait, Event: jobcore.EventRetryScheduled, Actor: jobcore.ActorWorker,
 		ReasonCode: "synthetic_retry", ErrorCode: "synthetic_failure", ReleaseLease: true,
@@ -833,7 +835,7 @@ func TestDurableJobIdempotencyAtomicBundleAndCancellation(t *testing.T) {
 	if err != nil || verifyingWorker.ID != verifyingJob.Job.ID {
 		t.Fatalf("verifying cancellation fixture: %+v/%v", verifyingWorker, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: verifyingWorker.ID, Token: verifyingWorker.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusVerifying, Event: jobcore.EventVerification, Actor: jobcore.ActorWorker, ReleaseLease: true,
 	}); err != nil {
@@ -847,7 +849,7 @@ func TestDurableJobIdempotencyAtomicBundleAndCancellation(t *testing.T) {
 	if err != nil || verifyingRecovery.ID != verifyingJob.Job.ID {
 		t.Fatalf("claim cancelled verifying fixture: %+v/%v", verifyingRecovery, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: verifyingRecovery.ID, Token: verifyingRecovery.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 		To: jobcore.StatusCancelled, Event: jobcore.EventCancelled, Actor: jobcore.ActorReconciler, ReleaseLease: true,
 	}); err != nil {
@@ -861,7 +863,7 @@ func TestDurableJobIdempotencyAtomicBundleAndCancellation(t *testing.T) {
 	if err != nil || rollingWorker.ID != rollingJob.Job.ID {
 		t.Fatalf("rolling cancellation fixture: %+v/%v", rollingWorker, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: rollingWorker.ID, Token: rollingWorker.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusVerifying, Event: jobcore.EventVerification, Actor: jobcore.ActorWorker, ReleaseLease: true,
 	}); err != nil {
@@ -871,7 +873,7 @@ func TestDurableJobIdempotencyAtomicBundleAndCancellation(t *testing.T) {
 	if err != nil || rollingRecovery.ID != rollingJob.Job.ID {
 		t.Fatalf("rolling recovery fixture: %+v/%v", rollingRecovery, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: rollingRecovery.ID, Token: rollingRecovery.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 		To: jobcore.StatusRollingBack, Event: jobcore.EventRollbackStarted, Actor: jobcore.ActorReconciler,
 		ReasonCode: "partial_effect", ReleaseLease: true,
@@ -890,7 +892,7 @@ func TestDurableJobIdempotencyAtomicBundleAndCancellation(t *testing.T) {
 	if err != nil || terminalLease.ID != terminalJob.Job.ID {
 		t.Fatalf("terminal cancellation fixture: %+v/%v", terminalLease, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: terminalLease.ID, Token: terminalLease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusFailed, Event: jobcore.EventFailed, Actor: jobcore.ActorWorker,
 		ReasonCode: "synthetic_failure", ErrorCode: "synthetic_failure", ReleaseLease: true,
@@ -969,7 +971,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	if err != nil || highLease.ID != high.Job.ID {
 		t.Fatalf("priority claim = %+v, %v", highLease, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: highLease.ID, Token: highLease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusFailed, Event: jobcore.EventFailed, Actor: jobcore.ActorWorker,
 		ErrorCode: "synthetic_failure", ReasonCode: "synthetic_failure", ReleaseLease: true,
@@ -980,7 +982,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	if err != nil || lowLease.ID != low.Job.ID {
 		t.Fatalf("second priority claim = %+v, %v", lowLease, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: lowLease.ID, Token: lowLease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusFailed, Event: jobcore.EventFailed, Actor: jobcore.ActorWorker,
 		ErrorCode: "synthetic_failure", ReasonCode: "synthetic_failure", ReleaseLease: true,
@@ -1102,7 +1104,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	}
 
 	for jobID, token := range seen {
-		if err := repository.TransitionFenced(ctx, jobcore.Transition{
+		if err := transitionFencedError(repository, ctx, jobcore.Transition{
 			JobID: jobID, Token: token, From: []jobcore.Status{jobcore.StatusRunning},
 			To: jobcore.StatusFailed, Event: jobcore.EventFailed, Actor: jobcore.ActorWorker,
 			ErrorCode: "synthetic_failure", ReasonCode: "synthetic_failure", ReleaseLease: true,
@@ -1141,7 +1143,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	}()
 	go func() {
 		<-startRace
-		staleChannel <- repository.TransitionFenced(ctx, jobcore.Transition{
+		staleChannel <- transitionFencedError(repository, ctx, jobcore.Transition{
 			JobID: workerLease.ID, Token: workerLease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 			To: jobcore.StatusFailed, Event: jobcore.EventFailed, Actor: jobcore.ActorWorker,
 			ErrorCode: "synthetic_failure", ReasonCode: "synthetic_failure", ReleaseLease: true,
@@ -1172,7 +1174,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 		t.Fatalf("replaced worker renewal = %v", err)
 	}
 
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: recovery.lease.ID, Token: recovery.lease.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 		To: jobcore.StatusRetryWait, Event: jobcore.EventRetryScheduled,
 		Actor: jobcore.ActorReconciler, ReasonCode: "effect_not_applied", ReleaseLease: true,
@@ -1183,7 +1185,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	if err != nil || secondWorker.ID != recoveryJob.Job.ID || secondWorker.Attempt != 2 {
 		t.Fatalf("retry claim = %+v/%v", secondWorker, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: secondWorker.ID, Token: secondWorker.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusVerifying, Event: jobcore.EventVerification,
 		Actor: jobcore.ActorWorker, ReleaseLease: true,
@@ -1194,7 +1196,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	if err != nil || secondRecovery.ID != recoveryJob.Job.ID || secondRecovery.VerificationAttempt != 2 {
 		t.Fatalf("second recovery = %+v/%v", secondRecovery, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: secondRecovery.ID, Token: secondRecovery.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 		To: jobcore.StatusRollingBack, Event: jobcore.EventRollbackStarted,
 		Actor: jobcore.ActorReconciler, ReasonCode: "partial_effect", ReleaseLease: true,
@@ -1205,7 +1207,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 	if err != nil || rollbackLease.ID != recoveryJob.Job.ID || rollbackLease.VerificationAttempt != 3 {
 		t.Fatalf("rollback recovery = %+v/%v", rollbackLease, err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: rollbackLease.ID, Token: rollbackLease.Token, From: []jobcore.Status{jobcore.StatusRollingBack},
 		To: jobcore.StatusRolledBack, Event: jobcore.EventRolledBack,
 		Actor: jobcore.ActorReconciler, ReleaseLease: true,
@@ -1250,7 +1252,7 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 			if claimErr != nil || worker.ID != created.Job.ID {
 				t.Fatalf("policy worker claim = %+v/%v", worker, claimErr)
 			}
-			if transitionErr := repository.TransitionFenced(ctx, jobcore.Transition{
+			if transitionErr := transitionFencedError(repository, ctx, jobcore.Transition{
 				JobID: worker.ID, Token: worker.Token, From: []jobcore.Status{jobcore.StatusRunning},
 				To: jobcore.StatusVerifying, Event: jobcore.EventVerification,
 				Actor: jobcore.ActorWorker, ReleaseLease: true,
@@ -1261,13 +1263,13 @@ func TestDurableJobConcurrentClaimsFencingAndRecoveryPaths(t *testing.T) {
 			if claimErr != nil || reconciler.ID != created.Job.ID {
 				t.Fatalf("policy recovery claim = %+v/%v", reconciler, claimErr)
 			}
-			transitionErr := repository.TransitionFenced(ctx, jobcore.Transition{
+			transitionErr := transitionFencedError(repository, ctx, jobcore.Transition{
 				JobID: reconciler.ID, Token: reconciler.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 				To: testCase.target, Event: testCase.event, Actor: jobcore.ActorReconciler,
 				ReasonCode: "policy_forbidden", ReleaseLease: true,
 			})
 			requirePostgresCode(t, transitionErr, "23514")
-			if transitionErr := repository.TransitionFenced(ctx, jobcore.Transition{
+			if transitionErr := transitionFencedError(repository, ctx, jobcore.Transition{
 				JobID: reconciler.ID, Token: reconciler.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 				To: jobcore.StatusFailed, Event: jobcore.EventFailed, Actor: jobcore.ActorReconciler,
 				ReasonCode: "policy_forbidden", ErrorCode: "policy_forbidden", ReleaseLease: true,
@@ -1528,7 +1530,9 @@ func TestDurableJobProtectedDownEachEvidenceClassPreservesPriorSchema(t *testing
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			database := newIsolatedJobDatabase(t)
+			// Keep this evidence-protection case on the legacy 00004 schema;
+			// otherwise 00028's forward-only guard is the first failure.
+			database := newIsolatedJobDatabase(t, "up-to", "4")
 			ctx := context.Background()
 			if _, err := database.owner.Exec(ctx, `INSERT INTO environments(environment_id,name,environment_type)
 				VALUES ('test-env','Protected Down Sentinel','dev')`); err != nil {

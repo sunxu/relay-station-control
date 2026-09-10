@@ -77,6 +77,24 @@ const (
 	EventCancelRequested EventType = "cancel_requested"
 )
 
+// These are framework-owned effect facts. They are deliberately kept apart
+// from ErrorCode: an executor may report an error code, but it cannot mint or
+// override the effect evidence used by cancellation and recovery guards.
+const (
+	ReasonEffectUnknownUnverified  = "effect_unknown_unverified"
+	ReasonExecuteRetryableNoEffect = "execute_retryable_no_effect"
+	ReasonEffectAbsentVerified     = "effect_absent_verified"
+)
+
+func isFrameworkReasonCode(code string) bool {
+	switch code {
+	case ReasonEffectUnknownUnverified, ReasonExecuteRetryableNoEffect, ReasonEffectAbsentVerified:
+		return true
+	default:
+		return false
+	}
+}
+
 type ActorType string
 
 const (
@@ -104,14 +122,16 @@ type Job struct {
 	// definition when a job is enqueued. Workers compare it with their local
 	// registry before invoking an executor so a deployment with a mismatched
 	// registry fails closed instead of silently changing durable semantics.
-	Timeout           time.Duration
-	LeaseDuration     time.Duration
-	HeartbeatInterval time.Duration
-	ReplaySafe        bool
-	AllowRollback     bool
-	CancelRequested   bool
-	CreatedAt         time.Time
-	DeadlineAt        time.Time
+	Timeout                  time.Duration
+	LeaseDuration            time.Duration
+	HeartbeatInterval        time.Duration
+	ReplaySafe               bool
+	AllowUnknownEffectReplay bool
+	AllowDirectSuccess       bool
+	AllowRollback            bool
+	CancelRequested          bool
+	CreatedAt                time.Time
+	DeadlineAt               time.Time
 }
 
 type Lease struct {
@@ -153,6 +173,15 @@ type DBTX interface {
 
 type TransitionMutation func(context.Context, DBTX) error
 
+// TransitionOutcome is the state and error code actually committed by the
+// database transition. A fenced transition may legally rewrite the caller's
+// requested target while holding the job lock (for example when cancellation
+// becomes visible), so callers must log this outcome rather than their request.
+type TransitionOutcome struct {
+	Status    Status
+	ErrorCode string
+}
+
 // Validate checks the transaction-bound mutation invariant. Repository
 // implementations must call it before opening their transition transaction.
 func (transition Transition) Validate() error {
@@ -176,16 +205,19 @@ func (transition Transition) Validate() error {
 // must open one pgx transaction, apply the fenced transition and event first,
 // then call Transition.Mutation with that same transaction. Any transition,
 // event, or mutation error must roll the entire transaction back.
+// TransitionFenced returns the actual outcome only after commit; errors return
+// a zero outcome, never a requested or uncommitted target.
 type Repository interface {
 	// ClaimRunnable must derive the initial lease expiry from the registered
 	// per-kind database policy, not from a process-wide duration.
 	ClaimRunnable(context.Context, ClaimRequest) (*Lease, error)
 	RenewLease(context.Context, uuid.UUID, uuid.UUID, time.Duration) error
-	TransitionFenced(context.Context, Transition) error
-	// ClaimRecoverable converts an expired running row to verifying while
-	// claiming it, or claims a due verifying/rolling_back row whose prior lease
-	// was deliberately released. It returns only verifying/rolling_back work and
-	// must never return pending/retry_wait work for Execute.
+	TransitionFenced(context.Context, Transition) (TransitionOutcome, error)
+	// ClaimRecoverable returns opted-in expired running work as running with a
+	// recovery lease, without incrementing VerificationAttempt. Ordinary
+	// recoverable work remains verifying or rolling_back.
+	// It never returns pending/retry_wait work or authorizes Reconciler Execute;
+	// retries must obtain a new normal Worker claim.
 	ClaimRecoverable(context.Context, ClaimRequest) (*Lease, error)
 
 	ClaimOutbox(context.Context, OutboxClaimRequest) (*OutboxLease, error)
@@ -205,6 +237,9 @@ const (
 	ExecuteRetryableNoEffect ExecuteDisposition = "retryable_no_effect"
 	ExecutePermanentFailure  ExecuteDisposition = "permanent_failure"
 	ExecuteResultUnknown     ExecuteDisposition = "result_unknown"
+	// ExecuteSucceeded means this synchronous Execute confirmed success;
+	// skipping Verify still requires the persisted AllowDirectSuccess policy.
+	ExecuteSucceeded ExecuteDisposition = "succeeded"
 )
 
 type ExecuteResult struct {

@@ -1029,7 +1029,8 @@ func TestAccountInventorySnapshotRuntimeRoleCannotWriteEvidence(t *testing.T) {
 
 func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	fixture := insertSnapshotPollFixture(t, ctx, database)
 	repository, err := pollstore.NewInventoryPollRepository(database.runtime)
 	if err != nil {
@@ -1072,7 +1073,8 @@ func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testin
 
 func TestAccountInventorySnapshotLegacyV5UpgradePreservesUnevaluatedPromotion(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "5"); err != nil {
 		t.Fatal(err)
 	}

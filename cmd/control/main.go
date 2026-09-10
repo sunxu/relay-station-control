@@ -81,7 +81,11 @@ func jobCatalogMatches(database []assetstore.JobKindPolicy, runtime []controljob
 			policy.Timeout != entry.Timeout || policy.LeaseDuration != entry.LeaseDuration ||
 			policy.HeartbeatInterval != entry.HeartbeatInterval || policy.MaxAttempts != entry.MaxAttempts ||
 			policy.MaxVerificationAttempts != entry.MaxVerifyAttempts || policy.ReplaySafe != entry.ReplaySafe ||
-			policy.RollbackAllowed != entry.AllowRollback {
+			policy.RollbackAllowed != entry.AllowRollback ||
+			policy.AllowUnknownEffectReplay != entry.AllowUnknownEffectReplay ||
+			policy.AllowDirectSuccess != entry.AllowDirectSuccess ||
+			(policy.AllowUnknownEffectReplay && !policy.ReplaySafe) ||
+			(entry.AllowUnknownEffectReplay && !entry.ReplaySafe) {
 			return false
 		}
 	}

@@ -135,6 +135,8 @@ func TestJobCatalogMatchesEveryPersistedPolicyField(t *testing.T) {
 		func(policy *assetstore.JobKindPolicy) { policy.MaxVerificationAttempts++ },
 		func(policy *assetstore.JobKindPolicy) { policy.ReplaySafe = false },
 		func(policy *assetstore.JobKindPolicy) { policy.RollbackAllowed = false },
+		func(policy *assetstore.JobKindPolicy) { policy.AllowUnknownEffectReplay = true },
+		func(policy *assetstore.JobKindPolicy) { policy.AllowDirectSuccess = true },
 	}
 	for index, mutate := range mismatches {
 		copy := append([]assetstore.JobKindPolicy(nil), database...)
@@ -145,6 +147,29 @@ func TestJobCatalogMatchesEveryPersistedPolicyField(t *testing.T) {
 	}
 	if jobCatalogMatches(nil, runtime) || jobCatalogMatches(database, nil) {
 		t.Fatal("catalog cardinality mismatch was accepted")
+	}
+}
+
+func TestJobCatalogExecutionPolicyInvariant(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		replay, unknown, direct, valid bool
+	}{
+		{"default", false, false, false, true},
+		{"direct_independent", false, false, true, true},
+		{"unknown_independent", true, true, false, true},
+		{"both", true, true, true, true},
+		{"invalid_unknown", false, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := []assetstore.JobKindPolicy{{JobKind: "test", PayloadSchemaVersion: 1,
+				ReplaySafe: tc.replay, AllowUnknownEffectReplay: tc.unknown, AllowDirectSuccess: tc.direct}}
+			runtime := []controljobs.CatalogEntry{{Kind: "test", SchemaVersion: 1,
+				ReplaySafe: tc.replay, AllowUnknownEffectReplay: tc.unknown, AllowDirectSuccess: tc.direct}}
+			if got := jobCatalogMatches(database, runtime); got != tc.valid {
+				t.Fatalf("matching catalogs accepted = %v, want %v", got, tc.valid)
+			}
+		})
 	}
 }
 

@@ -4,7 +4,7 @@ Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation rea
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
-Slice A：仅 durable-job 基础扩展已实施并完成 focused tests，Implementation Review 已发现 cancellation race contract gap，现已正式 re-review PASS，Stage 1 完成后恢复 amended Slice A；不继续 Slice B～G。3.1a/3.1e 的通用持久化基础已完成，但包含真实 DingTalk 注册/启用，故整项仍未勾选；3.1、4.5a/4.5b/4.5d/4.5e 的真实投递部分及第 6 节全 Phase 验收仍待实施。证据见 [Slice A validation](./slice-a-validation.md)。 既有勾选仅保留此前 Slice A 验证记录，不表示本 amendment 已实现；Stage 1 不新增任何完成勾选。
+Slice A：cancellation amendment 已按正式 re-review PASS 实施，3.1g～3.1i 已由 focused Go/PostgreSQL tests 验证，等待 Implementation Review；不继续 Slice B～G。此前完成项保留。3.1/3.1a/3.1e 仍含真实 DingTalk 注册/启用，故保持 open；其它产品能力及全 Phase 运行验收均未完成。证据见 [Slice A validation](./slice-a-validation.md)。
 
 ## 1. Contract and compatibility
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
@@ -38,9 +38,9 @@ Slice A：仅 durable-job 基础扩展已实施并完成 focused tests，Impleme
 
 ## 3A. Cancellation amendment — future implementation after re-review
 
-- [ ] 3.1g 在 re-review PASS 后修订未提交/未发布/未部署的 00028（仅届时已成为不可修改 baseline 才使用新 migration），由 framework 固定生成三种 reason_code；Worker/current unknown 与 expired-running recovery 记录 effect_unknown_unverified，no-effect 记录 execute_retryable_no_effect，VerifyEffectAbsent verifying→retry_wait 记录 effect_absent_verified；按 latest verified 之后的 immutable sequence 判 unresolved unknown，不以 policy/error_code/永久历史 sticky 替代事实。
-- [ ] 3.1h 修订现有 cancel request 与 fenced transition guards：有效 Worker+cancel 可见+明确当前 no-effect+无 unresolved unknown 才 running→cancelled，EventCancelled/worker/cancel_verified_safe/release lease；direct-success 并发取消 running→failed/cancel_after_effect_applied。锁内重检，保持 NeedsVerification、PermanentFailure、budget/deadline/fencing；不新增自动 rollback 路径。
-- [ ] 3.1i focused unit/DB 对照覆盖 cancellation matrix A～E、true/false policy 不充当 evidence、prior unknown + later no-effect 保留风险、Verify marker 消解旧 unknown 但不消解其后的新 unknown、current unknown 与 direct-success 并发取消、无 proof/旧 fence 拒绝、deadline/max-attempt 阻止 replay、普通 Verify-first/永久失败回归；验证事件与状态原子提交。只在真实通过后勾选，不以旧 Slice A 测试替代。
+- [x] 3.1g 在 re-review PASS 后修订未提交/未发布/未部署的 00028（仅届时已成为不可修改 baseline 才使用新 migration），由 framework 固定生成三种 reason_code；Worker/current unknown 与 expired-running recovery 记录 effect_unknown_unverified，no-effect 记录 execute_retryable_no_effect，VerifyEffectAbsent verifying→retry_wait 记录 effect_absent_verified；按 latest verified 之后的 immutable sequence 判 unresolved unknown，不以 policy/error_code/永久历史 sticky 替代事实。
+- [x] 3.1h 修订现有 cancel request 与 fenced transition guards：有效 Worker+cancel 可见+明确当前 no-effect+无 unresolved unknown 才 running→cancelled，EventCancelled/worker/cancel_verified_safe/release lease；direct-success 并发取消 running→failed/cancel_after_effect_applied。锁内重检，保持 NeedsVerification、PermanentFailure、budget/deadline/fencing；不新增自动 rollback 路径。
+- [x] 3.1i focused unit/DB 对照覆盖 cancellation matrix A～E、true/false policy 不充当 evidence、prior unknown + later no-effect 保留风险、Verify marker 消解旧 unknown 但不消解其后的新 unknown、current unknown 与 direct-success 并发取消、无 proof/旧 fence 拒绝、deadline/max-attempt 阻止 replay、普通 Verify-first/永久失败回归；验证事件与状态原子提交。只在真实通过后勾选，不以旧 Slice A 测试替代。
 
 ## 4. DingTalk executor
 - [ ] 4.1 添加部署环境配置读取/校验，未配置正常启动，非法 HTTPS/signing 配置失败，Secret 不持久化。

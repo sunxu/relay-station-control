@@ -93,7 +93,9 @@ func EnqueueTx(ctx context.Context, tx EnqueueTxStore, registry *Registry, reque
 		MaxAttempts: definition.MaxAttempts, MaxVerifyAttempts: definition.MaxVerifyAttempts,
 		Timeout: definition.Timeout, LeaseDuration: definition.LeaseDuration,
 		HeartbeatInterval: definition.HeartbeatInterval, ReplaySafe: definition.ReplaySafe,
-		AllowRollback: definition.AllowRollback,
+		AllowUnknownEffectReplay: definition.AllowUnknownEffectReplay,
+		AllowDirectSuccess:       definition.AllowDirectSuccess,
+		AllowRollback:            definition.AllowRollback,
 	}
 	bundle := EnqueueBundle{
 		Job:           job,
@@ -127,11 +129,14 @@ func matchExisting(existing Job, request EnqueueRequest, canonical []byte, hash 
 }
 
 func policyMatches(job Job, definition Definition) bool {
-	return job.Timeout == definition.Timeout &&
+	return job.MaxAttempts == definition.MaxAttempts &&
+		job.Timeout == definition.Timeout &&
 		job.LeaseDuration == definition.LeaseDuration &&
 		job.HeartbeatInterval == definition.HeartbeatInterval &&
 		job.MaxVerifyAttempts == definition.MaxVerifyAttempts &&
 		job.ReplaySafe == definition.ReplaySafe &&
+		job.AllowUnknownEffectReplay == definition.AllowUnknownEffectReplay &&
+		job.AllowDirectSuccess == definition.AllowDirectSuccess &&
 		job.AllowRollback == definition.AllowRollback
 }
 

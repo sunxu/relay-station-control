@@ -43,7 +43,7 @@ var fixedLogErrorCodes = map[string]struct{}{
 	"lease_or_timeout": {}, "unknown_job_definition": {}, "job_policy_mismatch": {},
 	"payload_integrity_failed": {}, "execution_result_unknown": {},
 	"max_attempts_exhausted": {}, "permanent_execution_failure": {},
-	"invalid_executor_result": {}, "cancel_after_effect_applied": {},
+	"invalid_executor_result": {}, "cancel_after_effect_applied": {}, "cancel_after_unknown_effect": {},
 	"cancel_verified_safe": {}, "replay_not_permitted": {}, "rollback_not_permitted": {},
 	"job_deadline_exceeded": {}, "verification_exhausted": {}, "effect_unknown": {},
 	"invalid_verify_result": {}, "rollback_exhausted": {}, "rollback_result_unknown": {},
@@ -77,6 +77,9 @@ func (record LogRecord) Valid(registry *Registry) bool {
 	}
 	if record.ErrorCode == "" {
 		return true
+	}
+	if isFrameworkReasonCode(record.ErrorCode) {
+		return false
 	}
 	if _, ok := fixedLogErrorCodes[record.ErrorCode]; ok {
 		return true
@@ -116,6 +119,12 @@ func emitTransitionLog(ctx context.Context, logger Logger, registry *Registry, c
 	code := transitionCode
 	if status == StatusFailed {
 		result = ResultFailure
+	} else if status == StatusCancelled {
+		result = ResultSkipped
+	}
+	if err == nil && !status.Valid() {
+		result = ResultFailure
+		code = "invalid_transition"
 	}
 	if err != nil {
 		result = ResultFailure

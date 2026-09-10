@@ -392,6 +392,8 @@ type AsyncJob struct {
 	LeaseExpiresAt           pgtype.Timestamptz `json:"lease_expires_at"`
 	CreatedAt                pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	AllowUnknownEffectReplay bool               `json:"allow_unknown_effect_replay"`
+	AllowDirectSuccess       bool               `json:"allow_direct_success"`
 }
 
 type AsyncJobEvent struct {
@@ -419,6 +421,8 @@ type AsyncJobKind struct {
 	RollbackAllowed                bool               `json:"rollback_allowed"`
 	LifecycleStatus                string             `json:"lifecycle_status"`
 	CreatedAt                      pgtype.Timestamptz `json:"created_at"`
+	AllowUnknownEffectReplay       bool               `json:"allow_unknown_effect_replay"`
+	AllowDirectSuccess             bool               `json:"allow_direct_success"`
 }
 
 type AuditLog struct {

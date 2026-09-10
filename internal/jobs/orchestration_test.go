@@ -29,6 +29,7 @@ type fakeRepository struct {
 	renewCalls          int
 	outboxRenewErr      error
 	transitionErr       error
+	transitionOutcome   *TransitionOutcome
 	outboxTransitionErr error
 	validToken          uuid.UUID
 	outboxValidToken    uuid.UUID
@@ -64,27 +65,30 @@ func (repository *fakeRepository) RenewLease(context.Context, uuid.UUID, uuid.UU
 	return repository.renewErr
 }
 
-func (repository *fakeRepository) TransitionFenced(ctx context.Context, transition Transition) error {
+func (repository *fakeRepository) TransitionFenced(ctx context.Context, transition Transition) (TransitionOutcome, error) {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
 	if err := transition.Validate(); err != nil {
-		return err
+		return TransitionOutcome{}, err
 	}
 	if repository.transitionErr != nil {
-		return repository.transitionErr
+		return TransitionOutcome{}, repository.transitionErr
 	}
 	if repository.validToken != uuid.Nil && transition.Token != repository.validToken {
-		return ErrLostLease
+		return TransitionOutcome{}, ErrLostLease
 	}
 	before := len(repository.transitions)
 	repository.transitions = append(repository.transitions, transition)
 	if transition.Mutation != nil {
 		if err := transition.Mutation(ctx, fakeDBTX{}); err != nil {
 			repository.transitions = repository.transitions[:before]
-			return err
+			return TransitionOutcome{}, err
 		}
 	}
-	return nil
+	if repository.transitionOutcome != nil {
+		return *repository.transitionOutcome, nil
+	}
+	return TransitionOutcome{Status: transition.To, ErrorCode: transition.ErrorCode}, nil
 }
 
 type fakeDBTX struct{}
@@ -228,7 +232,7 @@ func leasedJob(t *testing.T, registry *Registry, status Status, attempt int) Lea
 	if status == StatusVerifying || status == StatusRollingBack {
 		verificationAttempt = 1
 	}
-	return Lease{Job: Job{ID: uuid.New(), OperationID: uuid.New(), Kind: "test.synthetic", SchemaVersion: 1, Payload: payload, PayloadHash: hash, Status: status, Attempt: attempt, MaxAttempts: definition.MaxAttempts, VerificationAttempt: verificationAttempt, MaxVerifyAttempts: definition.MaxVerifyAttempts, Timeout: definition.Timeout, LeaseDuration: definition.LeaseDuration, HeartbeatInterval: definition.HeartbeatInterval, ReplaySafe: definition.ReplaySafe, AllowRollback: definition.AllowRollback}, Owner: "test-worker", Token: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}
+	return Lease{Job: Job{ID: uuid.New(), OperationID: uuid.New(), Kind: "test.synthetic", SchemaVersion: 1, Payload: payload, PayloadHash: hash, Status: status, Attempt: attempt, MaxAttempts: definition.MaxAttempts, VerificationAttempt: verificationAttempt, MaxVerifyAttempts: definition.MaxVerifyAttempts, Timeout: definition.Timeout, LeaseDuration: definition.LeaseDuration, HeartbeatInterval: definition.HeartbeatInterval, ReplaySafe: definition.ReplaySafe, AllowUnknownEffectReplay: definition.AllowUnknownEffectReplay, AllowDirectSuccess: definition.AllowDirectSuccess, AllowRollback: definition.AllowRollback}, Owner: "test-worker", Token: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}
 }
 
 func newTestWorker(t *testing.T, repository Repository, executor Executor) (*Worker, *Registry) {
@@ -251,14 +255,15 @@ func TestWorkerMapsClosedExecuteResultsWithoutArbitraryErrorMaterial(t *testing.
 		attempt    int
 		wantStatus Status
 		wantEvent  EventType
+		wantReason string
 		wantCode   string
 	}{
-		{"verify", ExecuteResult{Disposition: ExecuteNeedsVerification}, 1, StatusVerifying, EventVerification, ""},
-		{"unknown", ExecuteResult{Disposition: ExecuteResultUnknown}, 1, StatusVerifying, EventVerification, "execution_result_unknown"},
-		{"retry", ExecuteResult{Disposition: ExecuteRetryableNoEffect, ErrorCode: "synthetic_failure"}, 1, StatusRetryWait, EventRetryScheduled, "synthetic_failure"},
-		{"retry exhausted", ExecuteResult{Disposition: ExecuteRetryableNoEffect}, 3, StatusFailed, EventFailed, "max_attempts_exhausted"},
-		{"permanent", ExecuteResult{Disposition: ExecutePermanentFailure}, 1, StatusFailed, EventFailed, "permanent_execution_failure"},
-		{"invalid", ExecuteResult{Disposition: "arbitrary"}, 1, StatusFailed, EventFailed, "invalid_executor_result"},
+		{"verify", ExecuteResult{Disposition: ExecuteNeedsVerification}, 1, StatusVerifying, EventVerification, "", ""},
+		{"unknown", ExecuteResult{Disposition: ExecuteResultUnknown}, 1, StatusVerifying, EventVerification, "", "execution_result_unknown"},
+		{"retry", ExecuteResult{Disposition: ExecuteRetryableNoEffect, ErrorCode: "synthetic_failure"}, 1, StatusRetryWait, EventRetryScheduled, ReasonExecuteRetryableNoEffect, "synthetic_failure"},
+		{"retry exhausted", ExecuteResult{Disposition: ExecuteRetryableNoEffect}, 3, StatusFailed, EventFailed, ReasonExecuteRetryableNoEffect, "max_attempts_exhausted"},
+		{"permanent", ExecuteResult{Disposition: ExecutePermanentFailure}, 1, StatusFailed, EventFailed, "", "permanent_execution_failure"},
+		{"invalid", ExecuteResult{Disposition: "arbitrary"}, 1, StatusFailed, EventFailed, "", "invalid_executor_result"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -268,7 +273,7 @@ func TestWorkerMapsClosedExecuteResultsWithoutArbitraryErrorMaterial(t *testing.
 			lease := leasedJob(t, registry, StatusRunning, testCase.attempt)
 			worker.execute(context.Background(), lease)
 			transition := repository.lastTransition(t)
-			if transition.To != testCase.wantStatus || transition.Event != testCase.wantEvent || transition.ErrorCode != testCase.wantCode {
+			if transition.To != testCase.wantStatus || transition.Event != testCase.wantEvent || transition.ReasonCode != testCase.wantReason || transition.ErrorCode != testCase.wantCode {
 				t.Fatalf("transition = %+v", transition)
 			}
 			if testCase.wantStatus == StatusVerifying && !transition.ReleaseLease {
@@ -1023,6 +1028,9 @@ func TestStructuredLogContractRejectsUnregisteredDimensions(t *testing.T) {
 		{Component: ComponentWorker, Action: "https://secret.example", Result: ResultFailure},
 		{Component: ComponentWorker, Action: "claim", Result: "job-id-canary"},
 		{Component: ComponentWorker, Action: ActionExecute, Result: ResultFailure, JobKind: "test.synthetic", ErrorCode: "secret_canary"},
+		{Component: ComponentWorker, Action: ActionExecute, Result: ResultFailure, JobKind: "test.synthetic", ErrorCode: ReasonEffectUnknownUnverified},
+		{Component: ComponentWorker, Action: ActionExecute, Result: ResultFailure, JobKind: "test.synthetic", ErrorCode: ReasonExecuteRetryableNoEffect},
+		{Component: ComponentWorker, Action: ActionExecute, Result: ResultFailure, JobKind: "test.synthetic", ErrorCode: ReasonEffectAbsentVerified},
 	} {
 		if invalid.Valid(registry) {
 			t.Fatalf("unsafe log record accepted: %+v", invalid)

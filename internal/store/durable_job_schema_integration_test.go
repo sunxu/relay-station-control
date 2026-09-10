@@ -483,7 +483,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	isolatedLocation.Path = "/" + databaseName
 	isolatedURL := isolatedLocation.String()
 	repositoryRoot := "../.."
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up"); err != nil {
+	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up-to", "4"); err != nil {
 		t.Fatal(err)
 	}
 	checkVersion := func(stage string) {
@@ -497,7 +497,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 		if err := connection.QueryRow(ctx, `SELECT max(version_id) FILTER (WHERE is_applied), to_regclass('public.async_job_kinds')::text FROM goose_db_version`).Scan(&version, &tableName); err != nil {
 			t.Fatal(err)
 		}
-		if stage == "after-up" && (version != 9 || tableName == nil) {
+		if stage == "after-up" && (version != 4 || tableName == nil) {
 			t.Fatalf("%s version/table = %d/%v", stage, version, tableName)
 		}
 		if stage == "after-down" && (version != 3 || tableName != nil) {
@@ -516,6 +516,11 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkVersion("after-reup")
+	// Exercise the current adapter and its transaction-bound mutations only
+	// after upgrading; the legacy 00004 down/up assertions above remain intact.
+	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up"); err != nil {
+		t.Fatal(err)
+	}
 	isolated, err := pgx.ConnectConfig(ctx, isolatedConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -618,7 +623,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: lease.ID, Token: lease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusVerifying, Event: jobcore.EventVerification,
 		Actor: jobcore.ActorWorker, ReleaseLease: true,
@@ -629,7 +634,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	successOutcome, err := repository.TransitionFenced(ctx, jobcore.Transition{
 		JobID: recovery.ID, Token: recovery.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 		To: jobcore.StatusSucceeded, Event: jobcore.EventSucceeded,
 		Actor: jobcore.ActorReconciler, ReleaseLease: true,
@@ -637,8 +642,12 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 			_, err := database.Exec(ctx, `INSERT INTO synthetic_job_confirmations(job_id,result) VALUES ($1,'confirmed')`, recovery.ID)
 			return err
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("transaction-bound success mutation: %v", err)
+	}
+	if successOutcome.Status != jobcore.StatusSucceeded || successOutcome.ErrorCode != "" {
+		t.Fatalf("successful mutation outcome = %+v, want succeeded with empty error", successOutcome)
 	}
 	var persistedStatus, confirmation string
 	if err := pool.QueryRow(ctx, `SELECT job.status, confirmation.result
@@ -678,7 +687,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	if failedLease.ID != failedJob.Job.ID {
 		t.Fatal("claimed unexpected rollback fixture")
 	}
-	if err := repository.TransitionFenced(ctx, jobcore.Transition{
+	if err := transitionFencedError(repository, ctx, jobcore.Transition{
 		JobID: failedLease.ID, Token: failedLease.Token, From: []jobcore.Status{jobcore.StatusRunning},
 		To: jobcore.StatusVerifying, Event: jobcore.EventVerification,
 		Actor: jobcore.ActorWorker, ReleaseLease: true,
@@ -690,7 +699,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutationFailure := errors.New("synthetic mutation failure")
-	err = repository.TransitionFenced(ctx, jobcore.Transition{
+	failedOutcome, err := repository.TransitionFenced(ctx, jobcore.Transition{
 		JobID: failedRecovery.ID, Token: failedRecovery.Token, From: []jobcore.Status{jobcore.StatusVerifying},
 		To: jobcore.StatusSucceeded, Event: jobcore.EventSucceeded,
 		Actor: jobcore.ActorReconciler, ReleaseLease: true,
@@ -704,6 +713,9 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	if !errors.Is(err, mutationFailure) {
 		t.Fatalf("mutation rollback error = %v", err)
 	}
+	if failedOutcome.Status != "" || failedOutcome.ErrorCode != "" {
+		t.Fatalf("failed mutation outcome = %+v, want zero outcome", failedOutcome)
+	}
 	var confirmationCount int
 	if err := pool.QueryRow(ctx, `SELECT job.status,
 		(SELECT count(*) FROM synthetic_job_confirmations WHERE job_id=job.job_id)
@@ -715,7 +727,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	}
 	pool.Close()
 	err = runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down-to", "3")
-	if err == nil || !strings.Contains(err.Error(), "durable job evidence exists") {
+	if err == nil || !strings.Contains(err.Error(), "execution policy migration is forward-only") {
 		t.Fatalf("protected down error = %v", err)
 	}
 	isolated, err = pgx.ConnectConfig(ctx, isolatedConfig)
@@ -727,7 +739,7 @@ func TestDurableJobProtectedDownRequiresEmptyEvidenceTables(t *testing.T) {
 	if err := isolated.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
+	if version != 28 {
 		t.Fatalf("migration version after refused down = %d", version)
 	}
 }
