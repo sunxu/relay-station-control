@@ -589,7 +589,7 @@ duplicate delivery = accepted
 
 HTTP timeout、write 后 connection reset 或 running lease 过期导致外部结果未知时，启用该 policy 且剩余 Execute budget > 0 才能经现有恢复/退避机制进入 retry_wait，后续正常 claim 获得新 execution lease/fencing token 后重放。保留 job_id、operation_id、payload、payload hash、idempotency key；总 Execute attempts <= 5，耗尽 failed。未启用 policy 的所有 job 保持 Verify-first。该 boolean 在 enqueue 时由 async_job_kinds definition/catalog 快照到 async_jobs，Worker/Reconciler 必须依据持久化 job policy 且先通过 registry/catalog/job consistency check；重复 enqueue 也比较该字段。allow_unknown_effect_replay=true REQUIRES replay_safe=true，非法组合拒绝注册/持久化；job snapshot 与当前 registry 不匹配时 fail closed，不继承新权限。完整增量见 [durable-job spec](../durable-job/spec.md)。
 
-DingTalk HTTP success 与 business response success 同时满足时 SHALL 返回通用 ExecuteSucceeded；仅在 persisted allow_direct_success=true、policy compatibility 通过且 running lease/fencing 有效时，Worker 用既有 StatusSucceeded/EventSucceeded 直接 running→succeeded（event actor=worker），不进入 verifying。allow_direct_success 默认 false，仅 DingTalk 启用；沿用两表 BOOLEAN NOT NULL DEFAULT FALSE、enqueue per-job snapshot 与全部兼容性检查，不由 registry 动态改变旧 job 权限。普通 job 未授权却返回 ExecuteSucceeded MUST fail closed。
+DingTalk HTTP success 与 business response success 同时满足时 SHALL 返回通用 ExecuteSucceeded；仅在 persisted allow_direct_success=true、policy compatibility 通过且 running lease/fencing 有效、DB lock 下无取消请求时，Worker 用既有 StatusSucceeded/EventSucceeded 直接 running→succeeded（event actor=worker），不进入 verifying。allow_direct_success 默认 false，仅 DingTalk 启用；沿用两表 BOOLEAN NOT NULL DEFAULT FALSE、enqueue per-job snapshot 与全部兼容性检查，不由 registry 动态改变旧 job 权限。普通 job 未授权却返回 ExecuteSucceeded MUST fail closed。 commit 前取消已可见则 running→failed / cancel_after_effect_applied、actor=worker，不自动 rollback。当前 no-effect 且无 unresolved unknown 的并发取消可经窄 running→cancelled 安全完成；unknown 证据与 Verify 消解规则遵循 durable-job delta，不由 policy boolean 推断。
 
 allow_direct_success 只授权已知成功，allow_unknown_effect_replay 只授权未知效果有界重放，互不替代、互不依赖。不新增 direct⇒replay_safe invariant，保留 unknown⇒replay_safe。明确临时失败且证明无效果继续既有 retry disposition；unknown 不伪装为成功或 effect_not_applied。普通 job 两个 policy 默认 false，保留 Verify-first。详见 durable-job delta。
 
@@ -599,7 +599,7 @@ DingTalk executor 不进入：
 - rollback
 - rolled_back
 
-实际子状态机：
+投递主要路径（取消额外遵循 durable-job delta 的安全证据矩阵）：
 
 ```text
 pending
@@ -1116,9 +1116,9 @@ Phase 5 MUST 至少验证：
 37. enqueue 将 catalog policy 快照到 job；同 key 重入队比较此字段；Registry/Catalog 与 DB catalog 不匹配、existing job snapshot != current registry policy → fail closed / policy mismatch，Worker/Reconciler 不按新权限执行旧 job，不覆盖 snapshot
 
 38. allow_direct_success 默认 false、仅 DingTalk true；两表/Definition/CatalogEntry/Job/DB mapping/EnqueueTx snapshot 与所有 compatibility 检查一致，旧 job 不继承 registry 新授权
-39. HTTP+business 明确成功→ExecuteSucceeded；有 direct 持久化授权且有效 lease/fencing 时 worker running→succeeded 并原子写既有 EventSucceeded；普通 job 未授权返回相同结果→fail closed，DB 同样拒绝
+39. HTTP+business 明确成功→ExecuteSucceeded；有 direct 持久化授权且有效 lease/fencing、锁内无取消时 worker running→succeeded 并原子写既有 EventSucceeded；普通 job 未授权返回相同结果→fail closed，DB 同样拒绝
 40. 旧/过期 Worker 即使持有明确成功结果也不能提交 succeeded/event
-41. known DingTalk success→direct succeeded；unknown DingTalk→unknown-effect replay；普通 unknown/ExecuteNeedsVerification→Verify-first，三条路径严格分离
+41. known DingTalk success 且无取消→direct succeeded；unknown DingTalk→unknown-effect replay；普通 unknown/ExecuteNeedsVerification→Verify-first，三条路径严格分离
 42. direct=true/unknown=false/replay_safe=false 与 direct=false/unknown=true/replay_safe=true 不因额外 invariant 拒绝；两 policy 独立且 unknown⇒replay_safe 仍强制
 
 #### Scenario: 完整运行时验收

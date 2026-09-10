@@ -157,3 +157,47 @@ Phase 7: PLANNED / NOT STARTED
 - Control/Ops git diff --check：PASS；仅 approval/status Markdown 与 compatibility metadata 变更。
 - production changed = false；migration changed = false；test implementation changed = false；archive changed = false；Gateway changed = false；CLIProxyAPI changed = false。
 - 未执行 production build/runtime tests、migration、deploy acceptance；未 commit/push。
+
+## Cancellation-race discovery and Architecture Amendment — 2026-09-10
+
+本节追加新的发现与当前状态，不覆盖首次 PASS、direct-success preflight reopen/amendment、Formal Re-review PASS 或 [Slice A implementation evidence](./slice-a-validation.md)。此前批准仍是对应历史 baseline 的结论，不表示本 cancellation amendment 已获批准。
+
+Discovery context（当前 HEAD，附有未提交 Slice A 工作树；不是本 amendment 的 reviewed/approval commit）：
+
+- Control: `ec0e8a2951cc158509c62942f0e622b98bd4e27f`
+- Ops: `6d7f5d86deb613d62262475b675e75d55b571148`
+- Gateway compatibility baseline: `6b045698e6e5e62e35dbd103abf20c1407f8a0bb`
+- CLIProxyAPI compatibility baseline: `273d624c70f6eb8bdd7b049df396c306acd3f8d0`
+
+Slice A Implementation Review 发现 policy/evidence 混淆；进一步核对既有 cancellation contract，确认 running 执行 ExecuteRetryableNoEffect 时，claim 后、retry commit 前登记取消会落入 retry_wait，而 Worker 排除取消行、Reconciler 不扫描 retry_wait，缺少确定性收敛，只能等待 deadline/max-attempt sweep。停止实现，不通过未经评审的新状态转换绕过 gap。
+
+```text
+Detailed Requirements: FROZEN
+Architecture Review: REOPENED / CHANGES REQUIRED
+Implementation readiness: NOT READY
+Implementation: IN PROGRESS — PAUSED AT SLICE A
+Runtime Acceptance: NOT STARTED
+```
+
+本轮冻结的 amendment 见 [design](./design.md) cancellation-race section 与 [durable-job delta](./specs/durable-job/spec.md)：
+
+1. 窄 running→cancelled 仅授权有效 Worker、当前 lease/fence、锁内可见取消、明确当前 no-effect proof、无 unresolved prior unknown；EventCancelled / worker / cancel_verified_safe，释放 lease。
+2. policy != evidence。使用既有 immutable events 的 framework-generated reason codes：effect_unknown_unverified、execute_retryable_no_effect、effect_absent_verified；当前 no-effect 不能清除之前 unknown，VerifyEffectAbsent verifying→retry_wait 的 marker 消解此前 unknown，只考虑最新 verified marker 之后的 unknown。
+3. cancellation matrix A～E 冻结：current/prior unresolved unknown 加取消必须 failed / cancel_after_unknown_effect；Verify 已消解后可安全取消，普通 retry_wait 取消保持。DB cancel request 与 fenced transition 均按真实证据判定。
+4. ExecuteSucceeded 与锁内并发取消必须 failed / cancel_after_effect_applied，不提交 succeeded，不新增自动 rollback；NeedsVerification 与 PermanentFailure 保持既有语义。
+5. 最大增量仅一个窄 existing-state transition 加固定 reason semantics；无新 status/event type/policy/column/table/ledger/queue/worker/retry engine。普通 Verify-first、两个 persisted policies 及 Phase 4/6/7 边界保持。
+
+本轮仅文档修订；已有未提交 Slice A production/migration/generated/test 工作树及验证记录保留，不回退、不继续实现。未来 re-review PASS 后直接修订尚未 commit/release/deploy 的 00028，不为此新建 00029；仅当届时 00028 已成为正式不可修改 baseline 才使用新的合法 forward migration。
+
+tasks.md 保留此前 7 个完成勾选作为旧 Slice A evidence，新增 3.1g～3.1i 均未勾选；旧勾选不代表 amended contract 已实现。proposal 的 stale approval-only wording 已修正。Full-store suite 仍为此前记录的 NOT GREEN，本轮不执行或修复其 baseline failures，也不把旧 focused tests 宣称为 amendment 验收。
+
+### Cancellation amendment validation
+
+- 当前 change OpenSpec strict：PASS；全仓 strict：20 passed / 0 failed。
+- Markdown fences 与 38 个本地引用路径检查：PASS；Ops YAML parse 与五项 Phase 5 拆分状态检查：PASS。
+- 旧 planning-validation 全文作为前缀保留，仅追加本次 discovery/amendment；tasks 保留原 7 个完成项，总计 50 项，新增 3 项均 open。
+- 与本轮开始时全部 tracked/untracked 文件 SHA-256 对比：仅 Control 六个 active change 文档与 Ops 五个规划文件改变；既有 Slice A production、migration、generated、test 与 slice-a-validation.md 完全保留。四仓 HEAD 与 Git index 指纹均不变；Gateway/CLIProxyAPI 全部文件指纹不变。
+- Control/Ops git diff --check：PASS。整个工作树仍有 pre-existing uncommitted Slice A implementation changes；只有本 amendment 的增量是 docs/status-only，不能称整个 working tree 为 docs-only。
+- 本轮未运行生产测试、build/generate、migration 或运行验收，未修复 full-store baseline failures；未 commit/push。
+
+Architecture re-review readiness: READY（文档已可供重审，不是批准）。Architecture Review 保持 REOPENED / CHANGES REQUIRED，Implementation readiness = NOT READY；恢复实施须另获 re-review PASS。

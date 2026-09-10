@@ -5,7 +5,7 @@ Requirements freeze implementation baseline：Control `f4173242aef83afd95d324057
 
 Architecture Review target：评审时两个仓库 main 上当前已提交的 Phase 5 requirement documents。历史批准的 exact reviewed repository SHAs 已记录于独立的 [Architecture Review evidence](./planning-validation.md)；本 change 不硬编码自身最终 commit SHA，amend 不要求更新自引用 SHA。
 
-Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
+Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation = IN PROGRESS — PAUSED AT SLICE A；Runtime Acceptance = NOT STARTED。
 
 现有实现接入点：
 
@@ -55,18 +55,45 @@ ACTIVE/RESOLVED 使用 spec 固定四种 key；recurrence 产生新 occurrence I
 ### Delivery execution
 注册首个 production `dingtalk_alert_delivery` kind，payload schema 1、default timeout 10s（job execution budget；单次 HTTP total timeout 仍固定 5s）、max attempts 5（包括第一次）、replay_safe=true、allow_unknown_effect_replay=true、allow_direct_success=true、rollback_allowed=false。数据库 registration 与 Go registry 同步并检查兼容。框架如要求 verification attempts 字段，使用其合法默认值，但业务永不进入 verifying、rolling_back、rolled_back。
 
-Phase 5 增加两个独立默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 DingTalk 启用；不扩大 replay_safe，不使用 kind-name 条件硬编码。Worker Execute 的 timeout/write 后 reset 等未知结果，以及 Reconciler 接管 running expired lease，仅按 allow_unknown_effect_replay 和剩余预算决定 retry_wait；普通 job 保持 Verify-first，unknown 不伪装为 effect_not_applied。复用原 durable backoff 和有界扫描，不新建状态、retry engine、queue/outbox。恢复更新仍须取得有效恢复 lease/fencing；后续 Execute 必须正常 claim 新 execution lease/token。job_id、operation_id、payload/hash、idempotency key 均不变，Execute 最多五次、耗尽 failed；已有取消请求或终止期限仍阻止重放，未知效果不得伪装为安全取消。完整行为以本 change 的 durable-job 增量 spec 为准。
+Phase 5 增加两个独立默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 DingTalk 启用；不扩大 replay_safe，不使用 kind-name 条件硬编码。Worker Execute 的 timeout/write 后 reset 等未知结果，以及 Reconciler 接管 running expired lease，以真实未知结果为证据，并依据持久化 allow_unknown_effect_replay、剩余预算与锁内取消/期限检查决定 retry_wait，记录 effect_unknown_unverified；policy=true 本身不是 unknown evidence；普通 job 保持 Verify-first，unknown 不伪装为 effect_not_applied。复用原 durable backoff 和有界扫描，不新建状态、retry engine、queue/outbox。恢复更新仍须取得有效恢复 lease/fencing；后续 Execute 必须正常 claim 新 execution lease/token。job_id、operation_id、payload/hash、idempotency key 均不变，Execute 最多五次、耗尽 failed；已有取消请求或终止期限仍阻止重放，未知效果不得伪装为安全取消。完整行为以本 change 的 durable-job 增量 spec 为准。
 
 ### Direct-success amendment
-Slice A preflight 确认现有 ExecuteDisposition 无成功结果，Worker、DB lifecycle/event/fenced-transition 仅经 verifying 完成 succeeded；本节冻结的最小扩展已正式 re-review PASS，证据见 planning-validation.md；本轮仅记录批准，不开始实施。
+Slice A preflight 确认现有 ExecuteDisposition 无成功结果，Worker、DB lifecycle/event/fenced-transition 仅经 verifying 完成 succeeded；本节冻结的最小扩展已正式 re-review PASS，证据见 planning-validation.md；该历史 PASS 保留；当前因 cancellation-race gap 暂停 Slice A，等待新的 Architecture re-review。
 
 新增通用 `ExecuteSucceeded`，仅表示 Executor 从本次同步 Execute 获得足以确认操作成功的结果，且 job kind 被显式授权跳过 Verify。DingTalk HTTP 与 business response 均成功才返回此结果；未知结果、可重试无效果、needs verification 均不能冒充成功。
 
-只有经过 policy compatibility 校验、persisted job.allow_direct_success=true 且当前 running lease/fencing 有效时，Worker 才允许 running→succeeded，复用 StatusSucceeded/EventSucceeded；event 为 from_status=running、to_status=succeeded、actor=worker。后续 forward migration 必须同步 lifecycle guard、event constraint 与 fenced-transition contract，并在 DB 检查持久化授权。旧/过期 Worker 即使持有成功响应也不能提交。普通 job 未授权却返回 ExecuteSucceeded 必须 fail closed，不能全局开放直接成功。
+只有经过 policy compatibility 校验、persisted job.allow_direct_success=true 且当前 running lease/fencing 有效、DB lock 下没有取消请求时，Worker 才允许 running→succeeded，复用 StatusSucceeded/EventSucceeded；event 为 from_status=running、to_status=succeeded、actor=worker。后续 forward migration 必须同步 lifecycle guard、event constraint 与 fenced-transition contract，并在 DB 检查持久化授权。旧/过期 Worker 即使持有成功响应也不能提交。普通 job 未授权却返回 ExecuteSucceeded 必须 fail closed，不能全局开放直接成功。
 
 allow_direct_success 控制已知成功是否跳过 Verify；allow_unknown_effect_replay 只控制未知效果能否有界重放，两者互不替代或依赖。不新增 allow_direct_success⇒replay_safe invariant；保留 unknown replay⇒replay_safe。两个默认 false 的普通 job 继续 ExecuteNeedsVerification→verifying→Verify→succeeded/retry/rollback/failed。已知 DingTalk 成功、未知 DingTalk 结果、普通 job unknown 必须分别覆盖验收。
 
-本 amendment 的最大增量为一个 Execute disposition 加一个默认关闭的 persisted boolean；不新增状态、事件类型、execution mode enum、policy table/DSL、verification receipt、delivery ledger 或通知状态机。
+此前 direct-success amendment 的最大增量为一个 Execute disposition 加一个默认关闭的 persisted boolean；不新增状态、事件类型、execution mode enum、policy table/DSL、verification receipt、delivery ledger 或通知状态机。
+
+### Cancellation-race amendment
+既有 running→retry_wait 在 claim 后收到 cancellation 时缺少确定性收敛：Worker 排除 cancel_requested 行，Reconciler 不扫描 retry_wait，最终仅等待 deadline/max-attempt sweep。本 amendment 冻结修复契约，不实施代码；此前 Slice A 测试证据不代表新契约已实现。
+
+效果证据复用 immutable async_job_events.reason_code，固定由 framework 生成，Executor 不得自由提供：
+
+| reason_code | 事实与范围 |
+|---|---|
+| effect_unknown_unverified | Worker ExecuteResultUnknown 或 Reconciler expired-running recovery，经授权进入 retry_wait，外部效果未知且未 Verify |
+| execute_retryable_no_effect | 当前 ExecuteRetryableNoEffect 只证明本次 attempt 无效果 |
+| effect_absent_verified | VerifyEffectAbsent 导致 verifying→retry_wait，证明稳定 operation 无效果，消解此前 unknown |
+
+按同 job 的既有 event sequence，只有最新 effect_absent_verified 之后的 effect_unknown_unverified 才是 unresolved unknown；无 verified marker 时考虑全部。当前 unknown transition 在事件落盘前也须参与锁内判断。当前 no-effect 不清除以前 unknown；历史 unknown 被 Verify 消解后不永久 sticky。该语义明确 supersede 未提交 Slice A 的 capability/evidence 混淆及“历史曾 unknown”判断。
+
+control_request_async_job_cancel() 与 control_transition_async_job_fenced() 必须依据这些真实证据而非 policy boolean 判断。DB lock 下重新检查 cancellation、lease/fencing、预算与 deadline，并与事件原子提交：
+
+- A：有效 Worker running + ExecuteRetryableNoEffect + cancel 已可见 + 无 prior unresolved unknown → running→cancelled，EventCancelled、actor=worker、error_code=cancel_verified_safe、release lease=true，reason=execute_retryable_no_effect。
+- B：当前 unknown + replay 已授权 + 并发 cancel → failed / cancel_after_unknown_effect，不得安全取消。
+- C：此前 unknown→retry_wait，后续 attempt no-effect，再取消（或取消在其 commit 前可见）→ failed / cancel_after_unknown_effect。
+- D：unknown→verifying→VerifyEffectAbsent→retry_wait 记录 effect_absent_verified，此后无新 unknown 的取消 → cancelled / cancel_verified_safe。
+- E：普通 retry_wait 无 unresolved unknown 的取消 → 保持既有 cancelled。
+- ExecuteSucceeded + fenced commit 前 cancel 已可见 → running→failed / cancel_after_effect_applied、actor=worker，不得 succeeded；不引入 direct-success 自动 rollback 或 running→rolling_back，即使 generic kind 允许 rollback，未来需要时另开 change。
+- ExecuteNeedsVerification + cancel 仍 running→verifying，保留请求并使用既有 Verify cancellation outcomes；ExecutePermanentFailure 保持 fail-closed，不意味着 no-effect。
+
+running→cancelled 不是通用取消捷径：DB 必须同时验证当前有效 lease/fence、cancel_requested_at 非空、明确当前 known-no-effect framework proof、无 unresolved prior unknown。旧 fence、仅 policy=true/false 或无 proof 均不足以授权。普通 Verify-first、direct/unknown 两 policy 独立性、unknown⇒replay_safe、有限重试及终态保护保持。
+
+本次最大增量只有一个窄 existing-state transition 加固定 reason semantics；不新增状态、event type、policy、列、表、ledger、queue、cancellation worker 或 retry engine。
 
 ### Persisted execution-policy snapshot
 `allow_unknown_effect_replay` 与 `allow_direct_success` 各作为现有 execution policy 的独立 boolean 扩展，沿用 Timeout、LeaseDuration、HeartbeatInterval、MaxAttempts、MaxVerifyAttempts、ReplaySafe、AllowRollback 的 per-job snapshot 模式：
@@ -82,7 +109,7 @@ async_jobs.{allow_unknown_effect_replay, allow_direct_success}
 
 只有 dingtalk_alert_delivery 的 definition/catalog 为 true；普通 job 默认 false。enqueue 在既有 EnqueueTx 中复制字段，不新增事务或 enqueue logic。同幂等键重入队的 execution-policy compatibility check、Registry.Catalog 与 DB catalog comparison、Worker/Reconciler job-policy comparison 都必须包含两个字段，覆盖 jobs.Definition、jobs.CatalogEntry、jobs.Job、policyMatches 与 DB read/write mapping。Worker/Reconciler MUST 以 job 上持久化的 snapshot 授权各自的重放或直接成功，不能由当前进程 registry/config 动态改变旧 job 权限；job snapshot 与当前 registry/catalog 不一致时 fail closed / policy mismatch，不覆盖 snapshot、不继续按新权限执行。
 
-Invariant：`allow_unknown_effect_replay=true` REQUIRES `replay_safe=true`。Go Registry validation、DB catalog/schema constraint 或等价持久化校验（catalog 与 job snapshot 均覆盖）、catalog compatibility validation MUST 拒绝 false/true 非法组合。DingTalk 固定 true/true；普通 job 保持 unknown replay=false，Verify-first 不变。此处冻结的是架构契约，本轮不写 migration/SQL。后续验收必须覆盖非法组合 registration/persistence rejected，以及旧 job snapshot 与新 registry 不匹配时 Worker/Recovery/重复 enqueue 均 fail closed。
+Invariant：`allow_unknown_effect_replay=true` REQUIRES `replay_safe=true`。Go Registry validation、DB catalog/schema constraint 或等价持久化校验（catalog 与 job snapshot 均覆盖）、catalog compatibility validation MUST 拒绝 false/true 非法组合。DingTalk 固定 true/true；普通 job 保持 unknown replay=false，Verify-first 不变。此处冻结的是架构契约，需求冻结阶段未编写 migration/SQL；已有 Slice A 工作树保持不变，等待 cancellation amendment re-review 后再恢复。后续验收必须覆盖非法组合 registration/persistence rejected，以及旧 job snapshot 与新 registry 不匹配时 Worker/Recovery/重复 enqueue 均 fail closed。
 
 不新增 execution policy table、policy DSL、notification table/outbox、delivery ledger、workflow engine、job state、DingTalk 专用 retry engine 或 RBAC；不按 job kind 名硬编码行为。
 
@@ -103,7 +130,9 @@ POST 成功后未提交 succeeded 即 crash 可造成重复通知，这是通过
 新查询使用 SECURITY DEFINER、fixed search_path=pg_catalog、owner relay_control_migrator、REVOKE EXECUTE FROM PUBLIC、GRANT EXECUTE TO relay_control_runtime；runtime 无新增底表直接权限。继续唯一 super_admin 与既有会话/请求防护；不新增 RBAC。
 
 ## Migration, rollout and rollback
-不在本文档交付中编造 migration 编号或实施 SQL。实施使用下一个可用 forward Goose migration，read-model 与 delivery concern 分开；不修改任何历史 migration，不新增领域表/Token表/通知表/outbox/config表。后续实施仅增加 read functions/ACL、transition-returning reconciliation contracts、job-kind registration 及既有 execution-policy/recovery contracts 的必要 additive 扩展，两个 policy 在 async_job_kinds 的布尔定义及 async_jobs 的 enqueue snapshot 持久化语义已在上节冻结；后续实施按该契约编写 additive migration，本轮不修改 migration 或 SQL/schema；索引仅在实际 EXPLAIN/acceptance 证明需要时增加。
+本轮不修改 migration。Architecture re-review PASS 后，因为 00028_durable_job_execution_policies.sql 当前未 commit/release/deploy，应直接修订既有 00028 使其符合最终契约，不为本 amendment 新建 00029；只有届时 00028 已正式提交成为不可修改 baseline 才使用下一个合法 forward migration。
+
+实施使用下一个可用 forward Goose migration，read-model 与 delivery concern 分开；不修改任何历史 migration，不新增领域表/Token表/通知表/outbox/config表。后续实施仅增加 read functions/ACL、transition-returning reconciliation contracts、job-kind registration 及既有 execution-policy/recovery contracts 的必要 additive 扩展，两个 policy 在 async_job_kinds 的布尔定义及 async_jobs 的 enqueue snapshot 持久化语义已在上节冻结；后续实施按该契约编写 additive migration，需求冻结阶段未修改 migration 或 SQL/schema；索引仅在实际 EXPLAIN/acceptance 证明需要时增加。
 
 先升级 additive schema，核验 runtime ACL 与旧 v1，然后部署匹配 registry/worker 和 API/UI；DingTalk 初始关闭，完成隔离验收后按部署授权配置 Secret。发布 pin 与 phase_4_closed 不因文档冻结而变更。
 
