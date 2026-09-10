@@ -1,9 +1,52 @@
 import { expect, test } from "@playwright/test";
+import { formatDateTime } from "../src/time";
 
 const nodes = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
 const asset = (id: string, name: string) => ({ instance_id: id, display_name: name, node_type: "relay", driver_contract_version: "v1", management_endpoint: "https://node.invalid", secret_configured: false, capabilities: [], monitoring: { active: true, effective_from: null, effective_to: null } });
 const occurrence = { occurrence_id: "33333333-3333-4333-8333-333333333333", environment_id: "env", account_key: "openai:user@example.invalid", conflict_type: "cross_node_duplicate_ownership", status: "ACTIVE", severity: "Critical", first_seen_at: "2026-09-07T00:00:00Z", last_seen_at: "2026-09-07T00:01:00Z", resolved_at: null, evidence_state: "degraded", last_fully_verified_at: null, latest_evaluation_id: null, affected_nodes: nodes };
 const session = { state: "authenticated", administrator: { id: "00000000-0000-4000-8000-000000000001", login_name: "e2e", display_name: "E2E", auth_source: "local", role: "super_admin", status: "enabled", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }, mfa: { required: true, completed: true, method: "totp" }, csrf_token: "c", created_at: "2026-01-01T00:00:00Z", last_activity_at: "2026-01-01T00:00:00Z", idle_expires_at: "2099-01-01T00:30:00Z", absolute_expires_at: "2099-01-01T12:00:00Z", reauthenticated_until: null, recovery_codes_remaining: 10 };
+
+test("Account detail preserves server Token projection and occurrence history", async ({ page }) => {
+  const accountKey = "antigravity:detail@example.invalid";
+  const expected = "2099-01-01T00:00:00Z";
+  let qualityReads = 0;
+  await page.route("**/api/**", async (route) => {
+    const req = route.request();
+    const path = new URL(req.url()).pathname;
+    if (req.method() === "POST" && path === `/api/topology/nodes/${nodes[0]}/account-quality/query`) {
+      qualityReads++;
+      return route.fulfill({ json: { instance_id: nodes[0], window: "15m", next_cursor: null, items: [{
+        account_key: accountKey, email: "detail@example.invalid", provider: "antigravity", quality: "good",
+        token_state: "INVALID", expected_valid_until: expected, request_count: 1, success_count: 1,
+        failure_count: 0, success_rate: 1, p95_latency_ms: 1, last_success_at: null, last_failure_at: null,
+        last_failure_class: null,
+      }] } });
+    }
+    if (req.method() !== "GET") throw new Error(`unexpected mutation ${req.method()} ${path}`);
+    if (path === "/api/bootstrap/status") return route.fulfill({ json: { status: "completed" } });
+    if (path === "/api/auth/session") return route.fulfill({ json: session });
+    if (path === "/api/assets/nodes") return route.fulfill({ json: { items: [asset(nodes[0], "Detail node")], next_cursor: null } });
+    if (path === `/api/assets/nodes/${nodes[0]}`) return route.fulfill({ json: asset(nodes[0], "Detail node") });
+    if (path.endsWith("/providers")) return route.fulfill({ json: { instance_id: nodes[0], providers: [], observed_at: null } });
+    if (path.includes("/relay-bindings/nodes/")) return route.fulfill({ json: { relay_node_id: nodes[0], current_binding: null, resolution: "unbound", directory_freshness: "unknown", context_source: "none", account_context: null } });
+    if (path.endsWith("/request-history")) return route.fulfill({ json: { instance_id: nodes[0], account_key: accountKey, items: [], next_cursor: null } });
+    if (path.endsWith("/account-availability-occurrences")) return route.fulfill({ json: { instance_id: nodes[0], items: [{ occurrence_id: "detail-occurrence", instance_id: nodes[0], account_key: accountKey, reason: "token_invalid", severity: "Critical", status: "ACTIVE", first_seen_at: "2026-09-11T00:00:00Z", last_failure_at: "2026-09-11T00:01:00Z", confirmed_at: "2026-09-11T00:02:00Z", resolved_at: null }], next_cursor: null } });
+    if (path.endsWith("/duplicate-history") || path === "/api/cross-node-duplicate-occurrences" || path.endsWith("/incidents")) return route.fulfill({ json: { items: [], next_cursor: null } });
+    throw new Error(`unexpected detail API ${path}`);
+  });
+  await page.goto(`/topology?instance_id=${nodes[0]}`);
+  await page.getByRole("button", { name: "查看详情", exact: true }).click();
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("tab", { name: "采集信息" }).click();
+  await expect(drawer.getByText("INVALID", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Expected Valid Until", { exact: true })).toBeVisible();
+  // Browser and test runner share the host system timezone; no bespoke UI formatter.
+  await expect(drawer.getByText(formatDateTime(expected), { exact: true })).toBeVisible();
+  await drawer.getByRole("tab", { name: "可用性事件" }).click();
+  await expect(drawer.getByText("token_invalid", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Critical", { exact: true })).toBeVisible();
+  expect(qualityReads).toBe(1);
+});
 
 test("Topology covers responsive navigation, independent reads, pagination, and readonly recovery", async ({ page }) => {
   const requests: string[] = []; let bProviderReads = 0; let expireEvidence = false;

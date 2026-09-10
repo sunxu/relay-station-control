@@ -34,6 +34,8 @@ export function AccountDetailsDrawer({ api, instanceId, row, accountKey, onClose
         <Descriptions.Item label="Provider 快照">{formatDateTime(row.provider_last_complete_at)}</Descriptions.Item>
         <Descriptions.Item label="Snapshot freshness">{row.snapshot_freshness ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Provider health">{row.provider_degraded ? <Tag color="orange">degraded</Tag> : <Tag color="green">normal</Tag>}</Descriptions.Item>
+        <Descriptions.Item label="Token Health">{row.token_state ? <Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state}</Tag> : "—"}</Descriptions.Item>
+        <Descriptions.Item label="Expected Valid Until">{formatDateTime(row.expected_valid_until)}</Descriptions.Item>
         <Descriptions.Item label="Availability">{row.availability?.state ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Availability reason">{row.availability?.reason ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Availability since">{formatDateTime(row.availability?.since)}</Descriptions.Item>

@@ -62,7 +62,7 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 
 ## 5. UI
 - [x] 5.1 新增 Problems 只读列表与过滤/分页，多个 issues 一行，Critical/Warning 与 Since 排序。
-- [ ] 5.2 扩展现有 Account Quality/Inventory detail 的 Token 与 Expected Valid Until；复用 occurrence history 与系统时区。
+- [x] 5.2 扩展现有 Account Quality/Inventory detail 的 Token 与 Expected Valid Until；复用 occurrence history 与系统时区。
 - [x] 5.3 前端验证完整邮箱、UNKNOWN 与 Unavailable 区别、缺失/retired/disabled Availability ACTIVE 保留、duplicate 按领域 current membership 展开，不做 N+1 聚合。
 
 ## 6. Acceptance and delivery

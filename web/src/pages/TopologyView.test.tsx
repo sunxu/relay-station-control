@@ -294,12 +294,17 @@ it("opens request history for the selected account row", async () => {
   const asset = makeNode(A, "Node A");
   const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
   const api = emptyTopology();
-  api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [{ account_key: "openai:a@example.invalid", email: "a@example.invalid", provider: "openai", quality: "good", request_count: 1, success_count: 1, failure_count: 0, success_rate: 1, p95_latency_ms: 20, last_success_at: observedAt, last_failure_at: null, last_failure_class: null }] });
-  api.requestHistory = vi.fn().mockResolvedValue({ instance_id: A, account_key: "openai:a@example.invalid", items: [{ occurred_at: observedAt, model: "gpt-5", success: true, failure_class: null, duration_ms: 20, request_id: "history-1" }], next_cursor: null });
+  api.accountQuality = vi.fn().mockResolvedValue({ instance_id: A, window: "15m", next_cursor: null, items: [{ account_key: "antigravity:a@example.invalid", email: "a@example.invalid", provider: "antigravity", quality: "good", token_state: "VALID", expected_valid_until: observedAt, request_count: 1, success_count: 1, failure_count: 0, success_rate: 1, p95_latency_ms: 20, last_success_at: observedAt, last_failure_at: null, last_failure_class: null }] });
+  api.requestHistory = vi.fn().mockResolvedValue({ instance_id: A, account_key: "antigravity:a@example.invalid", items: [{ occurred_at: observedAt, model: "gpt-5", success: true, failure_class: null, duration_ms: 20, request_id: "history-1" }], next_cursor: null });
   renderView(api, assetApi);
   fireEvent.click(await screen.findByRole("button", { name: "查看详情" }));
   expect(await screen.findByText("history-1")).toBeInTheDocument();
-  expect(api.requestHistory).toHaveBeenCalledWith(A, "openai:a@example.invalid", undefined, expect.any(AbortSignal));
+  expect(api.requestHistory).toHaveBeenCalledWith(A, "antigravity:a@example.invalid", undefined, expect.any(AbortSignal));
+  fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
+  expect(screen.getByText("VALID")).toBeInTheDocument();
+  expect(screen.getByText("Expected Valid Until")).toBeInTheDocument();
+  expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent(formatDateTime(observedAt));
+  expect(api.accountQuality).toHaveBeenCalledTimes(1);
 });
 
 it("opens existing History from a real Incident account row", async () => {
