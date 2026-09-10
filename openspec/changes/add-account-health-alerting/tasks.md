@@ -4,18 +4,18 @@ Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation rea
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
-Slice A：cancellation amendment 已按正式 re-review PASS 实施，3.1g～3.1i 已由 focused Go/PostgreSQL tests 验证，等待 Implementation Review；不继续 Slice B～G。此前完成项保留。3.1/3.1a/3.1e 仍含真实 DingTalk 注册/启用，故保持 open；其它产品能力及全 Phase 运行验收均未完成。证据见 [Slice A validation](./slice-a-validation.md)。
+Slice A：最终 Implementation Review 已由用户正式确认 PASS，并提交为 `2eee43d`，历史证据见 [Slice A validation](./slice-a-validation.md)。Slice B：Token Health DB projection 与现有 Quality API additive 字段已完成 focused 验证，等待 Implementation Review；到此停止，不继续 Slice C～G。证据见 [Slice B validation](./slice-b-validation.md)。3.1/3.1a/3.1e 仍含真实 DingTalk 注册/启用，保持 open；1.3/2.5 仅完成 Quality 部分，Problems 部分与全 Phase 验收仍未完成。
 
 ## 1. Contract and compatibility
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
-- [ ] 1.2 核对 Inventory qualification 与 current snapshot/health 门禁，增加边界 fixture，不建立第二套资格状态。
+- [x] 1.2 核对 Inventory qualification 与 current snapshot/health 门禁，增加边界 fixture，不建立第二套资格状态。
 - [ ] 1.3 在 api/openapi.yaml 定义 Quality Token 字段、Problems query/DTO/filter/cursor/error，核验排序键身份唯一性。
 - [ ] 1.4 统一现行邮箱安全约束（含 AGENTS.md、openspec/config.yaml、canonical specs、OpenAPI 与 Ops 系统文档），保留 Secret 与 metrics 高基数边界。
 - [ ] 1.5 修正现行 Availability 陈旧 recovery scenario；明确 durable-job 从空生产 registry 到固定 DingTalk kind 及独立默认关闭 unknown-result replay/direct-success policies 的规范增量，保留历史 archive。
 
 ## 2. Read models
-- [ ] 2.1 在新 forward read-model migration 增加共享只读 SQL/query-layer Token projection，同一 DB statement 时间计算且无 Token 状态持久化/表/history/checkpoint，覆盖 future→UNKNOWN、相等当前时间→VALID、3598.x→VALID、恰好3599→UNKNOWN、null/不合格→UNKNOWN、ACTIVE invalid+相等当前时间→INVALID；不新增时钟容差。
-- [ ] 2.2 增加 Node Account Quality v2 contract 并验证 v1 签名/行为兼容。
+- [x] 2.1 在新 forward read-model migration 增加共享只读 SQL/query-layer Token projection，同一 DB statement 时间计算且无 Token 状态持久化/表/history/checkpoint，覆盖 future→UNKNOWN、相等当前时间→VALID、3598.x→VALID、恰好3599→UNKNOWN、null/不合格→UNKNOWN、ACTIVE invalid+相等当前时间→INVALID；不新增时钟容差。
+- [x] 2.2 增加 Node Account Quality additive contract（基线 v2/v3 已存在，实际使用下一版本 v4）并验证既有 v1/v2/v3 签名/行为兼容。
 - [ ] 2.3 增加 Problems v1 聚合 query、四类 ACTIVE issue、按 current membership 展开 duplicate，absence_confirmed 移出的 Node 立即清除对应 issue；保留降级成员与未恢复 Availability issues。
 - [ ] 2.4 加入有界 filters/keyset/no-store 与 ACL；通过实际 query plan 判断是否需要索引。
 - [ ] 2.5 更新 sqlc adapter/OpenAPI generated clients（make generate），实现 API 及 400/401/403/503 测试。

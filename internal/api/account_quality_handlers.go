@@ -229,7 +229,12 @@ func (s *Server) getNodeAccountQuality(w http.ResponseWriter, r *http.Request, i
 			}
 			recent = append(recent, NodeAccountRequestHistoryItem{OccurredAt: event.OccurredAt, Model: event.Model, Success: event.Success, FailureClass: class, DurationMs: event.DurationMS, RequestId: event.RequestID})
 		}
-		items = append(items, NodeAccountQualityItem{AccountKey: item.AccountKey, Email: item.Email, Provider: item.Provider, Quality: NodeAccountQualityItemQuality(item.Quality), RequestCount: stats.RequestCount, SuccessCount: stats.SuccessCount, FailureCount: stats.FailureCount, SuccessRate: stats.SuccessRate, P95LatencyMs: stats.P95LatencyMS, LastSuccessAt: stats.LastSuccessAt, LastFailureAt: stats.LastFailureAt, LastFailureClass: lastClass, Inventory: accountInventoryResponseItem(item.Inventory), RecentRequests: recent, Availability: availabilityItem})
+		var tokenState *NodeAccountQualityItemTokenState
+		if item.TokenState != nil {
+			value := NodeAccountQualityItemTokenState(*item.TokenState)
+			tokenState = &value
+		}
+		items = append(items, NodeAccountQualityItem{AccountKey: item.AccountKey, Email: item.Email, Provider: item.Provider, Quality: NodeAccountQualityItemQuality(item.Quality), TokenState: tokenState, ExpectedValidUntil: item.ExpectedValidUntil, RequestCount: stats.RequestCount, SuccessCount: stats.SuccessCount, FailureCount: stats.FailureCount, SuccessRate: stats.SuccessRate, P95LatencyMs: stats.P95LatencyMS, LastSuccessAt: stats.LastSuccessAt, LastFailureAt: stats.LastFailureAt, LastFailureClass: lastClass, Inventory: accountInventoryResponseItem(item.Inventory), RecentRequests: recent, Availability: availabilityItem})
 	}
 	var next *string
 	if page.HasMore && len(page.Items) > 0 {

@@ -3335,6 +3335,16 @@ components:
         email: {type: string}
         provider: {type: string}
         quality: {type: string, enum: [good, degraded, bad, unknown]}
+        token_state:
+          type: string
+          enum: [VALID, INVALID, UNKNOWN]
+          x-enum-varnames: [TokenHealthValid, TokenHealthInvalid, TokenHealthUnknown]
+          description: Antigravity Token Health projected by PostgreSQL from current Inventory qualification and ACTIVE TOKEN_INVALID occurrences; omitted for other providers.
+        expected_valid_until:
+          type: [string, "null"]
+          format: date-time
+          x-omitempty: false
+          description: Expected Valid Until (last_refresh_at + 3599 seconds), not actual token expiration. Retained for INVALID, expired and future refresh evidence; null when no applicable refresh timestamp exists.
         request_count: {type: integer, format: int64, minimum: 0}
         success_count: {type: integer, format: int64, minimum: 0}
         failure_count: {type: integer, format: int64, minimum: 0}

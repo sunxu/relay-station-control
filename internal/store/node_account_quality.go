@@ -25,13 +25,15 @@ type AccountQualityQuery struct {
 }
 
 type AccountQualityItem struct {
-	AccountKey     string
-	Email          string
-	Provider       string
-	Quality        string
-	Stats          requestquality.Quality
-	Inventory      AccountInventoryItem
-	RecentRequests []AccountRequestHistoryItem
+	AccountKey         string
+	Email              string
+	Provider           string
+	Quality            string
+	TokenState         *string
+	ExpectedValidUntil *time.Time
+	Stats              requestquality.Quality
+	Inventory          AccountInventoryItem
+	RecentRequests     []AccountRequestHistoryItem
 }
 
 type AccountQualityPage struct {
@@ -127,7 +129,7 @@ func (r *AccountRequestQualityRepository) ListAccountQualityAndAudit(ctx context
 }
 
 func (r *AccountRequestQualityRepository) listAccountQuality(ctx context.Context, db accountQualityQueryExecutor, query AccountQualityQuery) (AccountQualityPage, error) {
-	rows, err := db.Query(ctx, `SELECT account_key, normalized_email, provider, quality, request_count, success_count, failure_count, success_rate, p95_latency_ms, last_success_at, last_failure_at, last_failure_class, inventory, recent_requests FROM public.control_query_node_account_quality_v3($1,$2,$3,$4,$5,$6,$7,$8::interval,$9) ORDER BY account_key`, query.InstanceID, query.Provider, query.Lifecycle, query.BasicStatus, query.Email, query.Quality, query.AfterAccountKey, windowInterval(query.Window), query.Limit)
+	rows, err := db.Query(ctx, `SELECT account_key, normalized_email, provider, quality, request_count, success_count, failure_count, success_rate, p95_latency_ms, last_success_at, last_failure_at, last_failure_class, inventory, recent_requests, token_state, expected_valid_until FROM public.control_query_node_account_quality_v4($1,$2,$3,$4,$5,$6,$7,$8::interval,$9) ORDER BY account_key`, query.InstanceID, query.Provider, query.Lifecycle, query.BasicStatus, query.Email, query.Quality, query.AfterAccountKey, windowInterval(query.Window), query.Limit)
 	if err != nil {
 		return AccountQualityPage{}, accountInventoryDatabaseError(err)
 	}
@@ -137,7 +139,7 @@ func (r *AccountRequestQualityRepository) listAccountQuality(ctx context.Context
 		var item AccountQualityItem
 		var stats requestquality.Quality
 		var inventoryJSON, recentJSON []byte
-		if err := rows.Scan(&item.AccountKey, &item.Email, &item.Provider, &item.Quality, &stats.RequestCount, &stats.SuccessCount, &stats.FailureCount, &stats.SuccessRate, &stats.P95LatencyMS, &stats.LastSuccessAt, &stats.LastFailureAt, &stats.LastFailureClass, &inventoryJSON, &recentJSON); err != nil {
+		if err := rows.Scan(&item.AccountKey, &item.Email, &item.Provider, &item.Quality, &stats.RequestCount, &stats.SuccessCount, &stats.FailureCount, &stats.SuccessRate, &stats.P95LatencyMS, &stats.LastSuccessAt, &stats.LastFailureAt, &stats.LastFailureClass, &inventoryJSON, &recentJSON, &item.TokenState, &item.ExpectedValidUntil); err != nil {
 			return AccountQualityPage{}, err
 		}
 		var inventory accountQualityInventoryWire

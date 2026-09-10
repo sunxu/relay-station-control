@@ -1268,6 +1268,18 @@ export const NodeAccountQualityItemQuality = {
 } as const;
 
 /**
+ * Antigravity Token Health projected by PostgreSQL from current Inventory qualification and ACTIVE TOKEN_INVALID occurrences; omitted for other providers.
+ */
+export type NodeAccountQualityItemTokenState = typeof NodeAccountQualityItemTokenState[keyof typeof NodeAccountQualityItemTokenState];
+
+
+export const NodeAccountQualityItemTokenState = {
+  TokenHealthValid: 'VALID',
+  TokenHealthInvalid: 'INVALID',
+  TokenHealthUnknown: 'UNKNOWN',
+} as const;
+
+/**
  * @nullable
  */
 export type NodeAccountQualityItemLastFailureClass = typeof NodeAccountQualityItemLastFailureClass[keyof typeof NodeAccountQualityItemLastFailureClass] | null;
@@ -1314,6 +1326,13 @@ export interface NodeAccountQualityItem {
   email: string;
   provider: string;
   quality: NodeAccountQualityItemQuality;
+  /** Antigravity Token Health projected by PostgreSQL from current Inventory qualification and ACTIVE TOKEN_INVALID occurrences; omitted for other providers. */
+  token_state?: NodeAccountQualityItemTokenState;
+  /**
+     * Expected Valid Until (last_refresh_at + 3599 seconds), not actual token expiration. Retained for INVALID, expired and future refresh evidence; null when no applicable refresh timestamp exists.
+     * @nullable
+     */
+  expected_valid_until?: string | null;
   /** @minimum 0 */
   request_count: number;
   /** @minimum 0 */

@@ -361,6 +361,8 @@ instance_id ASC
 control_query_node_account_quality_v2
 ```
 
+Slice B 实施版本说明：当前基线已有 v1/v2/v3，因此本节新版本示例在实际 SQL 中落为 `control_query_node_account_quality_v4`；所有既有 v1/v2/v3 SHALL 保持不变，不新增 HTTP endpoint。
+
 不得破坏既有 v1 contract。
 
 Token projection MUST 在 PostgreSQL query layer 统一计算，使用 PostgreSQL 时间，避免 Go/UI 出现不同判定。

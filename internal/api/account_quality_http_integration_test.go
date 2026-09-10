@@ -107,6 +107,42 @@ func TestAccountQualityHTTPReadContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("token fields forward database projection without clock inference", func(t *testing.T) {
+		original := reader.page
+		defer func() { reader.page = original }()
+		key := "antigravity:alice@example.invalid"
+		server.SetAccountAvailabilityReader(&availabilityHTTPReader{values: map[string]store.AccountAvailability{key: {State: "UNKNOWN"}}})
+		for _, state := range []string{"VALID", "INVALID", "UNKNOWN"} {
+			for _, expected := range []*time.Time{nil, &now} {
+				// Deliberately old diagnostic timestamp: HTTP must trust the DB
+				// projection, not infer UNKNOWN from the process clock.
+				reader.page = store.AccountQualityPage{Items: []store.AccountQualityItem{{AccountKey: key, Email: "alice@example.invalid", Provider: "antigravity", Quality: "unknown", TokenState: &state, ExpectedValidUntil: expected}}}
+				w := do(http.MethodGet, path, token)
+				var got NodeAccountQualityResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 || len(got.Items) != 1 {
+					t.Fatalf("status=%d body=%s err=%v", w.Code, w.Body, err)
+				}
+				item := got.Items[0]
+				if item.TokenState == nil || string(*item.TokenState) != state || (item.ExpectedValidUntil == nil) != (expected == nil) || (expected != nil && !item.ExpectedValidUntil.Equal(*expected)) {
+					t.Fatalf("database projection changed: %+v", item)
+				}
+				if expected == nil && !strings.Contains(w.Body.String(), `"expected_valid_until":null`) {
+					t.Fatalf("missing explicit null diagnostic timestamp: %s", w.Body)
+				}
+				for _, forbidden := range []string{"access_token", "refresh_token", "auth_file", "oauth_secret", "raw_response"} {
+					if strings.Contains(w.Body.String(), forbidden) {
+						t.Fatalf("credential field exposed: %s", forbidden)
+					}
+				}
+			}
+		}
+		reader.page = original
+		w := do(http.MethodGet, path, token)
+		if w.Code != 200 || strings.Contains(w.Body.String(), `"token_state"`) {
+			t.Fatalf("non-Antigravity token projection: %s", w.Body)
+		}
+	})
+
 	t.Run("cursor is bound to filters", func(t *testing.T) {
 		w := do(http.MethodGet, path+"?window=1h&provider=openai&quality=good&limit=1", token)
 		var got NodeAccountQualityResponse

@@ -900,6 +900,27 @@ func (e NodeAccountQualityItemQuality) Valid() bool {
 	}
 }
 
+// Defines values for NodeAccountQualityItemTokenState.
+const (
+	TokenHealthInvalid NodeAccountQualityItemTokenState = "INVALID"
+	TokenHealthUnknown NodeAccountQualityItemTokenState = "UNKNOWN"
+	TokenHealthValid   NodeAccountQualityItemTokenState = "VALID"
+)
+
+// Valid indicates whether the value is a known member of the NodeAccountQualityItemTokenState enum.
+func (e NodeAccountQualityItemTokenState) Valid() bool {
+	switch e {
+	case TokenHealthInvalid:
+		return true
+	case TokenHealthUnknown:
+		return true
+	case TokenHealthValid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeAccountQualityQueryRequestBasicStatus.
 const (
 	NodeAccountQualityQueryRequestBasicStatusDisabled       NodeAccountQualityQueryRequestBasicStatus = "disabled"
@@ -2064,21 +2085,27 @@ type NodeAccountQualityIncidentResponse struct {
 
 // NodeAccountQualityItem defines model for NodeAccountQualityItem.
 type NodeAccountQualityItem struct {
-	AccountKey       string                                  `json:"account_key"`
-	Availability     *AccountAvailability                    `json:"availability,omitempty"`
-	Email            string                                  `json:"email"`
-	FailureCount     int64                                   `json:"failure_count"`
-	Inventory        AccountInventoryItem                    `json:"inventory"`
-	LastFailureAt    *time.Time                              `json:"last_failure_at"`
-	LastFailureClass *NodeAccountQualityItemLastFailureClass `json:"last_failure_class"`
-	LastSuccessAt    *time.Time                              `json:"last_success_at"`
-	P95LatencyMs     *float64                                `json:"p95_latency_ms"`
-	Provider         string                                  `json:"provider"`
-	Quality          NodeAccountQualityItemQuality           `json:"quality"`
-	RecentRequests   []NodeAccountRequestHistoryItem         `json:"recent_requests"`
-	RequestCount     int64                                   `json:"request_count"`
-	SuccessCount     int64                                   `json:"success_count"`
-	SuccessRate      *float64                                `json:"success_rate"`
+	AccountKey   string               `json:"account_key"`
+	Availability *AccountAvailability `json:"availability,omitempty"`
+	Email        string               `json:"email"`
+
+	// ExpectedValidUntil Expected Valid Until (last_refresh_at + 3599 seconds), not actual token expiration. Retained for INVALID, expired and future refresh evidence; null when no applicable refresh timestamp exists.
+	ExpectedValidUntil *time.Time                              `json:"expected_valid_until"`
+	FailureCount       int64                                   `json:"failure_count"`
+	Inventory          AccountInventoryItem                    `json:"inventory"`
+	LastFailureAt      *time.Time                              `json:"last_failure_at"`
+	LastFailureClass   *NodeAccountQualityItemLastFailureClass `json:"last_failure_class"`
+	LastSuccessAt      *time.Time                              `json:"last_success_at"`
+	P95LatencyMs       *float64                                `json:"p95_latency_ms"`
+	Provider           string                                  `json:"provider"`
+	Quality            NodeAccountQualityItemQuality           `json:"quality"`
+	RecentRequests     []NodeAccountRequestHistoryItem         `json:"recent_requests"`
+	RequestCount       int64                                   `json:"request_count"`
+	SuccessCount       int64                                   `json:"success_count"`
+	SuccessRate        *float64                                `json:"success_rate"`
+
+	// TokenState Antigravity Token Health projected by PostgreSQL from current Inventory qualification and ACTIVE TOKEN_INVALID occurrences; omitted for other providers.
+	TokenState *NodeAccountQualityItemTokenState `json:"token_state,omitempty"`
 }
 
 // NodeAccountQualityItemLastFailureClass defines model for NodeAccountQualityItem.LastFailureClass.
@@ -2086,6 +2113,9 @@ type NodeAccountQualityItemLastFailureClass string
 
 // NodeAccountQualityItemQuality defines model for NodeAccountQualityItem.Quality.
 type NodeAccountQualityItemQuality string
+
+// NodeAccountQualityItemTokenState Antigravity Token Health projected by PostgreSQL from current Inventory qualification and ACTIVE TOKEN_INVALID occurrences; omitted for other providers.
+type NodeAccountQualityItemTokenState string
 
 // NodeAccountQualityQueryRequest defines model for NodeAccountQualityQueryRequest.
 type NodeAccountQualityQueryRequest struct {

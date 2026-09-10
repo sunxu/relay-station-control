@@ -11,7 +11,7 @@ Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation rea
 
 | Concern | 真实路径 / contract | Phase 5 接入方式 |
 |---|---|---|
-| Node Account Quality | `internal/store/node_account_quality.go` | 新 v2 read contract，保留 v1 |
+| Node Account Quality | `internal/store/node_account_quality.go` | 新 additive read contract；实施基线已有 v1/v2/v3，使用下一版本 v4 并保留旧版本 |
 | Inventory | `internal/store/account_inventory_readonly_query.go`；current promoted snapshot 与 provider states | 复用当前资格门禁，不独立采集 |
 | Request Quality | `internal/store/account_request_quality.go` | 只关联既有请求事实，不重新分类 |
 | Availability | `internal/store/account_availability_reconcile.go`；`control_reconcile_account_availability_v1` | 在现有 SERIALIZABLE/page/retry 边界内返回 transitions 并 enqueue |
@@ -31,7 +31,7 @@ Qualification 复用 current promoted Inventory、present 生命周期、当前 
 15 分钟 Request Quality 窗口、Phase 4 failure confirmation 窗口仍属于原领域；删除的是“15 分钟成功请求才使 Token VALID”规则，不是删除合法故障确认窗口。恢复仍要求真实 success 严格晚于 occurrence.last_failure_at 且既有 guards 满足；refresh、file_active 不恢复故障。
 
 ### Problems and API/UI
-新增 `POST /api/problem-accounts/query`，返回 items/next_cursor。Node Account Quality DTO 添加 token_state、expected_valid_until；DB 使用 `control_query_node_account_quality_v2` 与新 Problems v1 query，函数签名在实现时与 sqlc 同步，不覆盖 v1。
+新增 `POST /api/problem-accounts/query`，返回 items/next_cursor。Node Account Quality DTO 添加 token_state、expected_valid_until；DB 新 Quality read contract 在 Slice B 实施基线中使用 `control_query_node_account_quality_v4`（v2/v3 已由 Phase 4 占用），保留 v1/v2/v3 签名与行为；这只是落实新版本命名，不增加 HTTP endpoint。新 Problems v1 query 属于后续 Slice C，函数签名在实现时与 sqlc 同步。
 
 一行是 instance_id（领域 node_id）+ account_key，issues 聚合四种 supported ACTIVE occurrence；按 occurrence 驱动再关联 current diagnostics，不以 present/fresh/active Node 的 inner join 过滤掉 confirmed problems。Availability issue 仅在对应 occurrence 合法 RESOLVED 后消失；UNKNOWN、DISABLED、stale、missing/out_of_scope、Node retired 不构成 recovery。duplicate 按 ACTIVE occurrence 的 current affected-node membership 展开并共享 occurrence_id；某 Node 经既有领域确认 absence_confirmed 并移出 membership，该 Node 的 duplicate issue 立即消失，不要求整体 RESOLVED。stale/unavailable/unverifiable/degraded/incomplete 不足以移除 membership。该行 supported ACTIVE issues 归零才退出，不复制领域状态。
 
