@@ -1,9 +1,9 @@
 # Proposal
 
 ## Phase and outcome
-Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。本 change 是待实施的正式项目记录，不代表代码已实现或 runtime acceptance 已通过。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
+Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = REOPENED / CHANGES REQUIRED；Implementation readiness = NOT READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。本 change 是待实施的正式项目记录，不代表代码已实现或 runtime acceptance 已通过。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
 
-正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。本次仅记录 approval/status，不开始实施。
+历史正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。本次为 direct-success Architecture Review amendment；历史 PASS 不代表本修订已批准，不开始实施。
 
 ## Why
 当前 Inventory、Request Quality、Availability 与 Duplicate occurrences 已提供持久事实，但尚无本阶段统一 Token projection、Problem Accounts 与事务可靠通知集成。复用这些事实及 durable jobs，避免第二套健康状态与通知存储。
@@ -17,7 +17,7 @@ Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Archite
 ### New Capabilities
 - `account-health-alerting`：Token projection、Problem Accounts、DingTalk 生命周期与运行时验收。
 ### Modified Capabilities
-- `durable-job`：增加默认 false 的 job-kind execution policy `allow_unknown_effect_replay`，仅 dingtalk_alert_delivery 启用；在剩余五次 Execute 总预算内允许 unknown result 经原退避/lease/fencing 重放。未启用者保持 Verify-first，不扩大 replay_safe、不伪造 effect_not_applied。字段作为 async_job_kinds 的默认 false 布尔策略，在 enqueue 时快照到 async_jobs；Worker/Reconciler 依据每条 job 持久化值执行。重复 enqueue、Registry/Catalog 与 DB catalog、job recovery 的策略兼容性检查均包含该字段；不匹配 fail closed。allow_unknown_effect_replay=true 必须要求 replay_safe=true，非法组合拒绝注册/持久化。增量位于 `specs/durable-job/spec.md`，本轮不实施。
+- `durable-job`：增加两个彼此独立、默认 false 的 job-kind execution policies：`allow_unknown_effect_replay` 与 `allow_direct_success`，仅 dingtalk_alert_delivery 启用；在剩余五次 Execute 总预算内允许 unknown result 经原退避/lease/fencing 重放。未启用者保持 Verify-first，不扩大 replay_safe、不伪造 effect_not_applied。字段作为 async_job_kinds 的默认 false 布尔策略，在 enqueue 时快照到 async_jobs；Worker/Reconciler 依据每条 job 持久化值执行。重复 enqueue、Registry/Catalog 与 DB catalog、job recovery 的策略兼容性检查均包含该字段；不匹配 fail closed。allow_unknown_effect_replay=true 必须要求 replay_safe=true，非法组合拒绝注册/持久化。另增通用 `ExecuteSucceeded`：本次同步 Execute 已确认成功、job 持久化 allow_direct_success=true 且 running lease/fencing 有效时，Worker 才可用既有 StatusSucceeded/EventSucceeded 直接完成。该字段同样进入 Definition/CatalogEntry/Job、两表策略列、enqueue snapshot、DB mapping 与全部兼容性校验；未授权返回成功须 fail closed。两个 policy 互不授权，不新增 allow_direct_success ⇒ replay_safe invariant。增量位于 `specs/durable-job/spec.md`，本轮不实施。
 
 本 change 不改变 Phase 4 领域确认、恢复、identity 和 duplicate eligibility。实施归档前须按本 change 的明确覆盖范围统一现行安全/OpenAPI/UI 文档，并修正已被最新 recovery 决定废止的陈旧文字；历史 archive/migrations 保持原样。
 

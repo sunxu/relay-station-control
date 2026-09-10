@@ -35,6 +35,37 @@ Invariant：allow_unknown_effect_replay=true REQUIRES replay_safe=true。Go Regi
 - **WHEN** 已持久化 job snapshot policy 与当前 registry/catalog policy 不同，包括重启后或 registry/config 更新后，Worker 或 Reconciler 尝试执行/恢复
 - **THEN** fail closed / policy mismatch，不按新 registry 权限 Execute/replay，不修改旧 snapshot；只有兼容性验证通过后才可依据持久化 job policy 处理
 
+### Requirement: Direct success SHALL require independent persisted authorization
+Control SHALL 新增通用 Execute disposition `ExecuteSucceeded`，表示 Executor 从本次同步 Execute 获得足以确认操作成功的结果，且该 job kind 被显式授权跳过 Verify。它不是 unknown、effect_not_applied、needs verification 或 retryable result。
+
+独立 execution-policy boolean `allow_direct_success` MUST 默认 false，Phase 5 仅 dingtalk_alert_delivery 为 true；不得按 kind 名硬编码。后续实现 MUST 在 async_job_kinds 与 async_jobs 分别使用 BOOLEAN NOT NULL DEFAULT FALSE，沿用 definition→enqueue snapshot→persisted per-job policy→Worker/Reconciler 的现有模式。jobs.Definition、jobs.CatalogEntry、jobs.Job、EnqueueTx、policyMatches、DB read/write mapping、Registry/Catalog 与 DB catalog comparison、同幂等键重入队及 Worker/Reconciler compatibility check MUST 包含此字段。任何 mismatch MUST fail closed，不覆盖旧 snapshot，registry/config 变化不得改变已存在 job 权限。本轮不实施 schema。
+
+只有 ExecuteSucceeded、persisted job.allow_direct_success=true、policy consistency 校验通过且当前 running lease/fencing 有效，Worker 才 SHALL 直接 running→succeeded；复用 StatusSucceeded 与 EventSucceeded。DB lifecycle guard、event constraint、fenced-transition contract MUST 一致支持并约束该路径：from_status=running、to_status=succeeded、actor=worker，持久化 policy=true 是必要条件。未经授权返回 ExecuteSucceeded MUST fail closed，不得成功。旧/过期 token 不得提交，即使外部操作确已成功。
+
+allow_direct_success 与 allow_unknown_effect_replay MUST 彼此独立：已知成功仅检查 direct-success 授权，未知效果重放仅检查 unknown-replay 授权及既有预算/取消/期限条件。不得相互推导授权；不新增 allow_direct_success⇒replay_safe invariant。已有 allow_unknown_effect_replay⇒replay_safe 保持。两个 policy 默认 false 的普通 job MUST 保持 ExecuteNeedsVerification→verifying→Verify 的既有成功/重试/回滚/失败路径。
+
+本 amendment SHALL 仅增加一个 disposition 与一个 persisted boolean；不得新增 status、event type、execution mode enum、policy table、strategy DSL、notification state machine、专用 queue/retry framework、verification receipt table 或 delivery ledger。
+
+#### Scenario: Direct-success 默认与快照兼容
+- **WHEN** 普通 kind 缺省注册或 DingTalk 注册后 enqueue，或 registry/catalog/同 key/job recovery 的 allow_direct_success 不匹配
+- **THEN** 普通默认 false、DingTalk true，enqueue 保存快照；每个不匹配入口 fail closed，旧 job 不继承新 registry 权限
+
+#### Scenario: Worker 与数据库授权对照
+- **WHEN** 有效 Worker 返回 ExecuteSucceeded，分别使用 persisted allow_direct_success=true 与 false
+- **THEN** 前者经已有 fenced 事务原子提交 succeeded 与 worker/running→succeeded event；后者 fail closed；直接调用 DB 也不能绕过 policy 检查
+
+#### Scenario: 过期成功响应不能提交
+- **WHEN** Worker 获得明确成功结果但 lease 已过期或 fencing 已被替换
+- **THEN** succeeded 与其 event 均不能提交，不留下部分更新
+
+#### Scenario: 三条结果路径分离
+- **WHEN** DingTalk HTTP/business 均成功、DingTalk 外部结果未知、普通默认 job 外部结果未知
+- **THEN** 分别为 ExecuteSucceeded→direct succeeded、unknown policy 下有界 replay、Verify-first；不能伪造成功或 effect_not_applied
+
+#### Scenario: 两个授权互不依赖
+- **WHEN** synthetic kind 配置 direct=true/unknown=false/replay_safe=false，或 direct=false/unknown=true/replay_safe=true
+- **THEN** 两种组合均不因额外 invariant 被拒绝；前者仅可明确直接成功，后者仅可未知重放且 ExecuteSucceeded 仍 fail closed
+
 ## MODIFIED Requirements
 
 ### Requirement: 状态转换、重试和取消有界且可审计
@@ -100,7 +131,7 @@ Control MUST 扫描 lease 已过期的 running、verifying 或 rolling-back 任�
 - **THEN** 原 attempt 不重置，任务进入 failed；不得发生第六次 Execute，不进入 verifying 或新增状态
 
 ### Requirement: 任务基础故障不得进入请求数据面
-持久任务能力 SHALL 只影响 Control 控制面。Worker、Reconciler、Dispatcher、Control 进程或其 PostgreSQL 停止时，Gateway 和 Relay Node 的已有请求处理 MUST 继续独立运行。Phase 5 SHALL 仅增加 dingtalk_alert_delivery 生产类型及对应 DingTalk 外部通知执行器，启用 allow_unknown_effect_replay；Gateway/Node 调用、账号采集、历史压缩和资产修改不属于该 job。仅已配置通知且有已提交任务时才可发送 direct HTTPS DingTalk 请求；无配置或无任务时，启动、扫描、只读页面和停机不得产生通知请求。
+持久任务能力 SHALL 只影响 Control 控制面。Worker、Reconciler、Dispatcher、Control 进程或其 PostgreSQL 停止时，Gateway 和 Relay Node 的已有请求处理 MUST 继续独立运行。Phase 5 SHALL 仅增加 dingtalk_alert_delivery 生产类型及对应 DingTalk 外部通知执行器，启用独立的 allow_unknown_effect_replay 与 allow_direct_success；Gateway/Node 调用、账号采集、历史压缩和资产修改不属于该 job。仅已配置通知且有已提交任务时才可发送 direct HTTPS DingTalk 请求；无配置或无任务时，启动、扫描、只读页面和停机不得产生通知请求。
 
 #### Scenario: 空生产 registry 启动
 - **WHEN** Control 在没有业务 job kind 和 Executor 的数据库上启动全部任务循环
