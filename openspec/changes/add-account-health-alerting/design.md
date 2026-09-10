@@ -3,9 +3,9 @@
 ## Context
 Requirements freeze implementation baseline：Control `f4173242aef83afd95d3240573c68eb4299987a2`；前置 Ops 路线规划基线：`a4f01f80c588f32a51625315f09d252045652edc`。这些是需求冻结前的既有基线，不是本 change 的最终提交或 Architecture Review 通过证据。
 
-Architecture Review target：评审时两个仓库 main 上当前已提交的 Phase 5 requirement documents。Exact reviewed repository SHAs SHALL 在评审批准后的独立 Architecture Review evidence/status update commit 中记录；本 change 不硬编码自身最终 commit SHA，amend 不要求更新自引用 SHA。
+Architecture Review target：评审时两个仓库 main 上当前已提交的 Phase 5 requirement documents。本次批准的 exact reviewed repository SHAs 已记录于独立的 [Architecture Review evidence](./planning-validation.md)；本 change 不硬编码自身最终 commit SHA，amend 不要求更新自引用 SHA。
 
-Detailed Requirements = FROZEN；Architecture Review = SEPARATELY TRACKED（未据需求冻结声明 PASS/APPROVED）；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
 
 现有实现接入点：
 

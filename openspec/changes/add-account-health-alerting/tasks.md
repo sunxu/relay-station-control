@@ -1,9 +1,11 @@
 # Tasks
 
+Architecture Review = PASS；Implementation readiness = READY；Implementation / Runtime Acceptance = NOT STARTED。批准与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
+
 以下全部是待实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
 ## 1. Contract and compatibility
-- [ ] 1.1 评审 proposal/design/spec 与 Ops baseline；保留前置 implementation baseline；Architecture Review target 为评审时 main 当前已提交需求文档，精确 reviewed repository SHAs 在批准后的独立 evidence/status commit 记录，不在 change 内硬编码自身最终 SHA；分开记录 Detailed Requirements、Architecture Review、Implementation、Runtime Acceptance；需求冻结不代表架构审批。
+- [ ] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
 - [ ] 1.2 核对 Inventory qualification 与 current snapshot/health 门禁，增加边界 fixture，不建立第二套资格状态。
 - [ ] 1.3 在 api/openapi.yaml 定义 Quality Token 字段、Problems query/DTO/filter/cursor/error，核验排序键身份唯一性。
 - [ ] 1.4 统一现行邮箱安全约束（含 AGENTS.md、openspec/config.yaml、canonical specs、OpenAPI 与 Ops 系统文档），保留 Secret 与 metrics 高基数边界。
