@@ -5,7 +5,7 @@ Requirements freeze implementation baseline：Control `f4173242aef83afd95d324057
 
 Architecture Review target：评审时两个仓库 main 上当前已提交的 Phase 5 requirement documents。历史批准的 exact reviewed repository SHAs 已记录于独立的 [Architecture Review evidence](./planning-validation.md)；本 change 不硬编码自身最终 commit SHA，amend 不要求更新自引用 SHA。
 
-Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = IN PROGRESS；Runtime Acceptance = NOT STARTED。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = 86/86 PASS。Runtime candidate pin=`a91117b5ffd9a3e8ed8c92080d97759efd80a235`；P0=0，Product P1=0；real DingTalk logical messages=4，additional sends=0。
 
 现有实现接入点：
 

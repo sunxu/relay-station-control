@@ -1,6 +1,6 @@
 # Tasks
 
-Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = IN PROGRESS；Runtime Acceptance = NOT STARTED。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = 86/86 PASS。Runtime candidate pin（不随 docs-only HEAD 改变）：`a91117b5ffd9a3e8ed8c92080d97759efd80a235`。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
@@ -68,8 +68,8 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 ## 6. Acceptance and delivery
 - [x] 6.1 验证 clean install 与现有数据库 forward upgrade、v1 兼容、function owner/search_path/PUBLIC/runtime ACL；生产不 destructive down。
 - [x] 6.2 运行 make test build 并核对生成物，不手改 generated clients。
-- [ ] 6.3 在 deploy/acceptance 现有 PostgreSQL/container 体系落实 spec Runtime Acceptance 全部 42 项及 durable-job 增量场景并逐项留证。
-- [ ] 6.4 验证 rollout 关闭配置、启用无历史补发、停止 worker/回滚旧 binary 兼容与恢复 durable jobs 的 Runbook。
-- [ ] 6.5 汇总测试、query plan、事务故障/重启/Secret-negative 证据及无数据面变化的验收结论。
+- [x] 6.3 在 deploy/acceptance 现有 PostgreSQL/container 体系落实 spec Runtime Acceptance 全部 42 项及 durable-job 增量场景并逐项留证；正式冻结 Matrix 为 86/86 PASS。
+- [x] 6.4 验证 rollout 关闭配置、启用无历史补发、停止 worker/回滚旧 binary 兼容与恢复 durable jobs 的 Runbook；old binary pin=`d0540d9018d53819c4f091ffafe31fb9311d3504`，结果为 fail-closed registry mismatch，durable evidence 保留，current candidate restore PASS。
+- [x] 6.5 汇总测试、query plan、事务故障/重启/Secret-negative 证据及无数据面变化的验收结论；P0=0，Product P1=0。
 - [ ] 6.6 Reconcile canonical docs、Ops roadmap/compatibility/runbook；仅凭真实实现/部署证据更新状态与 pin。
 - [ ] 6.7 执行 OpenSpec strict validation、引用/diff/clean-worktree 检查；全部任务与验收完成后才 archive。

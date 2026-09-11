@@ -1,7 +1,7 @@
 # Proposal
 
 ## Phase and outcome
-Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = IN PROGRESS；Runtime Acceptance = NOT STARTED。本 change 已开始实施，cancellation-race Architecture re-review 已正式通过；当前仅 Slice A durable-job 基础扩展，尚未交付下述完整产品能力或通过 runtime acceptance。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
+Phase 5 — Account Health & Alerting。Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = 86/86 PASS。本 change 的 Runtime candidate pin=`a91117b5ffd9a3e8ed8c92080d97759efd80a235`；P0=0，Product P1=0；real DingTalk logical messages exactly 4，additional sends 0。运维可查看 Antigravity Token 派生状态、全局 Problems，并收到 confirmed occurrence 的 DingTalk ACTIVE/RESOLVED 通知。
 
 历史正式批准及 reviewed repository SHAs 见 [Architecture Review evidence](./planning-validation.md)。direct-success amendment 的正式 re-review PASS 保留为历史；Slice A Implementation Review 发现 cancellation race contract gap，cancellation-race Architecture re-review 已正式 PASS，允许在 Stage 1 完成后恢复 Slice A。Stage 1 仅记录批准，不修改已有 Slice A 实现；Stage 2 仅实施已批准的 cancellation amendment。
 
