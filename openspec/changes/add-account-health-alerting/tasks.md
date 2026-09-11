@@ -1,6 +1,6 @@
 # Tasks
 
-Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = 86/86 PASS。Runtime candidate pin（不随 docs-only HEAD 改变）：`a91117b5ffd9a3e8ed8c92080d97759efd80a235`。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
+Detailed Requirements = FROZEN；Architecture Review = PASS；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = 86/86 PASS。Runtime candidate pin（不随 docs-only HEAD 改变）：`a91117b5ffd9a3e8ed8c92080d97759efd80a235`。Gateway `tls=true` 旧成功断言属于 KNOWN PRE-EXISTING TEST DEBT，product defect = NO。历史批准、amendment 与 reviewed SHAs 见 [Architecture Review evidence](./planning-validation.md)，不以批准勾选任何实施任务。
 
 以下按真实验证结果跟踪实施任务。文档冻结不表示实现完成；每项按一个可独立核验的改动组织，预计超过两小时的项在实施前拆分。
 
