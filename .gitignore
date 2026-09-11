@@ -1,19 +1,12 @@
+# Defense in depth; acceptance runtime must still be repo-external.
 .DS_Store
-.env
-.env.*
-!.env.example
-
-# Go
-/bin/
-/coverage.out
-
-# Frontend
-/web/node_modules/
-/web/dist/
-/web/*.tsbuildinfo
-/internal/webui/dist/*
-!/internal/webui/dist/.keep
-
-# Python acceptance harness
-__pycache__/
-*.py[cod]
+**/.DS_Store
+bin/
+**/node_modules/
+internal/webui/dist/
+**/__pycache__/
+**/*.tsbuildinfo
+deploy/acceptance/runtime/.runtime/
+tools/acceptance/**/evidence/
+**/storage-state.json
+**/admin-totp-uri
