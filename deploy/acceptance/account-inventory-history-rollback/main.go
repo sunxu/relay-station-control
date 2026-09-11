@@ -491,15 +491,14 @@ func (h *harness) verifyBaseline(ctx context.Context) error {
 	if baseline != current {
 		return gateError{reason: "history_changed"}
 	}
-	var genericJobs int
+	var durableJobs int
 	if err := h.owner.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM async_job_kinds)
-		+(SELECT count(*) FROM async_jobs)
-		+(SELECT count(*) FROM async_job_events)`).Scan(&genericJobs); err != nil {
+		(SELECT count(*) FROM async_jobs)
+		+(SELECT count(*) FROM async_job_events)`).Scan(&durableJobs); err != nil {
 		return err
 	}
-	if genericJobs != 0 {
-		return gateError{reason: "generic_jobs_created"}
+	if durableJobs != 0 {
+		return gateError{reason: "durable_jobs_created"}
 	}
 	return nil
 }

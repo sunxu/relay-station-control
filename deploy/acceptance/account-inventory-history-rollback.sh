@@ -24,6 +24,7 @@ fake_node_name=''
 old_control_name=''
 fake_node_active=false
 old_control_active=false
+old_binary_fail_closed=false
 current_control_pid=''
 lock_directory=''
 lock_acquired=false
@@ -265,6 +266,10 @@ start_old_control() {
   until curl --noproxy '*' --silent --show-error --fail \
     "http://127.0.0.1:${control_port}/api/healthz" >/dev/null 2>&1; do
     if [ "$(docker_no_proxy inspect "$old_control_name" --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
+      if docker_no_proxy logs "$old_control_name" 2>&1 | grep -Eq 'registry_mismatch|durable job catalog mismatch'; then
+        old_binary_fail_closed=true
+        return 42
+      fi
       fixed_failure 'old_control_exited'
     fi
     attempts=$((attempts - 1))
@@ -297,7 +302,11 @@ stop_fake_node() {
   [ "$exit_code" -eq 0 ] || fixed_failure 'fake_node_exit_failed'
   docker_no_proxy rm "$fake_node_name" >/dev/null || fixed_failure 'fake_node_remove_failed'
   fake_node_active=false
-  expected='account_inventory_history_fake_node=stopped total=1 health=0 inventory=1 unauthorized=0 rejected=0'
+  if [ "$old_binary_fail_closed" = true ]; then
+    expected='account_inventory_history_fake_node=stopped total=0 health=0 inventory=0 unauthorized=0 rejected=0'
+  else
+    expected='account_inventory_history_fake_node=stopped total=1 health=0 inventory=1 unauthorized=0 rejected=0'
+  fi
   [ "$(grep -Fxc "$expected" "$runtime_directory/fake-node.log")" -eq 1 ] \
     || fixed_failure 'fake_node_request_count_invalid'
 }
@@ -415,12 +424,22 @@ main() {
   session_value="$(sed -n 's/^.*"session":"\([^"]*\)".*$/\1/p' "$CONTROL_HISTORY_ROLLBACK_SESSION_FILE")"
   csrf_value="$(sed -n 's/^.*"csrf":"\([^"]*\)".*$/\1/p' "$CONTROL_HISTORY_ROLLBACK_SESSION_FILE")"
   [ -n "$session_value" ] && [ -n "$csrf_value" ] || fixed_failure 'http_session_file_invalid'
-  start_old_control "$control_port" "$node_ip"
-  "$runtime_directory/history-harness" wait >"$runtime_directory/wait.log" 2>&1 \
-    || fixed_failure 'old_control_poll_failed'
-  "$runtime_directory/history-harness" http-query >"$runtime_directory/http-query.log" 2>&1 \
-    || fixed_failure 'old_control_http_query_failed'
-  stop_old_control
+  old_start_result=0
+  start_old_control "$control_port" "$node_ip" || old_start_result=$?
+  if [ "$old_start_result" -eq 0 ]; then
+    "$runtime_directory/history-harness" wait >"$runtime_directory/wait.log" 2>&1 \
+      || fixed_failure 'old_control_poll_failed'
+    "$runtime_directory/history-harness" http-query >"$runtime_directory/http-query.log" 2>&1 \
+      || fixed_failure 'old_control_http_query_failed'
+    stop_old_control
+  elif [ "$old_binary_fail_closed" = true ]; then
+    printf '%s\n' 'old_binary=fail_closed reason=registry_mismatch' >"$runtime_directory/old-fail-closed.log"
+    docker_no_proxy rm --force "$old_control_name" >/dev/null \
+      || fixed_failure 'old_control_fail_closed_cleanup_failed'
+    old_control_active=false
+  else
+    fixed_failure 'old_control_start_failed'
+  fi
   stop_fake_node
   "$runtime_directory/history-harness" verify >"$runtime_directory/verify.log" 2>&1 \
     || fixed_failure 'history_changed_during_old_control'

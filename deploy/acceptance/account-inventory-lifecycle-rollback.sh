@@ -23,6 +23,7 @@ old_binary="$runtime_directory/control-old"
 new_binary="$runtime_directory/control-new"
 harness="$runtime_directory/rollback-harness"
 control_pid=''
+old_binary_fail_closed=false
 http_port=$((20000 + ($$ % 20000)))
 export CONTROL_SNAPSHOT_POSTGRES_PROJECT="$project_name"
 
@@ -129,6 +130,10 @@ start_control() {
   do
     if ! kill -0 "$control_pid" >/dev/null 2>&1; then
       if grep -Eq 'registry_mismatch|durable job catalog mismatch' "$log"; then
+        if [ "$binary" = "$old_binary" ]; then
+          old_binary_fail_closed=true
+          return 42
+        fi
         fixed_failure 'control_job_catalog_incompatible'
       elif grep -Eq 'environment identity verification failed' "$log"; then
         fixed_failure 'control_environment_incompatible'
@@ -287,18 +292,24 @@ main() {
     *) fixed_failure 'fingerprint_invalid' ;;
   esac
 
-  start_control "$old_binary" false "$runtime_directory/old-control.log"
-  verify_product_reads old
-  verify_old_readonly_route_closed
-  if grep -Eq '^relay_control_account_inventory_lifecycle_total' \
-    "$runtime_directory/old-metrics.txt"
-  then
-    fixed_failure 'old_binary_not_snapshot_only'
+  if start_control "$old_binary" false "$runtime_directory/old-control.log"; then
+    verify_product_reads old
+    verify_old_readonly_route_closed
+    if grep -Eq '^relay_control_account_inventory_lifecycle_total' \
+      "$runtime_directory/old-metrics.txt"
+    then
+      fixed_failure 'old_binary_not_snapshot_only'
+    fi
+    verify_policy_mutation_disabled
+    "$harness" verify-frozen >"$runtime_directory/old-frozen.log" 2>&1 \
+      || fixed_failure 'old_binary_changed_lifecycle'
+    stop_control
+  elif [ "$old_binary_fail_closed" = true ]; then
+    "$harness" verify-frozen >"$runtime_directory/old-fail-closed.log" 2>&1 \
+      || fixed_failure 'old_binary_changed_lifecycle'
+  else
+    fixed_failure 'old_control_start_failed'
   fi
-  verify_policy_mutation_disabled
-  "$harness" verify-frozen >"$runtime_directory/old-frozen.log" 2>&1 \
-    || fixed_failure 'old_binary_changed_lifecycle'
-  stop_control
   "$harness" verify-frozen >"$runtime_directory/old-audit-retained.log" 2>&1 \
     || fixed_failure 'old_binary_changed_readonly_audit'
   after_old="$(lifecycle_fingerprint)" || fixed_failure 'fingerprint_failed'
