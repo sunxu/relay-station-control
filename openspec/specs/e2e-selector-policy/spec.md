@@ -1,7 +1,7 @@
 # e2e-selector-policy Specification
 
 ## Purpose
-TBD - created by archiving change harden-e2e-selectors. Update Purpose after archive.
+定义 E2E 稳定 selector 契约，通过稳定 test ID、业务实体 identity attribute 和稳定 accessibility contract，避免测试依赖 presentation class、DOM 层级、位置或 incidental copy，同时保持 UI、API 和业务行为不变。
 
 ## Requirements
 

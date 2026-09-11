@@ -1,7 +1,7 @@
 # runtime-acceptance-harness Specification
 
 ## Purpose
-TBD - created by archiving change harden-runtime-acceptance-harness. Update Purpose after archive.
+提供统一、可复用且安全的 runtime acceptance tooling，包括 repo-external runtime orchestration、isolated Buildx candidate-image 校验、authenticated session/restart restore 与 production lifecycle fixture；该 capability 不改变 Control production behavior，durable-job recovery orchestration 由独立 capability 负责。
 
 ## Requirements
 

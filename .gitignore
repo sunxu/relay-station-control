@@ -1,6 +1,12 @@
 # Defense in depth; acceptance runtime must still be repo-external.
 .DS_Store
 **/.DS_Store
+.env
+.env.*
+!.env.example
+/coverage.out
+/web/dist/
+*.py[cod]
 bin/
 **/node_modules/
 internal/webui/dist/

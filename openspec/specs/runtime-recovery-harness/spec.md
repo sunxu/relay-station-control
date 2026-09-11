@@ -1,7 +1,7 @@
 # runtime-recovery-harness Specification
 
 ## Purpose
-TBD - created by archiving change harden-runtime-recovery-harness. Update Purpose after archive.
+提供基于真实 Control production main、隔离 PostgreSQL 与受控 HTTPS endpoint 的 durable-job crash/restart acceptance harness，覆盖 pending restart、retry_wait restart 和 running-lease SIGKILL 后的 lease-expiry/Reconciler takeover，且不改变 production behavior、不发送真实 DingTalk。
 
 ## Requirements
 

@@ -23,3 +23,16 @@
 ## Safe evidence and cleanup
 
 允许 evidence：safe UUID、固定状态、attempt/count、固定 error code、bounded timestamps、hash。禁止 webhook/token/signing secret、private key、signed URL、raw sensitive logs、password、TOTP URI、storage-state。所有 compose、browser、DB、证书私钥和 runtime 文件由调用方按 ownership cleanup。
+## Recovery runner identity
+
+`run-recovery.sh` is fail-closed: it requires `HEAD` to equal `EXPECTED_SHA`
+and the worktree to be clean. It never assembles a temporary candidate from
+dirty or untracked files. The Docker image gate verifies the candidate source
+revision label; it does not mean that the recovery scenarios run inside that
+Docker image. The scenarios run as `go test ./cmd/control` child processes,
+which invoke the production `main()` helper from the same clean committed
+source. The runner reports both identities explicitly.
+
+The runner provisions isolated PostgreSQL, runs migrations, executes all three
+focused recovery tests twice, and removes the compose project, volumes, and
+repo-external runtime files after each run.

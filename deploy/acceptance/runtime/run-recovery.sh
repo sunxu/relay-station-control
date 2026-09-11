@@ -8,8 +8,6 @@ SHORT_SHA="${BASE_SHA:0:12}"
 IMAGE="${ACCEPTANCE_RECOVERY_IMAGE:-relay-station/control:recovery-${SHORT_SHA}}"
 RUNTIME_ROOT="${ACCEPTANCE_RECOVERY_RUNTIME_ROOT:-}"
 SOURCE_DIR="$CONTROL_DIR"
-TEMP_WORKTREE=""
-TEMP_COMMIT=""
 BUILDX_STATE=""
 PROJECT=""
 DB_PORT=""
@@ -18,13 +16,6 @@ DB_PORT=""
 [[ -z "${DINGTALK_WEBHOOK_URL:-}" && -z "${DINGTALK_SIGNING_SECRET:-}" ]] || {
   echo "real DingTalk configuration must be absent" >&2
   exit 2
-}
-
-cleanup_worktree() {
-  if [[ -n "$TEMP_WORKTREE" ]]; then
-    git -C "$CONTROL_DIR" worktree remove --force "$TEMP_WORKTREE" >/dev/null 2>&1 || true
-    git -C "$CONTROL_DIR" worktree prune >/dev/null 2>&1 || true
-  fi
 }
 
 cleanup_project() {
@@ -37,32 +28,15 @@ cleanup() {
   cleanup_project
   [[ -n "$RUNTIME_ROOT" ]] && rm -rf -- "$RUNTIME_ROOT"
   [[ -n "$BUILDX_STATE" ]] && rm -rf -- "$BUILDX_STATE"
-  cleanup_worktree
 }
 trap cleanup EXIT INT TERM
 
-if [[ -n "$(git -C "$CONTROL_DIR" status --porcelain)" ]]; then
-  TEMP_WORKTREE="$(mktemp -d /private/tmp/relay-recovery-validation.XXXXXX)"
-  rmdir "$TEMP_WORKTREE"
-  git -C "$CONTROL_DIR" worktree add --detach "$TEMP_WORKTREE" "$BASE_SHA" >/dev/null
-  while IFS= read -r path; do
-    [[ -f "$CONTROL_DIR/$path" ]] || continue
-    case "$path" in
-      cmd/control/runtime_recovery_harness_test.go)
-        mkdir -p "$TEMP_WORKTREE/$(dirname "$path")"
-        cp "$CONTROL_DIR/$path" "$TEMP_WORKTREE/$path"
-        ;;
-    esac
-  done < <(git -C "$CONTROL_DIR" status --porcelain=v1 | sed -n 's/^?? //p')
-  git -C "$TEMP_WORKTREE" add cmd/control/runtime_recovery_harness_test.go
-  git -C "$TEMP_WORKTREE" -c user.name='acceptance-validation' -c user.email='acceptance-validation.invalid' \
-    commit -m 'test(acceptance): temporary recovery validation' >/dev/null
-  TEMP_COMMIT="$(git -C "$TEMP_WORKTREE" rev-parse HEAD)"
-  SOURCE_DIR="$TEMP_WORKTREE"
-else
-  [[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$BASE_SHA" ]] || { echo "candidate_image_mismatch" >&2; exit 1; }
-  TEMP_COMMIT="$BASE_SHA"
-fi
+[[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$BASE_SHA" ]] || { echo "candidate_image_mismatch" >&2; exit 1; }
+[[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || {
+  echo "recovery_validation_requires_clean_worktree" >&2
+  exit 1
+}
+TEMP_COMMIT="$BASE_SHA"
 
 BUILDX_STATE="$(mktemp -d /private/tmp/relay-recovery-buildx.XXXXXX)"
 EXPECTED_SHA="$TEMP_COMMIT" IMAGE="$IMAGE" ALLOW_DIRTY=0 \
@@ -101,4 +75,7 @@ done
 
 echo "RECOVERY_TESTS_SKIPPED=0"
 echo "CANDIDATE_IMAGE_REVISION=PASS"
+echo "RECOVERY_SOURCE_SHA=$BASE_SHA"
+echo "RECOVERY_PROCESS_MODE=go-test-child-production-main"
+echo "IMAGE_REVISION_GATE=PASS"
 echo "REAL_DINGTALK_SENDS=0"
