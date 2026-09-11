@@ -72,4 +72,4 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [x] 6.4 验证 rollout 关闭配置、启用无历史补发、停止 worker/回滚旧 binary 兼容与恢复 durable jobs 的 Runbook；old binary pin=`d0540d9018d53819c4f091ffafe31fb9311d3504`，结果为 fail-closed registry mismatch，durable evidence 保留，current candidate restore PASS。
 - [x] 6.5 汇总测试、query plan、事务故障/重启/Secret-negative 证据及无数据面变化的验收结论；P0=0，Product P1=0。
 - [x] 6.6 Reconcile canonical docs、Ops roadmap/compatibility/runbook；仅凭真实实现/部署证据更新状态与 pin。
-- [ ] 6.7 执行 OpenSpec strict validation、引用/diff/clean-worktree 检查；全部任务与验收完成后才 archive。
+- [x] 6.7 执行 OpenSpec strict validation、引用/diff/clean-worktree 检查；全部任务与验收完成后才 archive。
