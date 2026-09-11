@@ -271,7 +271,7 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
           <Text>观察时间：{formatDateTime(binding.data.observed_at)}</Text>
         </Flex>}
       </Card>
-      <Card title="Ownership Fact · 当前 duplicate" extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>刷新 Current</Button>}>
+      <Card data-testid="topology-current-ownership" title="Ownership Fact · 当前 duplicate" extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>刷新 Current</Button>}>
         {current.isPending && <Spin />}
         {current.error && <ReadError retry={() => void current.refetch()} />}
         {current.data && !current.error && <>
@@ -279,7 +279,7 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
           <Flex justify="end" gap={8}><Button disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>Current 首页</Button><Button disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>Current 下一页</Button></Flex>
         </>}
       </Card>
-      <Card title="Ownership Fact · 历史评估涉及">
+      <Card data-testid="topology-history-ownership" title="Ownership Fact · 历史评估涉及">
         <Flex gap={8} wrap>
           <Select allowClear aria-label="历史状态" placeholder="History 全部状态" value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: "ACTIVE" }, { value: "RESOLVED", label: "Resolved" }]} style={{ minWidth: 170 }} />
           <Button onClick={() => void history.refetch()} loading={history.isFetching}>刷新 History</Button>

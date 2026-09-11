@@ -89,7 +89,7 @@ export default function LoginPage() {
               <Input.Password autoComplete="current-password" />
             </Form.Item>
             <Flex vertical gap={12}>
-              <Button type="primary" htmlType="submit" loading={busy}>继续</Button>
+              <Button data-testid="login-submit" type="primary" htmlType="submit" loading={busy}>继续</Button>
               <Button type="link" onClick={() => auth.navigate("activation")}>使用激活令牌设置新账号</Button>
             </Flex>
           </Form>

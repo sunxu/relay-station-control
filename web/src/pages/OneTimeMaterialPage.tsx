@@ -40,7 +40,7 @@ export default function OneTimeMaterialPage() {
           description={recovery ? "每个恢复码只能使用一次。请保存到密码管理器或离线安全位置。" : "令牌只应通过可信渠道交给对应管理员，禁止放入 URL。"}
         />
         {recovery ? (
-          <List className="secret-list" bordered dataSource={material.values} renderItem={(value) => <List.Item><Text code>{value}</Text></List.Item>} />
+          <List data-testid="recovery-codes" className="secret-list" bordered dataSource={material.values} renderItem={(value) => <List.Item><Text code>{value}</Text></List.Item>} />
         ) : (
           <div className="secret-panel">
             <Text code copyable={{ text: material.values[0] }}>{material.values[0]}</Text>

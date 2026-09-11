@@ -169,10 +169,10 @@ export default function ManagementPage() {
         </div>
         <Space wrap>
           <Space wrap>
-            <Button onClick={() => auth.navigate("jobs")}>持久任务</Button>
-            <Button onClick={() => auth.navigate("assets")}>资产注册表</Button>
+            <Button data-testid="management-nav-jobs" onClick={() => auth.navigate("jobs")}>持久任务</Button>
+            <Button data-testid="management-nav-assets" onClick={() => auth.navigate("assets")}>资产注册表</Button>
             <Button onClick={() => auth.navigate("topology")}>Node Topology</Button>
-            <Button onClick={() => auth.navigate("problems")}>Problems</Button>
+            <Button data-testid="management-nav-problems" onClick={() => auth.navigate("problems")}>Problems</Button>
           </Space>
           <Button danger loading={busy} onClick={() => void logout()}>注销</Button>
         </Space>

@@ -54,6 +54,7 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     const request = route.request(); const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) return route.continue();
     requests.push(`${request.method()} ${url.pathname}${url.search}`);
+    if (request.method() === "POST" && url.pathname.endsWith("/account-quality/query")) return route.fulfill({ json: { instance_id: nodes[0], window: "15m", next_cursor: null, items: [] } });
     if (request.method() !== "GET") throw new Error(`unexpected non-GET request: ${request.method()} ${url.pathname}`);
     if (url.pathname === "/api/bootstrap/status") return route.fulfill({ json: { status: "completed" } });
     if (url.pathname === "/api/auth/session") return route.fulfill({ json: session });
@@ -65,14 +66,15 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     if (url.pathname.includes("/evidence")) { if (expireEvidence) return route.fulfill({ status: 401, json: { code: "unauthorized", message: "unauthorized", request_id: "fixture" } }); return route.fulfill({ json: { items: url.searchParams.has("cursor") ? [] : [{ observation_id: "44444444-4444-4444-8444-444444444444", instance_id: nodes[0], observation_kind: "owner_confirmed", source_provider: "openai", source_scheduled_at: "2026-09-07T00:00:00Z", source_completed_at: "2026-09-07T00:00:01Z", evaluation_id: "55555555-5555-4555-8555-555555555555", evaluation_at: "2026-09-07T00:00:02Z", recorded_at: "2026-09-07T00:00:03Z" }], next_cursor: url.searchParams.has("cursor") ? null : "evidence-page-2" } }); }
     if (url.pathname.includes("duplicate-history")) return route.fulfill({ json: { involvement: "historical", instance_id: nodes[0], observed_at: "2026-09-07T00:00:00Z", items: url.searchParams.has("cursor") ? [] : [{ ...occurrence, status: url.searchParams.get("status") ?? "ACTIVE" }], next_cursor: url.searchParams.has("cursor") ? null : "history-page-2" } });
     if (url.pathname.includes("cross-node-duplicate-occurrences")) return route.fulfill({ json: { items: url.searchParams.has("cursor") ? [] : [occurrence], next_cursor: url.searchParams.has("cursor") ? null : "current-page-2" } });
+    if (url.pathname.endsWith("/incidents")) return route.fulfill({ json: { items: [], next_cursor: null } });
     throw new Error(`unhandled API fixture: ${request.method()} ${url.pathname}`);
   });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/topology?instance_id=${nodes[0]}`);
   await expect(page.getByTestId("topology-page")).toBeVisible();
   await expect(page.getByText("fresh", { exact: true }).first()).toBeVisible();
-  const currentCard = page.locator(".ant-card").filter({ has: page.getByText("Ownership Fact · 当前 duplicate", { exact: true }) });
-  const historyCard = page.locator(".ant-card").filter({ has: page.getByText("Ownership Fact · 历史评估涉及", { exact: true }) });
+  const currentCard = page.getByTestId("topology-current-ownership");
+  const historyCard = page.getByTestId("topology-history-ownership");
   await test.step("current/history have independent pagination and status", async () => {
     await page.getByRole("button", { name: "Current 下一页" }).click();
     await expect(currentCard.getByText("没有符合条件的 occurrence")).toBeVisible();
@@ -128,7 +130,7 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     await expect(page.getByText("stale", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("degraded", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("not-yet-observed", { exact: true })).toBeVisible();
-    await expect(page.getByText("健康观测：2026-09-07 00:05:00 UTC").first()).toBeVisible();
+    await expect(page.getByText(`健康观测：${formatDateTime("2026-09-07T00:05:00Z")}`).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await currentCard.scrollIntoViewIfNeeded();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
@@ -141,7 +143,7 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     await currentCard.getByRole("button", { name: "Expand row" }).click();
     await expect(page.getByTestId("login-page")).toBeVisible();
     await expect(page.getByTestId("topology-page")).toHaveCount(0);
-    expect(requests.every((r) => r.startsWith("GET "))).toBe(true);
+    expect(requests.every((r) => r.startsWith("GET ") || r.includes("POST /api/topology/nodes/") && r.endsWith("/account-quality/query"))).toBe(true);
     expect(requests.every((r) => !r.includes(occurrence.account_key))).toBe(true);
     expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(occurrence.account_key);
   });

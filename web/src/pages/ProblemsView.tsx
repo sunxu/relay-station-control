@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { HTMLAttributes } from "react";
 import { Alert, Button, Card, Empty, Flex, Input, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useProblemAccountsQuery } from "../api/problem-accounts-hooks";
@@ -109,7 +110,7 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
         {list.isPending && <Flex justify="center"><div role="status" aria-label="正在读取 Problems"><Spin /></div></Flex>}
         {list.error && <RequestError error={list.error} retry={() => query()} />}
         {!list.isPending && !list.error && list.data?.items.length === 0 && <Empty description={emptyText} />}
-        {!list.error && list.data && list.data.items.length > 0 && <Table<ProblemAccountItem> rowKey={(row) => `${row.instance_id}:${row.account_key}`} size="small" scroll={{ x: 1500 }} pagination={false} dataSource={list.data.items} columns={columns} />}
+        {!list.error && list.data && list.data.items.length > 0 && <Table<ProblemAccountItem> rowKey={(row) => `${row.instance_id}:${row.account_key}`} onRow={(row): HTMLAttributes<HTMLTableRowElement> => ({ "data-testid": "problem-row", "data-instance-id": row.instance_id, "data-account-key": row.account_key } as unknown as HTMLAttributes<HTMLTableRowElement>)} size="small" scroll={{ x: 1500 }} pagination={false} dataSource={list.data.items} columns={columns} />}
         {!list.error && <Flex justify="end" gap={8} style={{ marginTop: 16 }}><Button disabled={list.isPending || cursorHistory.length === 1} onClick={previousPage}>上一页</Button><Button disabled={list.isPending || !list.data?.next_cursor} onClick={nextPage}>下一页</Button></Flex>}
       </Card>
     </Flex>

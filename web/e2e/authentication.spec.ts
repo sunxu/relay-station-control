@@ -74,7 +74,7 @@ async function logout(page: Page): Promise<void> {
 async function passwordLogin(page: Page, login: string, password: string): Promise<void> {
   await page.getByLabel("登录名").fill(login);
   await page.getByLabel("密码").fill(password);
-  await page.locator("form button[type=submit]").click();
+  await page.getByTestId("login-submit").click();
   await expect(page.getByText("需要第二步验证")).toBeVisible();
 }
 
@@ -134,7 +134,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   const bootstrapCompleteResponse = await bootstrapCompletePromise;
   expect(bootstrapCompleteResponse.headers()["cache-control"]).toBe("no-store");
   await expect(primary.getByTestId("one-time-page")).toBeVisible();
-  const recoveryCodes = await primary.locator(".secret-list code").allTextContents();
+  const recoveryCodes = await primary.getByTestId("recovery-codes").locator("code").allTextContents();
   expect(recoveryCodes.length).toBe(10);
   expect(recoveryCodes.every((code) => code.length >= 8)).toBe(true);
   await leaveOneTimePage(primary);
@@ -324,7 +324,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await secondary.getByLabel("登录名").fill(secondLogin);
   await secondary.getByLabel("密码").fill(secondPassword);
   const disabledLoginPromise = secondary.waitForResponse((response) => response.url().endsWith("/api/auth/login"));
-  await secondary.locator("form button[type=submit]").click();
+  await secondary.getByTestId("login-submit").click();
   const disabledLogin = await disabledLoginPromise;
   expect(disabledLogin.status()).toBe(401);
   expect(disabledLogin.headers()["cache-control"]).toBe("no-store");

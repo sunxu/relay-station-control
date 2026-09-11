@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { HTMLAttributes } from "react";
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Select, Space, Spin, Table, Tag, Timeline, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useJob, useJobs } from "../api/job-hooks";
@@ -117,7 +118,7 @@ export function JobRegistryView({ api, onUnauthorized }: { api: JobApi; onUnauth
         {list.error && <ReadFailure error={list.error} retry={() => void list.refetch()} />}
         {!list.isPending && !list.error && list.data?.items.length === 0 && <Empty description="当前过滤条件下没有持久任务" />}
         {!list.error && list.data && list.data.items.length > 0 && (
-          <Table<JobSummary> rowKey={(job) => job.jobId} size="small" scroll={{ x: 1100 }} pagination={false} dataSource={list.data.items} columns={columns} />
+          <Table<JobSummary> rowKey={(job) => job.jobId} onRow={(job): HTMLAttributes<HTMLTableRowElement> => ({ "data-testid": "job-row", "data-job-id": job.jobId } as unknown as HTMLAttributes<HTMLTableRowElement>)} size="small" scroll={{ x: 1100 }} pagination={false} dataSource={list.data.items} columns={columns} />
         )}
         {!list.error && (
           <Flex justify="end" gap={8} style={{ marginTop: 16 }}>
