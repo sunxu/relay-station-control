@@ -10,8 +10,8 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [x] 1.1 实施前核对 proposal/design/spec 与 Ops baseline 和已批准的 Architecture Review evidence 一致；保留前置 implementation baseline 与独立 evidence 中的 reviewed SHAs，不在 change 内硬编码自身最终 SHA；后续架构契约变更须重新评审，继续分开记录需求、架构审批、实施和运行验收状态。
 - [x] 1.2 核对 Inventory qualification 与 current snapshot/health 门禁，增加边界 fixture，不建立第二套资格状态。
 - [x] 1.3 在 api/openapi.yaml 定义 Quality Token 字段、Problems query/DTO/filter/cursor/error，核验排序键身份唯一性。
-- [ ] 1.4 统一现行邮箱安全约束（含 AGENTS.md、openspec/config.yaml、canonical specs、OpenAPI 与 Ops 系统文档），保留 Secret 与 metrics 高基数边界。
-- [ ] 1.5 修正现行 Availability 陈旧 recovery scenario；明确 durable-job 从空生产 registry 到固定 DingTalk kind 及独立默认关闭 unknown-result replay/direct-success policies 的规范增量，保留历史 archive。
+- [x] 1.4 统一现行邮箱安全约束（含 AGENTS.md、openspec/config.yaml、canonical specs、OpenAPI 与 Ops 系统文档），保留 Secret 与 metrics 高基数边界。
+- [x] 1.5 修正现行 Availability 陈旧 recovery scenario；明确 durable-job 从空生产 registry 到固定 DingTalk kind 及独立默认关闭 unknown-result replay/direct-success policies 的规范增量，保留历史 archive。
 
 ## 2. Read models
 - [x] 2.1 在新 forward read-model migration 增加共享只读 SQL/query-layer Token projection，同一 DB statement 时间计算且无 Token 状态持久化/表/history/checkpoint，覆盖 future→UNKNOWN、相等当前时间→VALID、3598.x→VALID、恰好3599→UNKNOWN、null/不合格→UNKNOWN、ACTIVE invalid+相等当前时间→INVALID；不新增时钟容差。
@@ -66,8 +66,8 @@ Slice A/B/C 均已由用户确认 Implementation Review PASS 并提交：`2eee43
 - [x] 5.3 前端验证完整邮箱、UNKNOWN 与 Unavailable 区别、缺失/retired/disabled Availability ACTIVE 保留、duplicate 按领域 current membership 展开，不做 N+1 聚合。
 
 ## 6. Acceptance and delivery
-- [ ] 6.1 验证 clean install 与现有数据库 forward upgrade、v1 兼容、function owner/search_path/PUBLIC/runtime ACL；生产不 destructive down。
-- [ ] 6.2 运行 make test build 并核对生成物，不手改 generated clients。
+- [x] 6.1 验证 clean install 与现有数据库 forward upgrade、v1 兼容、function owner/search_path/PUBLIC/runtime ACL；生产不 destructive down。
+- [x] 6.2 运行 make test build 并核对生成物，不手改 generated clients。
 - [ ] 6.3 在 deploy/acceptance 现有 PostgreSQL/container 体系落实 spec Runtime Acceptance 全部 42 项及 durable-job 增量场景并逐项留证。
 - [ ] 6.4 验证 rollout 关闭配置、启用无历史补发、停止 worker/回滚旧 binary 兼容与恢复 durable jobs 的 Runbook。
 - [ ] 6.5 汇总测试、query plan、事务故障/重启/Secret-negative 证据及无数据面变化的验收结论。

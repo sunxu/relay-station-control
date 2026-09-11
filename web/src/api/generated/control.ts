@@ -122,7 +122,7 @@ export const AccountInventoryBasicStatus = {
 } as const;
 
 /**
- * Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+ * Trimmed, lowercase exact-match account identity, not a Secret; full email is allowed in approved authenticated business surfaces and audit. Never placed in a URL or Prometheus/Alertmanager labels.
  * @minLength 1
  * @maxLength 320
  */

@@ -175,7 +175,7 @@ CLIProxyAPI Driver SHALL 使用调用时提供的不可变 Provider 策略快照
 
 ### Requirement: Driver 观测保持低基数且不泄露敏感数据
 
-Control SHALL 只以固定 node type、operation、result/reason 记录 Driver 聚合指标和结构化日志。instance ID、endpoint、hostname/IP、provider、email、版本/提交、Secret 引用、Management Key、请求/响应 header、原始错误和 body MUST NOT 成为指标标签、日志字段、Trace 属性、审计详情或测试证据。
+本 Driver 聚合观测 SHALL 只以固定 node type、operation、result/reason 记录 Driver 聚合指标和结构化日志。instance ID、endpoint、hostname/IP、provider、email、版本/提交、Secret 引用、Management Key、请求/响应 header、原始错误和 body MUST NOT 成为指标标签、日志字段、Trace 属性、审计详情或测试证据。 这是 Driver 本身的最小字段契约，不是全局邮箱敏感分类：普通业务邮箱可按其他已批准 API/UI/DB/audit/controlled business logs/DingTalk body 契约完整使用，不要求 mask/HMAC 或邮箱专属权限；Prometheus/Alertmanager labels 仍禁止 raw email/account_key，Secret 边界不变。
 
 #### Scenario: 成功和失败观测
 - **WHEN** Probe 或 inventory 调用成功、超时、DNS 失败、TLS 失败、HTTP 失败或契约无效

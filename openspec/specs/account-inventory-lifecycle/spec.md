@@ -111,7 +111,7 @@ Additive forward Migration SHALL 创建 lifecycle schema、约束、权限和兼
 
 ### Requirement: lifecycle 读取与观测 MUST 有界且不泄露身份
 
-Control SHALL 保留仅供内部Store使用的有界、稳定排序lifecycle读取函数，并 MAY 提供按受控instance/provider/lifecycle/固定transition reason聚合的指标，以及通过`account-inventory-readonly-query` capability向已认证、已启用super_admin提供单Node、有界、逐页审计的产品只读投影。标准化email/account key MAY只进入受保护snapshot、duplicate、lifecycle列、授权内部返回值和该受控产品响应；产品响应 MUST 不包含内部account key。它们与cursor明文、poll/policy ID、版本/提交、endpoint/IP、Secret、header/body和原始错误 MUST NOT进入普通日志、Prometheus标签、错误文本、SQL参数日志、测试输出或验收artifact。运行时角色 MUST无任意lifecycle表SELECT/DML权限。
+Control SHALL 保留仅供内部Store使用的有界、稳定排序lifecycle读取函数，并 MAY 提供按受控instance/provider/lifecycle/固定transition reason聚合的指标，以及通过`account-inventory-readonly-query` capability向已认证、已启用super_admin提供单Node、有界、逐页审计的产品只读投影。标准化 email/account key MAY 进入受保护 snapshot、duplicate、lifecycle 列、授权内部返回值和该受控产品响应。邮箱为普通业务身份，亦可按批准契约进入 authenticated API/UI、audit、controlled business logs 和 DingTalk payload/body，不 mask、不为业务展示使用 HMAC、不新增邮箱专属权限；产品响应 MUST 不包含内部account key。它们与cursor明文、poll/policy ID、版本/提交、endpoint/IP、Secret、header/body和原始错误 MUST NOT进入普通日志、Prometheus标签、错误文本、SQL参数日志、测试输出或验收artifact。运行时角色 MUST无任意lifecycle表SELECT/DML权限。
 
 #### Scenario: 内部读取生命周期
 - **WHEN** 内部消费者按instance/provider与有界limit读取当前lifecycle

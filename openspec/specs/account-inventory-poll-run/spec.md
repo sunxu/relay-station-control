@@ -163,7 +163,7 @@ Control MUST 在环境、Migration、Driver registry 和容量校验后启动 po
 
 ### Requirement: poll-run 观测 MUST 有界且不泄露账号或凭证
 
-Control SHALL 暴露固定 poll state、scheduler lag、queue wait、poll start lag、transport、contract、Provider snapshot-complete 和 promotion applied/skipped 指标。标签 MUST 仅使用受控 `instance_id`、状态、Provider 和固定 reason/mode；日志与验收证据 MUST 脱敏。poll-run ID、policy version、email/account key、endpoint/IP、Secret/Management Key、响应内容、版本/提交和原始错误 MUST NOT 成为指标标签或非受控输出。
+Control SHALL 暴露固定 poll state、scheduler lag、queue wait、poll start lag、transport、contract、Provider snapshot-complete 和 promotion applied/skipped 指标。标签 MUST 仅使用受控 `instance_id`、状态、Provider 和固定 reason/mode；验收证据与非受控输出 MUST 脱敏；邮箱不是 Secret，其他批准的受控业务日志可使用完整邮箱，不改变本 poll-run 聚合日志字段契约。poll-run ID、policy version、email/account key、endpoint/IP、Secret/Management Key、响应内容、版本/提交和原始错误 MUST NOT 成为指标标签或非受控输出。
 
 #### Scenario: 进程重启后导出延迟指标
 - **WHEN** Control 在 poll 创建、运行或 promotion 后重启

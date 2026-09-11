@@ -159,11 +159,11 @@ Poll 聚合、Provider 结果、duplicate evidence、snapshot items、Provider s
 
 ### Requirement: snapshot 身份数据 MUST 只进入受保护持久列
 
-标准化 email 与 account key MAY 只进入 `account_inventory_snapshot_items`、必要的 `account_inventory_poll_duplicates` 和 `account_inventory` 受保护列。它们以及 AccountObservation、endpoint/IP、Secret/Management Key、header/body、原始错误和未知响应字段 MUST NOT 进入普通日志、Prometheus 标签、错误文本、SQL 参数日志、test output 或 acceptance artifact。运行时角色 MUST 没有任意快照或 lifecycle 写删改能力。
+本 snapshot 写入路径中，标准化 email 与 account key MAY 进入 `account_inventory_snapshot_items`、必要的 `account_inventory_poll_duplicates` 和 `account_inventory` 受保护列。它们以及 AccountObservation、endpoint/IP、Secret/Management Key、header/body、原始错误和未知响应字段 MUST NOT 进入普通日志、Prometheus 标签、错误文本、SQL 参数日志、test output 或 acceptance artifact。运行时角色 MUST 没有任意快照或 lifecycle 写删改能力。 邮箱不是 Secret；上述限定属于 snapshot 写入/最小观测契约，不禁止其他已批准 authenticated API/UI、audit、controlled business logs、durable notification payload/DingTalk body 使用完整邮箱。Prometheus/Alertmanager labels 仍禁止 raw email/account_key。
 
 #### Scenario: 敏感 canary 注入成功路径和全部失败路径
 - **WHEN** 测试向 email/account key、endpoint、Secret、header/body、原始错误与未知字段注入唯一 canary
-- **THEN** 只有预期快照/重复/lifecycle 表的允许身份列可包含标准化 email/account key；其他数据库列、日志、指标、错误和 artifact 均不包含 canary
+- **THEN** 本 snapshot 路径只有预期快照/重复/lifecycle 表的允许身份列可包含标准化 email/account key；其他数据库列、日志、指标、错误和 artifact 均不包含 canary
 
 #### Scenario: 指标导出 Provider promotion
 - **WHEN** Control 从 PostgreSQL 导出 promotion applied/skipped 或 lifecycle 聚合

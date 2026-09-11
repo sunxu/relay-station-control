@@ -94,9 +94,9 @@ Cursor SHALL 使用现有环境 keyring的独立 domain和 AEAD加密认证，MU
 - **WHEN** 数据库缺少必要Provider state、last complete、健康字段或出现非法状态组合
 - **THEN** Control以固定503 fail closed，不返回默认填充或部分账号页
 
-### Requirement: 完整 email 页面返回 MUST 先持久审计
+### Requirement: Inventory query 页面返回 MUST 保留既有持久审计
 
-每个 query page，包括空结果和使用 cursor的后续页，MUST 在返回前持久写入实名 `account_inventory.view` 审计。账号查询与审计 SHALL 位于同一短数据库事务，只有 audit commit成功后才可返回 items。Audit details MUST 只包含受控 instance、各filter是否使用、cursor是否使用、结果数量和request ID；MUST NOT 包含 email、account key、cursor、filter value/hash或结果identity。
+每个 query page，包括空结果和使用 cursor的后续页，MUST 在返回前持久写入实名 `account_inventory.view` 审计。账号查询与审计 SHALL 位于同一短数据库事务，只有 audit commit成功后才可返回 items。该既有 query audit 的最小 details 白名单仍为受控 instance、各 filter 是否使用、cursor 是否使用、结果数量和 request ID，不增加 filter value、account key 或 cursor。邮箱是普通业务身份而非 Secret，其他已批准业务审计 MAY 使用完整邮箱；这里的最小字段选择不是全局邮箱禁令，也不为查看邮箱新增权限、reauthentication 或特殊安全审计。
 
 #### Scenario: 成功返回第一页或后续页
 - **WHEN** query验证、读取和audit insert/commit均成功
@@ -201,11 +201,11 @@ Control SHALL在已认证管理员的Topology内提供唯一账号UI，支持Pro
 
 ### Requirement: query观测 MUST 低基数且不泄露身份
 
-Query日志与指标 MAY 记录固定operation/result/error code、latency、result-size bucket和布尔filter-used。它们 MUST NOT包含instance、Provider、actor、email、account key、cursor、filter value/hash、request/poll/policy ID、版本/提交、endpoint、Secret或raw error。授权API响应中的email、受保护数据库identity列和AEAD ciphertext是唯一允许的相应敏感位置。
+Query 聚合日志与指标 MAY 记录固定 operation/result/error code、latency、result-size bucket 和布尔 filter-used，保留当前最小字段契约。Prometheus/Alertmanager labels MUST NOT 包含 raw email/account key 或其他高基数身份；确需指标稳定账号身份时使用环境隔离的不可逆 HMAC account_id。邮箱不是 Secret，完整邮箱 MAY 按批准契约进入 authenticated API/UI、受保护 DB、audit、controlled business logs、durable notification payload 与 DingTalk body；不得把本 query 最小日志字段规则解释为全局邮箱禁令。Cursor、endpoint、Secret、credential 与 raw error/response 仍不得泄漏；既有 URL、浏览器 storage 和验收 artifact 边界不变。
 
 #### Scenario: 敏感canary贯穿成功与失败路径
 - **WHEN** 测试把唯一email/account-key/cursor/Secret/endpoint/raw-error canary送入query、audit failure、cursor failure和UI错误路径
-- **THEN** 最终日志、指标、错误、audit details、URL、浏览器storage和artifact均不含canary；只有授权响应/受保护列和不可读ciphertext允许包含对应信息
+- **THEN** 本 query 既有最小日志/audit details、指标、错误、URL、浏览器 storage 和 artifact 不含 canary；授权响应/受保护身份列允许邮箱。其他批准的业务日志/审计可使用完整邮箱，但 credential、cursor、endpoint、raw error 等受保护 canary 不得泄漏
 
 #### Scenario: 页面查询网络范围
 - **WHEN** 管理员加载、筛选和翻页账号清单

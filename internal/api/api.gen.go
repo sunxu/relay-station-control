@@ -1705,7 +1705,7 @@ type AccountInventoryItem struct {
 	BasicStatus             AccountInventoryBasicStatus `json:"basic_status"`
 	ConsecutiveMissingCount int                         `json:"consecutive_missing_count"`
 
-	// Email Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+	// Email Trimmed, lowercase exact-match account identity, not a Secret; full email is allowed in approved authenticated business surfaces and audit. Never placed in a URL or Prometheus/Alertmanager labels.
 	Email                  NormalizedAccountEmail            `json:"email"`
 	FirstSeenAt            time.Time                         `json:"first_seen_at"`
 	InstanceId             openapi_types.UUID                `json:"instance_id"`
@@ -1753,7 +1753,7 @@ type AccountInventoryQueryRequest struct {
 	// Cursor Opaque, encrypted, actor- and filter-bound continuation token.
 	Cursor *string `json:"cursor,omitempty"`
 
-	// Email Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+	// Email Trimmed, lowercase exact-match account identity, not a Secret; full email is allowed in approved authenticated business surfaces and audit. Never placed in a URL or Prometheus/Alertmanager labels.
 	Email      *NormalizedAccountEmail    `json:"email,omitempty"`
 	InstanceId openapi_types.UUID         `json:"instance_id"`
 	Lifecycle  *AccountInventoryLifecycle `json:"lifecycle,omitempty"`
@@ -2440,7 +2440,7 @@ type NodeRelayBindingResponse struct {
 // NodeType defines model for NodeType.
 type NodeType = string
 
-// NormalizedAccountEmail Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+// NormalizedAccountEmail Trimmed, lowercase exact-match account identity, not a Secret; full email is allowed in approved authenticated business surfaces and audit. Never placed in a URL or Prometheus/Alertmanager labels.
 type NormalizedAccountEmail = string
 
 // OperationReason defines model for OperationReason.

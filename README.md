@@ -54,9 +54,12 @@ the migration-owner credential.
 
 ## Durable job foundation
 
-The phase-1 durable job runtime uses PostgreSQL as its only source of truth. Its
-Worker and Reconciler start with an empty production executor registry; Redis and
-external publishers are not required or enabled. Runtime concurrency and polling
+The durable-job foundation uses PostgreSQL as its only source of truth and is
+fail-closed by default. Its generic registry starts empty and does not dynamically
+load production executors. Current Control composition explicitly registers the
+reviewed Phase 5 `dingtalk_alert_delivery` definition and real executor; this is
+composition wiring, not a default in `jobs.NewProductionRegistry()`. Redis and
+external wake publishers remain optional, not correctness dependencies. Runtime concurrency and polling
 can be tuned with the bounded `CONTROL_JOB_*` variables documented in
 [`docs/runbooks/durable-jobs.md`](docs/runbooks/durable-jobs.md).
 

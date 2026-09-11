@@ -1955,7 +1955,7 @@ components:
       type: string
       minLength: 1
       maxLength: 320
-      description: Trimmed, lowercase exact-match account identity; never placed in a URL or audit detail.
+      description: Trimmed, lowercase exact-match account identity, not a Secret; full email is allowed in approved authenticated business surfaces and audit. Never placed in a URL or Prometheus/Alertmanager labels.
 
     JobListResponse:
       type: object

@@ -139,9 +139,9 @@ DNS/connect/TLS/timeout/ambiguous、408/429/5xx、明确临时业务失败重试
 POST 成功后未提交 succeeded 即 crash 可造成重复通知，这是通过行为；不加 delivery ledger、sent 标记、verify 协议或 exactly-once。最终失败通过现有 Jobs UI 与 structured ERROR log 发现，DingTalk 不进入 /healthz。
 
 ### Security and explicit supersession
-用户冻结策略优先于仓库旧措辞：邮箱在整个 Relay Station 是普通非敏感业务身份；可完整进入 PostgreSQL/API/UI/audit/structured logs/job payload/DingTalk，不 mask、不 HMAC、不新增邮箱权限或特殊安全审计。此覆盖不限于 Problems 页面。Prometheus 仍禁用 email/account identity 高基数 label。
+用户冻结策略优先于仓库旧措辞：邮箱在整个 Relay Station 是普通非敏感业务身份；可按批准契约完整进入 PostgreSQL/authenticated API/UI/audit/controlled structured logs/job payload/DingTalk，不 mask、不为业务展示使用 HMAC、不新增邮箱权限或特殊安全审计。此覆盖不限于 Problems 页面。Prometheus/Alertmanager labels 仍禁用 raw email/account_key；确需指标稳定身份时使用环境隔离的不可逆 HMAC account_id，不限制 DingTalk message body。
 
-现行 `AGENTS.md`、`openspec/config.yaml`、Inventory readonly 与相关 canonical specs、OpenAPI 注释、Ops system design 中旧“邮箱不得进入日志/审计/告警”的限制须在实施文档 reconciliation 中统一；不是沿用旧策略缩小本次冻结范围。Secret（Webhook URL/signing secret/management key/access token/refresh token/auth file）仍禁止进入 DB/job/API/UI/audit/log/metric/trace，原始响应仍禁止保存。
+现行 `AGENTS.md`、`openspec/config.yaml`、Inventory readonly 与相关 canonical specs、OpenAPI 注释、Ops system design / executive overview 已统一上述邮箱策略；各既有 endpoint 的最小日志/审计白名单保留，但不再作为全局邮箱敏感分类。历史 archive/evidence 不改写。Secret（Webhook URL/query、signing secret、management key、access token、refresh token、auth file）仍禁止进入 DB/job/API/UI/audit/log/metric/trace，原始响应仍禁止保存。
 
 新查询使用 SECURITY DEFINER、fixed search_path=pg_catalog、owner relay_control_migrator、REVOKE EXECUTE FROM PUBLIC、GRANT EXECUTE TO relay_control_runtime；runtime 无新增底表直接权限。继续唯一 super_admin 与既有会话/请求防护；不新增 RBAC。
 
@@ -157,6 +157,6 @@ Stage 1 不修改 migration。Architecture re-review PASS 后，因为 00028_dur
 ## Validation and reconciliation
 spec 的全部 42 项 runtime acceptance 是未来实施门槛，tasks 记录未完成状态。重点验证时间边界、退化证据、并发/同事务故障注入、commit ambiguity、restart/lease replay、HTTP/业务响应分类、第五次失败终态、proxy 环境与 redirect、Secret-negative、完整邮箱、ACL/no-store/auth、API pagination、UI 复用。
 
-仓库 canonical Availability 中 `Active runtime after previously confirmed forbidden` scenario 仍有“两次健康观察恢复”的旧句，与最新 `Recovery SHALL require newer independent evidence` 冲突。实施时仅统一现行文档到最新 success-only recovery，不修改历史 archive，不恢复旧 SQL 语义。durable-job canonical 的空 production registry 是旧 foundation 范围，Phase 5 增量显式扩展为固定 DingTalk kind，并增加独立默认关闭的 unknown-result replay 与 direct-success policies 及 ExecuteSucceeded；两个 policy 均未启用的普通 job 继续保持现有 Verify-first 语义。
+Canonical Availability 的 `Active runtime after previously confirmed forbidden` scenario 已统一到当前 success-only recovery requirement；历史 archive 中的 two-observation 语义保持原样，不恢复旧 SQL 语义。历史 durable-job foundation evidence 保留当时 empty production registry 的状态；当前 Control composition 显式加入已审 fixed `dingtalk_alert_delivery` definition/executor，并通过 active Phase 5 delta 增加两个独立、默认关闭且按 job 持久化快照的 unknown-result replay/direct-success policies 及 ExecuteSucceeded。generic `jobs.NewProductionRegistry()` 本身仍为空；普通 job 保持既有 Verify-first 语义。
 
 文档交付运行 OpenSpec strict validation、diff/引用/patch 检查。实施后运行 `make test build`（含生成），并依赖真实 deploy/acceptance 体系新增本 change 的 PostgreSQL/container 故障与恢复验收；不把文档验证冒充运行验证。

@@ -104,6 +104,7 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 	operations := allOperations(document)
 
 	expected := map[operationKey]string{
+		{http.MethodPost, "/api/problem-accounts/query"}:                                  "queryProblemAccounts",
 		{http.MethodGet, "/api/healthz"}:                                                   "getHealthz",
 		{http.MethodGet, "/api/bootstrap/status"}:                                          "getBootstrapStatus",
 		{http.MethodPost, "/api/bootstrap/start"}:                                          "startBootstrap",

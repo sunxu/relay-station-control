@@ -12,7 +12,9 @@ context: |
   API source of truth: api/openapi.yaml. Database source of truth: immutable forward Goose migrations.
   Generated Go and TypeScript clients must be refreshed with make generate and must not be hand-edited.
   Control must not persist or expose upstream credentials, Node Management Keys, Gateway admin credentials, or raw response bodies.
-  Metrics and alerts must not use raw email labels; account identity metrics use an environment-specific HMAC identifier.
+  Email is normal business identity, not Secret. Approved authenticated API/UI, protected database state, audit, controlled business logs, durable notification payloads and DingTalk message bodies may use full email without masking or special email permissions.
+  Prometheus/Alertmanager labels must not contain raw email/account_key. If stable account identity is needed in metrics, use an environment-specific irreversible HMAC account_id. This cardinality rule does not prohibit full email in approved business surfaces or DingTalk message bodies.
+  Secret handling remains strict: API keys, access/refresh tokens, OAuth credentials, Management Keys, Gateway management credentials, passwords, DingTalk webhook URLs including query, signing secrets, credential-bearing headers and raw upstream responses/bodies must not leak.
   Control PostgreSQL is the truth for Control-owned durable state.
   Control only observes, associates, snapshots, analyzes, alerts, and recommends. It must not enter the request data plane, schedule requests, modify Gateway Account/Group or routing, modify CLIProxyAPI credential state, mirror Gateway runtime scheduler truth, or automatically repair duplicate ownership.
   Gateway is one Sub2API deployment and Relay Node is one CLIProxyAPI deployment. Sub2API native Account/Group routing and runtime scheduling remain authoritative; CLIProxyAPI retains Provider/Account/credential selection, retry, and cooldown.

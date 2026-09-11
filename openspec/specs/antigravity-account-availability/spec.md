@@ -170,8 +170,8 @@ Availability确认 MUST在同Node/account内按非空request_id保守去重，�
 - **THEN** ACCOUNT_BLOCKED，创建Critical ACTIVE occurrence，不能降为普通FORBIDDEN
 
 #### Scenario: Active runtime after previously confirmed forbidden
-- **WHEN** 既有FORBIDDEN ACTIVE之后runtime已active，但尚不满足成功请求或连续两次健康观察的恢复条件
-- **THEN** 当前availability为UNKNOWN/pending_confirmation，不由旧ACTIVE强制展示FORBIDDEN、不重发告警；原occurrence保留ACTIVE历史直到可靠恢复，不伪造RESOLVED；下一相邻槽再有合格健康观察时按原两次规则RESOLVED
+- **WHEN** 既有 FORBIDDEN ACTIVE occurrence 之后 runtime 已变为 file_active，但尚不存在 `success = true` 且 `success.occurred_at > occurrence.last_failure_at` 的真实成功请求
+- **THEN** 当前 availability 为 UNKNOWN/pending_confirmation，不由旧 ACTIVE 强制展示 FORBIDDEN、不重发告警；原 occurrence 保持 ACTIVE。任意数量 fresh/complete file_active observation 均不得 resolve；只有满足当前 success-only recovery contract 的更新真实成功请求才可合法 RESOLVED
 
 #### Scenario: Runtime-only observations do not replace request evidence
 - **WHEN** 两个不同fresh完整runtime source均给出token/blocked语义，但没有相应request failure

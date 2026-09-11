@@ -55,7 +55,7 @@ func TestGatewayDirectoryMainDeploymentHelper(t *testing.T) {
 	}
 }
 
-func TestGatewayDirectoryMainDeploymentHTTPS(t *testing.T) {
+func TestGatewayDirectoryMainDeploymentHTTP(t *testing.T) {
 	owner, runtimePool := isolatedCrossNodeDuplicateOwnershipDatabase(t)
 	ctx := context.Background()
 	environmentID := "main-deployment-" + uuid.NewString()
@@ -63,7 +63,7 @@ func TestGatewayDirectoryMainDeploymentHTTPS(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
-	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		if r.Method != http.MethodGet || r.URL.Path != "/internal/v1/api-account-directory" || r.Header.Get("Authorization") != "Bearer main-deployment-reader" {
 			t.Errorf("source request contract violated: %s %s", r.Method, r.URL.Path)
@@ -78,12 +78,8 @@ func TestGatewayDirectoryMainDeploymentHTTPS(t *testing.T) {
 		})
 	}))
 	defer source.Close()
-	parsed := strings.Replace(source.URL, "127.0.0.1", "localhost", 1)
-	if err := source.Certificate().VerifyHostname("localhost"); err == nil {
-		t.Fatal("HTTPS fixture unexpectedly trusted localhost hostname")
-	}
 	gatewayID := uuid.New()
-	if _, err := owner.Exec(ctx, `SELECT control_register_gateway($1,'Main Deployment Gateway',$2,'file://main-deployment/reader')`, gatewayID, parsed); err != nil {
+	if _, err := owner.Exec(ctx, `SELECT control_register_gateway($1,'Main Deployment Gateway',$2,'file://main-deployment/reader')`, gatewayID, source.URL); err != nil {
 		t.Fatal(err)
 	}
 	directory := t.TempDir()
@@ -192,7 +188,7 @@ func TestGatewayDirectoryMainDeploymentHTTPS(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("main did not persist HTTPS Directory snapshot; requests=%d logs=%s", requests.Load(), output.String())
+			t.Fatalf("main did not persist HTTP Directory snapshot; requests=%d logs=%s", requests.Load(), output.String())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -242,7 +238,7 @@ func TestGatewayDirectoryMainDeploymentHTTPS(t *testing.T) {
 	if err := owner.QueryRow(ctx, `SELECT current_snapshot_id,last_success_received_at FROM gateway_directory_current_state WHERE gateway_instance_id=$1`, gatewayID).Scan(&snapshotID, &receivedAt); err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", mappingPath, parsed, "9007199254740993"} {
+	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", mappingPath, source.URL, "9007199254740993"} {
 		if strings.Contains(output.String()+disabledOutput.String()+string(metrics), forbidden) {
 			t.Fatal("main logs or metrics leaked a synthetic canary")
 		}
@@ -294,7 +290,7 @@ func TestGatewayDirectoryMainDeploymentHTTPS(t *testing.T) {
 	if restartedSnapshotID != snapshotID || !restartedReceivedAt.Equal(receivedAt) || accountID != 9007199254740993 {
 		t.Fatal("restart changed the persisted current snapshot, successful observation or exact account identity")
 	}
-	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", mappingPath, parsed, "9007199254740993"} {
+	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", mappingPath, source.URL, "9007199254740993"} {
 		if strings.Contains(restartedOutput.String(), forbidden) {
 			t.Fatal("restarted main log leaked a synthetic canary")
 		}

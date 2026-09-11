@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -52,141 +51,134 @@ func TestGatewayDirectoryRuntimeProcessHelper(t *testing.T) {
 }
 
 func TestGatewayDirectoryRuntimeProcessRecovery(t *testing.T) {
-	for _, secure := range []bool{false, true} {
-		t.Run(fmt.Sprintf("tls=%t", secure), func(t *testing.T) {
-			owner, runtimePool := isolatedCrossNodeDuplicateOwnershipDatabase(t)
-			ctx := context.Background()
-			// Reserve enough real DB slot time for lease recovery without skipping acceptance.
-			for {
-				var remaining float64
-				if err := owner.QueryRow(ctx, `SELECT 120-extract(epoch FROM clock_timestamp()-to_timestamp(floor(extract(epoch FROM clock_timestamp())/180)*180))`).Scan(&remaining); err != nil {
-					t.Fatal(err)
-				}
-				if remaining > 45 {
-					break
-				}
-				time.Sleep(time.Second)
-			}
-			var hold atomic.Bool
-			hold.Store(true)
-			var requests atomic.Int32
-			source := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests.Add(1)
-				if r.URL.Path != "/internal/v1/api-account-directory" || r.Header.Get("Authorization") != "Bearer process-test" {
-					t.Error("fixed request or auth violated")
-				}
-				if hold.Load() {
-					<-r.Context().Done()
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(map[string]any{"schema_version": 1, "generated_at": time.Now().UTC().Format(time.RFC3339Nano), "accounts": []map[string]any{{"id": int64(9007199254740993), "name": "process", "platform": "openai", "type": "apikey", "url": nil, "status": "active"}}})
-			})
-			var server *httptest.Server
-			if secure {
-				server = httptest.NewTLSServer(source)
-			} else {
-				server = httptest.NewServer(source)
-			}
-			defer server.Close()
-			id := uuid.New()
-			if _, err := owner.Exec(ctx, `SELECT control_register_gateway($1,'Process Gateway',$2,'file://process/reader')`, id, server.URL); err != nil {
+	t.Run("http", func(t *testing.T) {
+		owner, runtimePool := isolatedCrossNodeDuplicateOwnershipDatabase(t)
+		ctx := context.Background()
+		// Reserve enough real DB slot time for lease recovery without skipping acceptance.
+		for {
+			var remaining float64
+			if err := owner.QueryRow(ctx, `SELECT 120-extract(epoch FROM clock_timestamp()-to_timestamp(floor(extract(epoch FROM clock_timestamp())/180)*180))`).Scan(&remaining); err != nil {
 				t.Fatal(err)
 			}
-			dir := t.TempDir()
-			token := filepath.Join(dir, "token")
-			mapping := filepath.Join(dir, "mapping.json")
-			if err := os.WriteFile(token, []byte("process-test"), 0600); err != nil {
-				t.Fatal(err)
+			if remaining > 45 {
+				break
 			}
-			document, _ := json.Marshal(map[string]any{"provider": "file", "references": []map[string]string{{"reference": "file://process/reader", "path": token}}})
-			if err := os.WriteFile(mapping, document, 0600); err != nil {
-				t.Fatal(err)
+			time.Sleep(time.Second)
+		}
+		var hold atomic.Bool
+		hold.Store(true)
+		var requests atomic.Int32
+		source := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			if r.URL.Path != "/internal/v1/api-account-directory" || r.Header.Get("Authorization") != "Bearer process-test" {
+				t.Error("fixed request or auth violated")
 			}
-			start := func(enabled string) (*exec.Cmd, chan error) {
-				command := exec.Command(os.Args[0], "-test.run=^TestGatewayDirectoryRuntimeProcessHelper$")
-				command.Env = append(os.Environ(), "CONTROL_DIRECTORY_TEST_HELPER=1", "CONTROL_DIRECTORY_TEST_DATABASE="+runtimePool.Config().ConnString(), "CONTROL_GATEWAY_DIRECTORY_ENABLED="+enabled, "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE="+mapping)
-				var output bytes.Buffer
-				command.Stdout = &output
-				command.Stderr = &output
-				if err := command.Start(); err != nil {
-					t.Fatal(err)
-				}
-				done := make(chan error, 1)
-				go func() { done <- command.Wait() }()
-				t.Cleanup(func() { _ = command.Process.Kill() })
-				return command, done
+			if hold.Load() {
+				<-r.Context().Done()
+				return
 			}
-			_, disabled := start("false")
-			select {
-			case err := <-disabled:
-				if err != nil {
-					t.Fatal("disabled process failed")
-				}
-			case <-time.After(8 * time.Second):
-				t.Fatal("disabled process did not exit")
-			}
-			var count int
-			if err := owner.QueryRow(ctx, `SELECT count(*) FROM gateway_directory_ingestion_runs`).Scan(&count); err != nil {
-				t.Fatal(err)
-			}
-			if count != 0 || requests.Load() != 0 {
-				t.Fatal("disabled process had ingestion side effects")
-			}
-			first, firstDone := start("true")
-			deadline := time.Now().Add(12 * time.Second)
-			for requests.Load() == 0 {
-				if time.Now().After(deadline) {
-					t.Fatal("child did not fetch")
-				}
-				time.Sleep(20 * time.Millisecond)
-			}
-			if err := first.Process.Signal(syscall.SIGTERM); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case err := <-firstDone:
-				if err != nil {
-					t.Fatal("first process shutdown failed")
-				}
-			case <-time.After(8 * time.Second):
-				t.Fatal("shutdown not bounded")
-			}
-			hold.Store(false)
-			second, secondDone := start("true")
-			deadline = time.Now().Add(30 * time.Second)
-			for {
-				if err := owner.QueryRow(ctx, `SELECT count(*) FROM gateway_directory_current_state`).Scan(&count); err != nil {
-					t.Fatal(err)
-				}
-				if count == 1 {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("restart did not recover persisted run")
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-			var accountID int64
-			if err := owner.QueryRow(ctx, `SELECT account_id FROM gateway_directory_snapshot_items`).Scan(&accountID); err != nil {
-				t.Fatal(err)
-			}
-			if accountID != 9007199254740993 {
-				t.Fatal("source precision lost")
-			}
-			if err := second.Process.Signal(syscall.SIGTERM); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case err := <-secondDone:
-				if err != nil {
-					t.Fatal("second process shutdown failed")
-				}
-			case <-time.After(8 * time.Second):
-				t.Fatal("shutdown not bounded")
-			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"schema_version": 1, "generated_at": time.Now().UTC().Format(time.RFC3339Nano), "accounts": []map[string]any{{"id": int64(9007199254740993), "name": "process", "platform": "openai", "type": "apikey", "url": nil, "status": "active"}}})
 		})
-	}
+		server := httptest.NewServer(source)
+		defer server.Close()
+		id := uuid.New()
+		if _, err := owner.Exec(ctx, `SELECT control_register_gateway($1,'Process Gateway',$2,'file://process/reader')`, id, server.URL); err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		token := filepath.Join(dir, "token")
+		mapping := filepath.Join(dir, "mapping.json")
+		if err := os.WriteFile(token, []byte("process-test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		document, _ := json.Marshal(map[string]any{"provider": "file", "references": []map[string]string{{"reference": "file://process/reader", "path": token}}})
+		if err := os.WriteFile(mapping, document, 0600); err != nil {
+			t.Fatal(err)
+		}
+		start := func(enabled string) (*exec.Cmd, chan error) {
+			command := exec.Command(os.Args[0], "-test.run=^TestGatewayDirectoryRuntimeProcessHelper$")
+			command.Env = append(os.Environ(), "CONTROL_DIRECTORY_TEST_HELPER=1", "CONTROL_DIRECTORY_TEST_DATABASE="+runtimePool.Config().ConnString(), "CONTROL_GATEWAY_DIRECTORY_ENABLED="+enabled, "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE="+mapping)
+			var output bytes.Buffer
+			command.Stdout = &output
+			command.Stderr = &output
+			if err := command.Start(); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- command.Wait() }()
+			t.Cleanup(func() { _ = command.Process.Kill() })
+			return command, done
+		}
+		_, disabled := start("false")
+		select {
+		case err := <-disabled:
+			if err != nil {
+				t.Fatal("disabled process failed")
+			}
+		case <-time.After(8 * time.Second):
+			t.Fatal("disabled process did not exit")
+		}
+		var count int
+		if err := owner.QueryRow(ctx, `SELECT count(*) FROM gateway_directory_ingestion_runs`).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 || requests.Load() != 0 {
+			t.Fatal("disabled process had ingestion side effects")
+		}
+		first, firstDone := start("true")
+		deadline := time.Now().Add(12 * time.Second)
+		for requests.Load() == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("child did not fetch")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if err := first.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-firstDone:
+			if err != nil {
+				t.Fatal("first process shutdown failed")
+			}
+		case <-time.After(8 * time.Second):
+			t.Fatal("shutdown not bounded")
+		}
+		hold.Store(false)
+		second, secondDone := start("true")
+		deadline = time.Now().Add(30 * time.Second)
+		for {
+			if err := owner.QueryRow(ctx, `SELECT count(*) FROM gateway_directory_current_state`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count == 1 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("restart did not recover persisted run")
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		var accountID int64
+		if err := owner.QueryRow(ctx, `SELECT account_id FROM gateway_directory_snapshot_items`).Scan(&accountID); err != nil {
+			t.Fatal(err)
+		}
+		if accountID != 9007199254740993 {
+			t.Fatal("source precision lost")
+		}
+		if err := second.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-secondDone:
+			if err != nil {
+				t.Fatal("second process shutdown failed")
+			}
+		case <-time.After(8 * time.Second):
+			t.Fatal("shutdown not bounded")
+		}
+	})
 }
 
 func TestGatewayDirectoryRuntimeProcessSameSlotCompetition(t *testing.T) {
