@@ -190,6 +190,14 @@ Provider 策略以 `(node_type, driver_contract_version)` 为作用域。`active
 
 对账输出只能包含固定计数和通过/失败状态，不得选择 endpoint、名称、instance ID、Provider 名称或 Secret 引用。随后由实名 `super_admin` 访问 `/assets`，分别检查环境、Gateway、Driver、当前策略和 Node 页面。页面无编辑入口，endpoint 仅为不可点击文本，浏览器不得请求登记的外部 endpoint。
 
+### Web 路由与静态资源
+
+生产前端资源统一使用 `/static/` public prefix。Control 对 `/static/<file>` 去除该前缀后读取嵌入的 frontend dist；命中文件时返回静态资源，缺失文件固定返回 HTTP 404，不得回退到 SPA shell。
+
+`/assets` 与 `/assets/` 都是 Asset Registry SPA route。已认证用户直接访问任一路径，或在 `/assets/` reload，均必须渲染带有 `assets-page` 稳定标识和“资产注册表”标题的页面，且不得渲染管理员控制台默认页。其它既有 SPA deep link 保持 shell fallback；已注册 `/api/...` route 始终由 API router 优先处理。
+
+发布验收至少检查 production build 的入口 JS/CSS 与 lazy chunk URL 都位于 `/static/`、Asset Registry lazy chunk 可加载、`/static/not-found.js` 返回 404，以及 `/api/healthz` 不返回 SPA shell。回滚只切回上一已接受的 Control 镜像，不修改资产数据或数据库 schema。
+
 ## 故障恢复
 
 - `missing_config`：补齐 `CONTROL_ENVIRONMENT_ID` 和 `CONTROL_ENVIRONMENT` 后重启；

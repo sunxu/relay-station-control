@@ -72,3 +72,17 @@ API precedence unchanged
 other approved SPA deep links unchanged
 no HTTP redirect prerequisite for /assets/
 ```
+
+### Implementation and Runtime Acceptance
+
+```text
+Implementation = COMPLETE
+Runtime Acceptance = PASS
+Static prerequisite = IMPLEMENTED / ACCEPTED
+production code changed = true
+completed tasks = 10 / 10
+```
+
+2026-09-12 使用仓库当前 `openspec instructions apply --change fix-control-web-static-resource-prefix --json` 执行 apply workflow；当前 OpenSpec CLI 不提供独立 `openspec apply` 子命令。实施严格限定于本 change：Vite browser-facing base 为 `/static/`，embedded handler 对 `/static/*` 命中资源并对 miss 返回 404，`/assets` 与 `/assets/` 都由前端解析为 Asset Registry，API router 保持优先。
+
+Runtime Acceptance 使用全新独立 PostgreSQL 18、生产 linux/arm64 Control image 与真实 authenticated Playwright browser 完成。`/assets` direct、`/assets/` direct、`/assets/` reload 均通过 `assets-page` test id 和“资产注册表”heading 验证，三者均未渲染 `management-page`。Asset Registry lazy chunk 从 `/static/assets/AssetsPage-*` 成功加载；`/static/not-found.js` 返回 404 且无 SPA root；`/api/healthz` 返回 API response 且无 SPA root。Playwright 4/4 PASS，`make test build` PASS，OpenSpec archive 前 strict validation 与 diff/scope checks 见实施 evidence。

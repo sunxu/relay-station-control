@@ -16,7 +16,7 @@ export type AuthRoute = "loading" | "bootstrap" | "login" | "activation" | "mana
 type AuthenticatedRoute = Extract<AuthRoute, "management" | "assets" | "jobs" | "topology" | "problems">;
 
 function authenticatedRouteFromLocation(): AuthenticatedRoute {
-  if (window.location.pathname === "/assets") return "assets";
+  if (window.location.pathname === "/assets" || window.location.pathname === "/assets/") return "assets";
   if (window.location.pathname === "/jobs") return "jobs";
   if (window.location.pathname === "/topology") return "topology";
   if (window.location.pathname === "/problems") return "problems";

@@ -173,6 +173,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   console.log("[e2e] recovery-code login completed");
 
   const browserAssetRequests: Array<{ method: string; url: string }> = [];
+  const staticResponses: Array<{ status: number; url: string }> = [];
   const externalAssetRequests: string[] = [];
   const assetPaths = new Set([
     "/api/environment",
@@ -186,6 +187,10 @@ test("real administrator lifecycle survives restart and keeps one-time material 
     const requestedURL = new URL(request.url());
     if (assetPaths.has(requestedURL.pathname)) browserAssetRequests.push({ method: request.method(), url: request.url() });
     if (requestedURL.hostname === "gateway.invalid" || requestedURL.hostname === "node.invalid") externalAssetRequests.push(request.url());
+  });
+  primary.on("response", (response) => {
+    const requestedURL = new URL(response.url());
+    if (requestedURL.pathname.startsWith("/static/")) staticResponses.push({ status: response.status(), url: response.url() });
   });
   await primary.route(assetRoute, async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -242,17 +247,49 @@ test("real administrator lifecycle survives restart and keeps one-time material 
     });
   });
 
-  await primary.getByRole("button", { name: "资产注册表" }).click();
-  await expect(primary.getByTestId("assets-page")).toBeVisible();
+  const expectAssetRegistry = async () => {
+    await expect(primary.getByTestId("assets-page")).toBeVisible();
+    await expect(primary.getByRole("heading", { name: "资产注册表" })).toBeVisible();
+    await expect(primary.getByTestId("management-page")).toHaveCount(0);
+  };
+
+  browserAssetRequests.length = 0;
+  await primary.goto("/assets");
+  await expectAssetRegistry();
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  console.log("[e2e] authenticated direct /assets rendered Asset Registry");
+
+  browserAssetRequests.length = 0;
+  await primary.goto("/assets/");
+  await expectAssetRegistry();
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  console.log("[e2e] authenticated direct /assets/ rendered Asset Registry");
+
+  browserAssetRequests.length = 0;
+  await primary.reload();
+  await expectAssetRegistry();
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  console.log("[e2e] authenticated /assets/ reload rendered Asset Registry");
+
   await expect(primary.getByText("E2E Gateway")).toBeVisible();
   await expect(primary.getByText("E2E Node")).toBeVisible();
   await expect(primary.getByText("尚未配置当前 Provider 策略")).toBeVisible();
   await expect.poll(() => browserAssetRequests.length).toBe(5);
   const controlOrigin = new URL(baseURL!).origin;
   expect(browserAssetRequests.every((request) => request.method === "GET" && new URL(request.url).origin === controlOrigin)).toBe(true);
+  expect(staticResponses.length).toBeGreaterThan(0);
+  expect(staticResponses.every((response) => response.status === 200)).toBe(true);
+  expect(staticResponses.some((response) => new URL(response.url).pathname.includes("/static/assets/AssetsPage-"))).toBe(true);
   expect(await primary.locator('a[href^="https://gateway.invalid"], a[href^="https://node.invalid"]').count()).toBe(0);
   expect(await primary.getByText(/CANARY-(GATEWAY|NODE)-REF/).count()).toBe(0);
   expect(externalAssetRequests).toEqual([]);
+
+  const missingStatic = await primary.request.get("/static/not-found.js");
+  expect(missingStatic.status()).toBe(404);
+  expect(await missingStatic.text()).not.toContain('<div id="root">');
+  const APIHealth = await primary.request.get("/api/healthz");
+  expect(APIHealth.status()).toBe(200);
+  expect(await APIHealth.text()).not.toContain('<div id="root">');
   await primary.getByRole("button", { name: "管理员控制台" }).click();
   await expect(primary.getByTestId("management-page")).toBeVisible();
   await primary.unrouteAll({ behavior: "wait" });

@@ -57,9 +57,16 @@ it("does not load the assets chunk until authenticated navigation selects /asset
   expect(window.location.pathname).toBe("/assets");
 });
 
-it("restores an authenticated direct visit to /assets", async () => {
-  window.history.replaceState(null, "", "/assets");
+it.each(["/assets", "/assets/"])("restores an authenticated direct visit to %s", async (pathname) => {
+  window.history.replaceState(null, "", pathname);
   render(<App api={api()} />);
   expect(await screen.findByTestId("mock-assets-page")).toBeInTheDocument();
   expect(screen.queryByTestId("management-page")).not.toBeInTheDocument();
+});
+
+it("keeps the existing default route on the management page", async () => {
+  window.history.replaceState(null, "", "/");
+  render(<App api={api()} />);
+  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(screen.queryByTestId("mock-assets-page")).not.toBeInTheDocument();
 });
