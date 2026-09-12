@@ -16,6 +16,16 @@
 
 `/static/` 下的请求不得被解释为 product route；`/assets/...` 继续保留给 Asset Registry route 的应用路由语义。实现不得把静态资源路径注册为 `/assets/...` 产品资源的同义路由。
 
+前端 in-browser route resolver（当前实现位于 `web/src/auth/AuthContext.tsx`）只精确匹配
+`window.location.pathname === "/assets"`，`/assets/` 会落入 management/default 分支。
+HTTP 层正确返回 `/assets/` 的 SPA shell 不等于前端最终渲染 Asset Registry——必须同时冻结
+前端 pathname matcher 的等价识别契约：`/assets` 与 `/assets/` MUST 都解析为 `assets` 路由。
+实现阶段允许的最小方案是等价于
+`pathname === "/assets" || pathname === "/assets/"` 的判断，或等价的 trailing-slash
+normalization；不得引入新 router framework、全站 URL rewrite subsystem 或新的 route
+抽象层。本 change 目前只冻结该 planning 契约，不在本轮修改 `AuthContext.tsx`；对应
+implementation task 见 tasks.md。
+
 ## Verification
 
-使用生产构建启动 Control，验证 `/assets`、`/assets/`、lazy chunks、API regression 和 static miss；记录浏览器或等价 HTTP evidence。失败时只回滚本 change 的 build/server routing，不触碰资产数据。
+使用生产构建启动 Control，验证 `/assets`、`/assets/`、lazy chunks、API regression 和 static miss；记录浏览器或等价 HTTP evidence。E2E 断言 MUST 证明最终渲染的是 Asset Registry 页面本身（例如 Asset Registry page heading 或专用 asset-page test id 等稳定 UI signal），不得只断言 HTTP 200、document loaded 或 SPA root 存在。验证范围至少包含：authenticated 直接导航 `/assets`、authenticated 直接导航 `/assets/`、以及 authenticated 用户停留在 `/assets/` 时浏览器 reload 这三种路径，且三者都必须最终渲染 Asset Registry 而非 management/default 页面。失败时只回滚本 change 的 build/server routing，不触碰资产数据。
