@@ -1,6 +1,6 @@
 ## Apply gate
 
-proposal/spec/design/tasks complete -> strict PASS -> independent planning/readiness review -> readiness PASS -> authorized openspec apply -> execute tasks -> implementation evidence -> Runtime Acceptance -> archive readiness。当前Implementation readiness = AWAITING REVIEW；openspec apply = NOT AUTHORIZED。所有checkbox是未来implementation计划。
+proposal/spec/design/tasks complete -> strict PASS -> independent planning/readiness review -> readiness PASS -> explicit user implementation authorization -> `openspec instructions apply` -> execute tasks -> implementation evidence -> Runtime Acceptance -> archive readiness。当前 Independent readiness review = PASS；Planning readiness = PASS / READY；Implementation readiness = READY；implementation workflow = AUTHORIZED AFTER EXPLICIT USER AUTHORIZATION；instructions apply = NOT RUN；Implementation = NOT STARTED。所有checkbox是未来implementation计划。
 
 ## Tasks
 
@@ -22,13 +22,13 @@ proposal/spec/design/tasks complete -> strict PASS -> independent planning/readi
 - [ ] 16. 实现Retire transaction和同boundary binding close（≤2h）。
 - [ ] 17. 实现Replace transaction与lineage/no-inheritance（≤2h）。
 - [ ] 18. 实现binding Node->Gateway->Directory->binding锁协议及Gateway reasons（≤2h）。
-- [ ] 19. 实现Directory planner current eligibility及zero-current tests（≤2h）。
-- [ ] 20. 实现Directory outbound target fence及retirement分类（≤2h）。
+- [ ] 19. 实现Directory planner current eligibility及zero-current tests，复用现有Gateway Directory HTTP-only endpoint validator（≤2h）。
+- [ ] 20. 实现Directory outbound target fence及retirement分类；覆盖HTTP成功、`https://` client construction前拒绝且零request，不恢复TLS/dual-protocol branch（≤2h）。
 - [ ] 21. 实现Directory promotion/recovery fence及独立freshness（≤2h）。
 - [ ] 22. 更新OpenAPI固定action/routes/status/body与schemas（≤2h）。
 - [ ] 23. 生成Go/TypeScript clients并验证revision string无损（≤2h）。
 - [ ] 24. 接入Gateway HTTP handlers、super_admin、CSRF、no-store与固定错误翻译（≤2h）。
-- [ ] 25. 实现固定health/probe、timeout与observation audit（≤2h）。
+- [ ] 25. 复用现有 `gatewaydirectory` HTTP-only origin validator/transport safety primitives，实现management target上的固定health/probe、timeout与observation audit；覆盖`http://` + `/health`、`https://` probe前拒绝且零request，无TLS/fallback branch（≤2h）。
 - [ ] 26. 实现asset_gateway audit allowlist/atomic failure tests（≤2h）。
 - [ ] 27. 实现bounded metric families和label canary测试（≤2h）。
 - [ ] 28. 实现history/current read、counts compatibility与cursor generation（≤2h）。
@@ -37,7 +37,7 @@ proposal/spec/design/tasks complete -> strict PASS -> independent planning/readi
 - [ ] 31. 实现Gateway历史detail/lineage和active counts展示（≤2h）。
 - [ ] 32. 补Gateway lifecycle/lineage集成测试（≤2h）。
 - [ ] 33. 补binding-vs-Gateway lifecycle race测试（≤2h）。
-- [ ] 34. 补Directory-vs-Retire/Replace race测试（≤2h）。
+- [ ] 34. 补Directory-vs-Retire/Replace race及HTTP-only transport组合回归测试（≤2h）。
 - [ ] 35. 补同command/actor mismatch/concurrent Register/Replace/crash replay测试（≤2h）。
 - [ ] 36. 以正式wrapper运行pinned old binary rollback，证明未启动process/HTTP/workers和DB不变（≤2h）。
 - [ ] 37. 验收tampered manifest/digest、missing key/DB与gate bypass配置拒绝（≤2h）。

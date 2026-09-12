@@ -4,6 +4,8 @@
 
 本 change owns the shared command/compatibility foundation and all Gateway-specific lifecycle behavior. Node-specific lifecycle、monitoring cancellation 和 Inventory fencing 由后续 Node lifecycle change owns，必须复用本 change 的 foundation。
 
+当前已归档 `internal-http-transport` baseline 同时约束本 change：Control-managed Gateway `management_endpoint`、Directory target 以及 Health/Connection Test target MUST 使用 `http://`。`https://` MUST 在 metadata validation 或 client construction 阶段 fail closed，并发出零个 outbound request。Stage 1 MUST 复用现有 `gatewaydirectory` HTTP-only validator/client，不恢复 TLS、certificate skip-verify、HTTP/HTTPS toggle、dual-protocol 或 fallback branch。该约束仅适用于 Control-managed internal management/Directory transport，不改变 Gateway Account/upstream 或 request data-plane endpoint scheme。
+
 ## Persistence direction
 
 现有 `gateway_instances` 的物理约束为 `gateway_instances_pkey PRIMARY KEY (singleton_id)` 与 `gateway_instances_instance_id_key UNIQUE (instance_id)`。已核对的 direct FKs 为：`gateway_directory_ingestion_runs(gateway_instance_id)`、`gateway_directory_snapshots(gateway_instance_id)`、`gateway_directory_current_state(gateway_instance_id)` 和 `relay_node_gateway_account_bindings(gateway_instance_id)`；后者另有 `(evidence_snapshot_id,gateway_instance_id)` FK 指向 snapshot。目标决定为 physical `PRIMARY KEY (instance_id)`，`singleton_id` 改为 nullable current-slot marker，并保留 `instance_id` 值不变。
@@ -57,9 +59,9 @@ Receipt replay projection MUST 按下文 HTTP contract 的完整success body与s
 
 ## Gateway lifecycle transactions
 
-Register 要求无 current slot、new identity 在全部历史中不存在、metadata 合法、super_admin/CSRF 有效；同一 transaction 创建 active row、slot=1、revision=1 和一条 receipt/audit。不得 probe、修改 Account/Group/routing 或复用 retired identity。
+Register 要求无 current slot、new identity 在全部历史中不存在、metadata 合法、`management_endpoint` 为有效 `http://` origin、super_admin/CSRF 有效；`https://` 在 validation 阶段拒绝且不发 outbound request；同一 transaction 创建 active row、slot=1、revision=1 和一条 receipt/audit。不得 probe、修改 Account/Group/routing 或复用 retired identity。
 
-Edit 只允许 `display_name`、`management_endpoint`、approved opaque secret reference configuration；active、revision match、command/auth/CSRF 通过后 +1 revision。不得自动 probe。
+Edit 只允许 `display_name`、`management_endpoint`、approved opaque secret reference configuration；设置 `management_endpoint` 时同样只接受 `http://` origin，`https://` 在 validation 阶段拒绝且不发 outbound request；active、revision match、command/auth/CSRF 通过后 +1 revision。不得自动 probe。
 
 Retire 在单一 PostgreSQL transaction 中：锁 command；receipt lookup；锁 current Gateway；验证 active/current/revision；按 `relay_node_id ASC` 锁所有 current bindings；建立 DB boundary；以 `gateway_retired` 关闭 bindings；标记 retired、清 slot、revision +1；写 exactly one audit/receipt；commit。不得 network call，历史 binding/Directory evidence 保留，0 current 是稳定状态。
 
@@ -75,7 +77,7 @@ Replace 在单一 transaction 中严格按以下顺序：authentication/session/
 
 ## Directory and binding interaction
 
-Planner 只为 active/current Gateway 建 normal run；无 current 不创建新 run。run fetch 前和 finalize/promotion transaction 都 re-read/lock Gateway active/current 与 source identity；不满足则 no fetch/no promotion/no freshness refresh，历史 transport evidence 可保留。Replace 后 new Gateway freshness/current snapshot 独立开始。
+Planner 只为 active/current Gateway 建 normal run；无 current 不创建新 run。Directory target 使用 current Gateway 的 HTTP-only `management_endpoint`；复用现有 `gatewaydirectory` validator/client，在任何 outbound 前拒绝 `https://`。run fetch 前和 finalize/promotion transaction 都 re-read/lock Gateway active/current 与 source identity；不满足则 no fetch/no promotion/no freshness refresh，历史 transport evidence 可保留。Replace 后 new Gateway freshness/current snapshot 独立开始。
 
 Gateway Retire/Replace 锁所有 current bindings 并分别使用 `gateway_retired`/`gateway_replaced` 关闭。任何 bind/rebind 在 commit 前必须持有稳定 Node asset -> target Gateway asset -> Gateway Directory current-state -> current binding rows lock order，并验证两者 active、Gateway slot=1；Gateway lifecycle command 先 commit 时 bind/rebind conflict，binding 先 commit 时随后被 lifecycle transaction 关闭，最终不得存在 retired Gateway + current binding。
 
@@ -105,7 +107,7 @@ Rollback选择pinned class0 artifact -> 同一正式wrapper -> 验证manifest/di
 
 ## Security and verification
 
-所有 mutation 仅 super_admin、CSRF、Cache-Control no-store；raw secret reference、credentials、credential-bearing headers、raw probe body 不进入 API/UI/audit/receipt/metrics/logs。Connection Test 固定 bounded `GET /health`，observation-only，不改变 lifecycle/revision、Directory 或 routing；无 redirect/retry/fallback。Control 不进入 data plane、不持有 Gateway DB access、不提供 Account/Group CRUD。
+所有 mutation 仅 super_admin、CSRF、Cache-Control no-store；raw secret reference、credentials、credential-bearing headers、raw probe body 不进入 API/UI/audit/receipt/metrics/logs。Health/Connection Test 使用资产中已验证的 HTTP-only `management_endpoint`，固定 bounded `GET /health`，observation-only，不改变 lifecycle/revision、Directory 或 routing；无 redirect/retry/fallback。当前 runtime 不发起 TLS；`https://` target 在 probe 前拒绝并保持零 outbound。Control 不进入 data plane、不持有 Gateway DB access、不提供 Account/Group CRUD。
 
 后续实现必须覆盖 migration/FK safety、sqlc generation、Directory/binding races、command replay/no-op、stale revision、security-negative、production build、old-binary rollback acceptance 和 clean evidence；本 artifact 只做 planning。
 
@@ -122,7 +124,7 @@ Rollback选择pinned class0 artifact -> 同一正式wrapper -> 验证manifest/di
 | Health | GET /api/assets/gateways/{instance_id}/health | 无body，无command_id/revision | 200 ProbeResult |
 | Connection Test | POST /api/assets/gateways/{instance_id}/connection-test | 空object；无command_id/revision | 200 ProbeResult |
 
-command_id在body中为UUID；expected_revision在body中为规范正int64十进制string，范围1..9223372036854775807，response revision同型。Register没有expected_revision。path identity为UUID，body不可另传冲突identity。display_name/endpoint必须有效非null，Edit省略表示不修改；reader_secret_ref省略/显式null/合法string分别为absent/clear/set。第一版不提供operator note。Gateway无DELETE能力。revision溢出返回409 revision_exhausted且无mutation。
+command_id在body中为UUID；expected_revision在body中为规范正int64十进制string，范围1..9223372036854775807，response revision同型。Register没有expected_revision。path identity为UUID，body不可另传冲突identity。display_name/endpoint必须有效非null，`management_endpoint` 必须是 `http://` origin；`https://` 返回 `400 invalid_endpoint` 且零 outbound。Edit省略表示不修改；reader_secret_ref省略/显式null/合法string分别为absent/clear/set。第一版不提供operator note。Gateway无DELETE能力。revision溢出返回409 revision_exhausted且无mutation。
 
 ### Exact success bodies and receipt projection
 
@@ -132,7 +134,7 @@ AssetResult固定字段：instance_id、lifecycle_status(active|retired)、revis
 - EditResult = {result:"updated",asset:AssetResult}。
 - RetireResult = {result:"retired",asset:AssetResult,closed_binding_count:nonnegative integer}。
 - ReplaceResult = {result:"replaced",old_asset:AssetResult,new_asset:AssetResult,closed_binding_count:nonnegative integer,lineage:{old_instance_id,new_instance_id,replaced_at,replaced_by,command_id}}。
-- ProbeResult = {instance_id,result:"healthy",observed_at:UTC timestamp}；固定GET /health、5秒总timeout，无redirect/retry/fallback、不携带reader credential、不持DB事务做network call。retired资产拒绝probe；已经授权的probe可作为独立transport observation收尾，不推进revision/Directory。
+- ProbeResult = {instance_id,result:"healthy",observed_at:UTC timestamp}；在已验证的 HTTP-only management origin 上固定GET /health、5秒总timeout，无redirect/retry/fallback、不携带reader credential、不持DB事务做network call。`https://` 在 client construction 前拒绝且零 outbound；当前 runtime 不发起 TLS。retired资产拒绝probe；已经授权的probe可作为独立transport observation收尾，不推进revision/Directory。
 
 receipt.sanitized_result MUST 保存对应完整success body及http_status，不通过后续asset row重构。same actor/same intent replay返回原status和body（Register仍201），request_id作为本次传输错误跟踪而非旧success body字段。success audit、asset mutation、lineage、receipt同事务；audit/receipt失败全部rollback。
 
@@ -156,7 +158,7 @@ receipt.sanitized_result MUST 保存对应完整success body及http_status，不
 | 409 | command_conflict | globally unique command_id对应actor或canonical intent不匹配 |
 | 409 | cursor_stale | Gateway集合在分页期间发生durable mutation，要求从第一页重启 |
 | 504 | probe_timeout | 实际probe超出5秒，不回滚独立asset command |
-| 502 | probe_failed | transport/TLS/non-200/redirect等固定probe失败，raw error/body不回显 |
+| 502 | probe_failed | HTTP transport/non-200/redirect等固定probe失败，raw error/body不回显；`https://` target 在 outbound 前以400 invalid_endpoint拒绝 |
 | 503 | service_unavailable | DB、receipt key或内部依赖不可用，fail closed |
 
 ### Current/history reads, cursor and counts

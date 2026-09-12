@@ -2,7 +2,7 @@
 
 ### Requirement: Gateway Register and Edit
 
-Gateway Register MUST require no current slot, valid metadata, and a new identity absent from all history; success creates active/current with revision 1. It MUST NOT probe, mutate Account/Group/routing, or reuse retired identity. Gateway Edit MUST require active state, matching `expected_revision`, `command_id`, authenticated `super_admin` and CSRF; only display name, endpoint and approved secret configuration are mutable and success advances revision.
+Gateway Register MUST require no current slot, valid metadata with an HTTP-only `management_endpoint`, and a new identity absent from all history; success creates active/current with revision 1. An `https://` management endpoint MUST be rejected during validation before any outbound request. Register MUST NOT probe, mutate Account/Group/routing, or reuse retired identity. Gateway Edit MUST require active state, matching `expected_revision`, `command_id`, authenticated `super_admin` and CSRF; only display name, HTTP-only management endpoint and approved secret configuration are mutable and success advances revision. Edit of the endpoint to `https://` MUST fail before outbound activity.
 
 #### Scenario: Register success and conflict
 
@@ -18,12 +18,17 @@ Gateway Register MUST require no current slot, valid metadata, and a new identit
 
 ### Requirement: Gateway Health and Connection Test
 
-Gateway Health/Connection Test MUST be an explicit bounded `GET /health` observation with no redirect, retry or fallback. It MUST NOT mutate lifecycle, revision, Directory or routing, or persist raw response body.
+Gateway Health/Connection Test MUST be an explicit bounded `GET /health` observation against the asset's validated HTTP-only `management_endpoint`, with no redirect, retry or fallback. The current runtime MUST NOT initiate TLS; an `https://` target MUST be rejected before the probe with zero outbound request. It MUST NOT mutate lifecycle, revision, Directory or routing, or persist raw response body.
 
 #### Scenario: Fixed observation
 
 - **WHEN** an authorized administrator runs Connection Test
 - **THEN** only the fixed probe executes and a sanitized observation is returned
+
+#### Scenario: HTTPS probe target is rejected
+
+- **WHEN** a Gateway Health or Connection Test target resolves to an `https://` management endpoint
+- **THEN** Control rejects it before the probe, issues zero outbound requests, and does not restore a TLS or dual-protocol branch
 
 ### Requirement: Gateway Retire
 
@@ -97,7 +102,7 @@ Control MUST 实现下列固定HTTP契约；不得在OpenAPI implementation时�
 | Health | GET /api/assets/gateways/{instance_id}/health | 无body，无command_id/revision | 200 ProbeResult |
 | Connection Test | POST /api/assets/gateways/{instance_id}/connection-test | 空object；无command_id/revision | 200 ProbeResult |
 
-command_id在body中为UUID；expected_revision在body中为规范正int64十进制string，范围1..9223372036854775807，response revision同型。Register没有expected_revision。path identity为UUID，body不可另传冲突identity。display_name/endpoint必须有效非null，Edit省略表示不修改；reader_secret_ref省略/显式null/合法string分别为absent/clear/set。第一版不提供operator note。Gateway无DELETE能力。revision溢出返回409 revision_exhausted且无mutation。
+command_id在body中为UUID；expected_revision在body中为规范正int64十进制string，范围1..9223372036854775807，response revision同型。Register没有expected_revision。path identity为UUID，body不可另传冲突identity。display_name/endpoint必须有效非null，`management_endpoint` 必须是 `http://` origin；`https://` 返回400 invalid_endpoint且零 outbound。Edit省略表示不修改；reader_secret_ref省略/显式null/合法string分别为absent/clear/set。第一版不提供operator note。Gateway无DELETE能力。revision溢出返回409 revision_exhausted且无mutation。
 
 Exact success bodies and receipt projection：
 
@@ -107,7 +112,7 @@ AssetResult固定字段：instance_id、lifecycle_status(active|retired)、revis
 - EditResult = {result:"updated",asset:AssetResult}。
 - RetireResult = {result:"retired",asset:AssetResult,closed_binding_count:nonnegative integer}。
 - ReplaceResult = {result:"replaced",old_asset:AssetResult,new_asset:AssetResult,closed_binding_count:nonnegative integer,lineage:{old_instance_id,new_instance_id,replaced_at,replaced_by,command_id}}。
-- ProbeResult = {instance_id,result:"healthy",observed_at:UTC timestamp}；固定GET /health、5秒总timeout，无redirect/retry/fallback、不携带reader credential、不持DB事务做network call。retired资产拒绝probe；已经授权的probe可作为独立transport observation收尾，不推进revision/Directory。
+- ProbeResult = {instance_id,result:"healthy",observed_at:UTC timestamp}；在已验证的 HTTP-only management origin 上固定GET /health、5秒总timeout，无redirect/retry/fallback、不携带reader credential、不持DB事务做network call。`https://` 在 client construction 前拒绝且零 outbound；当前runtime不发起TLS。retired资产拒绝probe；已经授权的probe可作为独立transport observation收尾，不推进revision/Directory。
 
 receipt.sanitized_result MUST 保存对应完整success body及http_status，不通过后续asset row重构。same actor/same intent replay返回原status和body（Register仍201），request_id作为本次传输错误跟踪而非旧success body字段。success audit、asset mutation、lineage、receipt同事务；audit/receipt失败全部rollback。
 
@@ -131,7 +136,7 @@ Error contract：
 | 409 | command_conflict | globally unique command_id对应actor或canonical intent不匹配 |
 | 409 | cursor_stale | Gateway集合在分页期间发生durable mutation，要求从第一页重启 |
 | 504 | probe_timeout | 实际probe超出5秒，不回滚独立asset command |
-| 502 | probe_failed | transport/TLS/non-200/redirect等固定probe失败，raw error/body不回显 |
+| 502 | probe_failed | HTTP transport/non-200/redirect等固定probe失败，raw error/body不回显；`https://` target在outbound前以400 invalid_endpoint拒绝 |
 | 503 | service_unavailable | DB、receipt key或内部依赖不可用，fail closed |
 
 Current/history reads, cursor and counts：

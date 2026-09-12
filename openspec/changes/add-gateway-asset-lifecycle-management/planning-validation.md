@@ -32,6 +32,20 @@ RESOLVED表示planning选择已冻结，不表示DDL或runtime验收通过。
 
 静态prefix已获独立Planning readiness PASS，本轮不改其artifact。Node两个skeleton未改。生产代码零修改，PG18 proof/真实binary rollback/production build都只列task，未执行。
 
+## Independent readiness review round 1
+
+P0 = 0
+P1 = 1
+P2 = 0
+
+Finding:
+Stage 1 MODIFIED Gateway Directory planning preserved historical HTTP/HTTPS wording even though the newer archived `internal-http-transport` baseline makes Control-managed Gateway Directory/management endpoints HTTP-only.
+
+Disposition:
+Compose Stage 1 with the current HTTP-only baseline. Gateway `management_endpoint`、Directory target 和 Gateway Health/Connection Test target 仅允许 `http://`；`https://` 在 metadata validation 或 client construction 阶段 fail closed、发出零个 outbound request。不得恢复 TLS、certificate skip-verify、HTTP/HTTPS toggle、dual-protocol 或 HTTPS fallback。该组合不改变 Gateway Account/upstream 或 request data-plane endpoint scheme。
+
+修订已同步 proposal、design、tasks、`asset-registry` delta、`gateway-account-directory-ingestion` delta 与 `gateway-asset-lifecycle` spec。Directory Requirement 现在由原 Gateway Directory Requirement、已归档 `internal-http-transport` baseline 和 Stage 1 lifecycle delta 完整合成；未来 implementation task 明确复用当前 `gatewaydirectory` HTTP-only validator/client，并验证 HTTPS target 在 outbound 前拒绝。
+
 ## Validation results
 
 - 四个change逐项 openspec validate --strict：PASS。
@@ -44,9 +58,17 @@ CLI语法通过不等于planning readiness批准。Artifact密钥/签名与gate�
 
 ## Scope and apply gate
 
-Implementation readiness = AWAITING REVIEW
-openspec apply = NOT AUTHORIZED
+Detailed planning = COMPLETE
+Independent readiness review = PASS
+P0 = 0
+P1 = 0
+P2 = 0
+Planning readiness = PASS / READY
+Implementation readiness = READY
+implementation workflow = AUTHORIZED AFTER EXPLICIT USER AUTHORIZATION
+openspec apply / instructions apply = NOT RUN
 Implementation = NOT STARTED
 Runtime Acceptance = NOT STARTED
+completed implementation tasks = 0
 
 顺序：planning artifacts complete -> strict PASS -> independent readiness review -> readiness PASS -> 单独授权apply -> execute implementation tasks -> evidence -> Runtime Acceptance -> archive readiness。

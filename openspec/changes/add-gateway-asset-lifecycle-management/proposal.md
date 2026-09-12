@@ -7,6 +7,7 @@ Phase 6 已批准 Gateway & Relay Node Management Detailed Requirements。当前
 - 建立共享 `asset_admin_command_receipts`、canonical intent、advisory lock、revision、reason taxonomy 和 Phase 6 compatibility gate。
 - 将 Gateway `instance_id` 提升为稳定行 identity，`singleton_id` 演进为 nullable current-slot marker。
 - 增加 Gateway Register/Edit/Retire/Replace、Health 和 `/health` Connection Test 契约。
+- 组合已归档 `internal-http-transport` baseline：Gateway management/Directory/Health target 仅允许 `http://`，`https://` 在 outbound 前 fail closed，不恢复 TLS 或 dual-protocol branch。
 - 维护 Gateway historical rows、immutable replacement lineage、binding closure 和 Directory lifecycle fencing。
 - 扩展 Asset Registry Gateway API/UI 读取与 lifecycle surface，不进入 data plane。
 

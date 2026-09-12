@@ -23,7 +23,7 @@ Control SHALL 以数据库为资产真相源，支持本环境 0..1 current acti
 - **WHEN** Control 在已有资产记录的数据库上重启
 - **THEN** Gateway 和 Node 的稳定身份、Driver 绑定及 capability 声明保持不变
 
-Gateway MUST 仅允许 active -> retired，retired terminal；stable instance_id 不可复用，active/current slot 与 lifecycle/revision shape MUST 由数据库保护。
+Gateway MUST 仅允许 active -> retired，retired terminal；stable instance_id 不可复用，active/current slot 与 lifecycle/revision shape MUST 由数据库保护。Gateway `management_endpoint` MUST 是 Control-managed HTTP-only origin；Register/Edit/Replace 遇到 `https://` MUST 在 validation 阶段拒绝并保持零 outbound request。该约束不改变 Gateway Account/upstream 或 request data-plane endpoint scheme。
 
 #### Scenario: 历史与current共存
 - **WHEN** 已有 retired Gateway，普通 Register 使用全新 identity

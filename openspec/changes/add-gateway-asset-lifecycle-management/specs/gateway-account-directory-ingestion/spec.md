@@ -32,11 +32,15 @@ Control SHALL 为唯一 current active Gateway（lifecycle_status=active 且 sin
 
 ### Requirement: Control SHALL 使用固定 HTTP fetch contract
 
-Control SHALL 以 `GET /internal/v1/api-account-directory` 通过 HTTP 或 HTTPS fetch Directory（无目标许可列表，HTTPS不验证证书），并 MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body、retryable failure 以及读取超限 MUST 先记录 attempt failure，再按 retryability 分类；raw body MUST NOT 被持久化。
+Control SHALL 仅通过 HTTP 对已配置 Gateway management/Directory endpoint 执行 `GET /internal/v1/api-account-directory`。该 endpoint MUST 使用 `http://`；`https://` MUST 在配置验证或 client construction 阶段被拒绝，且 MUST 发出零个 outbound request。Control MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body、retryable failure 以及读取超限 MUST 先记录 attempt failure，再按 retryability 分类；raw body MUST NOT 被持久化。该 internal management transport 约束不改变 Gateway Account/upstream 或 request data-plane endpoint 的 scheme。
 
 #### Scenario: 正常 fetch
-- **WHEN** Control 以HTTPS或HTTP对 `GET /internal/v1/api-account-directory` 发起带 Bearer token 的请求
+- **WHEN** Control 以 HTTP 对 `GET /internal/v1/api-account-directory` 发起带 Bearer token 的请求
 - **THEN** fetch 继续进入验证流程
+
+#### Scenario: HTTPS target被预先拒绝
+- **WHEN** Gateway management/Directory endpoint 使用 `https://`
+- **THEN** Control 在配置验证或 client construction 阶段拒绝 target，发出零个 outbound request，且不得恢复 TLS、dual-protocol 或 HTTPS fallback branch
 
 #### Scenario: redirect
 - **WHEN** Gateway 返回 redirect
