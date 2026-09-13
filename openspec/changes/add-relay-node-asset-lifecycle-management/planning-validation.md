@@ -266,10 +266,13 @@ Architecture P2 = 0
 - Independent implementation review：`PASS`（`P0=0 / P1=0 / P2=0`）；上一轮 P1-1 至
   P1-4 与 P2-1 findings 均为 `FIXED / RECONCILED`
 - Stage 2 implementation commit：`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`
+- Stage 2 closeout commit：`fab572e58743533abda889118fa1a43f2f9ce094`
 - implementation commit：`CREATED`
 - Git/worktree closeout：`COMPLETE`
 - Archive：`NOT RUN`
-- Archive readiness：`READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW`
+- Archive-readiness P2 finding：`FIXED`
+- Independent archive-readiness re-review：`AWAITING RE-REVIEW`
+- Archive readiness：`READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW`
 - Stage 3 implementation：`NOT STARTED`
 
 ### Readiness gate
@@ -288,8 +291,12 @@ Task 61 closeout evidence reconciliation = COMPLETE
 Independent implementation review = PASS (P0 = 0 / P1 = 0 / P2 = 0)
 Previous implementation findings = FIXED / RECONCILED
 Stage 2 implementation commit = ff36a39a8b41db52b84a1e3966a5f84c81c23b1d
+Stage 2 closeout commit = fab572e58743533abda889118fa1a43f2f9ce094
 Git/worktree closeout = COMPLETE
-Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
+Archive-readiness P2 finding = FIXED
+Independent archive-readiness re-review = AWAITING RE-REVIEW
+Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW
 
-最终 independent readiness review 已通过，且用户已授权 Stage 2 implementation；Stage 3
-implementation、Git closeout 与 archive 仍未授权。
+最终 independent readiness review 与 implementation re-review 已通过；Stage 2 Git/worktree
+closeout = COMPLETE。Stage 2 archive 仍为 NOT RUN / NOT AUTHORIZED；Stage 3 implementation 仍为
+NOT STARTED / NOT AUTHORIZED。
