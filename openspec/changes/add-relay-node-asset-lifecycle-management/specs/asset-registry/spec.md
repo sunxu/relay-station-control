@@ -36,6 +36,10 @@ lifecycle edit 改写。
 - **WHEN** 已有 retired Gateway，普通 Register 使用全新 identity
 - **THEN** 允许创建唯一 current active Gateway，历史 row 与 FK 保留
 
+#### Scenario: 历史与current共存
+- **WHEN** 已有 retired Gateway，普通 Register 使用全新 identity
+- **THEN** 允许创建唯一 current active Gateway，历史 row 与 FK 保留
+
 #### Scenario: Node 历史与current共存
 - **WHEN** 已有 retired Node，Register 使用全新 identity，或 Replace 以旧 Node 的 revision
   为前提创建新 identity
@@ -156,6 +160,10 @@ reads retain super_admin, no-store and DB-failure 503 behavior。
 
 #### Scenario: Gateway 历史查询
 - **WHEN** 请求 `lifecycle=retired` 的 Gateway 历史列表或 stable identity detail
+- **THEN** 只返回相应历史 projection，不复活 retired identity
+
+#### Scenario: 历史查询
+- **WHEN** 请求 lifecycle=retired 的历史列表或 stable identity detail
 - **THEN** 只返回相应历史 projection，不复活 retired identity
 
 #### Scenario: Node 游标 generation 失效

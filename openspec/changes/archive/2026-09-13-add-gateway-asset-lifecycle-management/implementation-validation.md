@@ -5,6 +5,7 @@ Validation date: 2026-09-13 (Asia/Shanghai)
 - implementation baseline: `5012757753c6392d8d1ba3d3c9d5a7e2c479cd19`
 - Stage 1 implementation commit: `d22da75e8ca49bd05bbb641592238213484ed757`
 - Stage 1 closeout commit: `58d4d1b4d3c7e6e905c5b0c180a3945cd9a5c264`
+- Stage 1 reconciliation commit: `7e106b83662517f53f7e54927ba44d88bcba8735`
 - change: `add-gateway-asset-lifecycle-management`
 - implementation: COMPLETE
 - Runtime Acceptance: PASS
@@ -15,8 +16,8 @@ Validation date: 2026-09-13 (Asia/Shanghai)
 - Task 11: COMPLETE
 - Task 42: COMPLETE
 - post-implementation-commit clean worktree verification: PASS
-- Archive readiness: READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW
-- archive: NOT RUN
+- Archive readiness: PASS / APPROVED
+- archive: COMPLETE
 - Git/worktree closeout: COMPLETE
 - implementation commit: PUSHED
 - closeout commit: PUSHED
@@ -93,4 +94,4 @@ Validation date: 2026-09-13 (Asia/Shanghai)
 
 ## Remaining gate
 
-Tasks 9、11、42均已完成；42 of 42 implementation tasks are checked。Implementation evidence、durable-truth reconciliation及post-implementation-commit clean-worktree verification均为PASS。Git/worktree closeout = COMPLETE；implementation commit与closeout commit均已PUSHED；HEAD与`origin/main`已在closeout后核对一致。Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW；Archive = NOT RUN。Stage 1 implementation commit为`d22da75e8ca49bd05bbb641592238213484ed757`，Stage 1 closeout commit为`58d4d1b4d3c7e6e905c5b0c180a3945cd9a5c264`。
+Tasks 9、11、42均已完成；42 of 42 implementation tasks are checked。Implementation evidence、durable-truth reconciliation及post-implementation-commit clean-worktree verification均为PASS。Git/worktree closeout = COMPLETE；implementation、closeout与reconciliation commits均已PUSHED；HEAD与`origin/main`已在closeout后核对一致。Archive readiness = PASS / APPROVED；Archive = COMPLETE。Stage 1 implementation commit为`d22da75e8ca49bd05bbb641592238213484ed757`，Stage 1 closeout commit为`58d4d1b4d3c7e6e905c5b0c180a3945cd9a5c264`，Stage 1 reconciliation commit为`7e106b83662517f53f7e54927ba44d88bcba8735`。

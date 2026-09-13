@@ -122,6 +122,14 @@ Node→Gateway→Directory→binding 顺序产生反向加锁死锁。
 - **WHEN** Bind/Rebind先commit
 - **THEN** Gateway lifecycle随后关闭该binding，最终无retired+current binding
 
+#### Scenario: lifecycle先commit
+- **WHEN** Gateway Retire/Replace先持Gateway锁并commit
+- **THEN** 并发Bind/Rebind等待后conflict，不产生current binding
+
+#### Scenario: binding先commit
+- **WHEN** Bind/Rebind先commit
+- **THEN** Gateway lifecycle随后关闭该binding，最终无retired+current binding
+
 #### Scenario: Node lifecycle先commit
 - **WHEN** Node Retire/Replace先持Node锁并commit lifecycle_status=retired
 - **THEN** 并发Bind/Rebind在验证`lifecycle_status = active`时失败并返回conflict，不产生

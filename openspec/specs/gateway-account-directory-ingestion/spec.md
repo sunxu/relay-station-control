@@ -15,7 +15,7 @@ Control SHALL 将 Directory 相关持久状态划分为三个互相独立的逻�
 
 ### Requirement: Control SHALL 按 epoch-aligned 180s slot 轮询 Directory 并记录每次结果
 
-Control SHALL 为每个已登记 Gateway 以 epoch-aligned 的 180 秒 slot 触发 Directory ingestion run。`scheduled_at` MUST 等于该 epoch-aligned slot，且 `(gateway_instance_id, scheduled_at)` MUST 唯一。每次轮询 MUST 持久化一条 ingestion result；成功、失败、未变化、恢复、超时和重试都 MUST 形成可恢复的 run 证据。重复 scheduler tick 或重启遇到同一 slot MUST 复用已有 run，不得创建第二条。Control MUST NOT 为同一 Gateway 并发保留多个 active ingestion run，也 MUST NOT backfill 从未实际创建过的历史 slot。
+Control SHALL 为唯一 current active Gateway（lifecycle_status=active 且 singleton_id=1） 以 epoch-aligned 的 180 秒 slot 触发 Directory ingestion run。`scheduled_at` MUST 等于该 epoch-aligned slot，且 `(gateway_instance_id, scheduled_at)` MUST 唯一。每次轮询 MUST 持久化一条 ingestion result；成功、失败、未变化、恢复、超时和重试都 MUST 形成可恢复的 run 证据。重复 scheduler tick 或重启遇到同一 slot MUST 复用已有 run，不得创建第二条。Control MUST NOT 为同一 Gateway 并发保留多个 active ingestion run，也 MUST NOT backfill 从未实际创建过的历史 slot。
 
 #### Scenario: 到达下一个轮询槽
 - **WHEN** 某 Gateway 的下一轮 epoch-aligned 180 秒 slot 到达
@@ -36,6 +36,12 @@ Control SHALL 为每个已登记 Gateway 以 epoch-aligned 的 180 秒 slot 触�
 #### Scenario: 停机期间错过一个 cadence
 - **WHEN** Control 在某个 180 秒槽期间停机，且该槽没有实际执行 worker
 - **THEN** Control 重启后只能恢复已创建的 non-terminal run，不能伪造或回填该历史槽的 Directory observation，并从当前 cadence 继续
+
+所有正常 fetch/re-fetch eligibility MUST 为同一个 source Gateway active 且 singleton_id=1；run.gateway_instance_id 必须匹配。Retire/Replace commit 后不得授权新的 outbound；已授权并发生的有界 transport evidence 可保留，promotion 仍必须独立重查。固定 cadence、retry预算、严格 response/source-time 验证不变。
+
+#### Scenario: 零current Gateway
+- **WHEN** 不存在 current active Gateway
+- **THEN** 不创建 normal ingestion run，历史 run 仍可读
 
 ### Requirement: Control SHALL 受固定执行预算约束
 
@@ -80,6 +86,12 @@ Control SHALL 将以下情况视为 retryable：transport/network failure、time
 #### Scenario: Secret unavailable
 - **WHEN** SecretResolver 无法解析现有 reference
 - **THEN** Control 视为 non-retryable 并直接 failed
+
+gateway_retired 与 gateway_replaced MUST 是 non-retryable lifecycle failure；不得因既有 retry budget 尚有余量而重启 old fetch。
+
+#### Scenario: 退休不重试
+- **WHEN** attempt被 lifecycle fence否决
+- **THEN** terminal failed，固定 lifecycle failure code，零重试
 
 ### Requirement: Control SHALL 对整个 Directory 响应做 fail-closed 验证
 
@@ -171,11 +183,15 @@ Control SHALL 以 `schema_version` 加上按 `id` 升序排列的 `id`、`name`�
 
 ### Requirement: Control SHALL 使用固定 HTTP fetch contract
 
-Control SHALL 以 `GET /internal/v1/api-account-directory` 通过 HTTP 或 HTTPS fetch Directory（无目标许可列表，HTTPS不验证证书），并 MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body、retryable failure 以及读取超限 MUST 先记录 attempt failure，再按 retryability 分类；raw body MUST NOT 被持久化。
+Control SHALL 仅通过 HTTP 对已配置 Gateway management/Directory endpoint 执行 `GET /internal/v1/api-account-directory`。该 endpoint MUST 使用 `http://`；`https://` MUST 在配置验证或 client construction 阶段被拒绝，且 MUST 发出零个 outbound request。Control MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body、retryable failure 以及读取超限 MUST 先记录 attempt failure，再按 retryability 分类；raw body MUST NOT 被持久化。该 internal management transport 约束不改变 Gateway Account/upstream 或 request data-plane endpoint 的 scheme。
 
 #### Scenario: 正常 fetch
-- **WHEN** Control 以HTTPS或HTTP对 `GET /internal/v1/api-account-directory` 发起带 Bearer token 的请求
+- **WHEN** Control 以 HTTP 对 `GET /internal/v1/api-account-directory` 发起带 Bearer token 的请求
 - **THEN** fetch 继续进入验证流程
+
+#### Scenario: HTTPS target被预先拒绝
+- **WHEN** Gateway management/Directory endpoint 使用 `https://`
+- **THEN** Control 在配置验证或 client construction 阶段拒绝 target，发出零个 outbound request，且不得恢复 TLS、dual-protocol 或 HTTPS fallback branch
 
 #### Scenario: redirect
 - **WHEN** Gateway 返回 redirect
@@ -188,6 +204,12 @@ Control SHALL 以 `GET /internal/v1/api-account-directory` 通过 HTTP 或 HTTPS
 #### Scenario: 账号数超限
 - **WHEN** `accounts` 数量超过 10,000
 - **THEN** Control 整轮 rejected/failed，不保存 raw body
+
+所有正常 fetch/re-fetch eligibility MUST 为同一个 source Gateway active 且 singleton_id=1；run.gateway_instance_id 必须匹配。Retire/Replace commit 后不得授权新的 outbound；已授权并发生的有界 transport evidence 可保留，promotion 仍必须独立重查。固定 cadence、retry预算、严格 response/source-time 验证不变。
+
+#### Scenario: Retire先于fetch
+- **WHEN** run 尚未 outbound，Gateway Retire 已 commit
+- **THEN** 无 HTTP call，run terminal non-success，不 promotion、不刷新freshness
 
 ### Requirement: Control SHALL 用 last_success_received_at 计算 freshness，失败不得刷新
 
@@ -213,6 +235,12 @@ Control SHALL 只使用 Control DB 的 `last_success_received_at` 计算 freshne
 - **WHEN** 同一 durable run 在允许重试窗口内的最终 attempt 成功提交
 - **THEN** 只有这次最终成功提交刷新 `last_success_received_at`
 
+Finalize/promotion MUST 先锁 source Gateway row 并重查 lifecycle_status=active、singleton_id=1、run source identity 匹配，再取得 DB time 并按原 fencing/lease/strict validation 提交。若已 retired/replaced，MUST NOT promote、刷新 freshness 或改 current pointer；run 以 failed 和 gateway_retired/gateway_replaced 固定 non-retryable classification 收敛，既有 immutable terminal evidence 不重写。新 Gateway 的 current snapshot、last_success_received_at、last_source_generated_at 完全独立。
+
+#### Scenario: Replace独立freshness
+- **WHEN** old -> new Replace commit
+- **THEN** new freshness unknown，current pointer 和 last_success_received_at 不继承 old
+
 ### Requirement: Control SHALL 冻结 current state 的写入时钟
 
 Control SHALL 在 finalize transaction 中以 PostgreSQL DB time 记录 `received_at` 候选值。只有成功提交的 attempt 才能写入 `last_success_received_at`；失败 attempt、timeout、validation reject、partial body 或被 lease/fencing 否决的 attempt MUST NOT 写入该值。`generated_at` 的 backward-skew MUST 只与上一条成功的 `last_source_generated_at` 比较；首次成功观察 MUST NOT 执行 backward comparison，但仍 MUST 正常写入 `last_source_generated_at`、`last_success_received_at` 并按内容创建或复用 snapshot/current pointer。
@@ -233,13 +261,23 @@ Control SHALL 在 finalize transaction 中以 PostgreSQL DB time 记录 `receive
 - **WHEN** stale Gateway 随后再次成功返回合法 Directory
 - **THEN** Control 更新 `last_success_received_at` 并将 freshness 恢复为 fresh
 
+Finalize/promotion MUST 先锁 source Gateway row 并重查 lifecycle_status=active、singleton_id=1、run source identity 匹配，再取得 DB time 并按原 fencing/lease/strict validation 提交。若已 retired/replaced，MUST NOT promote、刷新 freshness 或改 current pointer；run 以 failed 和 gateway_retired/gateway_replaced 固定 non-retryable classification 收敛，既有 immutable terminal evidence 不重写。新 Gateway 的 current snapshot、last_success_received_at、last_source_generated_at 完全独立。
+
+#### Scenario: Retire先于promotion
+- **WHEN** HTTP已发生，Retire先取得Gateway锁并commit
+- **THEN** 保留有界transport evidence，拒绝promotion/current pointer/freshness更新
+
+#### Scenario: promotion先于Retire
+- **WHEN** promotion先持Gateway锁并commit
+- **THEN** 已提交snapshot保留为old历史，Retire随后阻止未来promotion
+
 ### Requirement: Control SHALL 在恢复、幂等和回写未知结果时保持单份真相
 
-Control SHALL 为 ingestion run 使用 lease/fencing、数据库短事务和幂等结果写入，确保同一轮轮询只产生一次有效 success 或 failure 结论。commit 前丢失的内存响应不可重放；若同一 durable run 仍满足 retry 条件，Control MUST 复用同一 run 发起新的 fenced re-fetch attempt；否则该 run MUST 终结为 failed。unknown commit 只能通过幂等键、唯一约束和 fencing 判定，不得重建内存结果。任何失败恢复都 MUST 保留 current pointer、freshness 和已提交 snapshot 不变。
+Control SHALL 为 ingestion run 使用 lease/fencing、数据库短事务和幂等结果写入，确保同一轮轮询只产生一次有效 success 或 failure 结论。commit 前丢失的内存响应不可重放；若同一 durable run 仍满足 active/current eligibility 与 retry 条件，Control MUST 复用同一 run 发起新的 fenced re-fetch attempt；否则该 run MUST 终结为 failed。unknown commit 只能通过幂等键、唯一约束和 fencing 判定，不得重建内存结果。任何失败恢复都 MUST 保留 current pointer、freshness 和已提交 snapshot 不变。
 
 #### Scenario: worker 在提交前崩溃
 - **WHEN** worker 已完成验证但在持久化前崩溃
-- **THEN** 内存中的 response 不可重放；lease 到期后若同一 durable run 仍满足 retry 条件则进行新的 fenced re-fetch attempt，否则将该 run 终结为 failed
+- **THEN** 内存中的 response 不可重放；lease 到期后若同一 durable run 仍满足 active/current eligibility 与 retry 条件则进行新的 fenced re-fetch attempt，否则将该 run 终结为 failed
 
 #### Scenario: 旧 fencing token 回写
 - **WHEN** 旧 worker 使用过期 fencing token 尝试写回
@@ -251,15 +289,21 @@ Control SHALL 为 ingestion run 使用 lease/fencing、数据库短事务和幂�
 
 #### Scenario: commit 前丢失内存响应
 - **WHEN** worker 在持久化前丢失内存中的 Directory response
-- **THEN** 该 response 不可被重放；若同一 durable run 仍满足 retry 条件，则发起新的 fenced re-fetch attempt，否则该 run 终结为 failed
+- **THEN** 该 response 不可被重放；若同一 durable run 仍满足 active/current eligibility 与 retry 条件，则发起新的 fenced re-fetch attempt，否则该 run 终结为 failed
 
 #### Scenario: lease 过期且仍可重试
-- **WHEN** durable run 的 lease 已过期，但仍在允许重试窗口内
+- **WHEN** durable run 的 lease 已过期，但仍在允许重试窗口内且 source Gateway active/current
 - **THEN** Control 复用同一 run 进行新的 fenced re-fetch attempt
 
 #### Scenario: lease 过期且不可再试
 - **WHEN** durable run 的 lease 已过期且已超出允许重试窗口
 - **THEN** 该 run 终结为失败，不得继续拉取该历史 slot
+
+所有正常 fetch/re-fetch eligibility MUST 为同一个 source Gateway active 且 singleton_id=1；run.gateway_instance_id 必须匹配。Retire/Replace commit 后不得授权新的 outbound；已授权并发生的有界 transport evidence 可保留，promotion 仍必须独立重查。固定 cadence、retry预算、严格 response/source-time 验证不变。
+
+#### Scenario: replacement后stale worker
+- **WHEN** 旧worker恢复或持旧token回写
+- **THEN** 不得retarget到new；old不fetch、不promotion、不刷新freshness
 
 ### Requirement: Control SHALL 仅保存 Secret reference 且不得泄露 raw response
 

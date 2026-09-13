@@ -123,6 +123,10 @@ Stage 3 MUST 增加 `GET /api/assets/nodes/{instance_id}/health`（无body、无
 - **WHEN** 请求 `lifecycle=retired` 的 Gateway 历史列表或 stable identity detail
 - **THEN** 只返回相应历史 projection，不复活 retired identity
 
+#### Scenario: 历史查询
+- **WHEN** 请求 lifecycle=retired 的历史列表或 stable identity detail
+- **THEN** 只返回相应历史 projection，不复活 retired identity
+
 #### Scenario: Node 游标 generation 失效
 - **WHEN** 分页过程中 `node_registry_generation` 因 Node lifecycle mutation 或监控 current-state
   变化而前进
