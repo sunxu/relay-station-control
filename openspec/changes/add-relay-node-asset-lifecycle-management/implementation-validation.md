@@ -16,12 +16,13 @@
 - Independent implementation review: PASS
 - Implementation review findings: P0 = 0 / P1 = 0 / P2 = 0
 - Previous review findings: P1-1 through P1-4 and P2-1 are FIXED; independent implementation re-review = PASS
-- completed implementation tasks: 66 / 67
-- Task 61: UNBLOCKED / NOT COMPLETED
+- completed implementation tasks: 67 / 67
+- Task 61: COMPLETE
 - Task 61 closeout evidence reconciliation: COMPLETE
-- Git/worktree closeout: IN PROGRESS / AUTHORIZED
-- Archive readiness: PENDING GIT CLOSEOUT
-- git add / commit / push: NOT RUN
+- Stage 2 implementation commit: `ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`
+- implementation commit: CREATED
+- Git/worktree closeout: COMPLETE
+- Archive readiness: READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
 - Archive: NOT RUN
 - Stage 3 implementation: NOT STARTED
 
@@ -140,6 +141,8 @@ their affected implementation and acceptance reruns.
 
 ## Remaining gate
 
-Task 61 closeout evidence reconciliation is complete. Independent implementation re-review passed;
-the checkbox remains open while the now-authorized Git/worktree reconciliation is in progress.
-Archive readiness is PENDING GIT CLOSEOUT. No archive command was run.
+Task 61 is complete. Independent implementation re-review passed, approved-scope reconciliation
+and Runtime Acceptance evidence are complete, and implementation commit
+`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d` was followed by a clean-worktree check, strict
+OpenSpec validation (28 passed / 0 failed), and `git diff --check` PASS. Archive readiness is READY
+FOR INDEPENDENT ARCHIVE-READINESS REVIEW. No archive command was run.

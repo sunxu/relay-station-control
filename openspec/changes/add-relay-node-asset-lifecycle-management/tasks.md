@@ -224,7 +224,7 @@ readiness 当前为 PENDING GIT CLOSEOUT。
 - [x] 59. 运行 `make test build`，处理失败时只增加明确的小任务并重新验证（≤2h）。
 - [x] 60. 更新 OpenAPI/runbook/compatibility evidence、migration reconciliation 和
   implementation task completion ledger（≤2h）。
-- [ ] 61. 执行 `openspec validate --strict`、heading comparison、Stage1+Stage2 overlapping
+- [x] 61. 执行 `openspec validate --strict`、heading comparison、Stage1+Stage2 overlapping
   MODIFIED Requirement 语义合成校验（baseline + Stage1 delta + Stage2 delta 手工复核为完整
   Requirement，Gateway lifecycle 内容未被 Node delta 覆盖或收窄）。对每个 MODIFIED
   Requirement 逐项验证：exact Requirement title matches baseline；baseline normative body
@@ -237,9 +237,9 @@ readiness 当前为 PENDING GIT CLOSEOUT。
   reconciliation 完成、Runtime Acceptance evidence 就绪，提交 archive readiness awaiting
   review evidence（≤2h）。
 
-当前 completed implementation tasks = 66 / 67；Implementation = COMPLETE；
+当前 completed implementation tasks = 67 / 67；Implementation = COMPLETE；
 Runtime Acceptance = PASS；Independent implementation review = PASS（P0=0 / P1=0 / P2=0）；
 previous implementation findings = FIXED / RECONCILED。Task 61 closeout evidence reconciliation =
-COMPLETE；Task 61 = UNBLOCKED / NOT COMPLETED；Git/worktree closeout = IN PROGRESS / AUTHORIZED；
-git add / commit / push = NOT RUN；Archive = NOT RUN；Archive readiness =
-PENDING GIT CLOSEOUT。
+COMPLETE；Task 61 = COMPLETE；Stage 2 implementation commit =
+`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`；Git/worktree closeout = COMPLETE；Archive = NOT RUN；
+Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW。

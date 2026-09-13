@@ -260,15 +260,16 @@ Architecture P2 = 0
 - production code changed：`true`，仅 Stage 2 frozen ownership
 - Implementation：`COMPLETE`
 - Runtime Acceptance：`PASS`
-- completed implementation tasks：`66 / 67`
-- Task 61：`UNBLOCKED / NOT COMPLETED`
+- completed implementation tasks：`67 / 67`
+- Task 61：`COMPLETE`
 - Task 61 closeout evidence reconciliation：`COMPLETE`
 - Independent implementation review：`PASS`（`P0=0 / P1=0 / P2=0`）；上一轮 P1-1 至
   P1-4 与 P2-1 findings 均为 `FIXED / RECONCILED`
-- Git/worktree closeout：`IN PROGRESS / AUTHORIZED`
-- git add / commit / push：`NOT RUN`
+- Stage 2 implementation commit：`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`
+- implementation commit：`CREATED`
+- Git/worktree closeout：`COMPLETE`
 - Archive：`NOT RUN`
-- Archive readiness：`PENDING GIT CLOSEOUT`
+- Archive readiness：`READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW`
 - Stage 3 implementation：`NOT STARTED`
 
 ### Readiness gate
@@ -281,13 +282,14 @@ Independent architecture re-review = PASS (P0=0 / P1=0 / P2=0)
 openspec instructions apply = RUN FOR STAGE 2 ONLY
 Implementation = COMPLETE
 Runtime Acceptance = PASS
-completed implementation tasks = 66 / 67
-Task 61 = UNBLOCKED / NOT COMPLETED
+completed implementation tasks = 67 / 67
+Task 61 = COMPLETE
 Task 61 closeout evidence reconciliation = COMPLETE
 Independent implementation review = PASS (P0 = 0 / P1 = 0 / P2 = 0)
 Previous implementation findings = FIXED / RECONCILED
-Git/worktree closeout = IN PROGRESS / AUTHORIZED
-Archive readiness = PENDING GIT CLOSEOUT
+Stage 2 implementation commit = ff36a39a8b41db52b84a1e3966a5f84c81c23b1d
+Git/worktree closeout = COMPLETE
+Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
 
 最终 independent readiness review 已通过，且用户已授权 Stage 2 implementation；Stage 3
 implementation、Git closeout 与 archive 仍未授权。
