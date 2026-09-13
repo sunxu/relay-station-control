@@ -17,10 +17,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// TestSupportedWrapperAgainstFloorOnePG18 exercises the supported deployment
+// TestSupportedWrapperAgainstFloorTwoPG18 exercises the supported deployment
 // wrapper, not just the gate package. It uses an isolated database and an
 // executable release artifact so a rejected class can be proven not to start.
-func TestSupportedWrapperAgainstFloorOnePG18(t *testing.T) {
+func TestSupportedWrapperAgainstFloorTwoPG18(t *testing.T) {
 	ctx := context.Background()
 	base := os.Getenv("CONTROL_DATABASE_TEST_URL")
 	if base == "" {
@@ -138,26 +138,34 @@ func TestSupportedWrapperAgainstFloorOnePG18(t *testing.T) {
 	if _, err := os.Stat(started); !os.IsNotExist(err) {
 		t.Fatal("artifact executed with missing floor-one marker")
 	}
-	if _, err := floorDB.Exec(ctx, `INSERT INTO public.control_runtime_compatibility(singleton_id,schema_version,phase6_evidence_floor) VALUES(1,1,1); ALTER TABLE public.control_runtime_compatibility ENABLE TRIGGER USER`); err != nil {
+	if _, err := floorDB.Exec(ctx, `INSERT INTO public.control_runtime_compatibility(singleton_id,schema_version,phase6_evidence_floor) VALUES(1,1,2); ALTER TABLE public.control_runtime_compatibility ENABLE TRIGGER USER`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := floorDB.Exec(ctx, `ALTER TABLE public.control_runtime_compatibility DISABLE TRIGGER USER; ALTER TABLE public.control_runtime_compatibility DROP CONSTRAINT control_runtime_compatibility_schema_version_check; UPDATE public.control_runtime_compatibility SET schema_version=2`); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := check(1, databaseURL); err == nil {
-		t.Fatalf("malformed floor-one marker unexpectedly accepted: %s", output)
+	if output, err := check(2, databaseURL); err == nil {
+		t.Fatalf("malformed floor-two marker unexpectedly accepted: %s", output)
 	} else if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != ExitIncompatible {
 		t.Fatalf("malformed marker exit=%v output=%s", err, output)
 	}
 	if _, err := floorDB.Exec(ctx, `UPDATE public.control_runtime_compatibility SET schema_version=1; ALTER TABLE public.control_runtime_compatibility ADD CONSTRAINT control_runtime_compatibility_schema_version_check CHECK(schema_version=1); ALTER TABLE public.control_runtime_compatibility ENABLE TRIGGER USER`); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := run(1, databaseURL); runtime.GOOS == "linux" {
+	if output, err := run(1, databaseURL); err == nil {
+		t.Fatalf("class one unexpectedly started at floor two: %s", output)
+	} else if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != ExitIncompatible {
+		t.Fatalf("class one at floor two exit=%v output=%s", err, output)
+	}
+	if _, err := os.Stat(started); !os.IsNotExist(err) {
+		t.Fatal("class-one artifact executed at floor two")
+	}
+	if output, err := run(2, databaseURL); runtime.GOOS == "linux" {
 		if err != nil {
-			t.Fatalf("class one wrapper start: %v output=%s", err, output)
+			t.Fatalf("class two wrapper start: %v output=%s", err, output)
 		}
 		if _, err := os.Stat(started); err != nil {
-			t.Fatalf("class-one artifact was not executed: %v", err)
+			t.Fatalf("class-two artifact was not executed: %v", err)
 		}
 	} else {
 		exit, ok := err.(*exec.ExitError)
@@ -168,7 +176,7 @@ func TestSupportedWrapperAgainstFloorOnePG18(t *testing.T) {
 			t.Fatal("artifact executed on an unsupported descriptor-exec platform")
 		}
 	}
-	if output, err := run(1, "postgres://unavailable.invalid/test"); err == nil {
+	if output, err := run(2, "postgres://unavailable.invalid/test"); err == nil {
 		t.Fatalf("unavailable database unexpectedly passed: %s", output)
 	} else if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != ExitDatabaseUnavailable {
 		t.Fatalf("unavailable database exit=%v output=%s", err, output)
@@ -179,7 +187,7 @@ func TestSupportedWrapperAgainstFloorOnePG18(t *testing.T) {
 
 	// The supported Compose path verifies the immutable OCI manifest digest
 	// before invoking Docker and passes the exact digest-qualified image.
-	if err := os.WriteFile(manifestPath, signedManifest(t, private, digestText, 1), 0o600); err != nil {
+	if err := os.WriteFile(manifestPath, signedManifest(t, private, digestText, 2), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fakeBin := filepath.Join(temporary, "bin")

@@ -610,15 +610,20 @@ func (q *Queries) LockGatewayDirectoryCurrentState(ctx context.Context, gatewayI
 }
 
 const lockRelayNodeAssetForBinding = `-- name: LockRelayNodeAssetForBinding :one
-SELECT instance_id
+SELECT instance_id, lifecycle_status
 FROM relay_node_assets
 WHERE instance_id = $1::uuid
 FOR UPDATE
 `
 
-func (q *Queries) LockRelayNodeAssetForBinding(ctx context.Context, instanceID pgtype.UUID) (pgtype.UUID, error) {
+type LockRelayNodeAssetForBindingRow struct {
+	InstanceID      pgtype.UUID `json:"instance_id"`
+	LifecycleStatus string      `json:"lifecycle_status"`
+}
+
+func (q *Queries) LockRelayNodeAssetForBinding(ctx context.Context, instanceID pgtype.UUID) (LockRelayNodeAssetForBindingRow, error) {
 	row := q.db.QueryRow(ctx, lockRelayNodeAssetForBinding, instanceID)
-	var instance_id pgtype.UUID
-	err := row.Scan(&instance_id)
-	return instance_id, err
+	var i LockRelayNodeAssetForBindingRow
+	err := row.Scan(&i.InstanceID, &i.LifecycleStatus)
+	return i, err
 }

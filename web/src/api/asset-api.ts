@@ -5,6 +5,7 @@ import {
   getNodeAsset,
   listNodeAssets,
   listNodeDrivers,
+  registerNodeAsset, editNodeAsset, retireNodeAsset, replaceNodeAsset,
 } from "./generated/control";
 import type {
   CurrentProviderInventoryPolicyResponse,
@@ -15,6 +16,7 @@ import type {
   NodeAssetListResponse,
   NodeCapability,
   NodeDriverListResponse,
+  NodeAssetDetailResponse,
 } from "./generated/control";
 import { AssetApiError } from "./asset-types";
 import type {
@@ -27,6 +29,7 @@ import type {
   NodeAsset,
   NodeFilters,
   NodePage,
+  NodeDetail,
   ProviderPolicyState,
 } from "./asset-types";
 
@@ -70,10 +73,24 @@ function mapNode(value: GeneratedNodeAsset): NodeAsset {
     managementEndpoint: value.management_endpoint,
     secretConfigured: value.secret_configured,
     capabilities: [...value.capabilities],
-    monitoringActive: value.monitoring.active,
+    monitoringActive: value.monitoring.monitoring_active,
     monitoringEffectiveFrom: value.monitoring.effective_from ?? null,
     monitoringEffectiveTo: value.monitoring.effective_to ?? null,
+    lifecycleStatus: value.lifecycle_status,
+    revision: value.revision,
+    retiredAt: value.retired_at ?? null,
+    retiredBy: value.retired_by ?? null,
+    retireReason: value.retire_reason ?? null,
   };
+}
+
+function mapNodeDetail(value: NodeAssetDetailResponse): NodeDetail {
+  const lineage = (item: NodeAssetDetailResponse["predecessor"]) => item ? {
+    oldInstanceId: item.old_instance_id,
+    newInstanceId: item.new_instance_id,
+    replacedAt: item.replaced_at,
+  } : null;
+  return { asset: mapNode(value.asset), predecessor: lineage(value.predecessor), successor: lineage(value.successor) };
 }
 
 export const generatedAssetApi: AssetApi = {
@@ -95,12 +112,17 @@ export const generatedAssetApi: AssetApi = {
       node_type: filters.nodeType,
       capability: filters.capability as NodeCapability | undefined,
       monitoring_active: filters.monitoringActive,
+      lifecycle: filters.lifecycle,
     }, requestOptions));
     return { items: response.items.map(mapNode), nextCursor: response.next_cursor ?? null };
   },
 
   async node(instanceId: string) {
-    return mapNode(unwrap<GeneratedNodeAsset>(await getNodeAsset(instanceId, requestOptions)));
+    return mapNodeDetail(unwrap<NodeAssetDetailResponse>(await getNodeAsset(instanceId, requestOptions))).asset;
+  },
+
+  async nodeDetail(instanceId: string) {
+    return mapNodeDetail(unwrap<NodeAssetDetailResponse>(await getNodeAsset(instanceId, requestOptions)));
   },
 
   async drivers(): Promise<DriverAsset[]> {
@@ -133,4 +155,8 @@ export const generatedAssetApi: AssetApi = {
       },
     } : { status: "not_configured", policy: null };
   },
+  async registerNode(data, csrf) { unwrap(await registerNodeAsset(data, {...requestOptions, headers:{"X-CSRF-Token":csrf}})); },
+  async editNode(id, data, csrf) { unwrap(await editNodeAsset(id,data,{...requestOptions,headers:{"X-CSRF-Token":csrf}})); },
+  async retireNode(id,data,csrf) { unwrap(await retireNodeAsset(id,data,{...requestOptions,headers:{"X-CSRF-Token":csrf}})); },
+  async replaceNode(id,data,csrf) { unwrap(await replaceNodeAsset(id,data,{...requestOptions,headers:{"X-CSRF-Token":csrf}})); },
 };

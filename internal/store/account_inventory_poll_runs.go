@@ -224,6 +224,7 @@ type pollDuplicateEvidence struct {
 }
 
 type InventoryPollRepository struct {
+	pool    *pgxpool.Pool
 	queries *generated.Queries
 }
 
@@ -233,7 +234,26 @@ func NewInventoryPollRepository(pool *pgxpool.Pool) (*InventoryPollRepository, e
 	if pool == nil {
 		return nil, errors.New("store: account inventory poll database is unavailable")
 	}
-	return &InventoryPollRepository{queries: generated.New(pool)}, nil
+	return &InventoryPollRepository{pool: pool, queries: generated.New(pool)}, nil
+}
+
+func (repository *InventoryPollRepository) AuthorizeDispatch(ctx context.Context, request inventorypoll.DispatchAuthorizationRequest) (inventorypoll.DispatchAuthorization, error) {
+	if request.PollRunID == uuid.Nil || request.FencingToken == uuid.Nil || request.Attempt < 1 || request.RequestTimeout <= 0 {
+		return inventorypoll.DispatchAuthorization{}, ErrInvalidPollRunInput
+	}
+	var leaseSeconds, graceSeconds float64
+	err := repository.pool.QueryRow(ctx,
+		`SELECT lease_remaining_seconds, grace_remaining_seconds
+		 FROM control_authorize_account_inventory_poll_dispatch($1,$2,$3)`,
+		request.PollRunID, request.Attempt, request.FencingToken,
+	).Scan(&leaseSeconds, &graceSeconds)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return inventorypoll.DispatchAuthorization{}, ErrPollRunLeaseLost
+	}
+	if err != nil {
+		return inventorypoll.DispatchAuthorization{}, err
+	}
+	return inventorypoll.DispatchAuthorization{LeaseRemaining: time.Duration(leaseSeconds * float64(time.Second)), GraceRemaining: time.Duration(graceSeconds * float64(time.Second))}, nil
 }
 
 func (repository *InventoryPollRepository) ScheduleCurrent(

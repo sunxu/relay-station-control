@@ -72,7 +72,7 @@ type assetReadMetricKey struct {
 	result    AssetReadResult
 }
 
-type assetOperationMetricKey struct{ action, result string }
+type assetOperationMetricKey struct{ assetType, action, result string }
 
 // AssetMetrics exposes only closed enum methods, so request and asset values can
 // never become Prometheus labels.
@@ -104,7 +104,19 @@ func (metrics *AssetMetrics) RecordGatewayMutation(action, result string) {
 		return
 	}
 	metrics.mu.Lock()
-	metrics.mutations[assetOperationMetricKey{action, result}]++
+	metrics.mutations[assetOperationMetricKey{"gateway", action, result}]++
+	metrics.mu.Unlock()
+}
+
+func (metrics *AssetMetrics) RecordNodeMutation(action, result string) {
+	if action != "register" && action != "edit" && action != "retire" && action != "replace" {
+		return
+	}
+	if result != "success" && result != "replay" && result != "conflict" && result != "invalid" && result != "unavailable" {
+		return
+	}
+	metrics.mu.Lock()
+	metrics.mutations[assetOperationMetricKey{"node", action, result}]++
 	metrics.mu.Unlock()
 }
 
@@ -116,7 +128,7 @@ func (metrics *AssetMetrics) RecordGatewayProbe(action, result string) {
 		return
 	}
 	metrics.mu.Lock()
-	metrics.probes[assetOperationMetricKey{action, result}]++
+	metrics.probes[assetOperationMetricKey{"gateway", action, result}]++
 	metrics.mu.Unlock()
 }
 
@@ -158,14 +170,14 @@ func (metrics *AssetMetrics) snapshot() []assetMetricSample {
 		samples = append(samples, assetMetricSample{name: "relay_control_asset_reads_total", labels: []string{string(key.operation), string(key.result)}, value: float64(count), valueType: prometheus.CounterValue})
 	}
 	for key, count := range metrics.mutations {
-		samples = append(samples, assetMetricSample{name: "control_asset_mutation_total", labels: []string{"gateway", key.action, key.result}, value: float64(count), valueType: prometheus.CounterValue})
+		samples = append(samples, assetMetricSample{name: "control_asset_mutation_total", labels: []string{key.assetType, key.action, key.result}, value: float64(count), valueType: prometheus.CounterValue})
 	}
 	for key, count := range metrics.probes {
 		name := "control_asset_health_total"
 		if key.action == "connection_test" {
 			name = "control_asset_connection_test_total"
 		}
-		samples = append(samples, assetMetricSample{name: name, labels: []string{"gateway", key.result}, value: float64(count), valueType: prometheus.CounterValue})
+		samples = append(samples, assetMetricSample{name: name, labels: []string{key.assetType, key.result}, value: float64(count), valueType: prometheus.CounterValue})
 	}
 	sort.Slice(samples, func(i, j int) bool {
 		if samples[i].name != samples[j].name {

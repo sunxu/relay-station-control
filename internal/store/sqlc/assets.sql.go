@@ -205,6 +205,11 @@ SELECT
     node.driver_contract_version,
     node.management_endpoint,
     COALESCE(node.reader_secret_configured, false)::boolean AS secret_configured,
+    node.lifecycle_status,
+    node.revision,
+    node.retired_at,
+    node.retired_by,
+    node.retire_reason,
     COALESCE(
         (
             SELECT array_agg(capability.capability ORDER BY capability.capability)::text[]
@@ -227,7 +232,7 @@ LEFT JOIN LATERAL (
         (CASE WHEN count(*) = 1 THEN min(activation.effective_to) END)::timestamptz AS effective_to
     FROM relay_node_inventory_monitoring_activations AS activation
     WHERE activation.instance_id = node.instance_id
-      AND CURRENT_TIMESTAMP <@ activation.active_range
+      AND transaction_timestamp() <@ activation.active_range
 ) AS monitoring ON true
 WHERE node.instance_id = $1
 `
@@ -239,6 +244,11 @@ type GetNodeAssetRow struct {
 	DriverContractVersion   string             `json:"driver_contract_version"`
 	ManagementEndpoint      string             `json:"management_endpoint"`
 	SecretConfigured        bool               `json:"secret_configured"`
+	LifecycleStatus         string             `json:"lifecycle_status"`
+	Revision                int64              `json:"revision"`
+	RetiredAt               pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy               pgtype.UUID        `json:"retired_by"`
+	RetireReason            pgtype.Text        `json:"retire_reason"`
 	Capabilities            []string           `json:"capabilities"`
 	MonitoringActive        bool               `json:"monitoring_active"`
 	MonitoringMatchCount    int64              `json:"monitoring_match_count"`
@@ -258,6 +268,11 @@ func (q *Queries) GetNodeAsset(ctx context.Context, instanceID pgtype.UUID) (Get
 		&i.DriverContractVersion,
 		&i.ManagementEndpoint,
 		&i.SecretConfigured,
+		&i.LifecycleStatus,
+		&i.Revision,
+		&i.RetiredAt,
+		&i.RetiredBy,
+		&i.RetireReason,
 		&i.Capabilities,
 		&i.MonitoringActive,
 		&i.MonitoringMatchCount,
@@ -269,6 +284,48 @@ func (q *Queries) GetNodeAsset(ctx context.Context, instanceID pgtype.UUID) (Get
 	return i, err
 }
 
+const getNodeLifecycleCounts = `-- name: GetNodeLifecycleCounts :one
+SELECT count(*) FILTER (WHERE lifecycle_status='active')::bigint AS active,
+       count(*) FILTER (WHERE lifecycle_status='retired')::bigint AS retired,
+       count(*)::bigint AS total
+FROM relay_node_assets
+`
+
+type GetNodeLifecycleCountsRow struct {
+	Active  int64 `json:"active"`
+	Retired int64 `json:"retired"`
+	Total   int64 `json:"total"`
+}
+
+func (q *Queries) GetNodeLifecycleCounts(ctx context.Context) (GetNodeLifecycleCountsRow, error) {
+	row := q.db.QueryRow(ctx, getNodeLifecycleCounts)
+	var i GetNodeLifecycleCountsRow
+	err := row.Scan(&i.Active, &i.Retired, &i.Total)
+	return i, err
+}
+
+const getNodeRegistryGeneration = `-- name: GetNodeRegistryGeneration :one
+SELECT node_generation FROM asset_registry_generations WHERE singleton_id=1
+`
+
+func (q *Queries) GetNodeRegistryGeneration(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getNodeRegistryGeneration)
+	var node_generation int64
+	err := row.Scan(&node_generation)
+	return node_generation, err
+}
+
+const getNodeRegistryReadAsOf = `-- name: GetNodeRegistryReadAsOf :one
+SELECT transaction_timestamp()::timestamptz
+`
+
+func (q *Queries) GetNodeRegistryReadAsOf(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getNodeRegistryReadAsOf)
+	var column_1 pgtype.Timestamptz
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listNodeAssets = `-- name: ListNodeAssets :many
 SELECT
     node.instance_id,
@@ -277,6 +334,11 @@ SELECT
     node.driver_contract_version,
     node.management_endpoint,
     COALESCE(node.reader_secret_configured, false)::boolean AS secret_configured,
+    node.lifecycle_status,
+    node.revision,
+    node.retired_at,
+    node.retired_by,
+    node.retire_reason,
     COALESCE(
         (
             SELECT array_agg(capability.capability ORDER BY capability.capability)::text[]
@@ -299,34 +361,37 @@ LEFT JOIN LATERAL (
         (CASE WHEN count(*) = 1 THEN min(activation.effective_to) END)::timestamptz AS effective_to
     FROM relay_node_inventory_monitoring_activations AS activation
     WHERE activation.instance_id = node.instance_id
-      AND CURRENT_TIMESTAMP <@ activation.active_range
+      AND $1::timestamptz <@ activation.active_range
 ) AS monitoring ON true
-WHERE ($1::text IS NULL OR node.node_type = $1)
+WHERE ($2::text = 'all' OR node.lifecycle_status = $2)
+  AND ($3::text IS NULL OR node.node_type = $3)
   AND (
-      $2::text IS NULL
+      $4::text IS NULL
       OR EXISTS (
           SELECT 1
           FROM node_capabilities AS filtered_capability
           WHERE filtered_capability.instance_id = node.instance_id
-            AND filtered_capability.capability = $2
+            AND filtered_capability.capability = $4
       )
   )
   AND (
-      $3::boolean IS NULL
+      $5::boolean IS NULL
       OR monitoring.active_match_count > 1
-      OR $3 = (monitoring.active_match_count = 1)
+      OR $5 = (monitoring.active_match_count = 1)
   )
-  AND ($4::uuid IS NULL OR node.instance_id > $4)
+  AND ($6::uuid IS NULL OR node.instance_id > $6)
 ORDER BY node.instance_id
-LIMIT $5
+LIMIT $7
 `
 
 type ListNodeAssetsParams struct {
-	NodeType         pgtype.Text `json:"node_type"`
-	Capability       pgtype.Text `json:"capability"`
-	MonitoringActive pgtype.Bool `json:"monitoring_active"`
-	AfterInstanceID  pgtype.UUID `json:"after_instance_id"`
-	PageSize         int32       `json:"page_size"`
+	ReadAsOf         pgtype.Timestamptz `json:"read_as_of"`
+	Lifecycle        string             `json:"lifecycle"`
+	NodeType         pgtype.Text        `json:"node_type"`
+	Capability       pgtype.Text        `json:"capability"`
+	MonitoringActive pgtype.Bool        `json:"monitoring_active"`
+	AfterInstanceID  pgtype.UUID        `json:"after_instance_id"`
+	PageSize         int32              `json:"page_size"`
 }
 
 type ListNodeAssetsRow struct {
@@ -336,6 +401,11 @@ type ListNodeAssetsRow struct {
 	DriverContractVersion   string             `json:"driver_contract_version"`
 	ManagementEndpoint      string             `json:"management_endpoint"`
 	SecretConfigured        bool               `json:"secret_configured"`
+	LifecycleStatus         string             `json:"lifecycle_status"`
+	Revision                int64              `json:"revision"`
+	RetiredAt               pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy               pgtype.UUID        `json:"retired_by"`
+	RetireReason            pgtype.Text        `json:"retire_reason"`
 	Capabilities            []string           `json:"capabilities"`
 	MonitoringActive        bool               `json:"monitoring_active"`
 	MonitoringMatchCount    int64              `json:"monitoring_match_count"`
@@ -347,6 +417,8 @@ type ListNodeAssetsRow struct {
 
 func (q *Queries) ListNodeAssets(ctx context.Context, arg ListNodeAssetsParams) ([]ListNodeAssetsRow, error) {
 	rows, err := q.db.Query(ctx, listNodeAssets,
+		arg.ReadAsOf,
+		arg.Lifecycle,
 		arg.NodeType,
 		arg.Capability,
 		arg.MonitoringActive,
@@ -367,6 +439,11 @@ func (q *Queries) ListNodeAssets(ctx context.Context, arg ListNodeAssetsParams) 
 			&i.DriverContractVersion,
 			&i.ManagementEndpoint,
 			&i.SecretConfigured,
+			&i.LifecycleStatus,
+			&i.Revision,
+			&i.RetiredAt,
+			&i.RetiredBy,
+			&i.RetireReason,
 			&i.Capabilities,
 			&i.MonitoringActive,
 			&i.MonitoringMatchCount,

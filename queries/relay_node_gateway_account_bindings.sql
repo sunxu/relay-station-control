@@ -2,7 +2,7 @@
 SELECT clock_timestamp()::timestamptz;
 
 -- name: LockRelayNodeAssetForBinding :one
-SELECT instance_id
+SELECT instance_id, lifecycle_status
 FROM relay_node_assets
 WHERE instance_id = sqlc.arg(instance_id)::uuid
 FOR UPDATE;

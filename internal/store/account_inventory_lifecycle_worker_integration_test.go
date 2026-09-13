@@ -50,6 +50,10 @@ func (*lifecycleClaimStore) ScheduleCurrent(context.Context, inventorypoll.Sched
 	return inventorypoll.ScheduleResult{}, nil
 }
 
+func (*lifecycleClaimStore) AuthorizeDispatch(context.Context, inventorypoll.DispatchAuthorizationRequest) (inventorypoll.DispatchAuthorization, error) {
+	return inventorypoll.DispatchAuthorization{LeaseRemaining: time.Minute, GraceRemaining: time.Minute}, nil
+}
+
 func (repository *lifecycleClaimStore) ClaimRunnable(
 	ctx context.Context, request inventorypoll.ClaimRequest,
 ) (*inventorypoll.ClaimedRun, error) {

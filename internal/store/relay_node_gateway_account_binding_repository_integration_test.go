@@ -316,6 +316,58 @@ func TestRelayBindingRepository_Bind(t *testing.T) {
 	})
 }
 
+func TestRelayBindingRepository_NodeLifecycleClosesAndFencesBinding(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
+	ctx := context.Background()
+	fixture := newRelayBindingSchemaFixture(t, ctx, database)
+	nodeID := fixture.insertNode(t, ctx, database)
+	var dbNow time.Time
+	if err := database.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+		t.Fatal(err)
+	}
+	insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, dbNow.Add(-5*time.Second))
+	bindingRepository, err := jobstore.NewRelayBindingRepository(database.runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := bindingRepository.Bind(ctx, jobstore.BindParams{
+		RelayNodeID: nodeID, GatewayInstanceID: fixture.gatewayID,
+		GatewayAccountID: fixture.accountIDs[0], AdminID: fixture.adminID,
+	})
+	if err != nil || bound.Outcome != jobstore.RelayBindingOutcomeSuccess {
+		t.Fatalf("bind outcome=%s err=%v", bound.Outcome, err)
+	}
+	lifecycle, err := jobstore.NewNodeLifecycleRepository(database.runtime, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := lifecycle.Retire(ctx, jobstore.NodeCommand{
+		CommandID: uuid.New(), ActorAdminID: fixture.adminID, RequestID: "node-binding-retire",
+		InstanceID: nodeID, ExpectedRevision: 1,
+		Secret: jobstore.SecretPatch{Operation: jobstore.SecretAbsent},
+	})
+	if err != nil || result.HTTPStatus != 200 {
+		t.Fatalf("retire status=%d err=%v", result.HTTPStatus, err)
+	}
+	var currentCount, closedCount int
+	if err = database.owner.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE ended_at IS NULL),
+		count(*) FILTER (WHERE ended_at IS NOT NULL AND end_reason='node_retired')
+		FROM relay_node_gateway_account_bindings WHERE relay_node_id=$1`, nodeID).Scan(&currentCount, &closedCount); err != nil {
+		t.Fatal(err)
+	}
+	if currentCount != 0 || closedCount != 1 {
+		t.Fatalf("current/closed bindings=%d/%d", currentCount, closedCount)
+	}
+	late, err := bindingRepository.Bind(ctx, jobstore.BindParams{
+		RelayNodeID: nodeID, GatewayInstanceID: fixture.gatewayID,
+		GatewayAccountID: fixture.accountIDs[1], AdminID: fixture.adminID,
+	})
+	if err != nil || late.Outcome != jobstore.RelayBindingOutcomeNodeConflict {
+		t.Fatalf("late bind outcome=%s err=%v", late.Outcome, err)
+	}
+}
+
 func TestRelayBindingRepository_Rebind(t *testing.T) {
 	database := newIsolatedJobDatabase(t)
 	ctx := context.Background()

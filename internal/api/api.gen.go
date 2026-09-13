@@ -647,13 +647,13 @@ func (e GatewayAssetResponseStatus) Valid() bool {
 
 // Defines values for GatewayEditResultResult.
 const (
-	Updated GatewayEditResultResult = "updated"
+	GatewayEditResultResultUpdated GatewayEditResultResult = "updated"
 )
 
 // Valid indicates whether the value is a known member of the GatewayEditResultResult enum.
 func (e GatewayEditResultResult) Valid() bool {
 	switch e {
-	case Updated:
+	case GatewayEditResultResultUpdated:
 		return true
 	default:
 		return false
@@ -692,13 +692,13 @@ func (e GatewayRegisterResultResult) Valid() bool {
 
 // Defines values for GatewayReplaceResultResult.
 const (
-	Replaced GatewayReplaceResultResult = "replaced"
+	GatewayReplaceResultResultReplaced GatewayReplaceResultResult = "replaced"
 )
 
 // Valid indicates whether the value is a known member of the GatewayReplaceResultResult enum.
 func (e GatewayReplaceResultResult) Valid() bool {
 	switch e {
-	case Replaced:
+	case GatewayReplaceResultResultReplaced:
 		return true
 	default:
 		return false
@@ -1215,6 +1215,45 @@ func (e NodeAccountRequestHistoryItemFailureClass) Valid() bool {
 	}
 }
 
+// Defines values for NodeAssetLifecycleStatus.
+const (
+	NodeAssetLifecycleStatusActive  NodeAssetLifecycleStatus = "active"
+	NodeAssetLifecycleStatusRetired NodeAssetLifecycleStatus = "retired"
+)
+
+// Valid indicates whether the value is a known member of the NodeAssetLifecycleStatus enum.
+func (e NodeAssetLifecycleStatus) Valid() bool {
+	switch e {
+	case NodeAssetLifecycleStatusActive:
+		return true
+	case NodeAssetLifecycleStatusRetired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeAssetRetireReason.
+const (
+	NodeAssetRetireReasonAdministratorRetire NodeAssetRetireReason = "administrator_retire"
+	NodeAssetRetireReasonLessThannil         NodeAssetRetireReason = "<nil>"
+	NodeAssetRetireReasonReplacement         NodeAssetRetireReason = "replacement"
+)
+
+// Valid indicates whether the value is a known member of the NodeAssetRetireReason enum.
+func (e NodeAssetRetireReason) Valid() bool {
+	switch e {
+	case NodeAssetRetireReasonAdministratorRetire:
+		return true
+	case NodeAssetRetireReasonLessThannil:
+		return true
+	case NodeAssetRetireReasonReplacement:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeCapability.
 const (
 	ManagementAccountInventoryRead NodeCapability = "management_account_inventory_read"
@@ -1305,6 +1344,42 @@ func (e NodeInventoryProviderStateSnapshotFreshness) Valid() bool {
 	case NodeInventoryProviderStateSnapshotFreshnessStale:
 		return true
 	case NodeInventoryProviderStateSnapshotFreshnessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeMutationResultResult.
+const (
+	NodeMutationResultResultRegistered NodeMutationResultResult = "registered"
+	NodeMutationResultResultRetired    NodeMutationResultResult = "retired"
+	NodeMutationResultResultUpdated    NodeMutationResultResult = "updated"
+)
+
+// Valid indicates whether the value is a known member of the NodeMutationResultResult enum.
+func (e NodeMutationResultResult) Valid() bool {
+	switch e {
+	case NodeMutationResultResultRegistered:
+		return true
+	case NodeMutationResultResultRetired:
+		return true
+	case NodeMutationResultResultUpdated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeReplaceResultResult.
+const (
+	NodeReplaceResultResultReplaced NodeReplaceResultResult = "replaced"
+)
+
+// Valid indicates whether the value is a known member of the NodeReplaceResultResult enum.
+func (e NodeReplaceResultResult) Valid() bool {
+	switch e {
+	case NodeReplaceResultResultReplaced:
 		return true
 	default:
 		return false
@@ -1683,6 +1758,27 @@ func (e ListGatewayAssetsParamsLifecycle) Valid() bool {
 	case ListGatewayAssetsParamsLifecycleAll:
 		return true
 	case ListGatewayAssetsParamsLifecycleRetired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListNodeAssetsParamsLifecycle.
+const (
+	ListNodeAssetsParamsLifecycleActive  ListNodeAssetsParamsLifecycle = "active"
+	ListNodeAssetsParamsLifecycleAll     ListNodeAssetsParamsLifecycle = "all"
+	ListNodeAssetsParamsLifecycleRetired ListNodeAssetsParamsLifecycle = "retired"
+)
+
+// Valid indicates whether the value is a known member of the ListNodeAssetsParamsLifecycle enum.
+func (e ListNodeAssetsParamsLifecycle) Valid() bool {
+	switch e {
+	case ListNodeAssetsParamsLifecycleActive:
+		return true
+	case ListNodeAssetsParamsLifecycleAll:
+		return true
+	case ListNodeAssetsParamsLifecycleRetired:
 		return true
 	default:
 		return false
@@ -2642,26 +2738,52 @@ type NodeAccountRequestHistoryResponse struct {
 
 // NodeAsset defines model for NodeAsset.
 type NodeAsset struct {
-	Capabilities          []NodeCapability      `json:"capabilities"`
-	CreatedAt             time.Time             `json:"created_at"`
-	DisplayName           DisplayName           `json:"display_name"`
-	DriverContractVersion DriverContractVersion `json:"driver_contract_version"`
-	InstanceId            openapi_types.UUID    `json:"instance_id"`
-	ManagementEndpoint    ManagementEndpoint    `json:"management_endpoint"`
-	Monitoring            NodeMonitoringStatus  `json:"monitoring"`
-	NodeType              NodeType              `json:"node_type"`
-	SecretConfigured      bool                  `json:"secret_configured"`
-	UpdatedAt             time.Time             `json:"updated_at"`
+	Capabilities          []NodeCapability         `json:"capabilities"`
+	CreatedAt             time.Time                `json:"created_at"`
+	DisplayName           DisplayName              `json:"display_name"`
+	DriverContractVersion DriverContractVersion    `json:"driver_contract_version"`
+	InstanceId            openapi_types.UUID       `json:"instance_id"`
+	LifecycleStatus       NodeAssetLifecycleStatus `json:"lifecycle_status"`
+	ManagementEndpoint    ManagementEndpoint       `json:"management_endpoint"`
+	Monitoring            NodeMonitoringStatus     `json:"monitoring"`
+	NodeType              NodeType                 `json:"node_type"`
+	RetireReason          *NodeAssetRetireReason   `json:"retire_reason"`
+	RetiredAt             *time.Time               `json:"retired_at"`
+	RetiredBy             *openapi_types.UUID      `json:"retired_by"`
+	Revision              AssetRevision            `json:"revision"`
+	SecretConfigured      bool                     `json:"secret_configured"`
+	UpdatedAt             time.Time                `json:"updated_at"`
+}
+
+// NodeAssetLifecycleStatus defines model for NodeAsset.LifecycleStatus.
+type NodeAssetLifecycleStatus string
+
+// NodeAssetRetireReason defines model for NodeAsset.RetireReason.
+type NodeAssetRetireReason string
+
+// NodeAssetDetailResponse defines model for NodeAssetDetailResponse.
+type NodeAssetDetailResponse struct {
+	Asset       NodeAsset               `json:"asset"`
+	Predecessor *NodeReplacementLineage `json:"predecessor"`
+	Successor   *NodeReplacementLineage `json:"successor"`
 }
 
 // NodeAssetListResponse defines model for NodeAssetListResponse.
 type NodeAssetListResponse struct {
 	Items      []NodeAsset `json:"items"`
-	NextCursor *string     `json:"next_cursor,omitempty"`
+	NextCursor *string     `json:"next_cursor"`
+	NodeCounts NodeCounts  `json:"node_counts"`
 }
 
 // NodeCapability defines model for NodeCapability.
 type NodeCapability string
+
+// NodeCounts defines model for NodeCounts.
+type NodeCounts struct {
+	Active  int `json:"active"`
+	Retired int `json:"retired"`
+	Total   int `json:"total"`
+}
 
 // NodeDriver defines model for NodeDriver.
 type NodeDriver struct {
@@ -2693,6 +2815,15 @@ type NodeDuplicateHistoryResponse struct {
 // NodeDuplicateHistoryResponseInvolvement defines model for NodeDuplicateHistoryResponse.Involvement.
 type NodeDuplicateHistoryResponseInvolvement string
 
+// NodeEditRequest defines model for NodeEditRequest.
+type NodeEditRequest struct {
+	CommandId          openapi_types.UUID  `json:"command_id"`
+	DisplayName        *DisplayName        `json:"display_name,omitempty"`
+	ExpectedRevision   AssetRevision       `json:"expected_revision"`
+	ManagementEndpoint *ManagementEndpoint `json:"management_endpoint,omitempty"`
+	ReaderSecretRef    *string             `json:"reader_secret_ref,omitempty"`
+}
+
 // NodeInventoryProviderState defines model for NodeInventoryProviderState.
 type NodeInventoryProviderState struct {
 	CurrentScheduledAt *time.Time                                  `json:"current_scheduled_at"`
@@ -2721,9 +2852,34 @@ type NodeInventoryProviderStatesResponse struct {
 
 // NodeMonitoringStatus defines model for NodeMonitoringStatus.
 type NodeMonitoringStatus struct {
-	Active        bool       `json:"active"`
-	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
-	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
+	Current          bool       `json:"current"`
+	EffectiveFrom    *time.Time `json:"effective_from"`
+	EffectiveTo      *time.Time `json:"effective_to"`
+	MonitoringActive bool       `json:"monitoring_active"`
+}
+
+// NodeMutationResult defines model for NodeMutationResult.
+type NodeMutationResult struct {
+	Asset                          NodeAsset                `json:"asset"`
+	CancelledFutureMonitoringCount int                      `json:"cancelled_future_monitoring_count"`
+	ClosedBindingCount             int                      `json:"closed_binding_count"`
+	ClosedMonitoringCount          int                      `json:"closed_monitoring_count"`
+	Result                         NodeMutationResultResult `json:"result"`
+}
+
+// NodeMutationResultResult defines model for NodeMutationResult.Result.
+type NodeMutationResultResult string
+
+// NodeRegisterRequest defines model for NodeRegisterRequest.
+type NodeRegisterRequest struct {
+	Capabilities          []NodeCapability      `json:"capabilities"`
+	CommandId             openapi_types.UUID    `json:"command_id"`
+	DisplayName           DisplayName           `json:"display_name"`
+	DriverContractVersion DriverContractVersion `json:"driver_contract_version"`
+	ManagementEndpoint    ManagementEndpoint    `json:"management_endpoint"`
+	NewInstanceId         openapi_types.UUID    `json:"new_instance_id"`
+	NodeType              NodeType              `json:"node_type"`
+	ReaderSecretRef       *string               `json:"reader_secret_ref,omitempty"`
 }
 
 // NodeRelayBindingResponse defines model for NodeRelayBindingResponse.
@@ -2740,6 +2896,48 @@ type NodeRelayBindingResponse struct {
 	ObservedAt               time.Time              `json:"observed_at"`
 	RelayNodeId              openapi_types.UUID     `json:"relay_node_id"`
 	Resolution               RelayBindingResolution `json:"resolution"`
+}
+
+// NodeReplaceRequest defines model for NodeReplaceRequest.
+type NodeReplaceRequest struct {
+	Capabilities          []NodeCapability      `json:"capabilities"`
+	CommandId             openapi_types.UUID    `json:"command_id"`
+	DisplayName           DisplayName           `json:"display_name"`
+	DriverContractVersion DriverContractVersion `json:"driver_contract_version"`
+	ExpectedRevision      AssetRevision         `json:"expected_revision"`
+	ManagementEndpoint    ManagementEndpoint    `json:"management_endpoint"`
+	NewInstanceId         openapi_types.UUID    `json:"new_instance_id"`
+	NodeType              NodeType              `json:"node_type"`
+	ReaderSecretRef       *string               `json:"reader_secret_ref,omitempty"`
+}
+
+// NodeReplaceResult defines model for NodeReplaceResult.
+type NodeReplaceResult struct {
+	CancelledFutureMonitoringCount int                     `json:"cancelled_future_monitoring_count"`
+	ClosedBindingCount             int                     `json:"closed_binding_count"`
+	ClosedMonitoringCount          int                     `json:"closed_monitoring_count"`
+	Lineage                        NodeReplacementLineage  `json:"lineage"`
+	NewAsset                       NodeAsset               `json:"new_asset"`
+	OldAsset                       NodeAsset               `json:"old_asset"`
+	Result                         NodeReplaceResultResult `json:"result"`
+}
+
+// NodeReplaceResultResult defines model for NodeReplaceResult.Result.
+type NodeReplaceResultResult string
+
+// NodeReplacementLineage defines model for NodeReplacementLineage.
+type NodeReplacementLineage struct {
+	CommandId     openapi_types.UUID `json:"command_id"`
+	NewInstanceId openapi_types.UUID `json:"new_instance_id"`
+	OldInstanceId openapi_types.UUID `json:"old_instance_id"`
+	ReplacedAt    time.Time          `json:"replaced_at"`
+	ReplacedBy    openapi_types.UUID `json:"replaced_by"`
+}
+
+// NodeRetireRequest defines model for NodeRetireRequest.
+type NodeRetireRequest struct {
+	CommandId        openapi_types.UUID `json:"command_id"`
+	ExpectedRevision AssetRevision      `json:"expected_revision"`
 }
 
 // NodeType defines model for NodeType.
@@ -3104,11 +3302,39 @@ type RetireGatewayAssetParams struct {
 
 // ListNodeAssetsParams defines parameters for ListNodeAssets.
 type ListNodeAssetsParams struct {
-	Limit            *AssetPageLimit `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor           *PageCursor     `form:"cursor,omitempty" json:"cursor,omitempty"`
-	NodeType         *NodeType       `form:"node_type,omitempty" json:"node_type,omitempty"`
-	Capability       *NodeCapability `form:"capability,omitempty" json:"capability,omitempty"`
-	MonitoringActive *bool           `form:"monitoring_active,omitempty" json:"monitoring_active,omitempty"`
+	Limit            *AssetPageLimit                `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor           *PageCursor                    `form:"cursor,omitempty" json:"cursor,omitempty"`
+	NodeType         *NodeType                      `form:"node_type,omitempty" json:"node_type,omitempty"`
+	Capability       *NodeCapability                `form:"capability,omitempty" json:"capability,omitempty"`
+	MonitoringActive *bool                          `form:"monitoring_active,omitempty" json:"monitoring_active,omitempty"`
+	Lifecycle        *ListNodeAssetsParamsLifecycle `form:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+}
+
+// ListNodeAssetsParamsLifecycle defines parameters for ListNodeAssets.
+type ListNodeAssetsParamsLifecycle string
+
+// RegisterNodeAssetParams defines parameters for RegisterNodeAsset.
+type RegisterNodeAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// EditNodeAssetParams defines parameters for EditNodeAsset.
+type EditNodeAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ReplaceNodeAssetParams defines parameters for ReplaceNodeAsset.
+type ReplaceNodeAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RetireNodeAssetParams defines parameters for RetireNodeAsset.
+type RetireNodeAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
 }
 
 // GetCurrentProviderInventoryPolicyParams defines parameters for GetCurrentProviderInventoryPolicy.
@@ -3316,6 +3542,18 @@ type ReplaceGatewayAssetJSONRequestBody = GatewayReplaceRequest
 
 // RetireGatewayAssetJSONRequestBody defines body for RetireGatewayAsset for application/json ContentType.
 type RetireGatewayAssetJSONRequestBody = GatewayRetireRequest
+
+// RegisterNodeAssetJSONRequestBody defines body for RegisterNodeAsset for application/json ContentType.
+type RegisterNodeAssetJSONRequestBody = NodeRegisterRequest
+
+// EditNodeAssetJSONRequestBody defines body for EditNodeAsset for application/json ContentType.
+type EditNodeAssetJSONRequestBody = NodeEditRequest
+
+// ReplaceNodeAssetJSONRequestBody defines body for ReplaceNodeAsset for application/json ContentType.
+type ReplaceNodeAssetJSONRequestBody = NodeReplaceRequest
+
+// RetireNodeAssetJSONRequestBody defines body for RetireNodeAsset for application/json ContentType.
+type RetireNodeAssetJSONRequestBody = NodeRetireRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -3718,9 +3956,21 @@ type ServerInterface interface {
 	// ListNodeAssets List registered Relay Nodes
 	// (GET /api/assets/nodes)
 	ListNodeAssets(w http.ResponseWriter, r *http.Request, params ListNodeAssetsParams)
+	// RegisterNodeAsset Register an active Relay Node
+	// (POST /api/assets/nodes)
+	RegisterNodeAsset(w http.ResponseWriter, r *http.Request, params RegisterNodeAssetParams)
 	// GetNodeAsset Read one registered Relay Node
 	// (GET /api/assets/nodes/{instance_id})
 	GetNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId)
+	// EditNodeAsset Edit mutable Relay Node metadata
+	// (PATCH /api/assets/nodes/{instance_id})
+	EditNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params EditNodeAssetParams)
+	// ReplaceNodeAsset Atomically replace an active Relay Node
+	// (POST /api/assets/nodes/{instance_id}/replace)
+	ReplaceNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ReplaceNodeAssetParams)
+	// RetireNodeAsset Retire an active Relay Node
+	// (POST /api/assets/nodes/{instance_id}/retire)
+	RetireNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params RetireNodeAssetParams)
 	// GetCurrentProviderInventoryPolicy Read the current Provider inventory policy for one Driver scope
 	// (GET /api/assets/provider-policies/current)
 	GetCurrentProviderInventoryPolicy(w http.ResponseWriter, r *http.Request, params GetCurrentProviderInventoryPolicyParams)
@@ -3943,9 +4193,33 @@ func (_ Unimplemented) ListNodeAssets(w http.ResponseWriter, r *http.Request, pa
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// RegisterNodeAsset Register an active Relay Node
+// (POST /api/assets/nodes)
+func (_ Unimplemented) RegisterNodeAsset(w http.ResponseWriter, r *http.Request, params RegisterNodeAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetNodeAsset Read one registered Relay Node
 // (GET /api/assets/nodes/{instance_id})
 func (_ Unimplemented) GetNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EditNodeAsset Edit mutable Relay Node metadata
+// (PATCH /api/assets/nodes/{instance_id})
+func (_ Unimplemented) EditNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params EditNodeAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReplaceNodeAsset Atomically replace an active Relay Node
+// (POST /api/assets/nodes/{instance_id}/replace)
+func (_ Unimplemented) ReplaceNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ReplaceNodeAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RetireNodeAsset Retire an active Relay Node
+// (POST /api/assets/nodes/{instance_id}/retire)
+func (_ Unimplemented) RetireNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params RetireNodeAssetParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4989,8 +5263,66 @@ func (siw *ServerInterfaceWrapper) ListNodeAssets(w http.ResponseWriter, r *http
 		return
 	}
 
+	// ------------- Optional query parameter "lifecycle" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "lifecycle", r.URL.Query(), &params.Lifecycle, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "lifecycle"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "lifecycle", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListNodeAssets(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegisterNodeAsset operation middleware
+func (siw *ServerInterfaceWrapper) RegisterNodeAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RegisterNodeAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegisterNodeAsset(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5017,6 +5349,168 @@ func (siw *ServerInterfaceWrapper) GetNodeAsset(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetNodeAsset(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EditNodeAsset operation middleware
+func (siw *ServerInterfaceWrapper) EditNodeAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EditNodeAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EditNodeAsset(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceNodeAsset operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceNodeAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceNodeAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceNodeAsset(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetireNodeAsset operation middleware
+func (siw *ServerInterfaceWrapper) RetireNodeAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetireNodeAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetireNodeAsset(w, r, instanceId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6689,7 +7183,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/assets/nodes", wrapper.ListNodeAssets)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/nodes", wrapper.RegisterNodeAsset)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/nodes/{instance_id}", wrapper.GetNodeAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/assets/nodes/{instance_id}", wrapper.EditNodeAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/nodes/{instance_id}/retire", wrapper.RetireNodeAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/nodes/{instance_id}/replace", wrapper.ReplaceNodeAsset)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/drivers", wrapper.ListNodeDrivers)

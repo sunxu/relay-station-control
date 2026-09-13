@@ -126,12 +126,15 @@ func (repository *RelayBindingRepository) Bind(
 	txQueries := repository.queries.WithTx(tx)
 
 	// 1. Lock Node asset identity (lock order 1)
-	_, err = txQueries.LockRelayNodeAssetForBinding(ctx, nullableUUID(params.RelayNodeID))
+	node, err := txQueries.LockRelayNodeAssetForBinding(ctx, nullableUUID(params.RelayNodeID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RelayBindingResult{Outcome: RelayBindingOutcomeNodeNotFound}, nil
 	}
 	if err != nil {
 		return RelayBindingResult{}, err
+	}
+	if node.LifecycleStatus != "active" {
+		return RelayBindingResult{Outcome: RelayBindingOutcomeNodeConflict}, nil
 	}
 
 	// 2. Lock and validate the current active Gateway asset (lock order 2).
@@ -300,12 +303,15 @@ func (repository *RelayBindingRepository) Rebind(
 	txQueries := repository.queries.WithTx(tx)
 
 	// 1. Lock Node asset identity (lock order 1)
-	_, err = txQueries.LockRelayNodeAssetForBinding(ctx, nullableUUID(params.RelayNodeID))
+	node, err := txQueries.LockRelayNodeAssetForBinding(ctx, nullableUUID(params.RelayNodeID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RelayBindingResult{Outcome: RelayBindingOutcomeNodeNotFound}, nil
 	}
 	if err != nil {
 		return RelayBindingResult{}, err
+	}
+	if node.LifecycleStatus != "active" {
+		return RelayBindingResult{Outcome: RelayBindingOutcomeNodeConflict}, nil
 	}
 
 	// 2. Lock and validate the new current active Gateway (lock order 2).

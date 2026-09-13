@@ -65,7 +65,15 @@ func (s *Server) ListNodeAssets(w http.ResponseWriter, r *http.Request, params L
 	if !s.authorizeAssetRead(w, r, AssetReadNodes) {
 		return
 	}
-	filters := assetstore.NodeListFilters{MonitoringActive: params.MonitoringActive}
+	environment, err := s.assets.Environment(r.Context())
+	if err != nil {
+		s.assetReadError(w, r, AssetReadNodes, err)
+		return
+	}
+	filters := assetstore.NodeListFilters{Environment: environment.ID, Lifecycle: "active", MonitoringActive: params.MonitoringActive}
+	if params.Lifecycle != nil {
+		filters.Lifecycle = string(*params.Lifecycle)
+	}
 	if params.NodeType != nil {
 		filters.NodeType = string(*params.NodeType)
 		if !validAssetIdentifier(filters.NodeType, 2) {
@@ -88,7 +96,7 @@ func (s *Server) ListNodeAssets(w http.ResponseWriter, r *http.Request, params L
 			return
 		}
 	}
-	after, err := s.nodeCursor.Decode(cursor, filters)
+	decoded, err := s.nodeCursor.DecodeFull(cursor, filters)
 	if err != nil {
 		s.assetReadError(w, r, AssetReadNodes, assetstore.ErrInvalidNodeCursor)
 		return
@@ -97,7 +105,8 @@ func (s *Server) ListNodeAssets(w http.ResponseWriter, r *http.Request, params L
 	if params.Limit != nil {
 		limit = int(*params.Limit)
 	}
-	page, err := s.assets.ListNodes(r.Context(), filters, after, limit)
+	filters.Generation, filters.ReadAsOf = decoded.Generation, decoded.ReadAsOf
+	page, err := s.assets.ListNodes(r.Context(), filters, decoded.After, limit)
 	if err != nil {
 		s.assetReadError(w, r, AssetReadNodes, err)
 		return
@@ -108,6 +117,7 @@ func (s *Server) ListNodeAssets(w http.ResponseWriter, r *http.Request, params L
 	}
 	var nextCursor *string
 	if page.HasMore && len(page.Items) > 0 {
+		filters.Generation, filters.ReadAsOf = page.Generation, page.ReadAsOf
 		value, encodeErr := s.nodeCursor.Encode(page.Items[len(page.Items)-1].InstanceID, filters)
 		if encodeErr != nil {
 			s.assetReadError(w, r, AssetReadNodes, encodeErr)
@@ -121,12 +131,30 @@ func (s *Server) ListNodeAssets(w http.ResponseWriter, r *http.Request, params L
 	}
 	s.recordAssetRead(AssetReadNodes, result)
 	s.refreshAssetCounts(r)
-	writeJSON(w, http.StatusOK, NodeAssetListResponse{Items: items, NextCursor: nextCursor})
+	writeJSON(w, http.StatusOK, NodeAssetListResponse{Items: items, NextCursor: nextCursor, NodeCounts: NodeCounts{Active: int(page.Counts.Active), Retired: int(page.Counts.Retired), Total: int(page.Counts.Total)}})
 }
 
 func (s *Server) GetNodeAsset(w http.ResponseWriter, r *http.Request, instanceID NodeInstanceId) {
 	s.prepare(w, r, true)
 	if !s.authorizeAssetRead(w, r, AssetReadNodeDetail) {
+		return
+	}
+	if s.nodeAssets != nil {
+		detail, err := s.nodeAssets.Detail(r.Context(), uuid.UUID(instanceID))
+		if err != nil {
+			s.assetReadError(w, r, AssetReadNodeDetail, err)
+			return
+		}
+		result := NodeAssetDetailResponse{Asset: nodeResponse(detail.Asset)}
+		if detail.Predecessor != nil {
+			result.Predecessor = nodeLineage(detail.Predecessor)
+		}
+		if detail.Successor != nil {
+			result.Successor = nodeLineage(detail.Successor)
+		}
+		s.recordAssetRead(AssetReadNodeDetail, AssetReadResultSuccess)
+		s.refreshAssetCounts(r)
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	node, err := s.assets.Node(r.Context(), uuid.UUID(instanceID))
@@ -136,7 +164,14 @@ func (s *Server) GetNodeAsset(w http.ResponseWriter, r *http.Request, instanceID
 	}
 	s.recordAssetRead(AssetReadNodeDetail, AssetReadResultSuccess)
 	s.refreshAssetCounts(r)
-	writeJSON(w, http.StatusOK, nodeResponse(node))
+	writeJSON(w, http.StatusOK, NodeAssetDetailResponse{Asset: nodeResponse(node)})
+}
+
+func nodeLineage(v *assetstore.NodeReplacement) *NodeReplacementLineage {
+	if v == nil {
+		return nil
+	}
+	return &NodeReplacementLineage{OldInstanceId: v.OldInstanceID, NewInstanceId: v.NewInstanceID, ReplacedAt: v.ReplacedAt, ReplacedBy: v.ReplacedBy, CommandId: v.CommandID}
 }
 
 func (s *Server) ListNodeDrivers(w http.ResponseWriter, r *http.Request) {
@@ -217,6 +252,8 @@ func (s *Server) assetReadError(w http.ResponseWriter, r *http.Request, operatio
 	case errors.Is(err, assetstore.ErrInvalidAssetQuery), errors.Is(err, assetstore.ErrInvalidNodeCursor):
 		s.recordAssetRead(operation, AssetReadResultInvalid)
 		s.writeError(w, r, authn.ErrInvalid)
+	case errors.Is(err, assetstore.ErrNodeCursorStale):
+		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeCursorStale)
 	case errors.Is(err, assetstore.ErrAssetNotFound):
 		s.recordAssetRead(operation, AssetReadResultNotFound)
 		writeJSON(w, http.StatusNotFound, ErrorResponse{Code: ErrorCodeNotFound, Message: "The asset was not found.", RequestId: s.requestID(r)})
@@ -264,13 +301,19 @@ func gatewayResponse(gateway *assetstore.GatewayAsset) *GatewayAsset {
 }
 
 func nodeResponse(node assetstore.NodeAsset) NodeAsset {
-	return NodeAsset{
+	result := NodeAsset{
 		InstanceId: node.InstanceID, DisplayName: node.DisplayName, NodeType: node.NodeType,
 		DriverContractVersion: node.DriverContractVersion, ManagementEndpoint: node.ManagementEndpoint,
 		SecretConfigured: node.SecretConfigured, Capabilities: capabilityResponses(node.Capabilities),
-		Monitoring: NodeMonitoringStatus{Active: node.Monitoring.Active, EffectiveFrom: node.Monitoring.EffectiveFrom, EffectiveTo: node.Monitoring.EffectiveTo},
-		CreatedAt:  node.CreatedAt, UpdatedAt: node.UpdatedAt,
+		LifecycleStatus: NodeAssetLifecycleStatus(node.LifecycleStatus), Revision: strconv.FormatInt(node.Revision, 10),
+		Monitoring: NodeMonitoringStatus{Current: node.Monitoring.Current, MonitoringActive: node.Monitoring.Active, EffectiveFrom: node.Monitoring.EffectiveFrom, EffectiveTo: node.Monitoring.EffectiveTo},
+		CreatedAt:  node.CreatedAt, UpdatedAt: node.UpdatedAt, RetiredAt: node.RetiredAt, RetiredBy: node.RetiredBy,
 	}
+	if node.RetireReason != nil {
+		value := NodeAssetRetireReason(*node.RetireReason)
+		result.RetireReason = &value
+	}
+	return result
 }
 
 func capabilityResponses(values []string) []NodeCapability {

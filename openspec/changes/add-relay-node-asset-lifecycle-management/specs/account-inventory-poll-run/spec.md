@@ -156,18 +156,21 @@ a non-authorized attempt (columns NULL, or non-NULL but stale relative to the cu
 
 Control SHALL 在一个 fenced PostgreSQL 事务中保存 poll run、其固定策略中全部 active Provider 的聚合结果、节点内重复证据、允许的 Provider snapshot promotion 和对应账号 lifecycle 转换，并 MUST 使用数据库时间生成 `observed_at`。结果集合 MUST 与 pinned policy 完全相等。事务 MUST 锁定当前 policy binding：在 Node lifecycle fence 通过后，版本变化时只保存采集证据并以 `policy_changed` 跳过所有 promotion/lifecycle；Node lifecycle/monitoring fence 通过且版本未变化时只为完整 runtime Provider 原子写 snapshot items、更新其当前指针、推进 lifecycle 并设置 `promotion_applied=true`。任一检查/写入失败 MUST 整体回滚。
 
-Finalize MUST lock the Node and verify active lifecycle, same instance identity, current
-monitoring eligibility and poll fencing token before promotion. Both existing promotion-skip
-layers additively gain the two Node lifecycle reasons: `account_inventory_poll_runs.
-promotion_skipped_reason` (`NULL|policy_changed`) gains `node_retired|node_replaced`, and
+Finalize MUST lock the poll/run as required, lock the Node, read one `database_now`, and verify the
+same instance identity, Node lifecycle, current non-cancelled monitoring eligibility and poll
+fencing token before promotion. Both existing promotion-skip layers additively gain the Node
+lifecycle reasons and the monitoring eligibility reason: `account_inventory_poll_runs.
+promotion_skipped_reason` (`NULL|policy_changed`) gains
+`monitoring_ineligible|node_retired|node_replaced`, and
 `account_inventory_poll_provider_results.promotion_skipped_reason` (`policy_changed|
 transport_failed|contract_invalid|disk_fallback|provider_identity_incomplete|
-provider_duplicate|stale_poll`) gains `node_retired|node_replaced`. No new promotion-skip
+provider_duplicate|stale_poll`) gains `monitoring_ineligible|node_retired|node_replaced`. No new promotion-skip
 column is introduced. Reason precedence at finalize time is frozen as:
 
 1. Node lifecycle fence (`node_retired`/`node_replaced`) — evaluated first.
-2. `policy_changed`.
-3. existing provider-specific evaluation (`transport_failed`, `contract_invalid`,
+2. monitoring eligibility fence (`monitoring_ineligible`).
+3. `policy_changed`.
+4. existing provider-specific evaluation (`transport_failed`, `contract_invalid`,
    `disk_fallback`, `provider_identity_incomplete`, `provider_duplicate`, `stale_poll`).
 
 If the Node is retired or replaced at finalize time, the run's `promotion_skipped_reason` MUST be
@@ -176,7 +179,17 @@ pinned active Provider result row MUST have `promotion_applied=false` and the sa
 `promotion_skipped_reason`, regardless of what a provider-specific evaluation would otherwise have
 produced; transport/provider evidence MUST still be preserved. In that case: no snapshot promotion, no Provider current pointer update, no account lifecycle
 advancement, and no availability/request-quality current refresh MUST occur. If the Node remains
-active, existing `policy_changed` and provider-specific evaluation continue to apply unchanged.
+active and has a current row satisfying `cancelled_at IS NULL AND database_now <@ active_range`,
+existing `policy_changed` and provider-specific evaluation continue to apply unchanged. If the
+Node identity exists and remains active but that monitoring predicate is false, the run MUST remain
+`finalized`, its run-level reason MUST be `monitoring_ineligible`, and all pinned active Provider
+rows MUST use `promotion_applied=false` and `promotion_skipped_reason=monitoring_ineligible`.
+Transport/provider observation metadata and historical evidence MUST remain durable, while
+Provider current pointers, inventory current snapshots, account lifecycle, availability,
+request-quality and Provider current health MUST remain unchanged. The database promotion
+validator MUST accept this evidence-only finalized shape, reject
+`monitoring_ineligible+promotion_applied=true`, and require the run reason and all pinned active
+Provider reasons to agree.
 
 #### Scenario: 多 Provider 中一个不完整
 - **WHEN** contract-valid runtime 观察中一个 active Provider 缓存缺 email/重复，而另一个 active Provider 完整
@@ -196,6 +209,28 @@ active, existing `policy_changed` and provider-specific evaluation continue to a
   pinned active Provider 行 `promotion_applied=false` 且 `promotion_skipped_reason` 与 run 一致
   （即使该 Provider 本身传输/契约完整）；transport/provider evidence 保留；不发生 snapshot
   promotion、Provider 当前指针更新、账号 lifecycle 推进或 availability/request-quality 当前刷新
+
+#### Scenario: active Node 在 finalize 时 monitoring ineligible
+- **WHEN** finalize 的 Node 锁与单一 `database_now` 已确认 Node identity 存在且 active，但没有
+  `cancelled_at IS NULL AND database_now <@ active_range` 的 monitoring activation
+- **THEN** run 进入 `finalized` 且 run 与全部 pinned active Provider reason 为
+  `monitoring_ineligible`、Provider `promotion_applied=false`；transport/Provider evidence 与
+  observation metadata 保留，所有 current truth 保持不变
+
+#### Scenario: lifecycle reason 优先于 monitoring 与 policy
+- **WHEN** Node 已 retired/replaced，同时 monitoring 不 eligible 或 policy 已变化
+- **THEN** run 与全部 pinned active Provider 使用 `node_retired`/`node_replaced`，不得改记为
+  `monitoring_ineligible` 或 `policy_changed`
+
+#### Scenario: monitoring reason 优先于 policy
+- **WHEN** Node active 但 monitoring 不 eligible，同时 policy 已变化
+- **THEN** run 与全部 pinned active Provider 使用 `monitoring_ineligible`，不使用
+  `policy_changed`
+
+#### Scenario: monitoring eligibility 因自然边界失效
+- **WHEN** 没有管理员操作，但 finalize 的 `database_now` 已越过 monitoring `effective_to`
+- **THEN** Control 使用 `monitoring_ineligible` 完成 evidence-only finalize，因为该 reason 描述
+  finalize 时的 eligibility 事实而非某个产品操作原因
 
 #### Scenario: 敏感或逐账号数据进入持久化路径
 - **WHEN** Driver observation 包含账号 DTO、email、endpoint、Secret 元数据或原始错误上下文

@@ -14,7 +14,7 @@ const unknownNode = "99999999-9999-4999-8999-999999999999";
 const observedAt = "2026-09-07T00:00:00Z";
 
 function makeNode(instanceId: string, displayName: string): NodeAsset {
-  return { instanceId, displayName, nodeType: "relay", driverContractVersion: "v1", managementEndpoint: "https://node.invalid", secretConfigured: true, capabilities: [], monitoringActive: true, monitoringEffectiveFrom: null, monitoringEffectiveTo: null };
+  return { instanceId, displayName, nodeType: "relay", driverContractVersion: "v1", managementEndpoint: "https://node.invalid", secretConfigured: true, capabilities: [], monitoringActive: true, monitoringEffectiveFrom: null, monitoringEffectiveTo: null, lifecycleStatus: "active", revision: "1", retiredAt: null, retiredBy: null, retireReason: null };
 }
 
 function emptyTopology(): TopologyApi {

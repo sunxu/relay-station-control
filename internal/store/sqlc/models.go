@@ -261,42 +261,45 @@ type AccountInventoryPollProviderResult struct {
 }
 
 type AccountInventoryPollRun struct {
-	PollRunID                pgtype.UUID        `json:"poll_run_id"`
-	InstanceID               pgtype.UUID        `json:"instance_id"`
-	NodeType                 string             `json:"node_type"`
-	DriverContractVersion    string             `json:"driver_contract_version"`
-	ScheduledAt              pgtype.Timestamptz `json:"scheduled_at"`
-	ProviderPolicyVersion    pgtype.UUID        `json:"provider_policy_version"`
-	Status                   string             `json:"status"`
-	AttemptCount             int32              `json:"attempt_count"`
-	MaxAttempts              int32              `json:"max_attempts"`
-	PollStartGraceSeconds    int32              `json:"poll_start_grace_seconds"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
-	FirstStartedAt           pgtype.Timestamptz `json:"first_started_at"`
-	LastStartedAt            pgtype.Timestamptz `json:"last_started_at"`
-	LeaseExpiresAt           pgtype.Timestamptz `json:"lease_expires_at"`
-	LeaseFencingToken        pgtype.UUID        `json:"lease_fencing_token"`
-	FinalizedAt              pgtype.Timestamptz `json:"finalized_at"`
-	AbandonedAt              pgtype.Timestamptz `json:"abandoned_at"`
-	ExecutionReason          pgtype.Text        `json:"execution_reason"`
-	ObservedAt               pgtype.Timestamptz `json:"observed_at"`
-	TransportSuccess         pgtype.Bool        `json:"transport_success"`
-	ResponseShapeValid       pgtype.Bool        `json:"response_shape_valid"`
-	ContractValid            pgtype.Bool        `json:"contract_valid"`
-	InventoryMode            pgtype.Text        `json:"inventory_mode"`
-	NodeIdentityComplete     pgtype.Bool        `json:"node_identity_complete"`
-	SnapshotComplete         pgtype.Bool        `json:"snapshot_complete"`
-	Degraded                 pgtype.Bool        `json:"degraded"`
-	Result                   pgtype.Text        `json:"result"`
-	Reason                   pgtype.Text        `json:"reason"`
-	SourceRecordCount        pgtype.Int4        `json:"source_record_count"`
-	IdentifiableRecordCount  pgtype.Int4        `json:"identifiable_record_count"`
-	UnidentifiedRecordCount  pgtype.Int4        `json:"unidentified_record_count"`
-	UnsupportedProviderCount pgtype.Int4        `json:"unsupported_provider_count"`
-	OutOfScopeProviderCount  pgtype.Int4        `json:"out_of_scope_provider_count"`
-	NodeVersion              pgtype.Text        `json:"node_version"`
-	NodeCommit               pgtype.Text        `json:"node_commit"`
-	PromotionSkippedReason   pgtype.Text        `json:"promotion_skipped_reason"`
+	PollRunID                      pgtype.UUID        `json:"poll_run_id"`
+	InstanceID                     pgtype.UUID        `json:"instance_id"`
+	NodeType                       string             `json:"node_type"`
+	DriverContractVersion          string             `json:"driver_contract_version"`
+	ScheduledAt                    pgtype.Timestamptz `json:"scheduled_at"`
+	ProviderPolicyVersion          pgtype.UUID        `json:"provider_policy_version"`
+	Status                         string             `json:"status"`
+	AttemptCount                   int32              `json:"attempt_count"`
+	MaxAttempts                    int32              `json:"max_attempts"`
+	PollStartGraceSeconds          int32              `json:"poll_start_grace_seconds"`
+	CreatedAt                      pgtype.Timestamptz `json:"created_at"`
+	FirstStartedAt                 pgtype.Timestamptz `json:"first_started_at"`
+	LastStartedAt                  pgtype.Timestamptz `json:"last_started_at"`
+	LeaseExpiresAt                 pgtype.Timestamptz `json:"lease_expires_at"`
+	LeaseFencingToken              pgtype.UUID        `json:"lease_fencing_token"`
+	FinalizedAt                    pgtype.Timestamptz `json:"finalized_at"`
+	AbandonedAt                    pgtype.Timestamptz `json:"abandoned_at"`
+	ExecutionReason                pgtype.Text        `json:"execution_reason"`
+	ObservedAt                     pgtype.Timestamptz `json:"observed_at"`
+	TransportSuccess               pgtype.Bool        `json:"transport_success"`
+	ResponseShapeValid             pgtype.Bool        `json:"response_shape_valid"`
+	ContractValid                  pgtype.Bool        `json:"contract_valid"`
+	InventoryMode                  pgtype.Text        `json:"inventory_mode"`
+	NodeIdentityComplete           pgtype.Bool        `json:"node_identity_complete"`
+	SnapshotComplete               pgtype.Bool        `json:"snapshot_complete"`
+	Degraded                       pgtype.Bool        `json:"degraded"`
+	Result                         pgtype.Text        `json:"result"`
+	Reason                         pgtype.Text        `json:"reason"`
+	SourceRecordCount              pgtype.Int4        `json:"source_record_count"`
+	IdentifiableRecordCount        pgtype.Int4        `json:"identifiable_record_count"`
+	UnidentifiedRecordCount        pgtype.Int4        `json:"unidentified_record_count"`
+	UnsupportedProviderCount       pgtype.Int4        `json:"unsupported_provider_count"`
+	OutOfScopeProviderCount        pgtype.Int4        `json:"out_of_scope_provider_count"`
+	NodeVersion                    pgtype.Text        `json:"node_version"`
+	NodeCommit                     pgtype.Text        `json:"node_commit"`
+	PromotionSkippedReason         pgtype.Text        `json:"promotion_skipped_reason"`
+	DispatchAuthorizedAttempt      pgtype.Int4        `json:"dispatch_authorized_attempt"`
+	DispatchAuthorizedAt           pgtype.Timestamptz `json:"dispatch_authorized_at"`
+	DispatchAuthorizedFencingToken pgtype.UUID        `json:"dispatch_authorized_fencing_token"`
 }
 
 type AccountInventoryProviderState struct {
@@ -371,6 +374,11 @@ type AssetAdminCommandReceipt struct {
 	ActorAdminID                pgtype.UUID        `json:"actor_admin_id"`
 	CommittedAt                 pgtype.Timestamptz `json:"committed_at"`
 	SecretFingerprintKeyVersion pgtype.Int2        `json:"secret_fingerprint_key_version"`
+}
+
+type AssetRegistryGeneration struct {
+	SingletonID    int16 `json:"singleton_id"`
+	NodeGeneration int64 `json:"node_generation"`
 }
 
 type AsyncJob struct {
@@ -775,6 +783,19 @@ type RelayNodeAsset struct {
 	ReaderSecretConfigured pgtype.Bool        `json:"reader_secret_configured"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	LifecycleStatus        string             `json:"lifecycle_status"`
+	Revision               int64              `json:"revision"`
+	RetiredAt              pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy              pgtype.UUID        `json:"retired_by"`
+	RetireReason           pgtype.Text        `json:"retire_reason"`
+}
+
+type RelayNodeAssetReplacement struct {
+	OldInstanceID pgtype.UUID        `json:"old_instance_id"`
+	NewInstanceID pgtype.UUID        `json:"new_instance_id"`
+	ReplacedAt    pgtype.Timestamptz `json:"replaced_at"`
+	ReplacedBy    pgtype.UUID        `json:"replaced_by"`
+	CommandID     pgtype.UUID        `json:"command_id"`
 }
 
 type RelayNodeGatewayAccountBinding struct {
@@ -796,11 +817,14 @@ type RelayNodeInventoryMonitoringActivation struct {
 	InstanceID             pgtype.UUID                      `json:"instance_id"`
 	EffectiveFrom          pgtype.Timestamptz               `json:"effective_from"`
 	EffectiveTo            pgtype.Timestamptz               `json:"effective_to"`
-	ActiveRange            pgtype.Range[pgtype.Timestamptz] `json:"active_range"`
 	Reason                 string                           `json:"reason"`
 	Actor                  string                           `json:"actor"`
 	EndReason              pgtype.Text                      `json:"end_reason"`
 	EndActor               pgtype.Text                      `json:"end_actor"`
 	EndRecordedAt          pgtype.Timestamptz               `json:"end_recorded_at"`
 	CreatedAt              pgtype.Timestamptz               `json:"created_at"`
+	CancelledAt            pgtype.Timestamptz               `json:"cancelled_at"`
+	CancelledBy            pgtype.UUID                      `json:"cancelled_by"`
+	CancelReason           pgtype.Text                      `json:"cancel_reason"`
+	ActiveRange            pgtype.Range[pgtype.Timestamptz] `json:"active_range"`
 }

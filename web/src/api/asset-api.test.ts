@@ -29,7 +29,7 @@ describe("generated asset client adapter", () => {
         },
       });
       if (url.startsWith("/api/assets/nodes?")) return json({ items: [], next_cursor: null });
-      if (url === "/api/assets/nodes/00000000-0000-4000-8000-000000000101") return json({
+      if (url === "/api/assets/nodes/00000000-0000-4000-8000-000000000101") return json({ asset: {
         instance_id: "00000000-0000-4000-8000-000000000101",
         display_name: "Node",
         node_type: "cliproxyapi",
@@ -37,10 +37,15 @@ describe("generated asset client adapter", () => {
         management_endpoint: "https://node.invalid:8317",
         secret_configured: true,
         capabilities: ["management_health_read"],
-        monitoring: { active: false, effective_from: null, effective_to: null },
+		lifecycle_status: "active",
+		revision: "1",
+		retired_at: null,
+		retired_by: null,
+		retire_reason: null,
+		monitoring: { current: false, monitoring_active: false, effective_from: null, effective_to: null },
         created_at: "2026-08-25T00:00:00Z",
         updated_at: "2026-08-25T00:00:00Z",
-      });
+      }, predecessor: null, successor: null });
       if (url === "/api/assets/drivers") return json({ items: [] });
       if (url.startsWith("/api/assets/provider-policies/current?")) return json({
         status: "not_configured",

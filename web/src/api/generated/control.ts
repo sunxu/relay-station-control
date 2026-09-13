@@ -574,6 +574,14 @@ export interface GatewayProbeResult {
 
 export interface EmptyObject { [key: string]: unknown }
 
+export type NodeAssetLifecycleStatus = typeof NodeAssetLifecycleStatus[keyof typeof NodeAssetLifecycleStatus];
+
+
+export const NodeAssetLifecycleStatus = {
+  active: 'active',
+  retired: 'retired',
+} as const;
+
 /**
  * @minLength 2
  * @maxLength 64
@@ -597,15 +605,29 @@ export const NodeCapability = {
 } as const;
 
 export interface NodeMonitoringStatus {
-  active: boolean;
+  current: boolean;
+  monitoring_active: boolean;
   /** @nullable */
-  effective_from?: string | null;
+  effective_from: string | null;
   /** @nullable */
-  effective_to?: string | null;
+  effective_to: string | null;
 }
+
+/**
+ * @nullable
+ */
+export type NodeAssetRetireReason = typeof NodeAssetRetireReason[keyof typeof NodeAssetRetireReason] | null;
+
+
+export const NodeAssetRetireReason = {
+  administrator_retire: 'administrator_retire',
+  replacement: 'replacement',
+} as const;
 
 export interface NodeAsset {
   instance_id: string;
+  lifecycle_status: NodeAssetLifecycleStatus;
+  revision: AssetRevision;
   display_name: DisplayName;
   node_type: NodeType;
   driver_contract_version: DriverContractVersion;
@@ -615,6 +637,21 @@ export interface NodeAsset {
   monitoring: NodeMonitoringStatus;
   created_at: string;
   updated_at: string;
+  /** @nullable */
+  retired_at: string | null;
+  /** @nullable */
+  retired_by: string | null;
+  /** @nullable */
+  retire_reason: NodeAssetRetireReason;
+}
+
+export interface NodeCounts {
+  /** @minimum 0 */
+  active: number;
+  /** @minimum 0 */
+  retired: number;
+  /** @minimum 0 */
+  total: number;
 }
 
 export interface NodeAssetListResponse {
@@ -623,7 +660,101 @@ export interface NodeAssetListResponse {
      * @maxLength 512
      * @nullable
      */
-  next_cursor?: string | null;
+  next_cursor: string | null;
+  node_counts: NodeCounts;
+}
+
+export interface NodeRegisterRequest {
+  command_id: string;
+  new_instance_id: string;
+  display_name: DisplayName;
+  management_endpoint: ManagementEndpoint;
+  node_type: NodeType;
+  driver_contract_version: DriverContractVersion;
+  /** @minItems 1 */
+  capabilities: NodeCapability[];
+  /**
+     * @minLength 6
+     * @maxLength 512
+     * @nullable
+     */
+  reader_secret_ref?: string | null;
+}
+
+export interface NodeEditRequest {
+  command_id: string;
+  expected_revision: AssetRevision;
+  display_name?: DisplayName;
+  management_endpoint?: ManagementEndpoint;
+  /**
+     * @minLength 6
+     * @maxLength 512
+     * @nullable
+     */
+  reader_secret_ref?: string | null;
+}
+
+export interface NodeRetireRequest {
+  command_id: string;
+  expected_revision: AssetRevision;
+}
+
+export type NodeReplaceRequest = NodeRegisterRequest & {
+  expected_revision: AssetRevision;
+};
+
+export type NodeMutationResultResult = typeof NodeMutationResultResult[keyof typeof NodeMutationResultResult];
+
+
+export const NodeMutationResultResult = {
+  registered: 'registered',
+  updated: 'updated',
+  retired: 'retired',
+} as const;
+
+export interface NodeMutationResult {
+  result: NodeMutationResultResult;
+  asset: NodeAsset;
+  /** @minimum 0 */
+  closed_binding_count: number;
+  /** @minimum 0 */
+  closed_monitoring_count: number;
+  /** @minimum 0 */
+  cancelled_future_monitoring_count: number;
+}
+
+export interface NodeReplacementLineage {
+  old_instance_id: string;
+  new_instance_id: string;
+  replaced_at: string;
+  replaced_by: string;
+  command_id: string;
+}
+
+export interface NodeAssetDetailResponse {
+  asset: NodeAsset;
+  predecessor: NodeReplacementLineage | null;
+  successor: NodeReplacementLineage | null;
+}
+
+export type NodeReplaceResultResult = typeof NodeReplaceResultResult[keyof typeof NodeReplaceResultResult];
+
+
+export const NodeReplaceResultResult = {
+  replaced: 'replaced',
+} as const;
+
+export interface NodeReplaceResult {
+  result: NodeReplaceResultResult;
+  old_asset: NodeAsset;
+  new_asset: NodeAsset;
+  /** @minimum 0 */
+  closed_binding_count: number;
+  /** @minimum 0 */
+  closed_monitoring_count: number;
+  /** @minimum 0 */
+  cancelled_future_monitoring_count: number;
+  lineage: NodeReplacementLineage;
 }
 
 export type NodeDriverLifecycleStatus = typeof NodeDriverLifecycleStatus[keyof typeof NodeDriverLifecycleStatus];
@@ -1993,7 +2124,17 @@ cursor?: PageCursorParameter;
 node_type?: NodeType;
 capability?: NodeCapability;
 monitoring_active?: boolean;
+lifecycle?: ListNodeAssetsLifecycle;
 };
+
+export type ListNodeAssetsLifecycle = typeof ListNodeAssetsLifecycle[keyof typeof ListNodeAssetsLifecycle];
+
+
+export const ListNodeAssetsLifecycle = {
+  active: 'active',
+  retired: 'retired',
+  all: 'all',
+} as const;
 
 export type GetCurrentProviderInventoryPolicyParams = {
 node_type: NodeType;
@@ -5987,8 +6128,132 @@ export function useListNodeAssets<TData = Awaited<ReturnType<typeof listNodeAsse
 
 
 
+export type registerNodeAssetResponse201 = {
+  data: NodeMutationResult
+  status: 201
+}
+
+export type registerNodeAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type registerNodeAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type registerNodeAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type registerNodeAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type registerNodeAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type registerNodeAssetResponseSuccess = (registerNodeAssetResponse201) & {
+  headers: Headers;
+};
+export type registerNodeAssetResponseError = (registerNodeAssetResponse400 | registerNodeAssetResponse401 | registerNodeAssetResponse403 | registerNodeAssetResponse409 | registerNodeAssetResponse503) & {
+  headers: Headers;
+};
+
+export type registerNodeAssetResponse = (registerNodeAssetResponseSuccess | registerNodeAssetResponseError)
+
+export const getRegisterNodeAssetUrl = () => {
+
+
+
+
+  return `/api/assets/nodes`
+}
+
+/**
+ * @summary Register an active Relay Node
+ */
+export const registerNodeAsset = async (nodeRegisterRequest: NodeRegisterRequest, options?: RequestInit): Promise<registerNodeAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRegisterNodeAssetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeRegisterRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: registerNodeAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as registerNodeAssetResponse
+}
+
+
+
+
+
+export const getRegisterNodeAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerNodeAsset>>, TError,RegisterNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof registerNodeAsset>>, TError,RegisterNodeAssetMutationVariables, TContext> => {
+
+const mutationKey = ['registerNodeAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerNodeAsset>>, RegisterNodeAssetMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerNodeAsset(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterNodeAssetMutationResult = NonNullable<Awaited<ReturnType<typeof registerNodeAsset>>>
+    export type RegisterNodeAssetMutationBody = NodeRegisterRequest
+    export type RegisterNodeAssetMutationError = ErrorResponse
+    export type RegisterNodeAssetMutationVariables = {data: NodeRegisterRequest}
+
+    /**
+ * @summary Register an active Relay Node
+ */
+export const useRegisterNodeAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerNodeAsset>>, TError,RegisterNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof registerNodeAsset>>,
+        TError,
+        RegisterNodeAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRegisterNodeAssetMutationOptions(options), queryClient);
+    }
+
 export type getNodeAssetResponse200 = {
-  data: NodeAsset
+  data: NodeAssetDetailResponse
   status: 200
 }
 
@@ -6128,6 +6393,396 @@ export function useGetNodeAsset<TData = Awaited<ReturnType<typeof getNodeAsset>>
 
 
 
+
+export type editNodeAssetResponse200 = {
+  data: NodeMutationResult
+  status: 200
+}
+
+export type editNodeAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type editNodeAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type editNodeAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type editNodeAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type editNodeAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type editNodeAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type editNodeAssetResponseSuccess = (editNodeAssetResponse200) & {
+  headers: Headers;
+};
+export type editNodeAssetResponseError = (editNodeAssetResponse400 | editNodeAssetResponse401 | editNodeAssetResponse403 | editNodeAssetResponse404 | editNodeAssetResponse409 | editNodeAssetResponse503) & {
+  headers: Headers;
+};
+
+export type editNodeAssetResponse = (editNodeAssetResponseSuccess | editNodeAssetResponseError)
+
+export const getEditNodeAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}`
+}
+
+/**
+ * @summary Edit mutable Relay Node metadata
+ */
+export const editNodeAsset = async (instanceId: string,
+    nodeEditRequest: NodeEditRequest, options?: RequestInit): Promise<editNodeAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getEditNodeAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeEditRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: editNodeAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as editNodeAssetResponse
+}
+
+
+
+
+
+export const getEditNodeAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editNodeAsset>>, TError,EditNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof editNodeAsset>>, TError,EditNodeAssetMutationVariables, TContext> => {
+
+const mutationKey = ['editNodeAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof editNodeAsset>>, EditNodeAssetMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  editNodeAsset(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EditNodeAssetMutationResult = NonNullable<Awaited<ReturnType<typeof editNodeAsset>>>
+    export type EditNodeAssetMutationBody = NodeEditRequest
+    export type EditNodeAssetMutationError = ErrorResponse
+    export type EditNodeAssetMutationVariables = {instanceId: string;data: NodeEditRequest}
+
+    /**
+ * @summary Edit mutable Relay Node metadata
+ */
+export const useEditNodeAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editNodeAsset>>, TError,EditNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof editNodeAsset>>,
+        TError,
+        EditNodeAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEditNodeAssetMutationOptions(options), queryClient);
+    }
+
+export type retireNodeAssetResponse200 = {
+  data: NodeMutationResult
+  status: 200
+}
+
+export type retireNodeAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type retireNodeAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type retireNodeAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type retireNodeAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type retireNodeAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type retireNodeAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type retireNodeAssetResponseSuccess = (retireNodeAssetResponse200) & {
+  headers: Headers;
+};
+export type retireNodeAssetResponseError = (retireNodeAssetResponse400 | retireNodeAssetResponse401 | retireNodeAssetResponse403 | retireNodeAssetResponse404 | retireNodeAssetResponse409 | retireNodeAssetResponse503) & {
+  headers: Headers;
+};
+
+export type retireNodeAssetResponse = (retireNodeAssetResponseSuccess | retireNodeAssetResponseError)
+
+export const getRetireNodeAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}/retire`
+}
+
+/**
+ * @summary Retire an active Relay Node
+ */
+export const retireNodeAsset = async (instanceId: string,
+    nodeRetireRequest: NodeRetireRequest, options?: RequestInit): Promise<retireNodeAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireNodeAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeRetireRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireNodeAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireNodeAssetResponse
+}
+
+
+
+
+
+export const getRetireNodeAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retireNodeAsset>>, TError,RetireNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof retireNodeAsset>>, TError,RetireNodeAssetMutationVariables, TContext> => {
+
+const mutationKey = ['retireNodeAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retireNodeAsset>>, RetireNodeAssetMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  retireNodeAsset(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetireNodeAssetMutationResult = NonNullable<Awaited<ReturnType<typeof retireNodeAsset>>>
+    export type RetireNodeAssetMutationBody = NodeRetireRequest
+    export type RetireNodeAssetMutationError = ErrorResponse
+    export type RetireNodeAssetMutationVariables = {instanceId: string;data: NodeRetireRequest}
+
+    /**
+ * @summary Retire an active Relay Node
+ */
+export const useRetireNodeAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retireNodeAsset>>, TError,RetireNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof retireNodeAsset>>,
+        TError,
+        RetireNodeAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRetireNodeAssetMutationOptions(options), queryClient);
+    }
+
+export type replaceNodeAssetResponse200 = {
+  data: NodeReplaceResult
+  status: 200
+}
+
+export type replaceNodeAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type replaceNodeAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type replaceNodeAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type replaceNodeAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type replaceNodeAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type replaceNodeAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type replaceNodeAssetResponseSuccess = (replaceNodeAssetResponse200) & {
+  headers: Headers;
+};
+export type replaceNodeAssetResponseError = (replaceNodeAssetResponse400 | replaceNodeAssetResponse401 | replaceNodeAssetResponse403 | replaceNodeAssetResponse404 | replaceNodeAssetResponse409 | replaceNodeAssetResponse503) & {
+  headers: Headers;
+};
+
+export type replaceNodeAssetResponse = (replaceNodeAssetResponseSuccess | replaceNodeAssetResponseError)
+
+export const getReplaceNodeAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}/replace`
+}
+
+/**
+ * @summary Atomically replace an active Relay Node
+ */
+export const replaceNodeAsset = async (instanceId: string,
+    nodeReplaceRequest: NodeReplaceRequest, options?: RequestInit): Promise<replaceNodeAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReplaceNodeAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeReplaceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceNodeAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceNodeAssetResponse
+}
+
+
+
+
+
+export const getReplaceNodeAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceNodeAsset>>, TError,ReplaceNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceNodeAsset>>, TError,ReplaceNodeAssetMutationVariables, TContext> => {
+
+const mutationKey = ['replaceNodeAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceNodeAsset>>, ReplaceNodeAssetMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  replaceNodeAsset(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceNodeAssetMutationResult = NonNullable<Awaited<ReturnType<typeof replaceNodeAsset>>>
+    export type ReplaceNodeAssetMutationBody = NodeReplaceRequest
+    export type ReplaceNodeAssetMutationError = ErrorResponse
+    export type ReplaceNodeAssetMutationVariables = {instanceId: string;data: NodeReplaceRequest}
+
+    /**
+ * @summary Atomically replace an active Relay Node
+ */
+export const useReplaceNodeAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceNodeAsset>>, TError,ReplaceNodeAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof replaceNodeAsset>>,
+        TError,
+        ReplaceNodeAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReplaceNodeAssetMutationOptions(options), queryClient);
+    }
 
 export type listNodeDriversResponse200 = {
   data: NodeDriverListResponse

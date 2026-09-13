@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -18,6 +19,7 @@ import (
 const nodeCursorVersion = 1
 
 var ErrInvalidNodeCursor = errors.New("store: invalid node cursor")
+var ErrNodeCursorStale = errors.New("store: node cursor stale")
 var ErrInvalidGatewayCursor = errors.New("store: invalid gateway cursor")
 var ErrGatewayCursorStale = errors.New("store: gateway cursor stale")
 
@@ -25,9 +27,13 @@ var ErrGatewayCursorStale = errors.New("store: gateway cursor stale")
 // Keeping this type closed prevents a cursor from being replayed under a
 // different query without being rejected.
 type NodeListFilters struct {
+	Environment      string
+	Lifecycle        string
 	NodeType         string
 	Capability       string
 	MonitoringActive *bool
+	Generation       int64
+	ReadAsOf         time.Time
 }
 
 type GatewayCursor struct {
@@ -123,6 +129,8 @@ type nodeCursorPayload struct {
 	KeyVersion  uint32 `json:"key_version"`
 	After       string `json:"after"`
 	FiltersHash string `json:"filters_hash"`
+	Generation  int64  `json:"generation"`
+	ReadAsOf    string `json:"read_as_of"`
 	Digest      string `json:"digest"`
 }
 
@@ -141,6 +149,8 @@ func NewNodeCursorCodec(keyring *authn.Keyring) (*NodeCursorCodec, error) {
 }
 
 type normalizedNodeListFilters struct {
+	Environment      string `json:"environment"`
+	Lifecycle        string `json:"lifecycle"`
 	NodeType         string `json:"node_type"`
 	Capability       string `json:"capability"`
 	MonitoringActive string `json:"monitoring_active"`
@@ -163,8 +173,10 @@ func (codec *NodeCursorCodec) Encode(after uuid.UUID, filters NodeListFilters) (
 		KeyVersion:  uint32(keyVersion),
 		After:       after.String(),
 		FiltersHash: filterHash,
+		Generation:  filters.Generation,
+		ReadAsOf:    filters.ReadAsOf.UTC().Format(time.RFC3339Nano),
 	}
-	payload.Digest = hex.EncodeToString(nodeCursorDigest(key, payload.Version, payload.KeyVersion, payload.After, payload.FiltersHash))
+	payload.Digest = hex.EncodeToString(nodeCursorDigest(key, payload))
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", ErrInvalidNodeCursor
@@ -175,40 +187,52 @@ func (codec *NodeCursorCodec) Encode(after uuid.UUID, filters NodeListFilters) (
 // DecodeNodeCursor accepts an empty cursor as the first page. Non-empty cursors
 // must have valid structure, UUID, integrity checksum, and filter binding.
 func (codec *NodeCursorCodec) Decode(cursor string, filters NodeListFilters) (uuid.UUID, error) {
+	value, err := codec.DecodeFull(cursor, filters)
+	return value.After, err
+}
+
+type NodeCursor struct {
+	After      uuid.UUID
+	Generation int64
+	ReadAsOf   time.Time
+}
+
+func (codec *NodeCursorCodec) DecodeFull(cursor string, filters NodeListFilters) (NodeCursor, error) {
 	if cursor == "" {
-		return uuid.Nil, nil
+		return NodeCursor{}, nil
 	}
 	if len(cursor) > 512 {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
 	var payload nodeCursorPayload
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
 	key, err := codec.keyring.Derive(authn.KeyVersion(payload.KeyVersion), authn.DomainAssetCursorDigest, sha256.Size)
 	if err != nil {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
-	expectedDigest := nodeCursorDigest(key, payload.Version, payload.KeyVersion, payload.After, payload.FiltersHash)
+	expectedDigest := nodeCursorDigest(key, payload)
 	providedDigest, err := hex.DecodeString(payload.Digest)
-	if err != nil || payload.Version != nodeCursorVersion || payload.FiltersHash != nodeFilterHash(filters) ||
+	readAsOf, timeErr := time.Parse(time.RFC3339Nano, payload.ReadAsOf)
+	if err != nil || timeErr != nil || payload.Generation < 0 || payload.Version != nodeCursorVersion || payload.FiltersHash != nodeFilterHash(filters) ||
 		!hmac.Equal(providedDigest, expectedDigest) {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
 	after, err := uuid.Parse(payload.After)
 	if err != nil || after == uuid.Nil {
-		return uuid.Nil, ErrInvalidNodeCursor
+		return NodeCursor{}, ErrInvalidNodeCursor
 	}
-	return after, nil
+	return NodeCursor{After: after, Generation: payload.Generation, ReadAsOf: readAsOf}, nil
 }
 
 func nodeFilterHash(filters NodeListFilters) string {
@@ -221,6 +245,8 @@ func nodeFilterHash(filters NodeListFilters) string {
 		}
 	}
 	normalized := normalizedNodeListFilters{
+		Environment:      strings.TrimSpace(filters.Environment),
+		Lifecycle:        strings.TrimSpace(filters.Lifecycle),
 		NodeType:         strings.TrimSpace(filters.NodeType),
 		Capability:       strings.TrimSpace(filters.Capability),
 		MonitoringActive: monitoring,
@@ -230,14 +256,8 @@ func nodeFilterHash(filters NodeListFilters) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func nodeCursorDigest(key []byte, version int, keyVersion uint32, after, filterHash string) []byte {
-	data, _ := json.Marshal(struct {
-		Domain      string `json:"domain"`
-		Version     int    `json:"v"`
-		KeyVersion  uint32 `json:"key_version"`
-		After       string `json:"after"`
-		FiltersHash string `json:"filters_hash"`
-	}{"relay-control-node-cursor-v1", version, keyVersion, after, filterHash})
+func nodeCursorDigest(key []byte, p nodeCursorPayload) []byte {
+	data, _ := json.Marshal([]any{"relay-control-node-cursor-v1", p.Version, p.KeyVersion, p.After, p.FiltersHash, p.Generation, p.ReadAsOf})
 	digest := hmac.New(sha256.New, key)
 	_, _ = digest.Write(data)
 	return digest.Sum(nil)

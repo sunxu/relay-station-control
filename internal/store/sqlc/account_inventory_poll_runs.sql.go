@@ -79,7 +79,7 @@ func (q *Queries) ClaimAccountInventoryPollRun(ctx context.Context, arg ClaimAcc
 }
 
 const finalizeAccountInventoryPollRun = `-- name: FinalizeAccountInventoryPollRun :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_finalize_account_inventory_poll_run(
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason, dispatch_authorized_attempt, dispatch_authorized_at, dispatch_authorized_fencing_token FROM public.control_finalize_account_inventory_poll_run(
     $1::uuid,
     $2::uuid,
     $3::boolean,
@@ -190,12 +190,15 @@ func (q *Queries) FinalizeAccountInventoryPollRun(ctx context.Context, arg Final
 		&i.NodeVersion,
 		&i.NodeCommit,
 		&i.PromotionSkippedReason,
+		&i.DispatchAuthorizedAttempt,
+		&i.DispatchAuthorizedAt,
+		&i.DispatchAuthorizedFencingToken,
 	)
 	return i, err
 }
 
 const finalizeAccountInventoryPollRunWithLifecycle = `-- name: FinalizeAccountInventoryPollRunWithLifecycle :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason, dispatch_authorized_attempt, dispatch_authorized_at, dispatch_authorized_fencing_token FROM public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(
     $1::uuid,
     $2::uuid,
     $3::boolean,
@@ -306,12 +309,15 @@ func (q *Queries) FinalizeAccountInventoryPollRunWithLifecycle(ctx context.Conte
 		&i.NodeVersion,
 		&i.NodeCommit,
 		&i.PromotionSkippedReason,
+		&i.DispatchAuthorizedAttempt,
+		&i.DispatchAuthorizedAt,
+		&i.DispatchAuthorizedFencingToken,
 	)
 	return i, err
 }
 
 const getAccountInventoryPollRun = `-- name: GetAccountInventoryPollRun :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason, dispatch_authorized_attempt, dispatch_authorized_at, dispatch_authorized_fencing_token
 FROM account_inventory_poll_runs
 WHERE poll_run_id = $1::uuid
 `
@@ -356,6 +362,9 @@ func (q *Queries) GetAccountInventoryPollRun(ctx context.Context, pollRunID pgty
 		&i.NodeVersion,
 		&i.NodeCommit,
 		&i.PromotionSkippedReason,
+		&i.DispatchAuthorizedAttempt,
+		&i.DispatchAuthorizedAt,
+		&i.DispatchAuthorizedFencingToken,
 	)
 	return i, err
 }
@@ -771,7 +780,7 @@ func (q *Queries) ListCurrentAccountInventorySnapshot(ctx context.Context, arg L
 }
 
 const reconcileAccountInventoryPollRun = `-- name: ReconcileAccountInventoryPollRun :one
-SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason FROM public.control_reconcile_account_inventory_poll_run(
+SELECT poll_run_id, instance_id, node_type, driver_contract_version, scheduled_at, provider_policy_version, status, attempt_count, max_attempts, poll_start_grace_seconds, created_at, first_started_at, last_started_at, lease_expires_at, lease_fencing_token, finalized_at, abandoned_at, execution_reason, observed_at, transport_success, response_shape_valid, contract_valid, inventory_mode, node_identity_complete, snapshot_complete, degraded, result, reason, source_record_count, identifiable_record_count, unidentified_record_count, unsupported_provider_count, out_of_scope_provider_count, node_version, node_commit, promotion_skipped_reason, dispatch_authorized_attempt, dispatch_authorized_at, dispatch_authorized_fencing_token FROM public.control_reconcile_account_inventory_poll_run(
 )
 `
 
@@ -815,6 +824,9 @@ func (q *Queries) ReconcileAccountInventoryPollRun(ctx context.Context) (Account
 		&i.NodeVersion,
 		&i.NodeCommit,
 		&i.PromotionSkippedReason,
+		&i.DispatchAuthorizedAttempt,
+		&i.DispatchAuthorizedAt,
+		&i.DispatchAuthorizedFencingToken,
 	)
 	return i, err
 }

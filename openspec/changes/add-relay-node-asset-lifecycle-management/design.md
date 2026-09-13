@@ -341,15 +341,24 @@ binding lock 后再拿 Gateway/Directory lock，避免与 Bind/Rebind 的 Node�
   `attempt_count`、不得获得新 lease/authorization、不得发起新 outbound；该 terminal transition
   须在同一事务原子清空 `lease_expires_at`/`lease_fencing_token`/三个 dispatch authorization
   列，并设置 `abandoned_at`/`execution_reason`。
-- finalize/promotion 短事务锁 Node，验证 active、同 identity、monitoring current/
-  eligibility 和 poll fencing token/run identity。若 Node 已 retired/replaced，run 级与
-  Provider 级 `promotion_skipped_reason` 均须设为对应的 `node_retired`/`node_replaced`
-  （precedence：Node lifecycle fence 先于 `policy_changed`，`policy_changed` 先于既有
-  provider-specific evaluation），保留 transport evidence 但不写 snapshot/current
-  pointer/account lifecycle/availability/request-quality current。
+- finalize/promotion 短事务按既有要求锁 poll/run，再锁 Node，读取单一 `database_now`，验证
+  same identity、poll fencing token/run identity，并先判定 Node lifecycle。若 Node 已
+  retired/replaced，run 级与 Provider 级 `promotion_skipped_reason` 均须设为对应的
+  `node_retired`/`node_replaced`。若 Node 仍 active，则以同一个 `database_now` 验证存在
+  `cancelled_at IS NULL AND database_now <@ active_range` 的 monitoring activation；不存在时
+  run 保持 `finalized`，run 与全部 pinned active Provider 统一使用
+  `monitoring_ineligible`，Provider `promotion_applied=false`。冻结 precedence：Node lifecycle
+  fence > `monitoring_ineligible` > `policy_changed` > 既有 provider-specific evaluation。
+  lifecycle 或 monitoring fence 命中时均保留 transport/provider historical evidence，但不写
+  snapshot/current pointer/account lifecycle/availability/request-quality/provider-health current
+  truth。Node lock 不跨 HTTP。
+- monitoring writer 同样先锁 Node，因此 race 只产生两个 commit-order 结果：finalize 先持有
+  Node lock 且当时 eligible，则可按正常规则完成；monitoring writer 先提交使 eligibility 消失，
+  finalize 随后观察到 `monitoring_ineligible` 并执行 evidence-only finalize。即使 eligibility 仅因
+  `database_now` 自然越过 `effective_to` 而消失，也使用同一 reason；它不专指管理员 Disable。
 - `control_refresh_account_inventory_provider_health_v1()`（以及任何等价的
   `account_inventory_provider_states` current-health consumer）把
-  `promotion_skipped_reason IN (policy_changed, stale_poll, node_retired, node_replaced)`
+  `promotion_skipped_reason IN (policy_changed, stale_poll, monitoring_ineligible, node_retired, node_replaced)`
   一视同仁地排除在 health 刷新之外：命中该 allowlist 时 MUST NOT 更新
   `health_scheduled_at`/`health_degraded`/`health_reason`，也不得间接推进
   availability/request-quality current truth；`transport_failed`/`contract_invalid`/
@@ -590,19 +599,26 @@ Additive-first sequence：
    清空为 NULL；`execution_reason` allowlist 增加 `node_retired|node_replaced`。
 6a. 扩展既有两层 promotion-skip allowlist（不新增字段）：
     `account_inventory_poll_runs_promotion_reason_fixed` CHECK 由仅允许
-    `NULL|policy_changed` additive 扩展为 `NULL|policy_changed|node_retired|node_replaced`；
+    `NULL|policy_changed` additive 扩展为
+    `NULL|policy_changed|monitoring_ineligible|node_retired|node_replaced`；
     `account_inventory_poll_provider_promotion_reason_fixed` CHECK 由
     `policy_changed|transport_failed|contract_invalid|disk_fallback|
     provider_identity_incomplete|provider_duplicate|stale_poll` additive 扩展为同一集合
-    加 `node_retired|node_replaced`；既有 `account_inventory_poll_runs_promotion_terminal`
+    加 `monitoring_ineligible|node_retired|node_replaced`；既有
+    `account_inventory_poll_runs_promotion_terminal`
     (`promotion_skipped_reason IS NULL OR status = 'finalized'`) 与
     `account_inventory_poll_provider_promotion_shape`
-    (`NOT promotion_applied OR promotion_skipped_reason IS NULL`) guard 不变。
+    (`NOT promotion_applied OR promotion_skipped_reason IS NULL`) guard 保留，并更新
+    `control_validate_account_inventory_promotion()` 或等价 invariant：接受 finalized +
+    `promotion_applied=false` + `monitoring_ineligible`，拒绝
+    `monitoring_ineligible` + `promotion_applied=true`，且 run reason 与全部 pinned active
+    Provider reason 必须一致。
 6b. 同一 migration 内更新既有触发器函数
     `control_refresh_account_inventory_provider_health_v1()`（不改变其签名/挂载点）：
     在原有 `promotion_skipped_reason IS DISTINCT FROM 'policy_changed'`（run 级）与
     `promotion_skipped_reason IS DISTINCT FROM 'policy_changed' AND ... 'stale_poll'`
-    （provider 级）判断中additive 加入 `node_retired`/`node_replaced` 排除；不新增列、
+    （provider 级）判断中additive 加入 `monitoring_ineligible`/`node_retired`/`node_replaced`
+    排除；不新增列、
     不新增触发器、不改变函数 owner/SECURITY DEFINER/search_path。
 7. 增加 `asset_registry_generations` 单例表：`singleton_id smallint PRIMARY KEY DEFAULT 1
    CHECK (singleton_id = 1)`、`node_generation bigint NOT NULL DEFAULT 0 CHECK

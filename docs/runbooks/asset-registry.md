@@ -1,6 +1,6 @@
-# 阶段 1 资产注册与只读视图 Runbook
+# 资产注册、Gateway 与 Node lifecycle Runbook
 
-本文适用于 `add-control-asset-registry-foundation`。资产登记是受控部署操作，不是产品 API；浏览器只读取 Control 同源 API，Control 不探测 Gateway 或 Relay Node endpoint，也不修改数据面配置。
+本文覆盖资产注册基础、Gateway lifecycle 和 Phase 6 Stage 2 Relay Node lifecycle。Driver、Provider policy 和预约式 Node monitoring 仍由受控部署流程维护；实名 `super_admin` 可在 Control 同源 Asset Registry 中执行 Node Register/Edit/Retire/Replace。Control 不进入模型请求数据面。
 
 所有示例值都必须来自目标环境的部署清单或 Secret Manager。不要把数据库口令、Reader Secret、Secret 引用、连接串或带 query 的 URL 写入 Git、工单、终端录屏和验收输出。
 
@@ -178,17 +178,27 @@ Provider 策略以 `(node_type, driver_contract_version)` 为作用域。`active
 
 停止 Control、Gateway 或 Node 不会隐式关闭监控区间。若需修正错误预约，使用新的受控边界操作，禁止直接改历史行。
 
-## 对账与只读页面
+## Node lifecycle 产品操作
+
+Asset Registry 的 Node collection 默认只显示 active Node，并提供 `active|retired|all` lifecycle filter；历史 detail 保留 retired metadata 和 predecessor/successor lineage。Register 创建 revision 1 的新 identity；Edit、Retire 和 Replace 都携带十进制字符串 `expected_revision`。Retire 是 terminal transition；Replace 原子退休旧 identity 并创建 revision 1 的新 identity，禁止复用或复活历史 identity。
+
+Node mutation 使用全局 `command_id` durable receipt。相同 actor、command 和 intent 重放原始 status/body；actor 或 intent 冲突返回固定冲突。Secret reference 是 write-only，产品响应和页面只显示 `secret_configured`。Retire/Replace 会在同一数据库 boundary 关闭旧 current binding、关闭 current monitoring、durable cancel future monitoring，并 fence 或终止旧 Node 的 Inventory work；replacement 不继承这些 runtime truth。
+
+Node collection cursor 绑定 filter、`node_generation` 和首屏 DB `read_as_of`。真正改变 lifecycle/current collection projection 的事务推进 generation，使旧 cursor 返回 `cursor_stale`；单纯 wall-clock 跨过 monitoring boundary 不改变已签发 cursor chain。legacy `nodes` count 继续表示 total，`node_counts` 分别提供 active、retired 和 total。
+
+Stage 2 页面不提供 Node Health、Connection Test、Monitoring Enable 或 Monitoring Disable；这些操作仍属于 Stage 3，不能通过 Stage 2 API/UI 提前执行。
+
+## 对账与 Asset Registry 页面
 
 `reconcile.sql` 必须确认：
 
 - 环境单例仍唯一且身份未变；
-- Gateway 至多一个；
+- Gateway 保持一个 current slot，并可有 retired history；
 - Node、Driver 和 capability 复合外键完整；
 - 当前策略绑定与当前激活区间同作用域；
 - Node 监控区间不重叠。
 
-对账输出只能包含固定计数和通过/失败状态，不得选择 endpoint、名称、instance ID、Provider 名称或 Secret 引用。随后由实名 `super_admin` 访问 `/assets`，分别检查环境、Gateway、Driver、当前策略和 Node 页面。页面无编辑入口，endpoint 仅为不可点击文本，浏览器不得请求登记的外部 endpoint。
+对账输出只能包含固定计数和通过/失败状态，不得选择 endpoint、名称、instance ID、Provider 名称或 Secret 引用。随后由实名 `super_admin` 访问 `/assets`，分别检查环境、Gateway、Driver、当前策略和 Node 页面。Node lifecycle 控件只调用 Control 同源 API；浏览器不得请求登记的外部 endpoint，也不得显示 raw Secret reference。retired Node 只提供历史读取和 lineage 导航，不提供 resurrection action。
 
 ### Web 路由与静态资源
 
@@ -211,7 +221,7 @@ Control 或资产数据库故障只影响管理视图。Gateway 和 Relay Node �
 
 ## 应用回滚
 
-应用回滚只切回旧二进制/前端，保留资产表、不可变策略版本、绑定和全部激活历史。旧版本会忽略 additive 表，重新升级后恢复读取。
+应用回滚只选择已签名、digest 固定的 Control artifact，并继续通过外置 compatibility wrapper。migration 34 将 evidence floor 提升为 2；class 0/1 artifact 必须在 Control HTTP/worker 启动前 fail closed，只有 class 2 artifact 可读取 Node lifecycle/cancellation truth。数据库保留资产、lineage、不可变策略版本、binding 和全部 monitoring 历史。
 
 普通回滚严禁执行 `make migrate-down`。只有全新数据库且 Gateway、Driver、Node、策略、绑定和所有激活区间均为空，经人工双人确认后，才允许使用 Migration owner 执行受保护 down；`environments` 单例必须保持不变。任何已有资产或历史都会使 down fail closed。
 

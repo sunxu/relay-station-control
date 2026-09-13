@@ -916,6 +916,13 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: lifecycle
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, retired, all]
+            default: active
       responses:
         "200":
           description: A stable instance-ID ordered page from one database snapshot.
@@ -934,6 +941,31 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+    post:
+      operationId: registerNodeAsset
+      summary: Register an active Relay Node
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeRegisterRequest" }
+      responses:
+        "201":
+          description: Relay Node registered.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeMutationResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /api/assets/nodes/{instance_id}:
     get:
@@ -953,7 +985,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NodeAsset"
+                $ref: "#/components/schemas/NodeAssetDetailResponse"
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -962,6 +994,91 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+    patch:
+      operationId: editNodeAsset
+      summary: Edit mutable Relay Node metadata
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeEditRequest" }
+      responses:
+        "200":
+          description: Relay Node updated.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeMutationResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/nodes/{instance_id}/retire:
+    post:
+      operationId: retireNodeAsset
+      summary: Retire an active Relay Node
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeRetireRequest" }
+      responses:
+        "200":
+          description: Relay Node retired.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeMutationResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/nodes/{instance_id}/replace:
+    post:
+      operationId: replaceNodeAsset
+      summary: Atomically replace an active Relay Node
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeReplaceRequest" }
+      responses:
+        "200":
+          description: Relay Node replaced.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeReplaceResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /api/assets/drivers:
     get:
@@ -2593,7 +2710,7 @@ components:
     NodeAssetListResponse:
       type: object
       additionalProperties: false
-      required: [items]
+      required: [items, next_cursor, node_counts]
       properties:
         items:
           type: array
@@ -2602,12 +2719,25 @@ components:
         next_cursor:
           type: [string, "null"]
           maxLength: 512
+        node_counts:
+          $ref: "#/components/schemas/NodeCounts"
+
+    NodeCounts:
+      type: object
+      additionalProperties: false
+      required: [active, retired, total]
+      properties:
+        active: { type: integer, minimum: 0 }
+        retired: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
 
     NodeAsset:
       type: object
       additionalProperties: false
       required:
         - instance_id
+        - lifecycle_status
+        - revision
         - display_name
         - node_type
         - driver_contract_version
@@ -2617,10 +2747,18 @@ components:
         - monitoring
         - created_at
         - updated_at
+        - retired_at
+        - retired_by
+        - retire_reason
       properties:
         instance_id:
           type: string
           format: uuid
+        lifecycle_status:
+          type: string
+          enum: [active, retired]
+        revision:
+          $ref: "#/components/schemas/AssetRevision"
         display_name:
           $ref: "#/components/schemas/DisplayName"
         node_type:
@@ -2644,13 +2782,24 @@ components:
         updated_at:
           type: string
           format: date-time
+        retired_at:
+          type: [string, "null"]
+          format: date-time
+        retired_by:
+          type: [string, "null"]
+          format: uuid
+        retire_reason:
+          type: [string, "null"]
+          enum: [administrator_retire, replacement, null]
 
     NodeMonitoringStatus:
       type: object
       additionalProperties: false
-      required: [active]
+      required: [current, monitoring_active, effective_from, effective_to]
       properties:
-        active:
+        current:
+          type: boolean
+        monitoring_active:
           type: boolean
         effective_from:
           type: [string, "null"]
@@ -2658,6 +2807,102 @@ components:
         effective_to:
           type: [string, "null"]
           format: date-time
+
+    NodeRegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, new_instance_id, display_name, management_endpoint, node_type, driver_contract_version, capabilities]
+      properties:
+        command_id: { type: string, format: uuid }
+        new_instance_id: { type: string, format: uuid }
+        display_name: { $ref: "#/components/schemas/DisplayName" }
+        management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
+        node_type: { $ref: "#/components/schemas/NodeType" }
+        driver_contract_version: { $ref: "#/components/schemas/DriverContractVersion" }
+        capabilities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/NodeCapability" }
+        reader_secret_ref: { type: [string, "null"], minLength: 6, maxLength: 512 }
+
+    NodeEditRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, expected_revision]
+      minProperties: 3
+      properties:
+        command_id: { type: string, format: uuid }
+        expected_revision: { $ref: "#/components/schemas/AssetRevision" }
+        display_name: { $ref: "#/components/schemas/DisplayName" }
+        management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
+        reader_secret_ref: { type: [string, "null"], minLength: 6, maxLength: 512 }
+
+    NodeRetireRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, expected_revision]
+      properties:
+        command_id: { type: string, format: uuid }
+        expected_revision: { $ref: "#/components/schemas/AssetRevision" }
+
+    NodeReplaceRequest:
+      allOf:
+        - $ref: "#/components/schemas/NodeRegisterRequest"
+        - type: object
+          required: [expected_revision]
+          properties:
+            expected_revision: { $ref: "#/components/schemas/AssetRevision" }
+
+    NodeMutationResult:
+      type: object
+      additionalProperties: false
+      required: [result, asset, closed_binding_count, closed_monitoring_count, cancelled_future_monitoring_count]
+      properties:
+        result: { type: string, enum: [registered, updated, retired] }
+        asset: { $ref: "#/components/schemas/NodeAsset" }
+        closed_binding_count: { type: integer, minimum: 0 }
+        closed_monitoring_count: { type: integer, minimum: 0 }
+        cancelled_future_monitoring_count: { type: integer, minimum: 0 }
+
+    NodeReplacementLineage:
+      type: object
+      additionalProperties: false
+      required: [old_instance_id, new_instance_id, replaced_at, replaced_by, command_id]
+      properties:
+        old_instance_id: { type: string, format: uuid }
+        new_instance_id: { type: string, format: uuid }
+        replaced_at: { type: string, format: date-time }
+        replaced_by: { type: string, format: uuid }
+        command_id: { type: string, format: uuid }
+
+    NodeAssetDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [asset, predecessor, successor]
+      properties:
+        asset: { $ref: "#/components/schemas/NodeAsset" }
+        predecessor:
+          oneOf:
+            - $ref: "#/components/schemas/NodeReplacementLineage"
+            - type: "null"
+        successor:
+          oneOf:
+            - $ref: "#/components/schemas/NodeReplacementLineage"
+            - type: "null"
+
+    NodeReplaceResult:
+      type: object
+      additionalProperties: false
+      required: [result, old_asset, new_asset, closed_binding_count, closed_monitoring_count, cancelled_future_monitoring_count, lineage]
+      properties:
+        result: { type: string, enum: [replaced] }
+        old_asset: { $ref: "#/components/schemas/NodeAsset" }
+        new_asset: { $ref: "#/components/schemas/NodeAsset" }
+        closed_binding_count: { type: integer, minimum: 0 }
+        closed_monitoring_count: { type: integer, minimum: 0 }
+        cancelled_future_monitoring_count: { type: integer, minimum: 0 }
+        lineage: { $ref: "#/components/schemas/NodeReplacementLineage" }
 
     NodeDriverListResponse:
       type: object

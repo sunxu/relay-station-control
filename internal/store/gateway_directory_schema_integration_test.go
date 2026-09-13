@@ -52,7 +52,7 @@ func TestGatewayDirectorySchemaFoundation(t *testing.T) {
 				singleton_id, instance_id, display_name, management_endpoint
 			) VALUES (
 				1, $1::uuid, 'Directory Schema Gateway',
-				'https://gateway-directory-schema.test'
+				'http://gateway-directory-schema.test'
 			)
 		`, gatewayID); err != nil {
 			t.Fatal(err)

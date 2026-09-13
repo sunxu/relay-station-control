@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -122,15 +123,28 @@ func (worker *Worker) execute(parent context.Context, claim ClaimedRun) {
 	if !worker.beginDispatch() {
 		return
 	}
-	timeout := worker.config.worstCasePollDuration
-	graceLimited := claim.GraceRemaining <= timeout
-	if graceLimited {
-		timeout = claim.GraceRemaining
-	}
-	if timeout <= 0 || parent.Err() != nil {
+	authorizationStarted := time.Now()
+	authorization, err := worker.repository.AuthorizeDispatch(parent, DispatchAuthorizationRequest{
+		PollRunID: claim.PollRunID, FencingToken: claim.FencingToken,
+		Attempt: claim.Attempt, RequestTimeout: worker.config.worstCasePollDuration,
+	})
+	if err != nil {
 		return
 	}
-	driverContext, cancelDriver := context.WithTimeout(parent, timeout)
+	budget := worker.config.worstCasePollDuration
+	graceLimited := authorization.GraceRemaining <= budget
+	if authorization.GraceRemaining < budget {
+		budget = authorization.GraceRemaining
+	}
+	if authorization.LeaseRemaining <= budget {
+		budget = authorization.LeaseRemaining
+		graceLimited = true
+	}
+	absoluteDeadline := authorizationStarted.Add(budget)
+	if budget <= 0 || !absoluteDeadline.After(time.Now()) || parent.Err() != nil {
+		return
+	}
+	driverContext, cancelDriver := context.WithDeadline(parent, absoluteDeadline)
 	worker.config.observer.Observe(driverContext, Event{
 		Component: EventComponentWorker, Action: EventActionDispatch, Result: EventResultSuccess,
 		Reason: ControlReasonNone, State: StatusRunning, AttemptBucket: attemptBucket(claim.Attempt, claim.MaxAttempts),

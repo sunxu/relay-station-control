@@ -23,10 +23,14 @@ type fakeRepository struct {
 	scheduleResult   ScheduleResult
 	scheduleErr      error
 
-	claimCalls    int
-	claimErr      error
-	claims        []ClaimedRun
-	claimDeadline time.Time
+	claimCalls      int
+	claimErr        error
+	claims          []ClaimedRun
+	claimDeadline   time.Time
+	authorizeCalls  int
+	authorizeErr    error
+	authorizeResult DispatchAuthorization
+	authorizeDelay  time.Duration
 
 	finalizeCalls int
 	finalizes     []FinalizeRequest
@@ -131,6 +135,41 @@ func (repository *fakeRepository) ScheduleCurrent(_ context.Context, request Sch
 	repository.scheduleCalls++
 	repository.scheduleRequests = append(repository.scheduleRequests, request)
 	return repository.scheduleResult, repository.scheduleErr
+}
+
+func (repository *fakeRepository) AuthorizeDispatch(ctx context.Context, _ DispatchAuthorizationRequest) (DispatchAuthorization, error) {
+	if repository.authorizeDelay > 0 {
+		timer := time.NewTimer(repository.authorizeDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return DispatchAuthorization{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	repository.authorizeCalls++
+	if repository.authorizeErr != nil {
+		return DispatchAuthorization{}, repository.authorizeErr
+	}
+	if repository.authorizeResult.LeaseRemaining > 0 {
+		return repository.authorizeResult, nil
+	}
+	return DispatchAuthorization{LeaseRemaining: time.Hour, GraceRemaining: time.Hour}, nil
+}
+
+func TestWorkerRequiresDispatchAuthorizationBeforeOutbound(t *testing.T) {
+	repository := &fakeRepository{authorizeErr: ErrLostLease}
+	driver := &fakeDriver{}
+	worker, err := NewWorker(repository, driver, smallTestConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker.execute(context.Background(), testClaim("antigravity"))
+	if repository.authorizeCalls != 1 || driver.calls.Load() != 0 || repository.finalizeCalls != 0 {
+		t.Fatalf("authorize/driver/finalize=%d/%d/%d", repository.authorizeCalls, driver.calls.Load(), repository.finalizeCalls)
+	}
 }
 
 func (repository *fakeRepository) ClaimRunnable(ctx context.Context, request ClaimRequest) (*ClaimedRun, error) {
@@ -478,7 +517,7 @@ func TestWorkerRelativeDeadlineAndNodeFailureFinalization(t *testing.T) {
 		t.Fatalf("unsafe finalize projection: %s", encoded)
 	}
 
-	repository = &fakeRepository{}
+	repository = &fakeRepository{authorizeResult: DispatchAuthorization{LeaseRemaining: 2 * time.Second, GraceRemaining: 500 * time.Millisecond}}
 	driver = &fakeDriver{}
 	worker = newWorker(repository, driver, configuration)
 	claim = testClaim("antigravity")
@@ -488,13 +527,79 @@ func TestWorkerRelativeDeadlineAndNodeFailureFinalization(t *testing.T) {
 	if len(deadlines) != 1 || deadlines[0] < 350*time.Millisecond || deadlines[0] > 550*time.Millisecond {
 		t.Fatalf("grace-limited deadline=%v", deadlines)
 	}
+
+	repository = &fakeRepository{authorizeResult: DispatchAuthorization{LeaseRemaining: 300 * time.Millisecond, GraceRemaining: 2 * time.Second}}
+	driver = &fakeDriver{}
+	worker = newWorker(repository, driver, configuration)
+	claim = testClaim("antigravity")
+	claim.GraceRemaining = 2 * time.Second
+	worker.execute(context.Background(), claim)
+	deadlines = driver.deadlineSnapshot()
+	if len(deadlines) != 1 || deadlines[0] < 180*time.Millisecond || deadlines[0] > 350*time.Millisecond {
+		t.Fatalf("lease-limited deadline=%v", deadlines)
+	}
+}
+
+func TestWorkerDispatchDeadlineIncludesAuthorizationLatency(t *testing.T) {
+	configuration, err := smallTestConfig().Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("delayed return reduces lease budget", func(t *testing.T) {
+		repository := &fakeRepository{
+			authorizeDelay:  80 * time.Millisecond,
+			authorizeResult: DispatchAuthorization{LeaseRemaining: 200 * time.Millisecond, GraceRemaining: time.Second},
+		}
+		driver := &fakeDriver{}
+		newWorker(repository, driver, configuration).execute(context.Background(), testClaim("antigravity"))
+		deadlines := driver.deadlineSnapshot()
+		if len(deadlines) != 1 || deadlines[0] <= 0 || deadlines[0] > 140*time.Millisecond {
+			t.Fatalf("authorization latency was not deducted: %v", deadlines)
+		}
+	})
+
+	t.Run("delay exhausts budget without outbound", func(t *testing.T) {
+		repository := &fakeRepository{
+			authorizeDelay:  80 * time.Millisecond,
+			authorizeResult: DispatchAuthorization{LeaseRemaining: 40 * time.Millisecond, GraceRemaining: time.Second},
+		}
+		driver := &fakeDriver{}
+		newWorker(repository, driver, configuration).execute(context.Background(), testClaim("antigravity"))
+		if driver.calls.Load() != 0 {
+			t.Fatalf("driver calls=%d, want zero", driver.calls.Load())
+		}
+	})
+
+	for _, test := range []struct {
+		name          string
+		authorization DispatchAuthorization
+		requestLimit  time.Duration
+		upperBound    time.Duration
+	}{
+		{"lease wins", DispatchAuthorization{LeaseRemaining: 120 * time.Millisecond, GraceRemaining: time.Second}, time.Second, 140 * time.Millisecond},
+		{"grace wins", DispatchAuthorization{LeaseRemaining: time.Second, GraceRemaining: 120 * time.Millisecond}, time.Second, 140 * time.Millisecond},
+		{"request timeout wins", DispatchAuthorization{LeaseRemaining: time.Second, GraceRemaining: time.Second}, 120 * time.Millisecond, 140 * time.Millisecond},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			configured := configuration
+			configured.worstCasePollDuration = test.requestLimit
+			repository := &fakeRepository{authorizeResult: test.authorization}
+			driver := &fakeDriver{}
+			newWorker(repository, driver, configured).execute(context.Background(), testClaim("antigravity"))
+			deadlines := driver.deadlineSnapshot()
+			if len(deadlines) != 1 || deadlines[0] <= 0 || deadlines[0] > test.upperBound {
+				t.Fatalf("deadline=%v, want <=%v", deadlines, test.upperBound)
+			}
+		})
+	}
 }
 
 func TestWorkerGraceDeadlineLeavesLeaseButRequestTimeoutFinalizes(t *testing.T) {
 	validated, _ := smallTestConfig().Validate()
 
 	t.Run("grace deadline", func(t *testing.T) {
-		repository := &fakeRepository{}
+		repository := &fakeRepository{authorizeResult: DispatchAuthorization{LeaseRemaining: time.Second, GraceRemaining: 40 * time.Millisecond}}
 		driver := &fakeDriver{invoke: func(ctx context.Context, _ drivers.InventoryRequest) (drivers.InventoryObservation, error) {
 			<-ctx.Done()
 			return drivers.InventoryObservation{Result: drivers.ResultFailed, Reason: drivers.ReasonTimeout}, ctx.Err()

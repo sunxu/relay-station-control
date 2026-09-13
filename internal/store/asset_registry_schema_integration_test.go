@@ -237,7 +237,7 @@ func TestAssetRegistrationIsAtomicIdempotentAndCapabilityBound(t *testing.T) {
 	}
 
 	register := func() error {
-		if _, err := tx.Exec(ctx, `SELECT public.control_register_gateway($1, 'Gateway', 'HTTPS://Gateway.EXAMPLE:443/api', 'vault://control/gateway')`, gatewayID); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT public.control_register_gateway($1, 'Gateway', 'http://Gateway.EXAMPLE:80', 'vault://control/gateway')`, gatewayID); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `SELECT public.control_register_relay_node(
@@ -261,12 +261,12 @@ func TestAssetRegistrationIsAtomicIdempotentAndCapabilityBound(t *testing.T) {
 	if err := tx.QueryRow(ctx, `SELECT management_endpoint, reader_secret_configured FROM relay_node_assets WHERE instance_id=$1`, nodeID).Scan(&nodeEndpoint, &nodeSecret); err != nil {
 		t.Fatal(err)
 	}
-	if gatewayEndpoint != "https://gateway.example/api" || nodeEndpoint != "http://node.example" || !gatewaySecret || !nodeSecret {
+	if gatewayEndpoint != "http://gateway.example" || nodeEndpoint != "http://node.example" || !gatewaySecret || !nodeSecret {
 		t.Fatalf("canonical registration mismatch: gateway=%q/%v node=%q/%v", gatewayEndpoint, gatewaySecret, nodeEndpoint, nodeSecret)
 	}
 
 	err = assetSavepoint(t, ctx, tx, "conflicting gateway replay", func() error {
-		_, err := tx.Exec(ctx, `SELECT public.control_register_gateway($1, 'Changed Gateway', 'https://gateway.example/api', 'vault://control/gateway')`, gatewayID)
+		_, err := tx.Exec(ctx, `SELECT public.control_register_gateway($1, 'Changed Gateway', 'http://changed-gateway.example', 'vault://control/gateway')`, gatewayID)
 		return err
 	})
 	requireSQLState(t, err, "23505")
@@ -483,11 +483,11 @@ func TestMonitoringIntervalsAndRegistrarLeastPrivilege(t *testing.T) {
 		return err
 	})
 	requireSQLState(t, err, "42501")
-	err = assetSavepoint(t, ctx, tx, "runtime direct write", func() error {
+	err = assetSavepoint(t, ctx, tx, "runtime write without revision transition", func() error {
 		_, err := tx.Exec(ctx, `UPDATE relay_node_assets SET display_name='Compromised' WHERE instance_id=$1`, nodeID)
 		return err
 	})
-	requireSQLState(t, err, "42501")
+	requireSQLState(t, err, "23514")
 }
 
 func TestAssetRegistryConcurrentPolicyActivationSerializesPerScope(t *testing.T) {

@@ -2,7 +2,7 @@
 
 ### Requirement: 只有 promotion-applied runtime Provider SHALL 推进生命周期
 
-只有当前 poll 对某 active Provider 同时满足 contract-valid runtime、provider snapshot complete、策略未变化、槽位较新且 `promotion_applied=true` 时，Control SHALL 使用该 Provider 的完整 snapshot item 集推进生命周期。transport/HTTP/contract 失败、disk fallback、Provider 不完整、重复身份、`policy_changed`、`stale_poll`、pending/retry/running/abandoned 槽、Gateway/Compose 状态和未提交事务 MUST NOT 增加、清零或重解释任何账号缺失状态。
+只有当前 poll 对某 active Provider 同时满足 contract-valid runtime、provider snapshot complete、Node active、当前 monitoring eligible、策略未变化、槽位较新且 `promotion_applied=true` 时，Control SHALL 使用该 Provider 的完整 snapshot item 集推进生命周期。transport/HTTP/contract 失败、disk fallback、Provider 不完整、重复身份、`policy_changed`、`monitoring_ineligible`、`node_retired`、`node_replaced`、`stale_poll`、pending/retry/running/abandoned 槽、Gateway/Compose 状态和未提交事务 MUST NOT 增加、清零或重解释任何账号缺失状态。
 
 Promotion MUST additionally prove the Node is active, retains the same stable identity and has a
 current eligible monitoring interval. Retired/replaced old Nodes cannot advance
@@ -15,6 +15,11 @@ current eligible monitoring interval. Retired/replaced old Nodes cannot advance
 #### Scenario: disk fallback 或 Provider 不完整
 - **WHEN** poll finalized 但某 Provider 未形成 promotion-applied runtime 快照
 - **THEN** 该 Provider 全部 lifecycle 行保持原值，既不累计 missing 也不把已有 missing 恢复为 present
+
+#### Scenario: monitoring-ineligible evidence 不推进 lifecycle
+- **WHEN** active Node 的 poll 以 `promotion_skipped_reason=monitoring_ineligible` finalized
+- **THEN** transport/Provider historical evidence 保留，但账号 lifecycle、availability、
+  request-quality 与 Provider current health 均不推进
 
 #### Scenario: 合法完整空集合
 - **WHEN** active Provider 的完整 runtime 空集合成功 promotion

@@ -29,6 +29,7 @@ type Server struct {
 	resolver                      *authn.SourceResolver
 	assets                        assetstore.AssetReader
 	gatewayAssets                 assetstore.GatewayLifecycleManager
+	nodeAssets                    *assetstore.NodeLifecycleRepository
 	gatewayCursor                 *assetstore.GatewayCursorCodec
 	assetMetrics                  *AssetMetrics
 	nodeCursor                    *assetstore.NodeCursorCodec
@@ -145,6 +146,14 @@ func (s *Server) SetGatewayLifecycleManager(manager assetstore.GatewayLifecycleM
 		return errors.New("api: gateway cursor initialization failed")
 	}
 	s.gatewayAssets, s.gatewayCursor = manager, codec
+	return nil
+}
+
+func (s *Server) SetNodeLifecycleManager(manager *assetstore.NodeLifecycleRepository) error {
+	if manager == nil || s.service == nil {
+		return errors.New("api: node lifecycle manager unavailable")
+	}
+	s.nodeAssets = manager
 	return nil
 }
 

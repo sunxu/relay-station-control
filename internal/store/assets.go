@@ -40,28 +40,39 @@ type GatewayAsset struct {
 }
 
 type NodeMonitoring struct {
-	Active        bool
-	EffectiveFrom *time.Time
-	EffectiveTo   *time.Time
+	Current       bool       `json:"current"`
+	Active        bool       `json:"monitoring_active"`
+	EffectiveFrom *time.Time `json:"effective_from"`
+	EffectiveTo   *time.Time `json:"effective_to"`
 }
 
 type NodeAsset struct {
-	InstanceID            uuid.UUID
-	DisplayName           string
-	NodeType              string
-	DriverContractVersion string
-	ManagementEndpoint    string
-	SecretConfigured      bool
-	Capabilities          []string
-	Monitoring            NodeMonitoring
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	InstanceID            uuid.UUID      `json:"instance_id"`
+	LifecycleStatus       string         `json:"lifecycle_status"`
+	Revision              int64          `json:"revision,string"`
+	DisplayName           string         `json:"display_name"`
+	NodeType              string         `json:"node_type"`
+	DriverContractVersion string         `json:"driver_contract_version"`
+	ManagementEndpoint    string         `json:"management_endpoint"`
+	SecretConfigured      bool           `json:"secret_configured"`
+	Capabilities          []string       `json:"capabilities"`
+	Monitoring            NodeMonitoring `json:"monitoring"`
+	CreatedAt             time.Time      `json:"created_at"`
+	UpdatedAt             time.Time      `json:"updated_at"`
+	RetiredAt             *time.Time     `json:"retired_at"`
+	RetiredBy             *uuid.UUID     `json:"retired_by"`
+	RetireReason          *string        `json:"retire_reason"`
 }
 
 type NodeAssetPage struct {
-	Items   []NodeAsset
-	HasMore bool
+	Items      []NodeAsset
+	HasMore    bool
+	Generation int64
+	ReadAsOf   time.Time
+	Counts     NodeCounts
 }
+
+type NodeCounts struct{ Active, Retired, Total int64 }
 
 type NodeDriver struct {
 	NodeType              string
@@ -169,7 +180,25 @@ func (repository *AssetRepository) ListNodes(ctx context.Context, filters NodeLi
 		IsoLevel:   pgx.RepeatableRead,
 		AccessMode: pgx.ReadOnly,
 	}, func(tx pgx.Tx) error {
-		rows, err := repository.queries.WithTx(tx).ListNodeAssets(ctx, generated.ListNodeAssetsParams{
+		queries := repository.queries.WithTx(tx)
+		var err error
+		page.Generation, err = queries.GetNodeRegistryGeneration(ctx)
+		if err != nil {
+			return err
+		}
+		if after != uuid.Nil && filters.Generation != page.Generation {
+			return ErrNodeCursorStale
+		}
+		page.ReadAsOf = filters.ReadAsOf
+		if page.ReadAsOf.IsZero() {
+			value, readErr := queries.GetNodeRegistryReadAsOf(ctx)
+			if readErr != nil {
+				return readErr
+			}
+			page.ReadAsOf = value.Time.UTC()
+		}
+		rows, err := queries.ListNodeAssets(ctx, generated.ListNodeAssetsParams{
+			Lifecycle: filters.Lifecycle, ReadAsOf: pgtype.Timestamptz{Time: page.ReadAsOf, Valid: true},
 			NodeType:         nullableText(filters.NodeType),
 			Capability:       nullableText(filters.Capability),
 			MonitoringActive: nullableBool(filters.MonitoringActive),
@@ -192,6 +221,11 @@ func (repository *AssetRepository) ListNodes(ctx context.Context, filters NodeLi
 		for _, row := range rows {
 			page.Items = append(page.Items, nodeAssetFromListRow(row))
 		}
+		counts, err := queries.GetNodeLifecycleCounts(ctx)
+		if err != nil {
+			return err
+		}
+		page.Counts = NodeCounts{Active: counts.Active, Retired: counts.Retired, Total: counts.Total}
 		return nil
 	})
 	return page, err
@@ -288,9 +322,10 @@ func nodeAssetFromListRow(row generated.ListNodeAssetsRow) NodeAsset {
 		InstanceID: uuidFromPG(row.InstanceID), DisplayName: row.DisplayName,
 		NodeType: row.NodeType, DriverContractVersion: row.DriverContractVersion,
 		ManagementEndpoint: row.ManagementEndpoint, SecretConfigured: row.SecretConfigured,
-		Capabilities: append([]string(nil), row.Capabilities...),
-		Monitoring:   NodeMonitoring{Active: row.MonitoringActive, EffectiveFrom: nullableTime(row.MonitoringEffectiveFrom), EffectiveTo: nullableTime(row.MonitoringEffectiveTo)},
-		CreatedAt:    row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
+		Capabilities:    append([]string(nil), row.Capabilities...),
+		Monitoring:      NodeMonitoring{Current: row.LifecycleStatus == "active" && row.MonitoringActive, Active: row.LifecycleStatus == "active" && row.MonitoringActive, EffectiveFrom: nullableTime(row.MonitoringEffectiveFrom), EffectiveTo: nullableTime(row.MonitoringEffectiveTo)},
+		LifecycleStatus: row.LifecycleStatus, Revision: row.Revision, RetiredAt: nullableTime(row.RetiredAt), RetiredBy: optionalUUID(row.RetiredBy), RetireReason: optionalText(row.RetireReason),
+		CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
 }
 
@@ -299,9 +334,10 @@ func nodeAssetFromDetailRow(row generated.GetNodeAssetRow) NodeAsset {
 		InstanceID: uuidFromPG(row.InstanceID), DisplayName: row.DisplayName,
 		NodeType: row.NodeType, DriverContractVersion: row.DriverContractVersion,
 		ManagementEndpoint: row.ManagementEndpoint, SecretConfigured: row.SecretConfigured,
-		Capabilities: append([]string(nil), row.Capabilities...),
-		Monitoring:   NodeMonitoring{Active: row.MonitoringActive, EffectiveFrom: nullableTime(row.MonitoringEffectiveFrom), EffectiveTo: nullableTime(row.MonitoringEffectiveTo)},
-		CreatedAt:    row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
+		Capabilities:    append([]string(nil), row.Capabilities...),
+		Monitoring:      NodeMonitoring{Current: row.LifecycleStatus == "active" && row.MonitoringActive, Active: row.LifecycleStatus == "active" && row.MonitoringActive, EffectiveFrom: nullableTime(row.MonitoringEffectiveFrom), EffectiveTo: nullableTime(row.MonitoringEffectiveTo)},
+		LifecycleStatus: row.LifecycleStatus, Revision: row.Revision, RetiredAt: nullableTime(row.RetiredAt), RetiredBy: optionalUUID(row.RetiredBy), RetireReason: optionalText(row.RetireReason),
+		CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
 }
 

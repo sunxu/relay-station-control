@@ -37,9 +37,15 @@ export interface NodeAsset {
   monitoringActive: boolean;
   monitoringEffectiveFrom: string | null;
   monitoringEffectiveTo: string | null;
+  lifecycleStatus: "active" | "retired";
+  revision: string;
+  retiredAt: string | null;
+  retiredBy: string | null;
+  retireReason: "administrator_retire" | "replacement" | null;
 }
 
 export interface NodeFilters {
+  lifecycle?: "active" | "retired" | "all";
   nodeType?: string;
   capability?: string;
   monitoringActive?: boolean;
@@ -50,6 +56,18 @@ export interface NodeFilters {
 export interface NodePage {
   items: NodeAsset[];
   nextCursor: string | null;
+}
+
+export interface NodeLineage {
+  oldInstanceId: string;
+  newInstanceId: string;
+  replacedAt: string;
+}
+
+export interface NodeDetail {
+  asset: NodeAsset;
+  predecessor: NodeLineage | null;
+  successor: NodeLineage | null;
 }
 
 export interface ProviderPolicyAsset {
@@ -78,8 +96,13 @@ export interface AssetApi {
   gateway(): Promise<GatewayState>;
   nodes(filters: NodeFilters): Promise<NodePage>;
   node(instanceId: string): Promise<NodeAsset>;
+  nodeDetail?(instanceId: string): Promise<NodeDetail>;
   drivers(): Promise<DriverAsset[]>;
   currentProviderPolicy(scope: DriverScope): Promise<ProviderPolicyState>;
+  registerNode?(data: import("./generated/control").NodeRegisterRequest, csrf: string): Promise<void>;
+  editNode?(id: string, data: import("./generated/control").NodeEditRequest, csrf: string): Promise<void>;
+  retireNode?(id: string, data: import("./generated/control").NodeRetireRequest, csrf: string): Promise<void>;
+  replaceNode?(id: string, data: import("./generated/control").NodeReplaceRequest, csrf: string): Promise<void>;
 }
 
 export class AssetApiError extends Error {

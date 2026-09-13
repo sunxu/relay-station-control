@@ -123,6 +123,10 @@ func (*workerProjectionRepository) ScheduleCurrent(context.Context, controlpoll.
 	return controlpoll.ScheduleResult{}, nil
 }
 
+func (*workerProjectionRepository) AuthorizeDispatch(context.Context, controlpoll.DispatchAuthorizationRequest) (controlpoll.DispatchAuthorization, error) {
+	return controlpoll.DispatchAuthorization{LeaseRemaining: time.Minute, GraceRemaining: time.Minute}, nil
+}
+
 func (repository *workerProjectionRepository) ClaimRunnable(_ context.Context, request controlpoll.ClaimRequest) (*controlpoll.ClaimedRun, error) {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()

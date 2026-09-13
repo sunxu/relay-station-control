@@ -144,6 +144,18 @@ type Repository interface {
 	ClaimRunnable(context.Context, ClaimRequest) (*ClaimedRun, error)
 	FinalizeFenced(context.Context, FinalizeRequest) error
 	ReconcileExpired(context.Context, ReconcileRequest) (ReconcileResult, error)
+	AuthorizeDispatch(context.Context, DispatchAuthorizationRequest) (DispatchAuthorization, error)
+}
+
+type DispatchAuthorizationRequest struct {
+	PollRunID      uuid.UUID
+	FencingToken   uuid.UUID
+	Attempt        int
+	RequestTimeout time.Duration
+}
+type DispatchAuthorization struct {
+	LeaseRemaining time.Duration
+	GraceRemaining time.Duration
 }
 
 // ScheduleRequest contains policy durations only. It deliberately has no time,

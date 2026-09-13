@@ -30,6 +30,11 @@ canonical intent、revision、signed compatibility manifest、`relay-control-com
   abandoned/terminal。generic `async_jobs`（当前唯一注册 job kind 是
   `dingtalk_alert_delivery`，未声明任何 Node-owned identity 字段）execution semantics 保持
   不变，本 change 不修改 `durable-job` capability。
+- Finalize 在 Node 仍 active 但同一数据库时点已无 current non-cancelled monitoring
+  eligibility 时，以唯一新增的 `promotion_skipped_reason=monitoring_ineligible` 保存
+  finalized transport/Provider historical evidence，并禁止 snapshot、Provider pointer、账号
+  lifecycle、availability、request-quality 与 Provider health current truth 更新。该 reason
+  不进入 execution/cancellation/binding/lifecycle taxonomy，不新增表、列或 migration 版本。
 - 冻结 Node canonical intent、脱敏 receipt result、HTTP mutation/read routes、history
   pagination、counts、bounded audit/metrics taxonomy 及 class 2 compatibility floor。
 
@@ -97,6 +102,15 @@ OAuth、raw CLIProxyAPI response 或 credential-bearing header。migration addit
 
 ## Planning Status
 
-Detailed planning = complete for independent readiness review only.
-Implementation readiness = AWAITING REVIEW.
-`openspec apply` = NOT AUTHORIZED; Implementation = NOT STARTED; Runtime Acceptance = NOT STARTED.
+Detailed planning = COMPLETE. Independent readiness review = PASS.
+Planning readiness = PASS / READY; Implementation readiness = READY.
+`openspec instructions apply add-relay-node-asset-lifecycle-management` = RUN.
+Implementation = COMPLETE; Runtime Acceptance = PASS.
+Independent implementation review = PASS (P0=0 / P1=0 / P2=0); the previous P1-1 through P1-4
+and P2-1 findings are FIXED and reconciled;
+Monitoring-ineligible taxonomy architecture gap = RESOLVED;
+Independent architecture re-review = PASS (Architecture P0=0 / P1=0 / P2=0);
+completed implementation tasks = 66 / 67; Task 61 = UNBLOCKED / NOT COMPLETED;
+Task 61 closeout evidence reconciliation = COMPLETE;
+Git/worktree closeout = IN PROGRESS / AUTHORIZED;
+Archive readiness = PENDING GIT CLOSEOUT.

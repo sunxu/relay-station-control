@@ -232,6 +232,11 @@ func main() {
 		logger.Error("gateway lifecycle initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	nodeLifecycleRepository, err := assetstore.NewNodeLifecycleRepository(pool, intentKey)
+	if err != nil {
+		logger.Error("node lifecycle initialization failed", "component", "assets")
+		os.Exit(1)
+	}
 	assetMetrics := controlapi.NewAssetMetrics()
 	crossNodeDuplicateReader, err := assetstore.NewCrossNodeDuplicateOwnershipRepository(pool)
 	if err != nil {
@@ -386,6 +391,10 @@ func main() {
 	apiServer.SetRelayBindingRepository(relayBindingRepository)
 	if err := apiServer.SetGatewayLifecycleManager(gatewayLifecycleRepository); err != nil {
 		logger.Error("gateway lifecycle API initialization failed", "component", "assets")
+		os.Exit(1)
+	}
+	if err := apiServer.SetNodeLifecycleManager(nodeLifecycleRepository); err != nil {
+		logger.Error("node lifecycle API initialization failed", "component", "assets")
 		os.Exit(1)
 	}
 	apiServer.SetCrossNodeDuplicateOwnershipOccurrenceReader(crossNodeDuplicateOccurrences)

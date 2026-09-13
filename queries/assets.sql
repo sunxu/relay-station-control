@@ -46,6 +46,11 @@ SELECT
     node.driver_contract_version,
     node.management_endpoint,
     COALESCE(node.reader_secret_configured, false)::boolean AS secret_configured,
+    node.lifecycle_status,
+    node.revision,
+    node.retired_at,
+    node.retired_by,
+    node.retire_reason,
     COALESCE(
         (
             SELECT array_agg(capability.capability ORDER BY capability.capability)::text[]
@@ -68,9 +73,10 @@ LEFT JOIN LATERAL (
         (CASE WHEN count(*) = 1 THEN min(activation.effective_to) END)::timestamptz AS effective_to
     FROM relay_node_inventory_monitoring_activations AS activation
     WHERE activation.instance_id = node.instance_id
-      AND CURRENT_TIMESTAMP <@ activation.active_range
+      AND sqlc.arg(read_as_of)::timestamptz <@ activation.active_range
 ) AS monitoring ON true
-WHERE (sqlc.narg(node_type)::text IS NULL OR node.node_type = sqlc.narg(node_type))
+WHERE (sqlc.arg(lifecycle)::text = 'all' OR node.lifecycle_status = sqlc.arg(lifecycle))
+  AND (sqlc.narg(node_type)::text IS NULL OR node.node_type = sqlc.narg(node_type))
   AND (
       sqlc.narg(capability)::text IS NULL
       OR EXISTS (
@@ -97,6 +103,11 @@ SELECT
     node.driver_contract_version,
     node.management_endpoint,
     COALESCE(node.reader_secret_configured, false)::boolean AS secret_configured,
+    node.lifecycle_status,
+    node.revision,
+    node.retired_at,
+    node.retired_by,
+    node.retire_reason,
     COALESCE(
         (
             SELECT array_agg(capability.capability ORDER BY capability.capability)::text[]
@@ -119,9 +130,21 @@ LEFT JOIN LATERAL (
         (CASE WHEN count(*) = 1 THEN min(activation.effective_to) END)::timestamptz AS effective_to
     FROM relay_node_inventory_monitoring_activations AS activation
     WHERE activation.instance_id = node.instance_id
-      AND CURRENT_TIMESTAMP <@ activation.active_range
+      AND transaction_timestamp() <@ activation.active_range
 ) AS monitoring ON true
 WHERE node.instance_id = $1;
+
+-- name: GetNodeRegistryGeneration :one
+SELECT node_generation FROM asset_registry_generations WHERE singleton_id=1;
+
+-- name: GetNodeRegistryReadAsOf :one
+SELECT transaction_timestamp()::timestamptz;
+
+-- name: GetNodeLifecycleCounts :one
+SELECT count(*) FILTER (WHERE lifecycle_status='active')::bigint AS active,
+       count(*) FILTER (WHERE lifecycle_status='retired')::bigint AS retired,
+       count(*)::bigint AS total
+FROM relay_node_assets;
 
 -- name: GetCurrentProviderInventoryPolicy :one
 WITH current_policy AS (

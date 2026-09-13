@@ -216,33 +216,78 @@ baseline 全部四个既有场景（旧 Worker 在 lease 丢失后回写；runni
 自动 heading comparison 结果：`PASS`。逐个比较每个 MODIFIED delta 与
 `openspec/specs/**` 的 exact Requirement title set，未发现新增、缺失或相似标题替代。
 
-### Validation status
+### Monitoring-Ineligible Architecture Addendum
 
-- `openspec validate add-relay-node-asset-lifecycle-management --strict`：PASS
-- `openspec validate add-gateway-asset-lifecycle-management --strict`：PASS（只读回归）
-- `openspec validate add-relay-node-management-operations --strict`：PASS（只读回归）
-- `openspec validate fix-control-web-static-resource-prefix --strict`：PASS（只读回归）
-- `openspec validate --all --strict`：PASS（27 passed / 0 failed）
-- Stage1 + Stage2 overlapping MODIFIED semantic composition check：PASS
-- `git diff --check`：PASS
-- `git status --short`：仅 `openspec/changes/add-relay-node-asset-lifecycle-management/**` 有变更
-- production code changed：`false`（目标外 migrations/api/queries/internal/cmd/web/deploy/generated 均未修改）
-- `openspec apply`：`NOT RUN`
-- Implementation：`NOT STARTED`
-- Runtime Acceptance：`NOT STARTED`
-- completed implementation tasks：`0`（tasks.md 现为 61 项主任务 + 6 项细分子任务
-  17a/17b/32a/36a/36b/42a，共 67 项，全部 ≤2h）
+Independent implementation review 发现 `monitoring-ineligible finalize outcome taxonomy`
+architecture gap。该 gap 现通过 planning 中唯一新增的 promotion skip reason
+`monitoring_ineligible` 解决，等待 independent architecture re-review：
+
+- 含义只表示 finalize promotion fence 的单一 `database_now` 下，Node identity 仍存在且
+  `lifecycle_status=active`，但不存在 `cancelled_at IS NULL AND database_now <@ active_range`
+  的 monitoring activation；它不专指管理员 Disable。
+- 它只进入 run/Provider `promotion_skipped_reason`。不得进入 `execution_reason`、
+  `cancel_reason`、binding `end_reason` 或 `lifecycle_status`。
+- run-level allowlist 为 `NULL|policy_changed|monitoring_ineligible|node_retired|node_replaced`；
+  Provider-level 既有 allowlist additive 增加 `monitoring_ineligible`。
+- precedence 固定为 Node lifecycle (`node_retired|node_replaced`) >
+  `monitoring_ineligible` > `policy_changed` > provider-specific evaluation。
+- 命中时 run 仍为 `finalized`，全部 pinned active Provider 为
+  `promotion_applied=false` 且 reason 与 run 一致；transport/Provider/observation historical
+  evidence 保留，所有 current snapshot、Provider pointer、account lifecycle、availability、
+  request-quality 与 Provider health truth 禁止更新。
+- promotion validator 必须接受该 finalized evidence-only shape，并拒绝
+  `monitoring_ineligible+promotion_applied=true` 或 run/Provider reason 不一致。
+- 不新增表、列、receipt 字段、migration 版本、compatibility class 或 floor；仍为 migration
+  34、class 2、floor 2。Stage 3 implementation 仍未开始。
+
+Monitoring-ineligible taxonomy architecture gap = RESOLVED
+
+Architecture decision = monitoring_ineligible promotion skip reason
+
+Independent architecture re-review = PASS
+
+Architecture P0 = 0
+
+Architecture P1 = 0
+
+Architecture P2 = 0
+
+### Implementation status
+
+- Stage 1 dependency：CLOSED / IMPLEMENTED / ARCHIVED（archive commit
+  `cf5109a980d41fbe8187e302335a3df820715889`）
+- `openspec instructions apply add-relay-node-asset-lifecycle-management`：RUN
+- production code changed：`true`，仅 Stage 2 frozen ownership
+- Implementation：`COMPLETE`
+- Runtime Acceptance：`PASS`
+- completed implementation tasks：`66 / 67`
+- Task 61：`UNBLOCKED / NOT COMPLETED`
+- Task 61 closeout evidence reconciliation：`COMPLETE`
+- Independent implementation review：`PASS`（`P0=0 / P1=0 / P2=0`）；上一轮 P1-1 至
+  P1-4 与 P2-1 findings 均为 `FIXED / RECONCILED`
+- Git/worktree closeout：`IN PROGRESS / AUTHORIZED`
+- git add / commit / push：`NOT RUN`
+- Archive：`NOT RUN`
+- Archive readiness：`PENDING GIT CLOSEOUT`
+- Stage 3 implementation：`NOT STARTED`
 
 ### Readiness gate
 
 Independent readiness review = PASS
 Planning readiness = PASS / READY
 Implementation readiness = READY
+Independent architecture re-review = PASS (P0=0 / P1=0 / P2=0)
 
-openspec apply = NOT AUTHORIZED / NOT RUN
-Implementation = NOT STARTED
-Runtime Acceptance = NOT STARTED
-completed implementation tasks = 0
+openspec instructions apply = RUN FOR STAGE 2 ONLY
+Implementation = COMPLETE
+Runtime Acceptance = PASS
+completed implementation tasks = 66 / 67
+Task 61 = UNBLOCKED / NOT COMPLETED
+Task 61 closeout evidence reconciliation = COMPLETE
+Independent implementation review = PASS (P0 = 0 / P1 = 0 / P2 = 0)
+Previous implementation findings = FIXED / RECONCILED
+Git/worktree closeout = IN PROGRESS / AUTHORIZED
+Archive readiness = PENDING GIT CLOSEOUT
 
-最终 independent readiness review 已通过；READY 不等于 apply 授权。
-本轮仅 documentation hardening，不执行 `openspec apply`，不修改 production code，不 commit/push。
+最终 independent readiness review 已通过，且用户已授权 Stage 2 implementation；Stage 3
+implementation、Git closeout 与 archive 仍未授权。

@@ -23,9 +23,10 @@ import (
 
 const (
 	ManifestVersion         = 1
-	SupportedClass          = 1
+	SupportedClass          = 2
 	FloorSchemaVersion      = 1
 	Stage1MigrationVersion  = 33
+	Stage2MigrationVersion  = 34
 	ExitOK                  = 0
 	ExitDatabaseUnavailable = 75
 	ExitIncompatible        = 78
@@ -271,11 +272,12 @@ type rowQuerier interface {
 // marker. Only a pre-migration-33 database without the marker is floor zero.
 func ReadFloor(ctx context.Context, db rowQuerier) (int, error) {
 	var maximumVersion int
-	var stage1Applied bool
+	var stage1Applied, stage2Applied bool
 	if err := db.QueryRow(ctx, `SELECT
 		COALESCE(max(version_id) FILTER (WHERE is_applied), 0)::integer,
-		COALESCE(bool_or(version_id = 33 AND is_applied), false)
-		FROM public.goose_db_version`).Scan(&maximumVersion, &stage1Applied); err != nil {
+		COALESCE(bool_or(version_id = 33 AND is_applied), false),
+		COALESCE(bool_or(version_id = 34 AND is_applied), false)
+		FROM public.goose_db_version`).Scan(&maximumVersion, &stage1Applied, &stage2Applied); err != nil {
 		return 0, unavailable("database_unavailable", err)
 	}
 	var exists bool
@@ -298,6 +300,12 @@ func ReadFloor(ctx context.Context, db rowQuerier) (int, error) {
 	}
 	if errors.Is(err, pgx.ErrNoRows) || schemaVersion != FloorSchemaVersion || floor < 0 || floor > SupportedClass {
 		return 0, incompatible("compatibility_marker_invalid", err)
+	}
+	if floor >= 2 && (maximumVersion < Stage2MigrationVersion || !stage2Applied) {
+		return 0, incompatible("compatibility_marker_invalid", nil)
+	}
+	if (maximumVersion >= Stage2MigrationVersion || stage2Applied) && floor < 2 {
+		return 0, incompatible("compatibility_marker_invalid", nil)
 	}
 	return floor, nil
 }

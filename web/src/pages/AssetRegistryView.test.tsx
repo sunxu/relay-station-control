@@ -26,6 +26,11 @@ const firstNode: NodeAsset = {
   monitoringActive: true,
   monitoringEffectiveFrom: "2026-08-25T10:00:00Z",
   monitoringEffectiveTo: null,
+	lifecycleStatus: "active",
+	revision: "1",
+	retiredAt: null,
+	retiredBy: null,
+	retireReason: null,
 };
 
 const gateway: GatewayState = {
@@ -192,4 +197,25 @@ describe("asset registry read-only view", () => {
     render(<AssetRegistryView api={api} onUnauthorized={onUnauthorized} />, { wrapper: Wrapper });
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
   });
+
+	it("owns Node lifecycle controls while Stage 3 operations remain absent", async () => {
+		const api = makeApi();
+		api.registerNode = vi.fn().mockResolvedValue(undefined);
+		api.editNode = vi.fn().mockResolvedValue(undefined);
+		api.retireNode = vi.fn().mockResolvedValue(undefined);
+		api.replaceNode = vi.fn().mockResolvedValue(undefined);
+		api.nodeDetail = vi.fn().mockResolvedValue({ asset: firstNode, predecessor: null, successor: null });
+		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+
+		expect(await screen.findByRole("button", { name: "登记 Node" })).toBeInTheDocument();
+		await screen.findByText("Singapore Node");
+		expect(screen.getByRole("button", { name: /编\s*辑/ })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Replace" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Retire" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /Health|Connection Test|Monitoring|启用监控|禁用监控/ })).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: /详\s*情/ }));
+		expect(await screen.findByText("Node 详情")).toBeInTheDocument();
+		expect(api.nodeDetail).toHaveBeenCalledWith(firstNode.instanceId);
+	}, 15_000);
 });

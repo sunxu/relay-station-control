@@ -84,7 +84,7 @@ func TestVerifyManifestRejectsSignatureAndUnsupportedClass(t *testing.T) {
 	if _, err := VerifyManifest(manifest, public); !isCode(err, ExitIncompatible) {
 		t.Fatalf("tampered signature error = %v", err)
 	}
-	if _, err := VerifyManifest(signedManifest(t, private, digest, 2), public); !isCode(err, ExitIncompatible) {
+	if _, err := VerifyManifest(signedManifest(t, private, digest, 3), public); !isCode(err, ExitIncompatible) {
 		t.Fatalf("unsupported class error = %v", err)
 	}
 	if _, err := VerifyManifest(signedManifest(t, private, "https://example.invalid", 1), public); !isCode(err, ExitIncompatible) {
@@ -128,15 +128,15 @@ func isCode(err error, code int) bool {
 }
 
 func TestReadFloorMissingAndValidMarker(t *testing.T) {
-	floor, err := ReadFloor(context.Background(), &fakeDB{rows: []fakeRow{{values: []any{32, false}}, {values: []any{false}}}})
+	floor, err := ReadFloor(context.Background(), &fakeDB{rows: []fakeRow{{values: []any{32, false, false}}, {values: []any{false}}}})
 	if err != nil || floor != 0 {
 		t.Fatalf("missing marker floor=%d err=%v", floor, err)
 	}
-	floor, err = ReadFloor(context.Background(), &fakeDB{rows: []fakeRow{{values: []any{33, true}}, {values: []any{true}}, {values: []any{1, 1}}}})
+	floor, err = ReadFloor(context.Background(), &fakeDB{rows: []fakeRow{{values: []any{33, true, false}}, {values: []any{true}}, {values: []any{1, 1}}}})
 	if err != nil || floor != 1 {
 		t.Fatalf("valid marker floor=%d err=%v", floor, err)
 	}
-	_, err = ReadFloor(context.Background(), &fakeDB{rows: []fakeRow{{values: []any{33, true}}, {values: []any{true}}, {err: pgx.ErrNoRows}}})
+	_, err = ReadFloor(context.Background(), &fakeDB{rows: []fakeRow{{values: []any{33, true, false}}, {values: []any{true}}, {err: pgx.ErrNoRows}}})
 	if !isCode(err, ExitIncompatible) {
 		t.Fatalf("missing singleton row error=%v", err)
 	}
@@ -147,10 +147,12 @@ func TestReadFloorRejectsMigrationMarkerMismatch(t *testing.T) {
 		name string
 		rows []fakeRow
 	}{
-		{"migration 33 without table", []fakeRow{{values: []any{33, true}}, {values: []any{false}}}},
-		{"migration 33 without singleton", []fakeRow{{values: []any{33, true}}, {values: []any{true}}, {err: pgx.ErrNoRows}}},
-		{"marker before migration 33", []fakeRow{{values: []any{32, false}}, {values: []any{true}}}},
-		{"wrong marker schema", []fakeRow{{values: []any{33, true}}, {values: []any{true}}, {values: []any{2, 1}}}},
+		{"migration 33 without table", []fakeRow{{values: []any{33, true, false}}, {values: []any{false}}}},
+		{"migration 33 without singleton", []fakeRow{{values: []any{33, true, false}}, {values: []any{true}}, {err: pgx.ErrNoRows}}},
+		{"marker before migration 33", []fakeRow{{values: []any{32, false, false}}, {values: []any{true}}}},
+		{"wrong marker schema", []fakeRow{{values: []any{33, true, false}}, {values: []any{true}}, {values: []any{2, 1}}}},
+		{"migration 34 with floor one", []fakeRow{{values: []any{34, true, true}}, {values: []any{true}}, {values: []any{1, 1}}}},
+		{"floor two before migration 34", []fakeRow{{values: []any{33, true, false}}, {values: []any{true}}, {values: []any{1, 2}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -255,7 +257,13 @@ func TestValidateClassAgainstFloor(t *testing.T) {
 	if err := ValidateClass(0, 1); !isCode(err, ExitIncompatible) {
 		t.Fatalf("class 0 at floor 1: %v", err)
 	}
-	if err := ValidateClass(2, 0); !isCode(err, ExitIncompatible) {
+	if err := ValidateClass(1, 2); !isCode(err, ExitIncompatible) {
+		t.Fatalf("class 1 at floor 2: %v", err)
+	}
+	if err := ValidateClass(2, 2); err != nil {
+		t.Fatalf("class 2 at floor 2: %v", err)
+	}
+	if err := ValidateClass(3, 0); !isCode(err, ExitIncompatible) {
 		t.Fatalf("unknown class: %v", err)
 	}
 }
