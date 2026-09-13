@@ -21,9 +21,13 @@ Disposition = CHANGES REQUIRED
 - Independent corrective implementation review: PASS
 - Final corrective review: P0 = 0 / P1 = 0 / P2 = 0
 - Corrective implementation commit: `0ef6700c5d95af411138e1caf77ce80849a6e58d`
+- Corrective closeout commit: `493d3bdfc33edce7fd55637e018d13fca190c54b`
 - Git/worktree closeout: COMPLETE
-- Archive readiness: READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
+- Independent archive-readiness review: PASS
+- Archive-readiness review: P0 = 0 / P1 = 0 / P2 = 0
+- Archive readiness: PASS / APPROVED
 - Phase 6: CLOSED / IMPLEMENTED / ARCHIVED
+- Corrective change: CLOSED / IMPLEMENTED / ARCHIVED
 - Phase 7: PLANNED / NOT STARTED
 
 ## Runtime Acceptance
@@ -53,6 +57,8 @@ Disposition = CHANGES REQUIRED
 | OpenSpec strict | PASS | Corrective change and all changes/specs validate with zero failures. |
 | `git diff --check` | PASS | Final unstaged corrective worktree passed whitespace validation. |
 
+Independent archive-readiness review re-ran the complete build, targeted PostgreSQL 18 migration and lifecycle-lock suites, authenticated Gateway/Node UI E2E, and the fixed Stage 2 class-2 artifact rollback against schema 36. The results matched the durable evidence above.
+
 ## Boundaries
 
 - New business table: 0
@@ -60,4 +66,4 @@ Disposition = CHANGES REQUIRED
 - Migration: 36
 - Corrective implementation commit: CREATED
 - Git/worktree closeout: COMPLETE
-- Archive: NOT RUN
+- Archive: COMPLETE

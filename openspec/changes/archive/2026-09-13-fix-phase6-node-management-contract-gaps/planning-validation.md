@@ -12,6 +12,9 @@
 - Runtime Acceptance: `PASS`。
 - Independent corrective implementation review: `PASS`，`P0=0 / P1=0 / P2=0`。
 - Corrective implementation commit: `0ef6700c5d95af411138e1caf77ce80849a6e58d`。
+- Corrective closeout commit: `493d3bdfc33edce7fd55637e018d13fca190c54b`。
 - Git/worktree closeout: `COMPLETE`。
-- Archive readiness: `READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW`。
-- Archive: `NOT RUN`。
+- Independent archive-readiness review: `PASS`，`P0=0 / P1=0 / P2=0`。
+- Archive readiness: `PASS / APPROVED`。
+- Archive: `COMPLETE`。
+- Corrective change: `CLOSED / IMPLEMENTED / ARCHIVED`。
