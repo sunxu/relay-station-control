@@ -1,13 +1,13 @@
 ## Stage 3 planning validation
 
-### Baseline / dependencies
+### Historical planning baseline / dependencies
 
 - Control main / static planning：`f8e600e28f22f88d672fff550c9d0ca2cfea1d2d`，开始时worktree clean。
 - Stage2 Node lifecycle planning：`4cf8eae`，独立readiness PASS/READY。
 - Stage1 Gateway/shared foundation：`14c0e80` planning baseline，当前main中的已批准artifacts为依赖真相，PASS/READY。
 - Ops批准记录：`5add9cb54f0a488cc547b2ba72287c8f492a32f7`；frozen requirements reviewed baseline：`8c7cdbcf5ea3480da16d51408581a4be3e72c994`。
 - Ops当前可读来源：[Phase6 requirements](../../../../ops/docs/phase-5-7/PHASE6_GATEWAY_RELAY_NODE_MANAGEMENT_CN.md)、[Architecture Review](../../../../ops/docs/phase-5-7/PHASE6_GATEWAY_RELAY_NODE_MANAGEMENT_ARCHITECTURE_REVIEW_CN.md)。仓库间引用按workspace兄弟ops定位；不修改Ops。
-- 当前scope为Control Stage3 planning。Stage1/2/static尚未implementation；其commit不是runtime binary或digest。
+- 本段记录最初 planning 时的历史基线；其中 Stage1/2/static 尚未 implementation 的描述已被后文 Current implementation status 取代。
 
 ### Source scan and precedence
 
@@ -37,9 +37,9 @@
 | index | 1，新增`asset_admin_command_receipts_node_disable_fence_idx` UNIQUE partial expression index，以`(sanitized_result.instance_id, committed_at DESC) INCLUDE(command_id)`支持`node.monitoring_disable`的bounded latest lookup并拒绝同一 Node timestamp tie；仅为查询/invariant支持，不是business truth |
 | reason allowlist | reason加administrator_enable；end_reason与cancel_reason加administrator_disable；原system/lifecycle值全部保留，产品admin不能冒充deployment/reconciliation |
 | audit action allowlist | node.health/node.connection_test/node.monitoring_enable/node.monitoring_disable；category=asset_node复用；Health与Connection Test各自独立action，不合并 |
-| functions / ACL | 最小product monitoring受控事务；operational writer先捕获F0，READ COMMITTED写事务内显式VOLATILE函数在Node lock后的下一内部SQL fresh snapshot有界读F1；mismatch为SQLSTATE 55000/monitoring_disable_fence_conflict；旧5参数函数撤销/删除EXECUTE，新签名强制nullable F0；PUBLIC revoke/runtime最小EXECUTE，底表无任意写权限 |
+| functions / ACL | 最小product monitoring受控事务；operational writer先捕获F0，READ COMMITTED写事务内显式VOLATILE函数在Node lock后的下一内部SQL fresh snapshot有界读F1；mismatch为SQLSTATE 55000/monitoring_disable_fence_conflict；旧5参数函数撤销/删除EXECUTE，新签名强制nullable F0；PUBLIC revoke，runtime/registrar按真实session/effective role membership分别限定administrator与deployment/scheduled/reconciliation reasons；registrar无底表DML，runtime仅保留migration 34已发布且Stage2 Retire/Replace forward-schema兼容所需的lifecycle列级UPDATE |
 
-以上是未来forward migration计划，本轮没有新增migration/SQL production文件。所有actor/history字段类型不变；cancelled_by仍admin UUID FK，actor/end_actor仍text。
+上述 forward schema 已在 Stage 3 implementation 中通过 migration 35 实施。本 change 仍保持 new business table = 0、new business column = 0；所有actor/history字段类型不变，cancelled_by仍为admin UUID FK，actor/end_actor仍为既有text列。
 
 ### Lock graph / scheduling race
 
@@ -68,7 +68,7 @@ secret_fingerprint_key_version=NULL；新kind无Secret字段，不变shared K1/v
 
 ### Connection Test / Health persistence decision
 
-Health（GET，独立product surface）与Connection Test（POST，独立显式admin action）是两个独立route，共享同一个底层Driver.Probe调用与response model，不复制parser/transport。两者都只写既有sanitized observation audit（各自独立action：node.health/node.connection_test），details固定为canonical target instance_id/result/reason/latency_ms，不要command_id/receipt/health-history/last-health持久列；instance_id不得成为metric label。现有migrations无Node process health history；Inventory provider health是另一领域，不得借用。短Node读事务commit是ephemeral授权点，release后HTTP；response只在客户端内存，probe不刷新任何current truth。网络与audit跨crash不可原子化，503/未知结果不自动重试，不伪造exactly-once或新health job。
+Health（GET，独立product surface）与Connection Test（POST，独立显式admin action）是两个独立route，共享同一个底层Driver.Probe调用与response model，不复制parser/transport。短Node授权投影只读取 identity/lifecycle/type/contract/management endpoint/capabilities，不读取、返回或要求 `reader_secret_ref`；Probe target 的 ReaderSecretReference 保持zero value，SecretResolver调用数必须为0。两者都只写既有sanitized observation audit（各自独立action：node.health/node.connection_test），details固定为canonical target instance_id/result/reason/latency_ms，不要command_id/receipt/health-history/last-health持久列；instance_id不得成为metric label。现有migrations无Node process health history；Inventory provider health是另一领域，不得借用。短Node读事务commit是ephemeral授权点，release后HTTP；response只在客户端内存，probe不刷新任何current truth。网络与audit跨crash不可原子化，503/未知结果不自动重试，不伪造exactly-once或新health job。
 
 ### Compatibility decision
 
@@ -160,8 +160,7 @@ git diff --name-only
 - all strict：27 passed / 0 failed。
 - check-planning：4个exact MODIFIED标题、baseline/Stage2全部既有scenario标题及两个canonical bytes/hash fixture PASS。
 - git diff --check：PASS；所有tracked/untracked新增修改仅在本change目录。
-- 其他change、production代码、migrations/api/queries/internal/cmd/web/deploy/generated：未修改；未git add/commit/push。
-- 58个implementation tasks全部unchecked，completed=0；没有运行Go/frontend build或runtime/migration验收（planning-only）。
+- 以上两条是 historical planning-only evidence；当前 production implementation 与验收状态以后文为准。
 
 ### Readiness gate
 
@@ -173,11 +172,25 @@ P1 = 0
 P2 = 0
 Planning readiness = PASS / READY
 Implementation readiness = READY
-production code changed = false
-openspec apply = NOT AUTHORIZED / NOT RUN
-Implementation = NOT STARTED
-Runtime Acceptance = NOT STARTED
-completed implementation tasks = 0
+production code changed = true
+Stage 1 baseline = CLOSED / IMPLEMENTED / ARCHIVED
+Stage 2 baseline = CLOSED / IMPLEMENTED / ARCHIVED
+Stage 2 archive commit = 5199b611a99ac36b46a5a0309db1c01d3fe50929
+openspec instructions apply add-relay-node-management-operations = RUN
+Stage 3 planning = COMPLETE
+Implementation = COMPLETE
+Runtime Acceptance = PASS
+First independent implementation review = CHANGES REQUIRED (historical: P0 = 0, P1 = 3, P2 = 1)
+First review findings = FIXED
+Second independent implementation re-review = P0 = 0, P1 = 0, P2 = 1
+Second review P2 stale evidence finding = FIXED
+Final independent implementation re-review = PASS (P0 = 0, P1 = 0, P2 = 0)
+Independent implementation review = PASS
+completed implementation tasks = 57 / 58
+Task 50 = UNBLOCKED / NOT COMPLETED
+Task 50 closeout evidence reconciliation = COMPLETE
+Git/worktree closeout = IN PROGRESS / AUTHORIZED
+Archive readiness = PENDING GIT CLOSEOUT
 ```
 
-独立readiness review已确认planning与implementation readiness；openspec apply仍未获授权，本change未开始implementation。
+独立readiness review已确认planning与implementation readiness。第一次 independent implementation review 的三项 P1 已经第二次独立复审确认修复；第二次复审唯一 P2 current-state wording finding 已完成文档修正；最终 independent implementation re-review 以 P0=0 / P1=0 / P2=0 通过。Runtime Acceptance 保持 PASS；Task 50 的 evidence reconciliation 已完成，Git/worktree closeout已获授权并正在执行，archive未执行。

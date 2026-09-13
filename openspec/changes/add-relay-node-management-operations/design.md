@@ -1,6 +1,6 @@
 ## Context
 
-基线为 Control `f8e600e28f22f88d672fff550c9d0ca2cfea1d2d`（clean main）。Stage 1/2 只有已批准 planning，当前 migration/Go 中尚不存在 lifecycle/revision、shared receipts、cancellation columns 或 asset_registry_generations。本文依赖未来先实施的 Stage 1/2 schema，绝不把 planning commit 当 accepted runtime binary。
+实施基线为 Control `5199b611a99ac36b46a5a0309db1c01d3fe50929`（clean main）。Stage 1 与 Stage 2 已实施、Runtime Accepted 并归档；当前 canonical `openspec/specs/**`、migration 33/34 及其 production implementation 是本 change 的基线 SoT。
 
 已核对 `migrations/00003_asset_registry_foundation.sql`：activation UUID PK、Node FK、半开 active_range、GiST exclusion、reason/actor/end metadata、effective_to>effective_from、禁止回填；`control_set_node_inventory_monitoring` 已先锁 Node，但现版本只处理一个命中区间，不会取消所有 future rows，不能直接作为产品 Disable 完整实现。
 
@@ -61,7 +61,7 @@ remote失败是200 observation failure，不伪装Control DB故障；启动前�
 
 ### 2. Probe reuse and DB/network boundary
 
-Health 与 Connection Test 均使用 registry 已存 Node target + `management_health_read`；不要求 monitoring enabled 或reader_secret_ref存在。不调用 auth-files、Usage Queue、Gateway、模型数据面。两者复用完全相同的现有 Driver registry/ProbeRequest/ProbeObservation/health parser 调用路径，不新增第二套 client abstraction，仅入口 route 不同。
+Health 与 Connection Test 均使用 registry 已存 Node target + `management_health_read`；短事务授权投影只读取 instance/lifecycle/type/contract/management endpoint/capabilities，MUST NOT SELECT、返回或要求 `reader_secret_ref`。不要求 monitoring enabled 或 reader Secret 存在，不调用 SecretResolver、auth-files、Usage Queue、Gateway、模型数据面。两者复用完全相同的现有 Driver registry/ProbeRequest/ProbeObservation/health parser 调用路径，不新增第二套 client abstraction，仅入口 route 不同。
 
 认证后短事务 `Node FOR UPDATE`，验证 active、driver/capability，并复制 approved endpoint/identity；commit/release 后才调用 Probe。commit 是本次 ephemeral probe authorization 的线性化点：Retire/Replace先提交则409且零HTTP；authorization先提交则允许该有界观察结束，即使随后退休，不改变任何current truth。Edit先提交读新endpoint；authorization先提交只使用已读endpoint一次。不得把该内存授权复用于第二次请求、restart或自动重试，不复用 Inventory durable dispatch columns。
 
@@ -131,7 +131,7 @@ Enable先检查future（即使有current也冲突），再检查current。无fut
 
 Disable关闭current（含已预约未来结束的current row）到同boundary，取消所有future。只有current monitoring projection实际改变（即current interval被关闭）时，`node_generation`才在同一transaction中恰好+1；仅取消future且没有current时，`node_generation` MUST NOT改变。无current且无uncancelled future：already_disabled receipt-only，仍提交新的Disable receipt/fence，以失效此前形成但尚未提交的scheduled intent；它不写transition audit或generation。future-only cancellation仍是真实monitoring domain mutation，按真实mutation写transition audit和receipt。任何约束、generation overflow、audit或receipt失败整事务rollback，绝不异步清理剩余future。Disable不建立durable disabled latch；只有Disable commit后才形成并捕获最新fence的新operational intent MAY按既有Node-lock/lifecycle/monitoring preconditions创建新的future activation。
 
-受控实现采用最小monitoring command函数/Store事务，复用shared receipt helper和Stage2 cancellation guard，不直接复用只返回一个activation ID的旧registrar函数来假装完整Disable。runtime只有对应SECURITY DEFINER函数EXECUTE（migrator owner、fixed pg_catalog、全限定对象名、PUBLIC revoke），无activation底表任意UPDATE/DELETE/INSERT权限。
+受控实现采用最小monitoring command函数/Store事务，复用shared receipt helper和Stage2 cancellation guard，不直接复用只返回一个activation ID的旧registrar函数来假装完整Disable。六参数 SECURITY DEFINER writer 仅向 `relay_control_runtime` 与 `relay_control_asset_registrar` 授予 EXECUTE（migrator owner、fixed pg_catalog、全限定对象名、PUBLIC revoke），并以真实 session/effective role membership 强制 reason ownership：runtime 仅 administrator_enable/administrator_disable，registrar 仅 deployment_*/scheduled_*/reconciliation，且不能冒充另一调用方的reason。registrar与PUBLIC无activation底表DML；Stage3 product/operational monitoring也只经受控函数写入。migration 35保留migration 34已发布给class2 runtime的 lifecycle-owned列级UPDATE，范围仅为Retire/Replace关闭current与取消future所需列，使真实Stage2 artifact可在forward schema执行既有Node lifecycle；INSERT/DELETE/TRUNCATE仍不可用。
 
 ### 7. Concurrency and scheduling writers
 
@@ -199,4 +199,4 @@ monitoring details allowlist仅 `command_id,instance_id,closed_monitoring_count,
 
 ## Planning gate
 
-Detailed planning = COMPLETE；Independent readiness review = PASS；P0 = 0；P1 = 0；P2 = 0；Planning readiness = PASS / READY；Implementation readiness = READY。openspec apply = NOT AUTHORIZED / NOT RUN；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
+Detailed planning = COMPLETE；Stage 3 planning = COMPLETE；Independent readiness review = PASS；Planning readiness = PASS / READY；Implementation readiness = READY。`openspec instructions apply add-relay-node-management-operations` = RUN；Implementation = COMPLETE；Runtime Acceptance = PASS。First independent implementation review = CHANGES REQUIRED（historical P0 = 0 / P1 = 3 / P2 = 1）；三个P1已在第二次独立复审确认FIXED。Second independent implementation re-review = P0 = 0 / P1 = 0 / P2 = 1；唯一P2 stale evidence finding已修正。Final independent implementation re-review = PASS（P0 = 0 / P1 = 0 / P2 = 0）；Independent implementation review = PASS；completed implementation tasks = 57 / 58；Task 50 = UNBLOCKED / NOT COMPLETED；Task 50 closeout evidence reconciliation = COMPLETE；Git/worktree closeout = IN PROGRESS / AUTHORIZED；Archive readiness = PENDING GIT CLOSEOUT。

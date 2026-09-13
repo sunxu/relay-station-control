@@ -28,11 +28,11 @@ Phase 6 Stage 1 shared foundation、Stage 2 Node lifecycle 和 static-prefix pla
 - `fix-control-web-static-resource-prefix`：mutation UI rollout 前完成，planning commit `f8e600e`。
 - Ops Phase 6 frozen requirements / Architecture Review D4–D8；具体来源见 planning-validation.md。
 
-这些依赖目前是 planning READY，不代表已经实现；未来按 Stage 1 → Stage 2 → Stage 3 顺序实施、验证和归档。
+这些依赖已成为 archived canonical baseline：Stage 1 与 Stage 2 均已实施并归档，Stage 2 archive commit 为 `5199b611a99ac36b46a5a0309db1c01d3fe50929`。Stage 3 只在该最终基线上增加本 change 明确列出的 operations。
 
 ## Impact
 
-未来实施触及 Control OpenAPI、sqlc queries/generated clients、受控 Store/API、Asset Registry UI、additive reason/ACL/index migration、audit/metrics 与 runbook。当前只修改本 change 的 planning 文件，不执行生成、migration、apply 或 runtime。Gateway、CLIProxyAPI 无产品修改；内部管理出站遵守当前 HTTP-only 真相，不恢复旧 HTTPS 分支。
+实施已触及 Control OpenAPI、sqlc queries/generated clients、受控 Store/API、Asset Registry UI、additive reason/ACL/index migration、audit/metrics 与 runbook。Gateway、CLIProxyAPI 无产品修改；内部管理出站遵守当前 HTTP-only 真相，未恢复旧 HTTPS 分支。
 
 ## Non-Goals
 
@@ -40,4 +40,4 @@ Phase 6 Stage 1 shared foundation、Stage 2 Node lifecycle 和 static-prefix pla
 
 ## Planning status
 
-Detailed planning = COMPLETE；Independent readiness review = PASS；P0 = 0；P1 = 0；P2 = 0；Planning readiness = PASS / READY；Implementation readiness = READY。openspec apply = NOT AUTHORIZED / NOT RUN；Implementation = NOT STARTED；Runtime Acceptance = NOT STARTED。
+Detailed planning = COMPLETE；Stage 3 planning = COMPLETE；Independent readiness review = PASS；Planning readiness = PASS / READY；Implementation readiness = READY。`openspec instructions apply add-relay-node-management-operations` = RUN；Implementation = COMPLETE；Runtime Acceptance = PASS。First independent implementation review = CHANGES REQUIRED（historical P0 = 0 / P1 = 3 / P2 = 1）；三个P1已在第二次独立复审确认FIXED。Second independent implementation re-review = P0 = 0 / P1 = 0 / P2 = 1；唯一P2 stale evidence finding已修正。Final independent implementation re-review = PASS（P0 = 0 / P1 = 0 / P2 = 0）；Independent implementation review = PASS；completed implementation tasks = 57 / 58；Task 50 = UNBLOCKED / NOT COMPLETED；Task 50 closeout evidence reconciliation = COMPLETE；Git/worktree closeout = IN PROGRESS / AUTHORIZED；Archive readiness = PENDING GIT CLOSEOUT。

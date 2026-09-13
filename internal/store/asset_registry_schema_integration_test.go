@@ -694,8 +694,16 @@ func TestAssetRegistryDeploymentTemplatesProtectSecretsAndTransactions(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(body), "BEGIN ISOLATION LEVEL SERIALIZABLE") {
-			t.Fatalf("%s lacks an explicit SERIALIZABLE transaction", name)
+		requiredIsolation := "BEGIN ISOLATION LEVEL SERIALIZABLE"
+		if name == "set-node-monitoring.sql" {
+			requiredIsolation = "BEGIN ISOLATION LEVEL READ COMMITTED"
+			if !strings.Contains(string(body), "control_latest_node_disable_fence_v1") ||
+				!strings.Contains(string(body), "expected_disable_fence") {
+				t.Fatalf("%s lacks the Stage 3 F0 disable-fence capture", name)
+			}
+		}
+		if !strings.Contains(string(body), requiredIsolation) {
+			t.Fatalf("%s lacks explicit %s isolation", name, requiredIsolation)
 		}
 		if !strings.Contains(string(body), "SET LOCAL TIME ZONE 'UTC'") {
 			t.Fatalf("%s does not pin timestamp parsing to UTC", name)

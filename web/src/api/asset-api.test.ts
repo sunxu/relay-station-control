@@ -82,4 +82,47 @@ describe("generated asset client adapter", () => {
     await expect(generatedAssetApi.gateway()).rejects.not.toHaveProperty("detail");
     expect(new AssetApiError(503).message).not.toContain("CANARY");
   });
+
+  it("uses fixed Node Stage 3 routes and bounded request bodies", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      if (url.endsWith("/health")) return json({ result: "success", reachable: true, reason: "none", latency_ms: 12 });
+      if (url.endsWith("/connection-test")) return json({ result: "success", reachable: true, reason: "none", latency_ms: 13 });
+      const result = url.endsWith("monitoring-enable") ? "enabled" : "disabled";
+      return json({
+        result,
+        instance_id: "00000000-0000-4000-8000-000000000101",
+        lifecycle_status: "active",
+        revision: "1",
+        boundary: "2026-08-25T10:01:00Z",
+        monitoring_active: result === "enabled",
+        monitoring_activation_id: result === "enabled" ? "00000000-0000-4000-8000-000000000301" : null,
+        effective_from: result === "enabled" ? "2026-08-25T10:01:00Z" : null,
+        effective_to: null,
+        closed_monitoring_count: result === "enabled" ? 0 : 1,
+        cancelled_future_monitoring_count: result === "enabled" ? 0 : 1,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const instanceId = "00000000-0000-4000-8000-000000000101";
+    await expect(generatedAssetApi.health!(instanceId)).resolves.toMatchObject({ latencyMs: 12 });
+    await expect(generatedAssetApi.connectionTest!(instanceId, "csrf-token")).resolves.toMatchObject({ latencyMs: 13 });
+    await expect(generatedAssetApi.monitoringEnable!(instanceId, "00000000-0000-4000-8000-000000000401", "csrf-token")).resolves.toMatchObject({ result: "enabled" });
+    await expect(generatedAssetApi.monitoringDisable!(instanceId, "00000000-0000-4000-8000-000000000402", "csrf-token")).resolves.toMatchObject({ result: "disabled" });
+
+    expect(requests.map(({ url }) => url)).toEqual([
+      `/api/assets/nodes/${instanceId}/health`,
+      `/api/assets/nodes/${instanceId}/connection-test`,
+      `/api/assets/nodes/${instanceId}/monitoring-enable`,
+      `/api/assets/nodes/${instanceId}/monitoring-disable`,
+    ]);
+    expect(requests[0]?.init).toMatchObject({ method: "GET", cache: "no-store", credentials: "same-origin" });
+    expect(requests[1]?.init).toMatchObject({ method: "POST", cache: "no-store", credentials: "same-origin", body: "{}" });
+    expect(requests[2]?.init).toMatchObject({ method: "POST", body: JSON.stringify({ command_id: "00000000-0000-4000-8000-000000000401" }) });
+    expect(requests[3]?.init).toMatchObject({ method: "POST", body: JSON.stringify({ command_id: "00000000-0000-4000-8000-000000000402" }) });
+    expect((requests[2]?.init?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("csrf-token");
+  });
 });

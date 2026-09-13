@@ -38,7 +38,7 @@ function node(instance_id: string, display_name: string, revision: string, lifec
   };
 }
 
-test("authenticated administrator manages Node lifecycle without Stage 3 controls", async ({ page, baseURL }) => {
+test("authenticated administrator uses Node lifecycle and explicit Stage 3 controls", async ({ page, baseURL }) => {
   type NodeFixture = ReturnType<typeof node>;
   let current: NodeFixture | undefined = node(firstID, "Primary Node", "1");
   const history = new Map<string, NodeFixture>();
@@ -46,7 +46,7 @@ test("authenticated administrator manages Node lifecycle without Stage 3 control
   const browserRequests: string[] = [];
   page.on("request", (request) => browserRequests.push(request.url()));
 
-  await page.route("**/api/**", async (route) => {
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     requests.push(`${request.method()} ${url.pathname}`);
@@ -69,6 +69,33 @@ test("authenticated administrator manages Node lifecycle without Stage 3 control
       const retired = [...history.values()];
       const items = lifecycle === "active" ? (current ? [current] : []) : lifecycle === "retired" ? retired : [...(current ? [current] : []), ...retired];
       return json({ items, next_cursor: null, node_counts: { active: current ? 1 : 0, retired: retired.length, total: retired.length + (current ? 1 : 0) } });
+    }
+    const health = url.pathname.match(/^\/api\/assets\/nodes\/([^/]+)\/health$/);
+    if (request.method() === "GET" && health) {
+      return json({ result: "success", reachable: true, reason: "none", latency_ms: 8 });
+    }
+    const connectionTest = url.pathname.match(/^\/api\/assets\/nodes\/([^/]+)\/connection-test$/);
+    if (request.method() === "POST" && connectionTest) {
+      return json({ result: "success", reachable: true, reason: "none", latency_ms: 9 });
+    }
+    const monitoring = url.pathname.match(/^\/api\/assets\/nodes\/([^/]+)\/monitoring-(enable|disable)$/);
+    if (request.method() === "POST" && monitoring) {
+      if (!current || monitoring[1] !== current.instance_id) return json({ code: "asset_not_found" }, 404);
+      const enabled = monitoring[2] === "enable";
+      current = { ...current, monitoring: { monitoring_active: enabled, effective_from: enabled ? "2026-09-13T00:10:00Z" : null, effective_to: null } };
+      return json({
+        result: enabled ? "enabled" : "disabled",
+        instance_id: current.instance_id,
+        lifecycle_status: "active",
+        revision: current.revision,
+        boundary: "2026-09-13T00:10:00Z",
+        monitoring_active: enabled,
+        monitoring_activation_id: enabled ? "10000000-0000-4000-8000-000000000003" : null,
+        effective_from: enabled ? "2026-09-13T00:10:00Z" : null,
+        effective_to: null,
+        closed_monitoring_count: enabled ? 0 : 1,
+        cancelled_future_monitoring_count: enabled ? 0 : 1,
+      });
     }
     const detail = url.pathname.match(/^\/api\/assets\/nodes\/([^/]+)$/);
     if (request.method() === "GET" && detail) {
@@ -107,6 +134,27 @@ test("authenticated administrator manages Node lifecycle without Stage 3 control
   await page.goto("/assets");
   const card = page.getByTestId("nodes-card");
   await expect(card.getByText("Primary Node")).toBeVisible();
+  expect(requests.some((request) => /\/api\/assets\/nodes\/[^/]+\/(health|connection-test|monitoring-(enable|disable))$/.test(request))).toBe(false);
+
+  await card.getByRole("button", { name: /详.{0,2}情/ }).click();
+  const activeDetail = page.getByLabel("Node 详情");
+  await expect(activeDetail.getByTestId("node-management-operations")).toBeVisible();
+  await expect(activeDetail.getByTestId("node-health-button")).toBeVisible();
+  await expect(activeDetail.getByTestId("node-connection-test-button")).toBeVisible();
+  await expect(activeDetail.getByTestId("node-monitoring-enable-button")).toBeVisible();
+  await expect(activeDetail.getByTestId("node-monitoring-disable-button")).toBeVisible();
+  await activeDetail.getByTestId("node-health-button").click();
+  await expect(activeDetail.getByTestId("node-health-result")).toBeVisible();
+  await activeDetail.getByTestId("node-connection-test-button").click();
+  await expect(activeDetail.getByTestId("node-connection-test-result")).toBeVisible();
+  await activeDetail.getByTestId("node-monitoring-enable-button").click();
+  await expect(activeDetail.getByTestId("node-monitoring-result")).toContainText("enabled");
+  await activeDetail.getByTestId("node-monitoring-disable-button").click();
+  await expect(page.getByText("这会立即关闭当前监控，并取消已有的未来监控预约。")).toBeVisible();
+  await page.getByRole("button", { name: /停.{0,2}用/ }).last().click();
+  await expect(activeDetail.getByTestId("node-monitoring-result")).toContainText("disabled");
+  await activeDetail.getByRole("button", { name: "Close" }).click();
+  await expect(activeDetail).toBeHidden();
 
   await card.getByRole("button", { name: /编\s*辑/ }).click();
   await page.getByLabel("显示名称").fill("Edited Node");

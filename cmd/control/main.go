@@ -237,6 +237,11 @@ func main() {
 		logger.Error("node lifecycle initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	nodeMonitoringRepository, err := assetstore.NewNodeMonitoringRepository(pool)
+	if err != nil {
+		logger.Error("node monitoring initialization failed", "component", "assets")
+		os.Exit(1)
+	}
 	assetMetrics := controlapi.NewAssetMetrics()
 	crossNodeDuplicateReader, err := assetstore.NewCrossNodeDuplicateOwnershipRepository(pool)
 	if err != nil {
@@ -397,6 +402,16 @@ func main() {
 		logger.Error("node lifecycle API initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	if err := apiServer.SetNodeProbeRegistry(nodeDrivers.registry); err != nil {
+		logger.Error("node probe API initialization failed", "component", "assets")
+		os.Exit(1)
+	}
+	if err := apiServer.SetNodeProbeAuthorizer(nodeMonitoringRepository); err != nil {
+		logger.Error("node probe authorization initialization failed", "component", "assets")
+		os.Exit(1)
+	}
+	apiServer.SetNodeProbeAuditWriter(nodeMonitoringRepository)
+	apiServer.SetNodeMonitoringOperator(nodeMonitoringRepository)
 	apiServer.SetCrossNodeDuplicateOwnershipOccurrenceReader(crossNodeDuplicateOccurrences)
 	apiServer.SetNodeDuplicateHistoryReader(crossNodeDuplicateOccurrences)
 	providerStates, err := assetstore.NewAccountInventoryProviderStateRepository(pool)

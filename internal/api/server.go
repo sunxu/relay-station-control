@@ -51,6 +51,10 @@ type Server struct {
 	accountQualityIncidents interface {
 		ListAccountQualityIncidents(context.Context, assetstore.AccountQualityIncidentQuery) (assetstore.AccountQualityIncidentPage, error)
 	}
+	nodeProbeRegistry   NodeProbeRegistry
+	nodeProbeAuthorizer NodeProbeAuthorizer
+	nodeProbeAuditor    NodeProbeAuditWriter
+	nodeMonitoring      NodeMonitoringOperator
 }
 
 type requestIDContextKey struct{}
@@ -155,6 +159,41 @@ func (s *Server) SetNodeLifecycleManager(manager *assetstore.NodeLifecycleReposi
 	}
 	s.nodeAssets = manager
 	return nil
+}
+
+// SetNodeProbeRegistry wires the immutable runtime Driver registry used by the
+// explicit Node Health and Connection Test operations. The registry is kept
+// outside the asset store so probe authorization never gains a generic HTTP
+// request surface.
+func (s *Server) SetNodeProbeRegistry(registry NodeProbeRegistry) error {
+	if registry == nil {
+		return errors.New("api: node probe registry unavailable")
+	}
+	s.nodeProbeRegistry = registry
+	return nil
+}
+
+// SetNodeProbeAuthorizer wires the short database-side authorization seam for
+// probes. It must return a snapshot and release any row lock before HTTP.
+func (s *Server) SetNodeProbeAuthorizer(authorizer NodeProbeAuthorizer) error {
+	if authorizer == nil {
+		return errors.New("api: node probe authorizer unavailable")
+	}
+	s.nodeProbeAuthorizer = authorizer
+	return nil
+}
+
+// SetNodeProbeAuditWriter wires the short, sanitized observation audit path.
+// The writer is intentionally a narrow seam for the store owner to implement.
+func (s *Server) SetNodeProbeAuditWriter(writer NodeProbeAuditWriter) {
+	s.nodeProbeAuditor = writer
+}
+
+// SetNodeMonitoringOperator wires the Stage 3 persistence owner. Monitoring
+// mutations remain outside this package's read model and are not reconstructed
+// from the current asset state by the HTTP layer.
+func (s *Server) SetNodeMonitoringOperator(operator NodeMonitoringOperator) {
+	s.nodeMonitoring = operator
 }
 
 // SetCrossNodeDuplicateOwnershipOccurrenceReader wires the Phase 5 read-only

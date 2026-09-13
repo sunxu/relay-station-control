@@ -572,6 +572,80 @@ export interface GatewayProbeResult {
   observed_at: string;
 }
 
+export type NodeProbeResultResult = typeof NodeProbeResultResult[keyof typeof NodeProbeResultResult];
+
+
+export const NodeProbeResultResult = {
+  success: 'success',
+  failure: 'failure',
+} as const;
+
+export type NodeProbeResultReason = typeof NodeProbeResultReason[keyof typeof NodeProbeResultReason];
+
+
+export const NodeProbeResultReason = {
+  none: 'none',
+  http_status: 'http_status',
+  response_invalid: 'response_invalid',
+  response_too_large: 'response_too_large',
+  timeout: 'timeout',
+  cancelled: 'cancelled',
+  network_unavailable: 'network_unavailable',
+  dns_rejected: 'dns_rejected',
+  tls_rejected: 'tls_rejected',
+  redirect_rejected: 'redirect_rejected',
+  target_rejected: 'target_rejected',
+} as const;
+
+export interface NodeProbeResult {
+  result: NodeProbeResultResult;
+  reachable: boolean;
+  reason: NodeProbeResultReason;
+  /**
+     * @minimum 0
+     * @maximum 30000
+     */
+  latency_ms: number;
+}
+
+export interface NodeMonitoringCommandRequest {
+  command_id: string;
+}
+
+export type NodeMonitoringCommandResultResult = typeof NodeMonitoringCommandResultResult[keyof typeof NodeMonitoringCommandResultResult];
+
+
+export const NodeMonitoringCommandResultResult = {
+  enabled: 'enabled',
+  already_enabled: 'already_enabled',
+  disabled: 'disabled',
+  already_disabled: 'already_disabled',
+} as const;
+
+export type NodeMonitoringCommandResultLifecycleStatus = typeof NodeMonitoringCommandResultLifecycleStatus[keyof typeof NodeMonitoringCommandResultLifecycleStatus];
+
+
+export const NodeMonitoringCommandResultLifecycleStatus = {
+  active: 'active',
+} as const;
+
+export interface NodeMonitoringCommandResult {
+  result: NodeMonitoringCommandResultResult;
+  instance_id: string;
+  lifecycle_status: NodeMonitoringCommandResultLifecycleStatus;
+  /** @pattern ^[1-9][0-9]*$ */
+  revision: string;
+  boundary: string;
+  monitoring_active: boolean;
+  monitoring_activation_id: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  /** @minimum 0 */
+  closed_monitoring_count: number;
+  /** @minimum 0 */
+  cancelled_future_monitoring_count: number;
+}
+
 export interface EmptyObject { [key: string]: unknown }
 
 export type NodeAssetLifecycleStatus = typeof NodeAssetLifecycleStatus[keyof typeof NodeAssetLifecycleStatus];
@@ -1204,6 +1278,11 @@ export const ErrorCode = {
   stale_revision: 'stale_revision',
   revision_exhausted: 'revision_exhausted',
   command_conflict: 'command_conflict',
+  capability_unsupported: 'capability_unsupported',
+  monitoring_future_conflict: 'monitoring_future_conflict',
+  monitoring_boundary_conflict: 'monitoring_boundary_conflict',
+  monitoring_state_conflict: 'monitoring_state_conflict',
+  generation_exhausted: 'generation_exhausted',
   cursor_stale: 'cursor_stale',
   invalid_endpoint: 'invalid_endpoint',
   secret_configuration_invalid: 'secret_configuration_invalid',
@@ -6782,6 +6861,548 @@ export const useReplaceNodeAsset = <TError = ErrorResponse,
         TContext
       > => {
       return useMutation(getReplaceNodeAssetMutationOptions(options), queryClient);
+    }
+
+export type getNodeHealthResponse200 = {
+  data: NodeProbeResult
+  status: 200
+}
+
+export type getNodeHealthResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getNodeHealthResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getNodeHealthResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getNodeHealthResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getNodeHealthResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getNodeHealthResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getNodeHealthResponseSuccess = (getNodeHealthResponse200) & {
+  headers: Headers;
+};
+export type getNodeHealthResponseError = (getNodeHealthResponse400 | getNodeHealthResponse401 | getNodeHealthResponse403 | getNodeHealthResponse404 | getNodeHealthResponse409 | getNodeHealthResponse503) & {
+  headers: Headers;
+};
+
+export type getNodeHealthResponse = (getNodeHealthResponseSuccess | getNodeHealthResponseError)
+
+export const getGetNodeHealthUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}/health`
+}
+
+/**
+ * @summary Execute the fixed Relay Node health observation
+ */
+export const getNodeHealth = async (instanceId: string, options?: RequestInit): Promise<getNodeHealthResponse> => {
+
+  const res = await fetch(getGetNodeHealthUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNodeHealthResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNodeHealthResponse
+}
+
+
+
+
+
+export const getGetNodeHealthQueryKey = (instanceId: string,) => {
+    return [
+    `/api/assets/nodes/${instanceId}/health`
+    ] as const;
+    }
+
+
+export const getGetNodeHealthQueryOptions = <TData = Awaited<ReturnType<typeof getNodeHealth>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeHealth>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeHealthQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeHealth>>> = ({ signal }) => getNodeHealth(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeHealth>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNodeHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeHealth>>>
+export type GetNodeHealthQueryError = ErrorResponse
+
+
+export function useGetNodeHealth<TData = Awaited<ReturnType<typeof getNodeHealth>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeHealth>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeHealth>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeHealth>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeHealth<TData = Awaited<ReturnType<typeof getNodeHealth>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeHealth>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNodeHealth>>,
+          TError,
+          Awaited<ReturnType<typeof getNodeHealth>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNodeHealth<TData = Awaited<ReturnType<typeof getNodeHealth>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeHealth>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Execute the fixed Relay Node health observation
+ */
+
+export function useGetNodeHealth<TData = Awaited<ReturnType<typeof getNodeHealth>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNodeHealth>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNodeHealthQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type testNodeConnectionResponse200 = {
+  data: NodeProbeResult
+  status: 200
+}
+
+export type testNodeConnectionResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type testNodeConnectionResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type testNodeConnectionResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type testNodeConnectionResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type testNodeConnectionResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type testNodeConnectionResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type testNodeConnectionResponseSuccess = (testNodeConnectionResponse200) & {
+  headers: Headers;
+};
+export type testNodeConnectionResponseError = (testNodeConnectionResponse400 | testNodeConnectionResponse401 | testNodeConnectionResponse403 | testNodeConnectionResponse404 | testNodeConnectionResponse409 | testNodeConnectionResponse503) & {
+  headers: Headers;
+};
+
+export type testNodeConnectionResponse = (testNodeConnectionResponseSuccess | testNodeConnectionResponseError)
+
+export const getTestNodeConnectionUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}/connection-test`
+}
+
+/**
+ * @summary Execute the explicit fixed Relay Node connection test
+ */
+export const testNodeConnection = async (instanceId: string,
+    emptyObject: EmptyObject, options?: RequestInit): Promise<testNodeConnectionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getTestNodeConnectionUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(emptyObject)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: testNodeConnectionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as testNodeConnectionResponse
+}
+
+
+
+
+
+export const getTestNodeConnectionMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testNodeConnection>>, TError,TestNodeConnectionMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof testNodeConnection>>, TError,TestNodeConnectionMutationVariables, TContext> => {
+
+const mutationKey = ['testNodeConnection'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testNodeConnection>>, TestNodeConnectionMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  testNodeConnection(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestNodeConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof testNodeConnection>>>
+    export type TestNodeConnectionMutationBody = EmptyObject
+    export type TestNodeConnectionMutationError = ErrorResponse
+    export type TestNodeConnectionMutationVariables = {instanceId: string;data: EmptyObject}
+
+    /**
+ * @summary Execute the explicit fixed Relay Node connection test
+ */
+export const useTestNodeConnection = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testNodeConnection>>, TError,TestNodeConnectionMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof testNodeConnection>>,
+        TError,
+        TestNodeConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getTestNodeConnectionMutationOptions(options), queryClient);
+    }
+
+export type enableNodeMonitoringResponse200 = {
+  data: NodeMonitoringCommandResult
+  status: 200
+}
+
+export type enableNodeMonitoringResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableNodeMonitoringResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableNodeMonitoringResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableNodeMonitoringResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableNodeMonitoringResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableNodeMonitoringResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableNodeMonitoringResponseSuccess = (enableNodeMonitoringResponse200) & {
+  headers: Headers;
+};
+export type enableNodeMonitoringResponseError = (enableNodeMonitoringResponse400 | enableNodeMonitoringResponse401 | enableNodeMonitoringResponse403 | enableNodeMonitoringResponse404 | enableNodeMonitoringResponse409 | enableNodeMonitoringResponse503) & {
+  headers: Headers;
+};
+
+export type enableNodeMonitoringResponse = (enableNodeMonitoringResponseSuccess | enableNodeMonitoringResponseError)
+
+export const getEnableNodeMonitoringUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}/monitoring-enable`
+}
+
+/**
+ * @summary Enable Relay Node monitoring immediately
+ */
+export const enableNodeMonitoring = async (instanceId: string,
+    nodeMonitoringCommandRequest: NodeMonitoringCommandRequest, options?: RequestInit): Promise<enableNodeMonitoringResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getEnableNodeMonitoringUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeMonitoringCommandRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableNodeMonitoringResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableNodeMonitoringResponse
+}
+
+
+
+
+
+export const getEnableNodeMonitoringMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enableNodeMonitoring>>, TError,EnableNodeMonitoringMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof enableNodeMonitoring>>, TError,EnableNodeMonitoringMutationVariables, TContext> => {
+
+const mutationKey = ['enableNodeMonitoring'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enableNodeMonitoring>>, EnableNodeMonitoringMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  enableNodeMonitoring(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnableNodeMonitoringMutationResult = NonNullable<Awaited<ReturnType<typeof enableNodeMonitoring>>>
+    export type EnableNodeMonitoringMutationBody = NodeMonitoringCommandRequest
+    export type EnableNodeMonitoringMutationError = ErrorResponse
+    export type EnableNodeMonitoringMutationVariables = {instanceId: string;data: NodeMonitoringCommandRequest}
+
+    /**
+ * @summary Enable Relay Node monitoring immediately
+ */
+export const useEnableNodeMonitoring = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enableNodeMonitoring>>, TError,EnableNodeMonitoringMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof enableNodeMonitoring>>,
+        TError,
+        EnableNodeMonitoringMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEnableNodeMonitoringMutationOptions(options), queryClient);
+    }
+
+export type disableNodeMonitoringResponse200 = {
+  data: NodeMonitoringCommandResult
+  status: 200
+}
+
+export type disableNodeMonitoringResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableNodeMonitoringResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableNodeMonitoringResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableNodeMonitoringResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableNodeMonitoringResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableNodeMonitoringResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableNodeMonitoringResponseSuccess = (disableNodeMonitoringResponse200) & {
+  headers: Headers;
+};
+export type disableNodeMonitoringResponseError = (disableNodeMonitoringResponse400 | disableNodeMonitoringResponse401 | disableNodeMonitoringResponse403 | disableNodeMonitoringResponse404 | disableNodeMonitoringResponse409 | disableNodeMonitoringResponse503) & {
+  headers: Headers;
+};
+
+export type disableNodeMonitoringResponse = (disableNodeMonitoringResponseSuccess | disableNodeMonitoringResponseError)
+
+export const getDisableNodeMonitoringUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/nodes/${instanceId}/monitoring-disable`
+}
+
+/**
+ * @summary Disable Relay Node monitoring immediately
+ */
+export const disableNodeMonitoring = async (instanceId: string,
+    nodeMonitoringCommandRequest: NodeMonitoringCommandRequest, options?: RequestInit): Promise<disableNodeMonitoringResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDisableNodeMonitoringUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(nodeMonitoringCommandRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableNodeMonitoringResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableNodeMonitoringResponse
+}
+
+
+
+
+
+export const getDisableNodeMonitoringMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableNodeMonitoring>>, TError,DisableNodeMonitoringMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof disableNodeMonitoring>>, TError,DisableNodeMonitoringMutationVariables, TContext> => {
+
+const mutationKey = ['disableNodeMonitoring'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disableNodeMonitoring>>, DisableNodeMonitoringMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  disableNodeMonitoring(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisableNodeMonitoringMutationResult = NonNullable<Awaited<ReturnType<typeof disableNodeMonitoring>>>
+    export type DisableNodeMonitoringMutationBody = NodeMonitoringCommandRequest
+    export type DisableNodeMonitoringMutationError = ErrorResponse
+    export type DisableNodeMonitoringMutationVariables = {instanceId: string;data: NodeMonitoringCommandRequest}
+
+    /**
+ * @summary Disable Relay Node monitoring immediately
+ */
+export const useDisableNodeMonitoring = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableNodeMonitoring>>, TError,DisableNodeMonitoringMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof disableNodeMonitoring>>,
+        TError,
+        DisableNodeMonitoringMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDisableNodeMonitoringMutationOptions(options), queryClient);
     }
 
 export type listNodeDriversResponse200 = {

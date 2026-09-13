@@ -109,10 +109,11 @@ func (metrics *AssetMetrics) RecordGatewayMutation(action, result string) {
 }
 
 func (metrics *AssetMetrics) RecordNodeMutation(action, result string) {
-	if action != "register" && action != "edit" && action != "retire" && action != "replace" {
+	if action != "register" && action != "edit" && action != "retire" && action != "replace" &&
+		action != "monitoring_enable" && action != "monitoring_disable" {
 		return
 	}
-	if result != "success" && result != "replay" && result != "conflict" && result != "invalid" && result != "unavailable" {
+	if result != "success" && result != "replay" && result != "noop" && result != "conflict" && result != "invalid" && result != "unavailable" {
 		return
 	}
 	metrics.mu.Lock()
@@ -121,6 +122,14 @@ func (metrics *AssetMetrics) RecordNodeMutation(action, result string) {
 }
 
 func (metrics *AssetMetrics) RecordGatewayProbe(action, result string) {
+	metrics.recordProbe("gateway", action, result)
+}
+
+func (metrics *AssetMetrics) RecordNodeProbe(action, result string) {
+	metrics.recordProbe("node", action, result)
+}
+
+func (metrics *AssetMetrics) recordProbe(assetType, action, result string) {
 	if action != "health" && action != "connection_test" {
 		return
 	}
@@ -128,7 +137,7 @@ func (metrics *AssetMetrics) RecordGatewayProbe(action, result string) {
 		return
 	}
 	metrics.mu.Lock()
-	metrics.probes[assetOperationMetricKey{"gateway", action, result}]++
+	metrics.probes[assetOperationMetricKey{assetType, action, result}]++
 	metrics.mu.Unlock()
 }
 

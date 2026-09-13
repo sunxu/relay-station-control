@@ -5,7 +5,6 @@ import re
 
 ROOT = Path('openspec')
 CHANGE = ROOT / 'changes/add-relay-node-management-operations'
-STAGE2 = ROOT / 'changes/add-relay-node-asset-lifecycle-management'
 PATTERN = re.compile(r'^### Requirement: ([^\n]+)\n.*?(?=^### Requirement: |\Z)', re.M | re.S)
 
 
@@ -21,16 +20,11 @@ count = 0
 for delta in sorted((CHANGE / 'specs').glob('*/spec.md')):
     if '## MODIFIED Requirements' not in delta.read_text():
         continue
-    prior_path = STAGE2 / 'specs' / delta.parent.name / 'spec.md'
-    prior = requirements(prior_path)
     baseline_path = ROOT / 'specs' / delta.parent.name / 'spec.md'
-    baseline = requirements(baseline_path) if baseline_path.exists() else {}
+    baseline = requirements(baseline_path)
     for title, text in requirements(delta).items():
-        assert title in prior, f'Unknown approved dependency title: {title}'
-        if delta.parent.name == 'asset-registry':
-            assert title in baseline, f'Unknown baseline title: {title}'
-            assert scenarios(baseline[title]) <= scenarios(text), title
-        assert scenarios(prior[title]) <= scenarios(text), f'Stage2 scenarios lost: {title}'
+        assert title in baseline, f'Unknown canonical title: {title}'
+        assert scenarios(baseline[title]) <= scenarios(text), f'Canonical scenarios lost: {title}'
         count += 1
         print(f'PASS heading + scenario coverage: {delta.parent.name}: {title}')
 
@@ -43,7 +37,6 @@ for action, (size, digest) in expected.items():
                f'"administrator_{action}"]').encode('utf-8')
     assert len(encoded) == size and hashlib.sha256(encoded).hexdigest() == digest
     print(f'PASS canonical v1 bytes/hash: {action}')
-assert not re.search(r'^- \[[xX]\]', (CHANGE / 'tasks.md').read_text(), re.M)
 all_planning = '\n'.join(path.read_text() for path in [
     CHANGE / 'proposal.md',
     CHANGE / 'design.md',
@@ -85,6 +78,9 @@ for required in (
     'Independent readiness review round 6',
 ):
     assert required in all_planning, f'Missing P1 hardening contract: {required}'
-print(f'PASS {count} MODIFIED titles; implementation tasks completed = 0')
+task_text = (CHANGE / 'tasks.md').read_text()
+completed = len(re.findall(r'^- \[[xX]\]', task_text, re.M))
+total = len(re.findall(r'^- \[[ xX]\]', task_text, re.M))
+print(f'PASS {count} MODIFIED titles; implementation tasks completed = {completed}/{total}')
 print('PASS strict Disable receipt ordering/retention, probe audit target, and conditional generation guards')
 print('Normative body/approved semantics preservation still requires manual review.')

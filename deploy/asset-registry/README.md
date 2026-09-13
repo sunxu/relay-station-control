@@ -2,7 +2,7 @@
 
 Run all templates with the environment-specific LOGIN that inherits the
 `relay_control_asset_registrar` capability role. Each mutation template starts
-an explicit `SERIALIZABLE` transaction, fixes the transaction time zone to UTC,
+an explicit transaction at its documented isolation level, fixes the transaction time zone to UTC,
 accepts psql variables rather than SQL
 fragments, and is safely replayable only when the complete requested content is
 identical. Conflicting content fails without partial writes.
@@ -21,7 +21,9 @@ identical. Conflicting content fails without partial writes.
   audit evidence. The template fails closed unless
   `CONTROL_PROVIDER_POLICY_MUTATION_ENABLED=true`; clear or set it to `false`
   before an application rollback.
-- `set-node-monitoring.sql` enables, disables, or schedules the Node inventory
+- `set-node-monitoring.sql` captures the latest immutable Disable fence before
+  opening its `READ COMMITTED` write transaction, then enables, disables, or
+  schedules the Node inventory
   monitoring interval using a Node row lock.
 - `reconcile.sql` runs as a read-only repeatable-read transaction through a
   fixed SECURITY DEFINER reconciliation function. The registrar has no direct

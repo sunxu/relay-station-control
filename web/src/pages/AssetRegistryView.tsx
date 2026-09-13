@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -20,7 +20,7 @@ import {
   Typography,
 } from "antd";
 import type { ReactNode } from "react";
-import type { DriverAsset, DriverScope, NodeAsset, NodeDetail, NodeFilters, AssetApi } from "../api/asset-types";
+import type { DriverAsset, DriverScope, NodeAsset, NodeDetail, NodeFilters, AssetApi, NodeMonitoringResult, NodeProbeResult } from "../api/asset-types";
 import { AssetApiError } from "../api/asset-types";
 import type { GatewayAdminApi } from "../api/gateway-api";
 import { GatewayApiError } from "../api/gateway-api";
@@ -254,6 +254,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 	const [nodeDetail, setNodeDetail] = useState<NodeDetail>();
 	const [nodeBusy, setNodeBusy] = useState(false);
 	const [nodeMessage, setNodeMessage] = useState<string>();
+	const [nodeOperationBusy, setNodeOperationBusy] = useState<"health" | "connection-test" | "monitoring-enable" | "monitoring-disable">();
+	const [probeObservation, setProbeObservation] = useState<{ kind: "health" | "connection-test"; result: NodeProbeResult }>();
+	const [monitoringResult, setMonitoringResult] = useState<NodeMonitoringResult>();
+	const nodeDetailRequestRef = useRef(0);
+	const commandIdsRef = useRef(new Map<string, string>());
 	const [nodeForm] = Form.useForm<NodeFormValues>();
   const cursor = cursorHistory.at(-1);
   const filters = useMemo<NodeFilters>(() => ({
@@ -328,9 +333,75 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 		finally { setNodeBusy(false); }
 	};
 	const showNodeDetail = async (node: NodeAsset) => {
+		const requestId = ++nodeDetailRequestRef.current;
+		setNodeDetail(undefined);
+		setProbeObservation(undefined);
+		setMonitoringResult(undefined);
+		setNodeOperationBusy(undefined);
+		setNodeMessage(undefined);
 		try {
-			setNodeDetail(api.nodeDetail ? await api.nodeDetail(node.instanceId) : { asset: await api.node(node.instanceId), predecessor: null, successor: null });
-		} catch (error) { if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error)); }
+			const detail = api.nodeDetail ? await api.nodeDetail(node.instanceId) : { asset: await api.node(node.instanceId), predecessor: null, successor: null };
+			if (requestId === nodeDetailRequestRef.current) setNodeDetail(detail);
+		} catch (error) {
+			if (requestId !== nodeDetailRequestRef.current) return;
+			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error));
+		}
+	};
+	const refreshNodeAfterOperation = async (instanceId: string, requestId: number) => {
+		await nodes.refetch();
+		if (requestId !== nodeDetailRequestRef.current) return;
+		const detail = api.nodeDetail ? await api.nodeDetail(instanceId) : { asset: await api.node(instanceId), predecessor: null, successor: null };
+		if (requestId === nodeDetailRequestRef.current) setNodeDetail(detail);
+	};
+	const runProbe = async (kind: "health" | "connection-test") => {
+		if (!nodeDetail || nodeDetail.asset.lifecycleStatus !== "active") return;
+		const method = kind === "health" ? api.health : api.connectionTest;
+		if (!method) return;
+		const requestId = nodeDetailRequestRef.current;
+		setNodeOperationBusy(kind);
+		setProbeObservation(undefined);
+		setNodeMessage(undefined);
+		try {
+			const result = kind === "health" ? await api.health!(nodeDetail.asset.instanceId) : await api.connectionTest!(nodeDetail.asset.instanceId, csrfToken);
+			if (requestId === nodeDetailRequestRef.current) {
+				setProbeObservation({ kind, result });
+				setNodeMessage(kind === "health" ? "Health 检查已完成。" : "Connection Test 已完成。");
+			}
+		} catch (error) {
+			if (requestId !== nodeDetailRequestRef.current) return;
+			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error));
+		} finally {
+			if (requestId === nodeDetailRequestRef.current) setNodeOperationBusy(undefined);
+		}
+	};
+	const runMonitoringCommand = async (kind: "monitoring-enable" | "monitoring-disable") => {
+		if (!nodeDetail || nodeDetail.asset.lifecycleStatus !== "active") return;
+		const method = kind === "monitoring-enable" ? api.monitoringEnable : api.monitoringDisable;
+		if (!method) return;
+		const instanceId = nodeDetail.asset.instanceId;
+		const key = `${instanceId}:${kind}`;
+		const stableCommandId = commandIdsRef.current.get(key) ?? commandId();
+		commandIdsRef.current.set(key, stableCommandId);
+		const requestId = nodeDetailRequestRef.current;
+		setNodeOperationBusy(kind);
+		setMonitoringResult(undefined);
+		setNodeMessage(undefined);
+		try {
+			const result = kind === "monitoring-enable"
+				? await api.monitoringEnable!(instanceId, stableCommandId, csrfToken)
+				: await api.monitoringDisable!(instanceId, stableCommandId, csrfToken);
+			commandIdsRef.current.delete(key);
+			if (requestId === nodeDetailRequestRef.current) {
+				setMonitoringResult(result);
+				setNodeMessage(`监控操作已完成：${result.result}`);
+				await refreshNodeAfterOperation(instanceId, requestId);
+			}
+		} catch (error) {
+			if (requestId !== nodeDetailRequestRef.current) return;
+			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error));
+		} finally {
+			if (requestId === nodeDetailRequestRef.current) setNodeOperationBusy(undefined);
+		}
 	};
   const driverTypes = useMemo(() => {
     const values = new Set((drivers.data ?? []).map((driver) => driver.nodeType));
@@ -520,15 +591,31 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 				{nodeModal === "edit" && <Form.Item name="clear_secret" valuePropName="checked"><Checkbox>清除已保存的 Secret reference</Checkbox></Form.Item>}
 			</Form>
 		</Modal>
-		<Modal open={Boolean(nodeDetail)} title="Node 详情" footer={null} onCancel={() => setNodeDetail(undefined)}>
-			{nodeDetail && <Descriptions column={1} size="small" bordered>
+		<Modal open={Boolean(nodeDetail)} title="Node 详情" footer={null} onCancel={() => { nodeDetailRequestRef.current += 1; setNodeDetail(undefined); setProbeObservation(undefined); setMonitoringResult(undefined); setNodeOperationBusy(undefined); setNodeMessage(undefined); }}>
+			{nodeDetail && <>
+			<Descriptions column={1} size="small" bordered>
 				<Descriptions.Item label="Instance ID"><Text code>{nodeDetail.asset.instanceId}</Text></Descriptions.Item>
 				<Descriptions.Item label="状态">{nodeDetail.asset.lifecycleStatus}</Descriptions.Item>
 				<Descriptions.Item label="Revision">{nodeDetail.asset.revision}</Descriptions.Item>
 				<Descriptions.Item label="Secret">{nodeDetail.asset.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
+				<Descriptions.Item label="监控">{nodeDetail.asset.monitoringActive ? "已激活" : "未激活"}</Descriptions.Item>
 				<Descriptions.Item label="前驱">{nodeDetail.predecessor?.oldInstanceId ?? "—"}</Descriptions.Item>
 				<Descriptions.Item label="后继">{nodeDetail.successor?.newInstanceId ?? "—"}</Descriptions.Item>
-			</Descriptions>}
+			</Descriptions>
+			{nodeDetail.asset.lifecycleStatus === "active" && <Flex vertical gap={12} data-testid="node-management-operations" style={{ marginTop: 16 }}>
+				<Space wrap>
+					<Button data-testid="node-health-button" loading={nodeOperationBusy === "health"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("health")}>Health</Button>
+					<Button data-testid="node-connection-test-button" loading={nodeOperationBusy === "connection-test"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("connection-test")}>Connection Test</Button>
+					<Button data-testid="node-monitoring-enable-button" loading={nodeOperationBusy === "monitoring-enable"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runMonitoringCommand("monitoring-enable")}>启用监控</Button>
+					<Popconfirm title="确认立即停用监控？" description="这会立即关闭当前监控，并取消已有的未来监控预约。" okText="停用" cancelText="取消" onConfirm={() => void runMonitoringCommand("monitoring-disable")}>
+						<Button data-testid="node-monitoring-disable-button" loading={nodeOperationBusy === "monitoring-disable"} disabled={Boolean(nodeOperationBusy)}>停用监控</Button>
+					</Popconfirm>
+				</Space>
+				{probeObservation?.kind === "health" && <Alert data-testid="node-health-result" type={probeObservation.result.result === "success" ? "success" : "warning"} message="Health 结果" description={`${probeObservation.result.reachable ? "reachable" : "unreachable"}；reason=${probeObservation.result.reason}；latency=${probeObservation.result.latencyMs}ms`} showIcon />}
+				{probeObservation?.kind === "connection-test" && <Alert data-testid="node-connection-test-result" type={probeObservation.result.result === "success" ? "success" : "warning"} message="Connection Test 结果" description={`${probeObservation.result.reachable ? "reachable" : "unreachable"}；reason=${probeObservation.result.reason}；latency=${probeObservation.result.latencyMs}ms`} showIcon />}
+				{monitoringResult && <Alert data-testid="node-monitoring-result" type="success" message={`Monitoring ${monitoringResult.result}`} description={`current=${monitoringResult.monitoringActive ? "active" : "inactive"}；closed=${monitoringResult.closedMonitoringCount}；cancelled=${monitoringResult.cancelledFutureMonitoringCount}`} showIcon />}
+			</Flex>}
+			</>}
 		</Modal>
       </Card>
     </Flex>

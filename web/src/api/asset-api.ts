@@ -5,6 +5,10 @@ import {
   getNodeAsset,
   listNodeAssets,
   listNodeDrivers,
+  getNodeHealth,
+  testNodeConnection,
+  enableNodeMonitoring,
+  disableNodeMonitoring,
   registerNodeAsset, editNodeAsset, retireNodeAsset, replaceNodeAsset,
 } from "./generated/control";
 import type {
@@ -17,6 +21,8 @@ import type {
   NodeCapability,
   NodeDriverListResponse,
   NodeAssetDetailResponse,
+  NodeMonitoringCommandResult as GeneratedNodeMonitoringResult,
+  NodeProbeResult as GeneratedNodeProbeResult,
 } from "./generated/control";
 import { AssetApiError } from "./asset-types";
 import type {
@@ -30,6 +36,8 @@ import type {
   NodeFilters,
   NodePage,
   NodeDetail,
+  NodeMonitoringResult,
+  NodeProbeResult,
   ProviderPolicyState,
 } from "./asset-types";
 
@@ -93,6 +101,26 @@ function mapNodeDetail(value: NodeAssetDetailResponse): NodeDetail {
   return { asset: mapNode(value.asset), predecessor: lineage(value.predecessor), successor: lineage(value.successor) };
 }
 
+function mapNodeProbeResult(value: GeneratedNodeProbeResult): NodeProbeResult {
+  return { result: value.result, reachable: value.reachable, reason: value.reason, latencyMs: value.latency_ms };
+}
+
+function mapNodeMonitoringResult(value: GeneratedNodeMonitoringResult): NodeMonitoringResult {
+  return {
+    result: value.result,
+    instanceId: value.instance_id,
+    lifecycleStatus: value.lifecycle_status,
+    revision: value.revision,
+    boundary: value.boundary,
+    monitoringActive: value.monitoring_active,
+    monitoringActivationId: value.monitoring_activation_id ?? null,
+    effectiveFrom: value.effective_from ?? null,
+    effectiveTo: value.effective_to ?? null,
+    closedMonitoringCount: value.closed_monitoring_count,
+    cancelledFutureMonitoringCount: value.cancelled_future_monitoring_count,
+  };
+}
+
 export const generatedAssetApi: AssetApi = {
   async environment() {
     return mapEnvironment(unwrap<GeneratedEnvironmentAsset>(await getEnvironment(requestOptions)));
@@ -123,6 +151,34 @@ export const generatedAssetApi: AssetApi = {
 
   async nodeDetail(instanceId: string) {
     return mapNodeDetail(unwrap<NodeAssetDetailResponse>(await getNodeAsset(instanceId, requestOptions)));
+  },
+
+  async health(instanceId: string) {
+    return mapNodeProbeResult(unwrap<GeneratedNodeProbeResult>(await getNodeHealth(instanceId, requestOptions)));
+  },
+
+  async connectionTest(instanceId: string, csrf: string) {
+    return mapNodeProbeResult(unwrap<GeneratedNodeProbeResult>(await testNodeConnection(
+      instanceId,
+      {},
+      { ...requestOptions, headers: { "X-CSRF-Token": csrf } },
+    )));
+  },
+
+  async monitoringEnable(instanceId: string, commandId: string, csrf: string) {
+    return mapNodeMonitoringResult(unwrap<GeneratedNodeMonitoringResult>(await enableNodeMonitoring(
+      instanceId,
+      { command_id: commandId },
+      { ...requestOptions, headers: { "X-CSRF-Token": csrf } },
+    )));
+  },
+
+  async monitoringDisable(instanceId: string, commandId: string, csrf: string) {
+    return mapNodeMonitoringResult(unwrap<GeneratedNodeMonitoringResult>(await disableNodeMonitoring(
+      instanceId,
+      { command_id: commandId },
+      { ...requestOptions, headers: { "X-CSRF-Token": csrf } },
+    )));
   },
 
   async drivers(): Promise<DriverAsset[]> {

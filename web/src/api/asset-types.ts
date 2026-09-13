@@ -70,6 +70,42 @@ export interface NodeDetail {
   successor: NodeLineage | null;
 }
 
+export type NodeProbeReason =
+  | "none"
+  | "http_status"
+  | "response_invalid"
+  | "response_too_large"
+  | "timeout"
+  | "cancelled"
+  | "network_unavailable"
+  | "dns_rejected"
+  | "tls_rejected"
+  | "redirect_rejected"
+  | "target_rejected";
+
+export interface NodeProbeResult {
+  result: "success" | "failure";
+  reachable: boolean;
+  reason: NodeProbeReason;
+  latencyMs: number;
+}
+
+export type NodeMonitoringResultType = "enabled" | "already_enabled" | "disabled" | "already_disabled";
+
+export interface NodeMonitoringResult {
+  result: NodeMonitoringResultType;
+  instanceId: string;
+  lifecycleStatus: "active";
+  revision: string;
+  boundary: string;
+  monitoringActive: boolean;
+  monitoringActivationId: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  closedMonitoringCount: number;
+  cancelledFutureMonitoringCount: number;
+}
+
 export interface ProviderPolicyAsset {
   policyVersionId: string;
   nodeType: string;
@@ -103,6 +139,10 @@ export interface AssetApi {
   editNode?(id: string, data: import("./generated/control").NodeEditRequest, csrf: string): Promise<void>;
   retireNode?(id: string, data: import("./generated/control").NodeRetireRequest, csrf: string): Promise<void>;
   replaceNode?(id: string, data: import("./generated/control").NodeReplaceRequest, csrf: string): Promise<void>;
+  health?(id: string): Promise<NodeProbeResult>;
+  connectionTest?(id: string, csrf: string): Promise<NodeProbeResult>;
+  monitoringEnable?(id: string, commandId: string, csrf: string): Promise<NodeMonitoringResult>;
+  monitoringDisable?(id: string, commandId: string, csrf: string): Promise<NodeMonitoringResult>;
 }
 
 export class AssetApiError extends Error {

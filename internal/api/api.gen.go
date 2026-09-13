@@ -478,6 +478,7 @@ const (
 	ErrorCodeAssetRetired                      ErrorCode = "asset_retired"
 	ErrorCodeAuthenticationFailed              ErrorCode = "authentication_failed"
 	ErrorCodeBootstrapUnavailable              ErrorCode = "bootstrap_unavailable"
+	ErrorCodeCapabilityUnsupported             ErrorCode = "capability_unsupported"
 	ErrorCodeChallengeExpired                  ErrorCode = "challenge_expired"
 	ErrorCodeCommandConflict                   ErrorCode = "command_conflict"
 	ErrorCodeConflict                          ErrorCode = "conflict"
@@ -488,10 +489,14 @@ const (
 	ErrorCodeDirectoryUnavailable              ErrorCode = "directory_unavailable"
 	ErrorCodeDuplicateIdentity                 ErrorCode = "duplicate_identity"
 	ErrorCodeForbidden                         ErrorCode = "forbidden"
+	ErrorCodeGenerationExhausted               ErrorCode = "generation_exhausted"
 	ErrorCodeInternalError                     ErrorCode = "internal_error"
 	ErrorCodeInvalidEndpoint                   ErrorCode = "invalid_endpoint"
 	ErrorCodeLastAdministratorProtected        ErrorCode = "last_administrator_protected"
 	ErrorCodeMfaRequired                       ErrorCode = "mfa_required"
+	ErrorCodeMonitoringBoundaryConflict        ErrorCode = "monitoring_boundary_conflict"
+	ErrorCodeMonitoringFutureConflict          ErrorCode = "monitoring_future_conflict"
+	ErrorCodeMonitoringStateConflict           ErrorCode = "monitoring_state_conflict"
 	ErrorCodeNoCurrentBinding                  ErrorCode = "no_current_binding"
 	ErrorCodeNodeConflict                      ErrorCode = "node_conflict"
 	ErrorCodeNotFound                          ErrorCode = "not_found"
@@ -527,6 +532,8 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeBootstrapUnavailable:
 		return true
+	case ErrorCodeCapabilityUnsupported:
+		return true
 	case ErrorCodeChallengeExpired:
 		return true
 	case ErrorCodeCommandConflict:
@@ -547,6 +554,8 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeForbidden:
 		return true
+	case ErrorCodeGenerationExhausted:
+		return true
 	case ErrorCodeInternalError:
 		return true
 	case ErrorCodeInvalidEndpoint:
@@ -554,6 +563,12 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeLastAdministratorProtected:
 		return true
 	case ErrorCodeMfaRequired:
+		return true
+	case ErrorCodeMonitoringBoundaryConflict:
+		return true
+	case ErrorCodeMonitoringFutureConflict:
+		return true
+	case ErrorCodeMonitoringStateConflict:
 		return true
 	case ErrorCodeNoCurrentBinding:
 		return true
@@ -1350,6 +1365,45 @@ func (e NodeInventoryProviderStateSnapshotFreshness) Valid() bool {
 	}
 }
 
+// Defines values for NodeMonitoringCommandResultLifecycleStatus.
+const (
+	NodeMonitoringCommandResultLifecycleStatusActive NodeMonitoringCommandResultLifecycleStatus = "active"
+)
+
+// Valid indicates whether the value is a known member of the NodeMonitoringCommandResultLifecycleStatus enum.
+func (e NodeMonitoringCommandResultLifecycleStatus) Valid() bool {
+	switch e {
+	case NodeMonitoringCommandResultLifecycleStatusActive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeMonitoringCommandResultResult.
+const (
+	NodeMonitoringCommandResultResultAlreadyDisabled NodeMonitoringCommandResultResult = "already_disabled"
+	NodeMonitoringCommandResultResultAlreadyEnabled  NodeMonitoringCommandResultResult = "already_enabled"
+	NodeMonitoringCommandResultResultDisabled        NodeMonitoringCommandResultResult = "disabled"
+	NodeMonitoringCommandResultResultEnabled         NodeMonitoringCommandResultResult = "enabled"
+)
+
+// Valid indicates whether the value is a known member of the NodeMonitoringCommandResultResult enum.
+func (e NodeMonitoringCommandResultResult) Valid() bool {
+	switch e {
+	case NodeMonitoringCommandResultResultAlreadyDisabled:
+		return true
+	case NodeMonitoringCommandResultResultAlreadyEnabled:
+		return true
+	case NodeMonitoringCommandResultResultDisabled:
+		return true
+	case NodeMonitoringCommandResultResultEnabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeMutationResultResult.
 const (
 	NodeMutationResultResultRegistered NodeMutationResultResult = "registered"
@@ -1365,6 +1419,69 @@ func (e NodeMutationResultResult) Valid() bool {
 	case NodeMutationResultResultRetired:
 		return true
 	case NodeMutationResultResultUpdated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeProbeResultReason.
+const (
+	NodeProbeResultReasonCancelled          NodeProbeResultReason = "cancelled"
+	NodeProbeResultReasonDnsRejected        NodeProbeResultReason = "dns_rejected"
+	NodeProbeResultReasonHttpStatus         NodeProbeResultReason = "http_status"
+	NodeProbeResultReasonNetworkUnavailable NodeProbeResultReason = "network_unavailable"
+	NodeProbeResultReasonNone               NodeProbeResultReason = "none"
+	NodeProbeResultReasonRedirectRejected   NodeProbeResultReason = "redirect_rejected"
+	NodeProbeResultReasonResponseInvalid    NodeProbeResultReason = "response_invalid"
+	NodeProbeResultReasonResponseTooLarge   NodeProbeResultReason = "response_too_large"
+	NodeProbeResultReasonTargetRejected     NodeProbeResultReason = "target_rejected"
+	NodeProbeResultReasonTimeout            NodeProbeResultReason = "timeout"
+	NodeProbeResultReasonTlsRejected        NodeProbeResultReason = "tls_rejected"
+)
+
+// Valid indicates whether the value is a known member of the NodeProbeResultReason enum.
+func (e NodeProbeResultReason) Valid() bool {
+	switch e {
+	case NodeProbeResultReasonCancelled:
+		return true
+	case NodeProbeResultReasonDnsRejected:
+		return true
+	case NodeProbeResultReasonHttpStatus:
+		return true
+	case NodeProbeResultReasonNetworkUnavailable:
+		return true
+	case NodeProbeResultReasonNone:
+		return true
+	case NodeProbeResultReasonRedirectRejected:
+		return true
+	case NodeProbeResultReasonResponseInvalid:
+		return true
+	case NodeProbeResultReasonResponseTooLarge:
+		return true
+	case NodeProbeResultReasonTargetRejected:
+		return true
+	case NodeProbeResultReasonTimeout:
+		return true
+	case NodeProbeResultReasonTlsRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeProbeResultResult.
+const (
+	NodeProbeResultResultFailure NodeProbeResultResult = "failure"
+	NodeProbeResultResultSuccess NodeProbeResultResult = "success"
+)
+
+// Valid indicates whether the value is a known member of the NodeProbeResultResult enum.
+func (e NodeProbeResultResult) Valid() bool {
+	switch e {
+	case NodeProbeResultResultFailure:
+		return true
+	case NodeProbeResultResultSuccess:
 		return true
 	default:
 		return false
@@ -1565,19 +1682,19 @@ func (e RecoveryCodesResponseRemaining) Valid() bool {
 
 // Defines values for RelayBindingContextSource.
 const (
-	Current   RelayBindingContextSource = "current"
-	LastKnown RelayBindingContextSource = "last_known"
-	None      RelayBindingContextSource = "none"
+	RelayBindingContextSourceCurrent   RelayBindingContextSource = "current"
+	RelayBindingContextSourceLastKnown RelayBindingContextSource = "last_known"
+	RelayBindingContextSourceNone      RelayBindingContextSource = "none"
 )
 
 // Valid indicates whether the value is a known member of the RelayBindingContextSource enum.
 func (e RelayBindingContextSource) Valid() bool {
 	switch e {
-	case Current:
+	case RelayBindingContextSourceCurrent:
 		return true
-	case LastKnown:
+	case RelayBindingContextSourceLastKnown:
 		return true
-	case None:
+	case RelayBindingContextSourceNone:
 		return true
 	default:
 		return false
@@ -2850,6 +2967,32 @@ type NodeInventoryProviderStatesResponse struct {
 	Providers  []NodeInventoryProviderState `json:"providers"`
 }
 
+// NodeMonitoringCommandRequest defines model for NodeMonitoringCommandRequest.
+type NodeMonitoringCommandRequest struct {
+	CommandId openapi_types.UUID `json:"command_id"`
+}
+
+// NodeMonitoringCommandResult defines model for NodeMonitoringCommandResult.
+type NodeMonitoringCommandResult struct {
+	Boundary                       time.Time                                  `json:"boundary"`
+	CancelledFutureMonitoringCount int                                        `json:"cancelled_future_monitoring_count"`
+	ClosedMonitoringCount          int                                        `json:"closed_monitoring_count"`
+	EffectiveFrom                  *time.Time                                 `json:"effective_from"`
+	EffectiveTo                    *time.Time                                 `json:"effective_to"`
+	InstanceId                     openapi_types.UUID                         `json:"instance_id"`
+	LifecycleStatus                NodeMonitoringCommandResultLifecycleStatus `json:"lifecycle_status"`
+	MonitoringActivationId         *openapi_types.UUID                        `json:"monitoring_activation_id"`
+	MonitoringActive               bool                                       `json:"monitoring_active"`
+	Result                         NodeMonitoringCommandResultResult          `json:"result"`
+	Revision                       string                                     `json:"revision"`
+}
+
+// NodeMonitoringCommandResultLifecycleStatus defines model for NodeMonitoringCommandResult.LifecycleStatus.
+type NodeMonitoringCommandResultLifecycleStatus string
+
+// NodeMonitoringCommandResultResult defines model for NodeMonitoringCommandResult.Result.
+type NodeMonitoringCommandResultResult string
+
 // NodeMonitoringStatus defines model for NodeMonitoringStatus.
 type NodeMonitoringStatus struct {
 	Current          bool       `json:"current"`
@@ -2869,6 +3012,20 @@ type NodeMutationResult struct {
 
 // NodeMutationResultResult defines model for NodeMutationResult.Result.
 type NodeMutationResultResult string
+
+// NodeProbeResult defines model for NodeProbeResult.
+type NodeProbeResult struct {
+	LatencyMs int                   `json:"latency_ms"`
+	Reachable bool                  `json:"reachable"`
+	Reason    NodeProbeResultReason `json:"reason"`
+	Result    NodeProbeResultResult `json:"result"`
+}
+
+// NodeProbeResultReason defines model for NodeProbeResult.Reason.
+type NodeProbeResultReason string
+
+// NodeProbeResultResult defines model for NodeProbeResult.Result.
+type NodeProbeResultResult string
 
 // NodeRegisterRequest defines model for NodeRegisterRequest.
 type NodeRegisterRequest struct {
@@ -3325,6 +3482,24 @@ type EditNodeAssetParams struct {
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
 }
 
+// TestNodeConnectionParams defines parameters for TestNodeConnection.
+type TestNodeConnectionParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// DisableNodeMonitoringParams defines parameters for DisableNodeMonitoring.
+type DisableNodeMonitoringParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// EnableNodeMonitoringParams defines parameters for EnableNodeMonitoring.
+type EnableNodeMonitoringParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // ReplaceNodeAssetParams defines parameters for ReplaceNodeAsset.
 type ReplaceNodeAssetParams struct {
 	// XCSRFToken Random proof bound to the current administrator session.
@@ -3548,6 +3723,15 @@ type RegisterNodeAssetJSONRequestBody = NodeRegisterRequest
 
 // EditNodeAssetJSONRequestBody defines body for EditNodeAsset for application/json ContentType.
 type EditNodeAssetJSONRequestBody = NodeEditRequest
+
+// TestNodeConnectionJSONRequestBody defines body for TestNodeConnection for application/json ContentType.
+type TestNodeConnectionJSONRequestBody = EmptyObject
+
+// DisableNodeMonitoringJSONRequestBody defines body for DisableNodeMonitoring for application/json ContentType.
+type DisableNodeMonitoringJSONRequestBody = NodeMonitoringCommandRequest
+
+// EnableNodeMonitoringJSONRequestBody defines body for EnableNodeMonitoring for application/json ContentType.
+type EnableNodeMonitoringJSONRequestBody = NodeMonitoringCommandRequest
 
 // ReplaceNodeAssetJSONRequestBody defines body for ReplaceNodeAsset for application/json ContentType.
 type ReplaceNodeAssetJSONRequestBody = NodeReplaceRequest
@@ -3965,6 +4149,18 @@ type ServerInterface interface {
 	// EditNodeAsset Edit mutable Relay Node metadata
 	// (PATCH /api/assets/nodes/{instance_id})
 	EditNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params EditNodeAssetParams)
+	// TestNodeConnection Execute the explicit fixed Relay Node connection test
+	// (POST /api/assets/nodes/{instance_id}/connection-test)
+	TestNodeConnection(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params TestNodeConnectionParams)
+	// GetNodeHealth Execute the fixed Relay Node health observation
+	// (GET /api/assets/nodes/{instance_id}/health)
+	GetNodeHealth(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId)
+	// DisableNodeMonitoring Disable Relay Node monitoring immediately
+	// (POST /api/assets/nodes/{instance_id}/monitoring-disable)
+	DisableNodeMonitoring(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params DisableNodeMonitoringParams)
+	// EnableNodeMonitoring Enable Relay Node monitoring immediately
+	// (POST /api/assets/nodes/{instance_id}/monitoring-enable)
+	EnableNodeMonitoring(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params EnableNodeMonitoringParams)
 	// ReplaceNodeAsset Atomically replace an active Relay Node
 	// (POST /api/assets/nodes/{instance_id}/replace)
 	ReplaceNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params ReplaceNodeAssetParams)
@@ -4208,6 +4404,30 @@ func (_ Unimplemented) GetNodeAsset(w http.ResponseWriter, r *http.Request, inst
 // EditNodeAsset Edit mutable Relay Node metadata
 // (PATCH /api/assets/nodes/{instance_id})
 func (_ Unimplemented) EditNodeAsset(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params EditNodeAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TestNodeConnection Execute the explicit fixed Relay Node connection test
+// (POST /api/assets/nodes/{instance_id}/connection-test)
+func (_ Unimplemented) TestNodeConnection(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params TestNodeConnectionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetNodeHealth Execute the fixed Relay Node health observation
+// (GET /api/assets/nodes/{instance_id}/health)
+func (_ Unimplemented) GetNodeHealth(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DisableNodeMonitoring Disable Relay Node monitoring immediately
+// (POST /api/assets/nodes/{instance_id}/monitoring-disable)
+func (_ Unimplemented) DisableNodeMonitoring(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params DisableNodeMonitoringParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EnableNodeMonitoring Enable Relay Node monitoring immediately
+// (POST /api/assets/nodes/{instance_id}/monitoring-enable)
+func (_ Unimplemented) EnableNodeMonitoring(w http.ResponseWriter, r *http.Request, instanceId NodeInstanceId, params EnableNodeMonitoringParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5403,6 +5623,194 @@ func (siw *ServerInterfaceWrapper) EditNodeAsset(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.EditNodeAsset(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestNodeConnection operation middleware
+func (siw *ServerInterfaceWrapper) TestNodeConnection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TestNodeConnectionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestNodeConnection(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetNodeHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetNodeHealth(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetNodeHealth(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableNodeMonitoring operation middleware
+func (siw *ServerInterfaceWrapper) DisableNodeMonitoring(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DisableNodeMonitoringParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableNodeMonitoring(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableNodeMonitoring operation middleware
+func (siw *ServerInterfaceWrapper) EnableNodeMonitoring(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId NodeInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EnableNodeMonitoringParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableNodeMonitoring(w, r, instanceId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7196,6 +7604,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/assets/nodes/{instance_id}/replace", wrapper.ReplaceNodeAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/nodes/{instance_id}/health", wrapper.GetNodeHealth)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/nodes/{instance_id}/connection-test", wrapper.TestNodeConnection)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/nodes/{instance_id}/monitoring-enable", wrapper.EnableNodeMonitoring)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/nodes/{instance_id}/monitoring-disable", wrapper.DisableNodeMonitoring)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/drivers", wrapper.ListNodeDrivers)

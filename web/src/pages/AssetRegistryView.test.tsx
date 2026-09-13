@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import type { AssetApi, DriverAsset, GatewayState, NodeAsset, ProviderPolicyState } from "../api/asset-types";
+import type { AssetApi, DriverAsset, GatewayState, NodeAsset, NodeMonitoringResult, NodeProbeResult, ProviderPolicyState } from "../api/asset-types";
 import { AssetApiError } from "../api/asset-types";
 import { AssetRegistryView } from "./AssetRegistryView";
 
@@ -59,14 +59,34 @@ const policy: ProviderPolicyState = {
   },
 };
 
+const healthyProbe: NodeProbeResult = { result: "success", reachable: true, reason: "none", latencyMs: 12 };
+const monitoringEnabled: NodeMonitoringResult = {
+  result: "enabled",
+  instanceId: firstNode.instanceId,
+  lifecycleStatus: "active",
+  revision: firstNode.revision,
+  boundary: "2026-08-25T10:01:00Z",
+  monitoringActive: true,
+  monitoringActivationId: "00000000-0000-4000-8000-000000000301",
+  effectiveFrom: "2026-08-25T10:01:00Z",
+  effectiveTo: null,
+  closedMonitoringCount: 0,
+  cancelledFutureMonitoringCount: 0,
+};
+
 function makeApi(): AssetApi {
   return {
     environment: vi.fn().mockResolvedValue({ environmentId: "development", environmentType: "production", displayName: "Phase 1" }),
     gateway: vi.fn().mockResolvedValue(gateway),
     nodes: vi.fn().mockResolvedValue({ items: [firstNode], nextCursor: null }),
     node: vi.fn().mockResolvedValue(firstNode),
+    nodeDetail: vi.fn().mockResolvedValue({ asset: firstNode, predecessor: null, successor: null }),
     drivers: vi.fn().mockResolvedValue(drivers),
     currentProviderPolicy: vi.fn().mockResolvedValue(policy),
+    health: vi.fn().mockResolvedValue(healthyProbe),
+    connectionTest: vi.fn().mockResolvedValue(healthyProbe),
+    monitoringEnable: vi.fn().mockResolvedValue(monitoringEnabled),
+    monitoringDisable: vi.fn().mockResolvedValue({ ...monitoringEnabled, result: "disabled", monitoringActive: false, monitoringActivationId: null, effectiveFrom: null }),
   };
 }
 
@@ -198,13 +218,12 @@ describe("asset registry read-only view", () => {
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
   });
 
-	it("owns Node lifecycle controls while Stage 3 operations remain absent", async () => {
+	it("shows explicit Stage 3 operations only inside active Node detail", async () => {
 		const api = makeApi();
 		api.registerNode = vi.fn().mockResolvedValue(undefined);
 		api.editNode = vi.fn().mockResolvedValue(undefined);
 		api.retireNode = vi.fn().mockResolvedValue(undefined);
 		api.replaceNode = vi.fn().mockResolvedValue(undefined);
-		api.nodeDetail = vi.fn().mockResolvedValue({ asset: firstNode, predecessor: null, successor: null });
 		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
 
 		expect(await screen.findByRole("button", { name: "登记 Node" })).toBeInTheDocument();
@@ -212,10 +231,89 @@ describe("asset registry read-only view", () => {
 		expect(screen.getByRole("button", { name: /编\s*辑/ })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Replace" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Retire" })).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: /Health|Connection Test|Monitoring|启用监控|禁用监控/ })).not.toBeInTheDocument();
+		expect(screen.queryByTestId("node-management-operations")).not.toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: /详\s*情/ }));
+		fireEvent.click(screen.getByRole("button", { name: /详.{0,2}情/ }));
 		expect(await screen.findByText("Node 详情")).toBeInTheDocument();
+		expect(screen.getByTestId("node-health-button")).toBeInTheDocument();
+		expect(screen.getByTestId("node-connection-test-button")).toBeInTheDocument();
+		expect(screen.getByTestId("node-monitoring-enable-button")).toBeInTheDocument();
+		expect(screen.getByTestId("node-monitoring-disable-button")).toBeInTheDocument();
 		expect(api.nodeDetail).toHaveBeenCalledWith(firstNode.instanceId);
 	}, 15_000);
+
+	it("runs probes only after explicit clicks and confirms immediate disable", async () => {
+		const api = makeApi();
+		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+		await screen.findByText("Singapore Node");
+		expect(api.health).not.toHaveBeenCalled();
+		expect(api.connectionTest).not.toHaveBeenCalled();
+		expect(api.monitoringEnable).not.toHaveBeenCalled();
+		expect(api.monitoringDisable).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: /详.{0,2}情/ }));
+		const detail = await screen.findByTestId("node-management-operations");
+		fireEvent.click(within(detail).getByTestId("node-health-button"));
+		expect(await within(detail).findByTestId("node-health-result")).toBeInTheDocument();
+		fireEvent.click(within(detail).getByTestId("node-connection-test-button"));
+		expect(await within(detail).findByTestId("node-connection-test-result")).toBeInTheDocument();
+		fireEvent.click(within(detail).getByTestId("node-monitoring-disable-button"));
+		expect(await screen.findByText("这会立即关闭当前监控，并取消已有的未来监控预约。"));
+		const confirmButtons = screen.getAllByRole("button", { name: /停.{0,2}用/ });
+		fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
+		expect(await within(detail).findByTestId("node-monitoring-result")).toHaveTextContent("disabled");
+		expect(api.health).toHaveBeenCalledTimes(1);
+		expect(api.connectionTest).toHaveBeenCalledWith(firstNode.instanceId, "csrf-proof");
+		expect(api.monitoringDisable).toHaveBeenCalledWith(firstNode.instanceId, expect.any(String), "csrf-proof");
+	});
+
+	it("reuses the same monitoring command UUID after an unknown failure", async () => {
+		const api = makeApi();
+		vi.mocked(api.monitoringEnable!).mockRejectedValueOnce(new AssetApiError(503)).mockResolvedValue(monitoringEnabled);
+		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+		await screen.findByText("Singapore Node");
+		fireEvent.click(screen.getByRole("button", { name: /详.{0,2}情/ }));
+		const detail = await screen.findByTestId("node-management-operations");
+		fireEvent.click(within(detail).getByTestId("node-monitoring-enable-button"));
+		await waitFor(() => expect(api.monitoringEnable).toHaveBeenCalledTimes(1));
+		fireEvent.click(within(detail).getByTestId("node-monitoring-enable-button"));
+		await waitFor(() => expect(api.monitoringEnable).toHaveBeenCalledTimes(2));
+		expect(api.monitoringEnable).toHaveBeenNthCalledWith(2, firstNode.instanceId, (api.monitoringEnable as ReturnType<typeof vi.fn>).mock.calls[0]![1], "csrf-proof");
+	});
+
+	it("ignores late detail responses after switching Nodes", async () => {
+		const secondNode = { ...firstNode, instanceId: "00000000-0000-4000-8000-000000000102", displayName: "Tokyo Node" };
+		const api = makeApi();
+		vi.mocked(api.nodes).mockResolvedValue({ items: [firstNode, secondNode], nextCursor: null });
+		let resolveFirst!: (value: { asset: NodeAsset; predecessor: null; successor: null }) => void;
+		let resolveSecond!: (value: { asset: NodeAsset; predecessor: null; successor: null }) => void;
+		vi.mocked(api.nodeDetail!).mockImplementation((id) => new Promise((resolve) => {
+			if (id === firstNode.instanceId) resolveFirst = resolve;
+			else resolveSecond = resolve;
+		}));
+		render(<AssetRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+		await screen.findByText("Tokyo Node");
+		const detailButtons = screen.getAllByRole("button", { name: /详.{0,2}情/ });
+		fireEvent.click(detailButtons[0]!);
+		fireEvent.click(detailButtons[1]!);
+		resolveSecond({ asset: secondNode, predecessor: null, successor: null });
+		expect(await screen.findByText("Tokyo Node")).toBeInTheDocument();
+		resolveFirst({ asset: firstNode, predecessor: null, successor: null });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.getByText("Tokyo Node")).toBeInTheDocument();
+		expect(screen.queryByText("Singapore Node", { selector: ".ant-modal-title" })).not.toBeInTheDocument();
+	});
+
+	it("does not expose Stage 3 controls for retired Nodes", async () => {
+		const retiredNode = { ...firstNode, lifecycleStatus: "retired" as const, monitoringActive: false, retiredAt: "2026-08-25T11:00:00Z", retiredBy: "admin", retireReason: "administrator_retire" as const };
+		const api = makeApi();
+		vi.mocked(api.nodes).mockResolvedValue({ items: [retiredNode], nextCursor: null });
+		vi.mocked(api.nodeDetail!).mockResolvedValue({ asset: retiredNode, predecessor: null, successor: null });
+		render(<AssetRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+		await screen.findByText("Singapore Node");
+		fireEvent.click(screen.getByRole("button", { name: /详.{0,2}情/ }));
+		expect(await screen.findByText("Node 详情")).toBeInTheDocument();
+		expect(screen.queryByTestId("node-management-operations")).not.toBeInTheDocument();
+		expect(api.health).not.toHaveBeenCalled();
+		expect(api.connectionTest).not.toHaveBeenCalled();
+	});
 });

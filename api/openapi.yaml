@@ -1080,6 +1080,116 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
 
+  /api/assets/nodes/{instance_id}/health:
+    get:
+      operationId: getNodeHealth
+      summary: Execute the fixed Relay Node health observation
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+      responses:
+        "200":
+          description: The bounded health observation, including failed observations.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeProbeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/nodes/{instance_id}/connection-test:
+    post:
+      operationId: testNodeConnection
+      summary: Execute the explicit fixed Relay Node connection test
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmptyObject" }
+      responses:
+        "200":
+          description: The bounded connection observation, including failed observations.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeProbeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/nodes/{instance_id}/monitoring-enable:
+    post:
+      operationId: enableNodeMonitoring
+      summary: Enable Relay Node monitoring immediately
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeMonitoringCommandRequest" }
+      responses:
+        "200":
+          description: The persisted monitoring command result.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeMonitoringCommandResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/nodes/{instance_id}/monitoring-disable:
+    post:
+      operationId: disableNodeMonitoring
+      summary: Disable Relay Node monitoring immediately
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/NodeInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeMonitoringCommandRequest" }
+      responses:
+        "200":
+          description: The persisted monitoring command result.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeMonitoringCommandResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /api/assets/drivers:
     get:
       operationId: listNodeDrivers
@@ -2702,6 +2812,51 @@ components:
         result: { type: string, enum: [healthy] }
         observed_at: { type: string, format: date-time }
 
+    NodeProbeResult:
+      type: object
+      additionalProperties: false
+      required: [result, reachable, reason, latency_ms]
+      properties:
+        result: { type: string, enum: [success, failure] }
+        reachable: { type: boolean }
+        reason:
+          type: string
+          enum: [none, http_status, response_invalid, response_too_large, timeout, cancelled, network_unavailable, dns_rejected, tls_rejected, redirect_rejected, target_rejected]
+        latency_ms: { type: integer, minimum: 0, maximum: 30000 }
+
+    NodeMonitoringCommandRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id]
+      properties:
+        command_id: { type: string, format: uuid }
+
+    NodeMonitoringCommandResult:
+      type: object
+      additionalProperties: false
+      required: [result, instance_id, lifecycle_status, revision, boundary, monitoring_active, monitoring_activation_id, effective_from, effective_to, closed_monitoring_count, cancelled_future_monitoring_count]
+      properties:
+        result: { type: string, enum: [enabled, already_enabled, disabled, already_disabled] }
+        instance_id: { type: string, format: uuid }
+        lifecycle_status: { type: string, enum: [active] }
+        revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        boundary: { type: string, format: date-time }
+        monitoring_active: { type: boolean }
+        monitoring_activation_id:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: "null" }
+        effective_from:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+        effective_to:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+        closed_monitoring_count: { type: integer, minimum: 0 }
+        cancelled_future_monitoring_count: { type: integer, minimum: 0 }
+
     EmptyObject:
       type: object
       additionalProperties: false
@@ -3509,6 +3664,11 @@ components:
         - stale_revision
         - revision_exhausted
         - command_conflict
+        - capability_unsupported
+        - monitoring_future_conflict
+        - monitoring_boundary_conflict
+        - monitoring_state_conflict
+        - generation_exhausted
         - cursor_stale
         - invalid_endpoint
         - secret_configuration_invalid

@@ -134,9 +134,24 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 		}
 	}
 
-	if _, err = owner.Exec(ctx, `SELECT control_set_node_inventory_monitoring($1,true,clock_timestamp()+interval '600 milliseconds','scheduled_enable','node-http-test')`, ids[1]); err != nil {
+	registrar, err := owner.Acquire(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = registrar.Exec(ctx, `SET ROLE relay_control_asset_registrar`); err != nil {
+		registrar.Release()
+		t.Fatal(err)
+	}
+	var disableFence *uuid.UUID
+	if err = registrar.QueryRow(ctx, `SELECT control_latest_node_disable_fence_v1($1)`, ids[1]).Scan(&disableFence); err != nil {
+		registrar.Release()
+		t.Fatal(err)
+	}
+	if _, err = registrar.Exec(ctx, `SELECT control_set_node_inventory_monitoring($1,true,clock_timestamp()+interval '600 milliseconds','scheduled_enable','node-http-test',$2)`, ids[1], disableFence); err != nil {
+		registrar.Release()
+		t.Fatal(err)
+	}
+	registrar.Release()
 	firstPage := do(http.MethodGet, "/api/assets/nodes?lifecycle=active&monitoring_active=false&limit=1", "", "")
 	if firstPage.Code != http.StatusOK || !strings.Contains(firstPage.Body.String(), ids[0].String()) {
 		t.Fatalf("first page status=%d body=%s", firstPage.Code, firstPage.Body.String())

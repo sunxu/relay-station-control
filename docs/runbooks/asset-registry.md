@@ -1,6 +1,6 @@
 # 资产注册、Gateway 与 Node lifecycle Runbook
 
-本文覆盖资产注册基础、Gateway lifecycle 和 Phase 6 Stage 2 Relay Node lifecycle。Driver、Provider policy 和预约式 Node monitoring 仍由受控部署流程维护；实名 `super_admin` 可在 Control 同源 Asset Registry 中执行 Node Register/Edit/Retire/Replace。Control 不进入模型请求数据面。
+本文覆盖资产注册基础、Gateway lifecycle、Relay Node lifecycle，以及 Phase 6 Stage 3 Node 管理操作。Driver、Provider policy 和预约式 Node monitoring 仍由受控部署流程维护；实名 `super_admin` 可在 Control 同源 Asset Registry 中执行 Node lifecycle、显式 Health/Connection Test 和立即 Monitoring Enable/Disable。Control 不进入模型请求数据面。
 
 所有示例值都必须来自目标环境的部署清单或 Secret Manager。不要把数据库口令、Reader Secret、Secret 引用、连接串或带 query 的 URL 写入 Git、工单、终端录屏和验收输出。
 
@@ -141,7 +141,7 @@ psql -X --no-psqlrc \
   --file=deploy/asset-registry/set-node-monitoring.sql
 ```
 
-`register-assets.sql` 只从固定环境变量读取两个 Secret 引用，并以 PostgreSQL extended-query bind 参数发送；引用不会出现在 `psql` argv/process list、`pg_stat_activity` 查询文本或 statement log 中（数据库仍可能按独立参数审计策略记录 bind 参数，因此生产必须禁用敏感参数日志）。空值表示未配置。空的 `effective_at` 表示使用数据库当前时间；非空值必须是带 `Z` 或数值 offset 的 RFC 3339 时间（例如 `2026-08-25T15:00:00Z` 或 `2026-08-25T23:00:00+08:00`），无 offset 的本地时间会 fail closed。Provider/capability CSV 必须已经排序且无重复。模板各自显式开启 `SERIALIZABLE` 事务并固定事务时区为 UTC，不要再嵌套事务或拆开其中语句。
+`register-assets.sql` 只从固定环境变量读取两个 Secret 引用，并以 PostgreSQL extended-query bind 参数发送；引用不会出现在 `psql` argv/process list、`pg_stat_activity` 查询文本或 statement log 中（数据库仍可能按独立参数审计策略记录 bind 参数，因此生产必须禁用敏感参数日志）。空值表示未配置。空的 `effective_at` 表示使用数据库当前时间；非空值必须是带 `Z` 或数值 offset 的 RFC 3339 时间（例如 `2026-08-25T15:00:00Z` 或 `2026-08-25T23:00:00+08:00`），无 offset 的本地时间会 fail closed。Provider/capability CSV 必须已经排序且无重复。登记和策略模板使用 `SERIALIZABLE`；Stage 3 的 monitoring writer 必须先捕获最新 Disable fence F0，再使用模板固定的 `READ COMMITTED` 事务，让受控函数在取得 Node lock 后读取 F1。不要嵌套事务或拆开其中语句。
 
 `reconcile.sql` 使用 `REPEATABLE READ READ ONLY`，由同一个 registrar LOGIN 执行；其最终只读权限必须通过数据库权限测试证明不包含 endpoint、Secret 引用列或任何认证表。禁止为了让对账通过而给 registrar 或 runtime 增加资产表写权限：
 
@@ -186,7 +186,15 @@ Node mutation 使用全局 `command_id` durable receipt。相同 actor、command
 
 Node collection cursor 绑定 filter、`node_generation` 和首屏 DB `read_as_of`。真正改变 lifecycle/current collection projection 的事务推进 generation，使旧 cursor 返回 `cursor_stale`；单纯 wall-clock 跨过 monitoring boundary 不改变已签发 cursor chain。legacy `nodes` count 继续表示 total，`node_counts` 分别提供 active、retired 和 total。
 
-Stage 2 页面不提供 Node Health、Connection Test、Monitoring Enable 或 Monitoring Disable；这些操作仍属于 Stage 3，不能通过 Stage 2 API/UI 提前执行。
+## Node 管理操作
+
+active Node detail 提供四个彼此独立、只在管理员点击时执行的操作：Health、Connection Test、Enable Monitoring 和 Disable Monitoring。页面加载、reload 或切换 Node 不会自动 Probe，也不会后台轮询。retired Node 不提供这些控件。
+
+Health 是不需要 CSRF 的认证只读 GET；Connection Test 是需要同源与 CSRF 的 POST。两者复用固定 Driver Probe，只访问已登记 Node 的固定 `/healthz` 目标，一次请求最多一次 HTTP，不重定向、不重试、不使用代理、不读取或发送 Reader Secret。结果只保存脱敏 audit（instance ID、result、reason、latency），不建立 health history。audit 写入失败返回安全 503，管理员必须先确认远端是否已收到该次请求，系统不会自动重做 Probe。
+
+Enable/Disable 都需要新的稳定 `command_id`，不接受 Node revision，也不改变 Node revision/updated_at。未知 outcome 应使用同一 command ID 重试，以便 immutable receipt 返回原 status/body。Enable 只建立立即 current activation；存在冲突 future activation 时返回冲突。Disable 在一个数据库 boundary 内关闭 current 并取消全部 future activation；确认框中的取消说明是持久化事实。
+
+每次新的 Disable（包括 `already_disabled`）都会提交一个严格递增 `committed_at` 的 receipt fence。预约 writer 必须通过本仓库模板先捕获 F0，再在写事务内比较 F1；`monitoring_disable_fence_conflict` 表示 intent 已过期，作业应丢弃旧 intent 并由下一次正常调度重新形成 intent，禁止自动重试原事务。该 fence 不是 disabled latch，Disable 之后形成的新 intent 会捕获新 F0，并继续按普通 monitoring precondition 判断。支持部署不得清理每个 Node 最新的 Disable receipt。
 
 ## 对账与 Asset Registry 页面
 
