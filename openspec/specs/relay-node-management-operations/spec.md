@@ -312,3 +312,15 @@ Health 与 Connection Test 共用的 secret-free authorizer MUST 在短 PostgreS
 #### Scenario: Probe 保持 credential-free
 - **WHEN** active Node 的 Reader Secret reference 为 NULL 或 runtime 无权读取该列
 - **THEN** Health 与 Connection Test 仍可各执行一次 Probe，且 API、audit、metrics、log 与 receipt 均无 Secret reference/value
+
+### Requirement: Node Monitoring commands SHALL participate in the global command registry
+
+Monitoring Enable/Disable commands MUST use the same global command registry and actor-first serialization as Gateway/Node lifecycle commands. Existing per-Node Disable fence semantics, receipt `committed_at` ordering and monitoring transaction behavior MUST remain unchanged after registration. Health and Connection Test remain command-ID-free observations and MUST NOT reserve global command IDs.
+
+#### Scenario: Monitoring command collides with another domain
+- **WHEN** a Monitoring Enable/Disable request uses a command ID already reserved by a Gateway/Node/account command
+- **THEN** Control returns `command_conflict` before monitoring-state validation and makes no monitoring change
+
+#### Scenario: Health uses no command identity
+- **WHEN** an administrator runs Node Health or Connection Test
+- **THEN** no global command reservation is created and existing observation semantics remain unchanged

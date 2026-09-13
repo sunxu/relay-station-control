@@ -1,4 +1,10 @@
-## ADDED Requirements
+# admin-command-registry Specification
+
+## Purpose
+
+定义所有管理员命令共用的不可变全局 `command_id` 预留、actor-first 冲突边界、历史回填、receipt 完整性与兼容性阻断契约。
+
+## Requirements
 
 ### Requirement: Administrator commands SHALL share one durable global command namespace
 

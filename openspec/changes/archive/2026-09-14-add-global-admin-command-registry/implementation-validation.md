@@ -6,16 +6,22 @@
 - Ops requirements baseline: `594a349435dbb6c2d4265be79fb913015b1b05c5`
 - Planning: COMPLETE
 - Independent readiness review: P0 = 0 / P1 = 0 / P2 = 1; non-blocking validation evidence finding corrected
-- Implementation: COMPLETE — READY FOR INDEPENDENT IMPLEMENTATION REVIEW
+- Implementation: COMPLETE
 - Runtime Acceptance: PASS
-- Independent implementation review: CHANGES REQUIRED (P0 = 0 / P1 = 1 / P2 = 0)
-- Independent implementation review finding P1-1: CORRECTED — READY FOR RE-REVIEW
+- Initial independent implementation review: P0 = 0 / P1 = 1 / P2 = 0; CHANGES REQUIRED
+- Initial finding: P1-1 compatibility artifact provenance
+- Corrective acceptance commit: `550bdc31dbda0cbaf32632ee8d8aa54161daa2aa`
+- Final independent implementation re-review: P0 = 0 / P1 = 0 / P2 = 0; PASS
+- Independent implementation review: PASS
 - Implementation commit: `a9463bc776ffa5cc7c6341f15f89385afa555d34`
 - Completed implementation tasks: 15 / 15
 - Git/worktree implementation closeout: COMPLETE
 - Migration: 37
 - Compatibility class/floor: `3 / 3`
-- Archive: NOT RUN
+- Independent archive-readiness review: P0 = 0 / P1 = 0 / P2 = 0; PASS
+- Archive readiness: PASS / APPROVED
+- Archive: COMPLETE
+- Stage 7A: CLOSED / IMPLEMENTED / ARCHIVED
 - Stage 7N: NOT STARTED
 - Stage 7B: NOT STARTED
 - Phase 7: PLANNED / NOT STARTED
@@ -61,7 +67,7 @@ Production rollout must stop old Control and automatic restart, install the clas
 
 The first implementation review found one P1 provenance gap: compatibility acceptance archived `HEAD` for the old artifact and built the new artifact from the mutable implementation worktree. That historical run produced Stage7A digest `sha256:9677e70108d4a326fb00cdafb38ea9c6ac4e4efb73a29998c24dd02244d9494f`; it is retained here only as historical worktree evidence.
 
-The corrective acceptance now runs `git archive` separately for immutable revisions `fa9825be3239bbd395bbaf0ecd7294e10cf7af64` and `a9463bc776ffa5cc7c6341f15f89385afa555d34`, fails if either revision cannot be resolved, and builds both Control artifacts plus the gate from those extracted committed sources. Future documentation commits and mutable worktree changes therefore cannot redefine either artifact provenance. P1-1 compatibility artifact provenance is CORRECTED — READY FOR RE-REVIEW. Independent implementation re-review remains REQUIRED.
+The corrective acceptance now runs `git archive` separately for immutable revisions `fa9825be3239bbd395bbaf0ecd7294e10cf7af64` and `a9463bc776ffa5cc7c6341f15f89385afa555d34`, fails if either revision cannot be resolved, and builds both Control artifacts plus the gate from those extracted committed sources. Future documentation commits and mutable worktree changes therefore cannot redefine either artifact provenance. P1-1 compatibility artifact provenance was corrected by commit `550bdc31dbda0cbaf32632ee8d8aa54161daa2aa`; final independent implementation re-review passed with P0/P1/P2 = 0/0/0.
 
 ## Boundaries
 
@@ -69,5 +75,6 @@ The corrective acceptance now runs `git archive` separately for immutable revisi
 - Node Account Management Contract v1 hardening: NOT IMPLEMENTED
 - Stage 7N: NOT STARTED
 - Stage 7B: NOT STARTED
-- Archive: NOT RUN
+- Archive: COMPLETE
+- Stage 7A: CLOSED / IMPLEMENTED / ARCHIVED
 - Phase 7 remains PLANNED / NOT STARTED until an authorized stage implementation closeout changes that project-level status.

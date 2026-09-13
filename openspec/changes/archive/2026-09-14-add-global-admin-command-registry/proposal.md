@@ -40,4 +40,4 @@ No Disable/Enable/Remove/upload account operation, no credential body handling, 
 
 ## Planning status
 
-Planning = COMPLETE. Independent implementation-readiness review = COMPLETE / READY. Implementation = COMPLETE — READY FOR INDEPENDENT IMPLEMENTATION REVIEW. Archive = NOT RUN. Stage 7N and Stage 7B remain NOT STARTED.
+Planning = COMPLETE. Independent implementation-readiness review = COMPLETE / READY. Implementation = COMPLETE. Runtime Acceptance = PASS. Final independent implementation re-review = PASS（P0/P1/P2 = 0/0/0）. Archive readiness = PASS / APPROVED. Archive = COMPLETE. Stage 7A = CLOSED / IMPLEMENTED / ARCHIVED. Stage 7N and Stage 7B remain NOT STARTED.
