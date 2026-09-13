@@ -17,6 +17,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const (
+	preStage7ARevision            = "fa9825be3239bbd395bbaf0ecd7294e10cf7af64"
+	stage7AImplementationRevision = "a9463bc776ffa5cc7c6341f15f89385afa555d34"
+)
+
 func TestStage7ARealArtifactsAgainstFloorThreePG18(t *testing.T) {
 	ownerBase := os.Getenv("CONTROL_DATABASE_TEST_URL")
 	if ownerBase == "" {
@@ -43,26 +48,32 @@ func TestStage7ARealArtifactsAgainstFloorThreePG18(t *testing.T) {
 	}
 	parsed.Path = "/" + databaseName
 	databaseURL := parsed.String()
-	migrate := exec.CommandContext(ctx, "go", "tool", "goose", "-dir", "../migrations", "postgres", databaseURL, "up")
+	migrate := exec.CommandContext(ctx, "go", "tool", "goose", "-dir", "../migrations", "postgres", databaseURL, "up-to", "37")
 	migrate.Dir = filepath.Join(root, "tools")
 	if output, migrateErr := migrate.CombinedOutput(); migrateErr != nil {
 		t.Fatalf("migrate Stage 7A database: %v\n%s", migrateErr, output)
 	}
 
 	temporary := t.TempDir()
-	oldSource := filepath.Join(temporary, "old-source")
-	if err = os.Mkdir(oldSource, 0o700); err != nil {
-		t.Fatal(err)
+	archiveRevision := func(revision, directoryName string) string {
+		t.Helper()
+		source := filepath.Join(temporary, directoryName)
+		if err := os.Mkdir(source, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		archive := filepath.Join(temporary, directoryName+".tar")
+		archiveCommand := exec.CommandContext(ctx, "git", "archive", "--format=tar", "--output", archive, revision)
+		archiveCommand.Dir = root
+		if output, archiveErr := archiveCommand.CombinedOutput(); archiveErr != nil {
+			t.Fatalf("archive source revision %s: %v\n%s", revision, archiveErr, output)
+		}
+		if output, extractErr := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", source).CombinedOutput(); extractErr != nil {
+			t.Fatalf("extract source revision %s: %v\n%s", revision, extractErr, output)
+		}
+		return source
 	}
-	archive := filepath.Join(temporary, "old-source.tar")
-	archiveCommand := exec.CommandContext(ctx, "git", "archive", "--format=tar", "--output", archive, "HEAD")
-	archiveCommand.Dir = root
-	if output, archiveErr := archiveCommand.CombinedOutput(); archiveErr != nil {
-		t.Fatalf("archive pre-Stage7A source: %v\n%s", archiveErr, output)
-	}
-	if output, extractErr := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", oldSource).CombinedOutput(); extractErr != nil {
-		t.Fatalf("extract pre-Stage7A source: %v\n%s", extractErr, output)
-	}
+	oldSource := archiveRevision(preStage7ARevision, "pre-stage7a-source")
+	stage7ASource := archiveRevision(stage7AImplementationRevision, "stage7a-source")
 	build := func(source, outputPath, target string) {
 		t.Helper()
 		command := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", outputPath, target)
@@ -79,8 +90,8 @@ func TestStage7ARealArtifactsAgainstFloorThreePG18(t *testing.T) {
 	newArtifact := filepath.Join(temporary, "control-stage7a")
 	gate := filepath.Join(temporary, "relay-control-compat-gate")
 	build(oldSource, oldArtifact, "./cmd/control")
-	build(root, newArtifact, "./cmd/control")
-	build(root, gate, "./cmd/relay-control-compat-gate")
+	build(stage7ASource, newArtifact, "./cmd/control")
+	build(stage7ASource, gate, "./cmd/relay-control-compat-gate")
 	digest := func(path string) string {
 		t.Helper()
 		data, readErr := os.ReadFile(path)
@@ -122,5 +133,6 @@ func TestStage7ARealArtifactsAgainstFloorThreePG18(t *testing.T) {
 	if output, runErr := run(newArtifact, newDigest, 3); runErr != nil {
 		t.Fatalf("Stage7A class-3 artifact rejected: %v output=%s", runErr, output)
 	}
-	t.Logf("pre_stage7a_source=HEAD old_digest=%s old_class=2 migration=37 floor=3 rejected=true new_digest=%s new_class=3 accepted=true", oldDigest, newDigest)
+	t.Logf("pre_stage7a_source=%s old_digest=%s old_class=2 old_result=rejected stage7a_source=%s new_digest=%s new_class=3 new_result=accepted gate_source=%s migration=37 floor=3",
+		preStage7ARevision, oldDigest, stage7AImplementationRevision, newDigest, stage7AImplementationRevision)
 }

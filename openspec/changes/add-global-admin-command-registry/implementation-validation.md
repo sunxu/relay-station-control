@@ -8,7 +8,8 @@
 - Independent readiness review: P0 = 0 / P1 = 0 / P2 = 1; non-blocking validation evidence finding corrected
 - Implementation: COMPLETE — READY FOR INDEPENDENT IMPLEMENTATION REVIEW
 - Runtime Acceptance: PASS
-- Independent implementation review: REQUIRED
+- Independent implementation review: CHANGES REQUIRED (P0 = 0 / P1 = 1 / P2 = 0)
+- Independent implementation review finding P1-1: CORRECTED — READY FOR RE-REVIEW
 - Implementation commit: `a9463bc776ffa5cc7c6341f15f89385afa555d34`
 - Completed implementation tasks: 15 / 15
 - Git/worktree implementation closeout: COMPLETE
@@ -43,11 +44,11 @@
 | Minimum privilege / immutability | PASS | Runtime direct registry INSERT/UPDATE/DELETE/TRUNCATE and direct receipt INSERT were rejected; owner mutation guards rejected UPDATE/DELETE/TRUNCATE. |
 | Existing writers | PASS | Gateway lifecycle, Node lifecycle, Node Monitoring Enable/Disable and HTTP integration regressions passed on migration 37. |
 | Monitoring Disable fence | PASS | Strict receipt ordering, F0/F1 waiting, already-disabled fence and receipt immutability tests passed unchanged. |
-| Compatibility barrier | PASS | Real pre-Stage7A source artifact digest `sha256:36cbdf26d32e237097e52e89c6e4b2327e578d84ce98f889a849270c181bce91`, signed as class 2, was rejected by the mandatory wrapper at floor 3 before Control start. |
-| Compatible artifact | PASS | Real Stage7A artifact digest `sha256:9677e70108d4a326fb00cdafb38ea9c6ac4e4efb73a29998c24dd02244d9494f`, signed as class 3, was accepted against migration 37 / floor 3. |
+| Compatibility barrier | PASS | Exact pre-Stage7A source revision `fa9825be3239bbd395bbaf0ecd7294e10cf7af64` rebuilt release compatibility artifact `sha256:36cbdf26d32e237097e52e89c6e4b2327e578d84ce98f889a849270c181bce91`; its signed class-2 manifest was rejected by the mandatory wrapper at migration 37 / floor 3 before Control start. |
+| Compatible artifact | PASS | Exact Stage7A implementation source revision `a9463bc776ffa5cc7c6341f15f89385afa555d34` rebuilt release compatibility artifact `sha256:e037caa821947ad626c19dc23f4a007ae8b8109a9415dafc906f98df547265e7`; its signed class-3 manifest was accepted against migration 37 / floor 3. The gate binary was built from the same pinned Stage7A revision. |
 | Generated artifacts | PASS | `make generate` ran twice; the second run produced no additional filename/status delta. |
 | `make test` | PASS | All Go/tool packages, 30 frontend test files / 224 tests, and TypeScript typecheck passed. |
-| `make build` | PASS | Generated inputs, production Vite bundle and Control binary completed; local build digest `sha256:7e2b4d5e3637e7a4b641fc402c434f786d83c9ea8d81d6bf4c03e471591f79c1`. |
+| `make build` | PASS | Generated inputs, production Vite bundle and Control binary completed; corrective-run local make-build digest `sha256:d416fbab275a972337c36044692919b9e0980650a8a3371d8289e44541d1dfc6`. This local artifact is distinct from the pinned release compatibility artifact above. |
 | OpenSpec strict | PASS | Change-specific validation and `openspec validate --all --strict` passed, 30 passed / 0 failed. |
 | Diff hygiene | PASS | `git diff --check` passed. |
 | Git closeout | PASS | Implementation commit `a9463bc776ffa5cc7c6341f15f89385afa555d34` was created and the worktree was clean immediately afterward; this evidence-only reconciliation records that durable result. |
@@ -55,6 +56,12 @@
 ## Release and rollback ordering
 
 Production rollout must stop old Control and automatic restart, install the class-3-aware gate/trust root/wrapper and signed class-3 artifact, apply forward migration 37, verify artifact and database floor through the mandatory wrapper, and only then start Control. The forward schema, registry, receipts and floor remain durable during rollback. A pre-registry class-2 artifact cannot be selected after floor advancement, and migration 37 has no destructive production down path.
+
+## Independent implementation review correction
+
+The first implementation review found one P1 provenance gap: compatibility acceptance archived `HEAD` for the old artifact and built the new artifact from the mutable implementation worktree. That historical run produced Stage7A digest `sha256:9677e70108d4a326fb00cdafb38ea9c6ac4e4efb73a29998c24dd02244d9494f`; it is retained here only as historical worktree evidence.
+
+The corrective acceptance now runs `git archive` separately for immutable revisions `fa9825be3239bbd395bbaf0ecd7294e10cf7af64` and `a9463bc776ffa5cc7c6341f15f89385afa555d34`, fails if either revision cannot be resolved, and builds both Control artifacts plus the gate from those extracted committed sources. Future documentation commits and mutable worktree changes therefore cannot redefine either artifact provenance. P1-1 compatibility artifact provenance is CORRECTED — READY FOR RE-REVIEW. Independent implementation re-review remains REQUIRED.
 
 ## Boundaries
 
