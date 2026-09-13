@@ -1,6 +1,6 @@
 ## Apply gate
 
-proposal/spec/design/tasks complete -> strict PASS -> independent planning/readiness review -> readiness PASS -> explicit user implementation authorization -> `openspec instructions apply` -> execute tasks -> implementation evidence -> Runtime Acceptance -> independent implementation review -> archive readiness。K1 architecture gap已由contract simplification解决；Independent architecture re-review = PASS；Independent implementation review = PASS（P0=0 / P1=0 / P2=0）；Planning readiness = PASS / READY；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = PASS；Task 42 closeout evidence reconciliation = COMPLETE；Git/worktree closeout = PENDING EXPLICIT AUTHORIZATION；Archive readiness = PENDING GIT CLOSEOUT；Archive = NOT RUN。Tasks 9、11已完成，Task 42尚未完成。
+proposal/spec/design/tasks complete -> strict PASS -> independent planning/readiness review -> readiness PASS -> explicit user implementation authorization -> `openspec instructions apply` -> execute tasks -> implementation evidence -> Runtime Acceptance -> independent implementation review -> archive readiness。K1 architecture gap已由contract simplification解决；Independent architecture re-review = PASS；Independent implementation review = PASS（P0=0 / P1=0 / P2=0）；Planning readiness = PASS / READY；Implementation readiness = READY；Implementation = COMPLETE；Runtime Acceptance = PASS；completed implementation tasks = 42 / 42；post-implementation-commit clean worktree verification = PASS；Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW；Archive = NOT RUN。Stage 1 implementation commit为`d22da75e8ca49bd05bbb641592238213484ed757`。
 
 ## Tasks
 
@@ -45,4 +45,4 @@ proposal/spec/design/tasks complete -> strict PASS -> independent planning/readi
 - [x] 39. 执行generation reproducibility检查（≤2h）。
 - [x] 40. 执行make test build及错误处理（≤2h单次工作块，失败新增明确修复task）。
 - [x] 41. 执行Gateway PostgreSQL/container acceptance并记录结果（≤2h单次工作块）。
-- [ ] 42. 记录implementation evidence、durable truth reconciliation及clean-worktree/archive readiness（≤2h；evidence与durable truth reconciliation已完成；Git/worktree closeout等待明确授权，archive readiness等待Git closeout）。
+- [x] 42. 记录implementation evidence、durable truth reconciliation及clean-worktree/archive readiness（≤2h；implementation commit后clean worktree、strict validation与archive-readiness evidence均已核对）。

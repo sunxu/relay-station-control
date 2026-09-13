@@ -85,16 +85,19 @@ implementation workflow = AUTHORIZED AFTER EXPLICIT USER AUTHORIZATION
 openspec instructions apply = RUN（仅本 change）
 Implementation = COMPLETE
 Runtime Acceptance = PASS
-completed implementation tasks = 41 / 42
+completed implementation tasks = 42 / 42
 Independent implementation review = PASS
 P0 = 0
 P1 = 0
 P2 = 0
 Task 9 = COMPLETE
 Task 11 = COMPLETE
+Task 42 = COMPLETE
 Task 42 closeout evidence reconciliation = COMPLETE
-Git/worktree closeout = PENDING EXPLICIT AUTHORIZATION
-Archive readiness = PENDING GIT CLOSEOUT
+Stage 1 implementation commit = `d22da75e8ca49bd05bbb641592238213484ed757`
+post-implementation-commit clean worktree verification = PASS
+Git/worktree closeout = COMPLETE
+Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
 Archive = NOT RUN
 
 顺序：planning artifacts complete -> strict PASS -> independent readiness review -> readiness PASS -> 单独授权apply -> execute implementation tasks -> evidence -> Runtime Acceptance -> archive readiness。
