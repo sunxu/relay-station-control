@@ -35,7 +35,7 @@ type gatewayDirectoryLifecycleFixture struct {
 func newGatewayDirectoryLifecycleFixture(t *testing.T, ctx context.Context) *gatewayDirectoryLifecycleFixture {
 	t.Helper()
 	databaseURL, connection, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "33"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		cleanup()
 		t.Fatal(err)
 	}

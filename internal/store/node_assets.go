@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -418,9 +417,17 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 		return NodeCommandResult{}, err
 	}
 	defer tx.Rollback(ctx)
-	sum := sha256.Sum256(c.CommandID[:])
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(binary.BigEndian.Uint64(sum[:8]))); err != nil {
+	if err = lockAdminCommand(ctx, tx, c.CommandID); err != nil {
 		return NodeCommandResult{}, err
+	}
+	reservation, reserved, err := lookupAdminCommandReservation(ctx, tx, c.CommandID)
+	if err != nil {
+		return NodeCommandResult{}, err
+	}
+	if reserved {
+		if reservation.ActorAdminID != c.ActorAdminID || reservation.CommandDomain != adminCommandDomainAsset || reservation.CommandKind != kind {
+			return NodeCommandResult{}, ErrCommandConflict
+		}
 	}
 	var actor uuid.UUID
 	var sk string
@@ -430,6 +437,9 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 	var kv *int16
 	err = tx.QueryRow(ctx, `SELECT actor_admin_id,command_kind,intent_encoding_version,canonical_intent_hash,secret_fingerprint_key_version,sanitized_result,response_status FROM asset_admin_command_receipts WHERE command_id=$1`, c.CommandID).Scan(&actor, &sk, &enc, &hash, &kv, &result, &status)
 	if err == nil {
+		if !reserved || !reservation.matchesReceipt(actor, sk, enc, hash, kv) {
+			return NodeCommandResult{}, ErrCommandRegistryInconsistent
+		}
 		if actor != c.ActorAdminID || sk != kind {
 			return NodeCommandResult{}, ErrCommandConflict
 		}
@@ -452,11 +462,17 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return NodeCommandResult{}, err
 	}
+	if reserved {
+		return NodeCommandResult{}, ErrCommandRegistryInconsistent
+	}
 	intent, keyVersion, err := b(false, nil)
 	if err != nil {
 		return NodeCommandResult{}, err
 	}
-	sum = sha256.Sum256(intent)
+	sum := sha256.Sum256(intent)
+	if err = reserveAdminCommand(ctx, tx, c.CommandID, c.ActorAdminID, kind, sum[:], keyVersion); err != nil {
+		return NodeCommandResult{}, err
+	}
 	statusCode, body, err := apply(tx)
 	if err != nil {
 		return NodeCommandResult{}, translateNodeDBError(err)
@@ -465,7 +481,7 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 	if err != nil {
 		return NodeCommandResult{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO asset_admin_command_receipts(command_id,command_kind,intent_encoding_version,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,secret_fingerprint_key_version) VALUES($1,$2,1,$3,$4,$5,$6,$7)`, c.CommandID, kind, sum[:], bodyBytes, statusCode, c.ActorAdminID, keyVersion)
+	err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, sum[:], bodyBytes, statusCode, nil, keyVersion)
 	if err != nil {
 		return NodeCommandResult{}, err
 	}

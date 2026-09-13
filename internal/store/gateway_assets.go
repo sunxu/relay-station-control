@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -471,10 +470,17 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 		return GatewayCommandResult{}, err
 	}
 	defer tx.Rollback(ctx)
-	sum := sha256.Sum256(command.CommandID[:])
-	lockKey := int64(binary.BigEndian.Uint64(sum[:8]))
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey); err != nil {
+	if err = lockAdminCommand(ctx, tx, command.CommandID); err != nil {
 		return GatewayCommandResult{}, err
+	}
+	reservation, reserved, err := lookupAdminCommandReservation(ctx, tx, command.CommandID)
+	if err != nil {
+		return GatewayCommandResult{}, err
+	}
+	if reserved {
+		if reservation.ActorAdminID != command.ActorAdminID || reservation.CommandDomain != adminCommandDomainAsset || reservation.CommandKind != kind {
+			return GatewayCommandResult{}, ErrCommandConflict
+		}
 	}
 	var actor uuid.UUID
 	var storedKind string
@@ -485,6 +491,9 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 	var storedKeyVersion *int16
 	err = tx.QueryRow(ctx, `SELECT actor_admin_id,command_kind,intent_encoding_version,canonical_intent_hash,secret_fingerprint_key_version,sanitized_result,response_status FROM asset_admin_command_receipts WHERE command_id=$1`, command.CommandID).Scan(&actor, &storedKind, &storedEncoding, &storedHash, &storedKeyVersion, &resultBytes, &storedStatus)
 	if err == nil {
+		if !reserved || !reservation.matchesReceipt(actor, storedKind, storedEncoding, storedHash, storedKeyVersion) {
+			return GatewayCommandResult{}, ErrCommandRegistryInconsistent
+		}
 		if actor != command.ActorAdminID {
 			return GatewayCommandResult{}, ErrCommandConflict
 		}
@@ -514,11 +523,17 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return GatewayCommandResult{}, err
 	}
+	if reserved {
+		return GatewayCommandResult{}, ErrCommandRegistryInconsistent
+	}
 	intent, keyVersion, err := buildIntent(false, nil)
 	if err != nil {
 		return GatewayCommandResult{}, err
 	}
 	hash := sha256.Sum256(intent)
+	if err = reserveAdminCommand(ctx, tx, command.CommandID, command.ActorAdminID, kind, hash[:], keyVersion); err != nil {
+		return GatewayCommandResult{}, err
+	}
 	status, body, err := apply(tx)
 	if err != nil {
 		return GatewayCommandResult{}, err
@@ -528,7 +543,7 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 		return GatewayCommandResult{}, err
 	}
 	saved := GatewayCommandResult{HTTPStatus: status, Body: bodyBytes}
-	_, err = tx.Exec(ctx, `INSERT INTO asset_admin_command_receipts(command_id,command_kind,intent_encoding_version,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,secret_fingerprint_key_version) VALUES($1,$2,1,$3,$4,$5,$6,$7)`, command.CommandID, kind, hash[:], bodyBytes, status, command.ActorAdminID, keyVersion)
+	err = insertControlledAssetAdminCommandReceipt(ctx, tx, command.CommandID, command.ActorAdminID, kind, hash[:], bodyBytes, status, nil, keyVersion)
 	if err != nil {
 		return GatewayCommandResult{}, err
 	}

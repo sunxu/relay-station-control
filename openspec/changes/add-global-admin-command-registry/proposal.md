@@ -11,7 +11,7 @@ This prerequisite introduces a true durable global reservation without changing 
 - Require all existing Gateway asset, Relay Node asset and Node Monitoring command writers to use the same UUID-derived transaction advisory serialization and actor-first registry lookup before domain/Secret/current-state validation.
 - Keep `asset_admin_command_receipts` as immutable completed-command exact replay evidence; registry reservation is not a replacement receipt and does not change existing persisted success bodies.
 - Add fail-closed registry↔receipt integrity, direct-DML/minimum-privilege protection, PostgreSQL 18 concurrency acceptance and compatibility/rollback planning.
-- Plan a forward compatibility-floor increase because pre-registry writers must not be allowed to keep mutating after registry enforcement. The exact numeric class/floor is release metadata and is not guessed by this planning change.
+- Advance the forward compatibility class/floor from `2 / 2` to the minimum monotonic next value `3 / 3`, so pre-registry class-2 writers cannot start after registry enforcement.
 
 ## Capabilities
 
@@ -40,4 +40,4 @@ No Disable/Enable/Remove/upload account operation, no credential body handling, 
 
 ## Planning status
 
-Planning = COMPLETE candidate. Independent implementation-readiness review = REQUIRED. Implementation = NOT STARTED. No migration or product code is authorized by this change until a later explicit apply request after readiness review.
+Planning = COMPLETE. Independent implementation-readiness review = COMPLETE / READY. Implementation = COMPLETE — READY FOR INDEPENDENT IMPLEMENTATION REVIEW. Archive = NOT RUN. Stage 7N and Stage 7B remain NOT STARTED.

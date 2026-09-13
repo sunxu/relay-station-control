@@ -31,7 +31,7 @@ func newNodeFenceFixture(t *testing.T) *nodeFenceFixture {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "35"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		cleanup()
 		t.Fatal(err)
 	}
@@ -122,12 +122,23 @@ func requireNodeFenceSQLState(t *testing.T, err error, want string) {
 
 func insertNodeDisableFence(t *testing.T, ctx context.Context, conn *pgx.Conn, nodeID, adminID, commandID uuid.UUID, committedAt time.Time) {
 	t.Helper()
-	_, err := conn.Exec(ctx, `INSERT INTO asset_admin_command_receipts(
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin disable fence fixture: %v", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT command_id FROM control_reserve_admin_command_v1($1::uuid,$2::uuid,'asset_admin'::text,'node.monitoring_disable'::text,1::smallint,decode(repeat('00',32),'hex'),NULL::smallint)`, commandID, adminID); err != nil {
+		t.Fatalf("reserve disable fence: %v", err)
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO asset_admin_command_receipts(
 		command_id,command_kind,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,committed_at)
 		VALUES($1,'node.monitoring_disable',decode(repeat('00',32),'hex'),
 		jsonb_build_object('instance_id',$2::text),200,$3,$4)`, commandID, nodeID, adminID, committedAt)
 	if err != nil {
 		t.Fatalf("insert disable fence: %v", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit disable fence fixture: %v", err)
 	}
 }
 

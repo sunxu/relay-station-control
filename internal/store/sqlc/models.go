@@ -364,6 +364,17 @@ type AccountRequestQualityEvent struct {
 	AuthFailureReason pgtype.Text        `json:"auth_failure_reason"`
 }
 
+type AdminCommandRegistry struct {
+	CommandID                   pgtype.UUID        `json:"command_id"`
+	ActorAdminID                pgtype.UUID        `json:"actor_admin_id"`
+	CommandDomain               string             `json:"command_domain"`
+	CommandKind                 string             `json:"command_kind"`
+	IntentEncodingVersion       int16              `json:"intent_encoding_version"`
+	CanonicalIntentHash         []byte             `json:"canonical_intent_hash"`
+	SecretFingerprintKeyVersion pgtype.Int2        `json:"secret_fingerprint_key_version"`
+	ReservedAt                  pgtype.Timestamptz `json:"reserved_at"`
+}
+
 type AssetAdminCommandReceipt struct {
 	CommandID                   pgtype.UUID        `json:"command_id"`
 	CommandKind                 string             `json:"command_kind"`

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -178,9 +177,17 @@ func (r *NodeMonitoringRepository) mutate(ctx context.Context, c NodeMonitoringC
 		return NodeCommandResult{}, err
 	}
 	defer tx.Rollback(ctx)
-	keySum := sha256.Sum256(c.CommandID[:])
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(binary.BigEndian.Uint64(keySum[:8]))); err != nil {
+	if err = lockAdminCommand(ctx, tx, c.CommandID); err != nil {
 		return NodeCommandResult{}, err
+	}
+	reservation, reserved, err := lookupAdminCommandReservation(ctx, tx, c.CommandID)
+	if err != nil {
+		return NodeCommandResult{}, err
+	}
+	if reserved {
+		if reservation.ActorAdminID != c.ActorAdminID || reservation.CommandDomain != adminCommandDomainAsset || reservation.CommandKind != kind {
+			return NodeCommandResult{}, ErrCommandConflict
+		}
 	}
 
 	var actor uuid.UUID
@@ -191,6 +198,9 @@ func (r *NodeMonitoringRepository) mutate(ctx context.Context, c NodeMonitoringC
 	var storedKeyVersion *int16
 	err = tx.QueryRow(ctx, `SELECT actor_admin_id,command_kind,intent_encoding_version,canonical_intent_hash,secret_fingerprint_key_version,sanitized_result,response_status FROM public.asset_admin_command_receipts WHERE command_id=$1`, c.CommandID).Scan(&actor, &storedKind, &encodingVersion, &storedHash, &storedKeyVersion, &storedResult, &storedStatus)
 	if err == nil {
+		if !reserved || !reservation.matchesReceipt(actor, storedKind, encodingVersion, storedHash, storedKeyVersion) {
+			return NodeCommandResult{}, ErrCommandRegistryInconsistent
+		}
 		if actor != c.ActorAdminID || storedKind != kind {
 			return NodeCommandResult{}, ErrCommandConflict
 		}
@@ -213,11 +223,17 @@ func (r *NodeMonitoringRepository) mutate(ctx context.Context, c NodeMonitoringC
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return NodeCommandResult{}, err
 	}
+	if reserved {
+		return NodeCommandResult{}, ErrCommandRegistryInconsistent
+	}
 	intent, intentErr := nodeMonitoringIntent(kind, c.InstanceID, reason)
 	if intentErr != nil {
 		return NodeCommandResult{}, intentErr
 	}
 	intentHash := sha256.Sum256(intent)
+	if err = reserveAdminCommand(ctx, tx, c.CommandID, c.ActorAdminID, kind, intentHash[:], nil); err != nil {
+		return NodeCommandResult{}, err
+	}
 	node, err := lockNode(ctx, tx, c.InstanceID)
 	if err != nil {
 		return NodeCommandResult{}, translateNodeMonitoringDBError(err)
@@ -293,13 +309,13 @@ func (r *NodeMonitoringRepository) mutate(ctx context.Context, c NodeMonitoringC
 		}
 	}
 	if enable {
-		_, err = tx.Exec(ctx, `INSERT INTO public.asset_admin_command_receipts(command_id,command_kind,intent_encoding_version,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,secret_fingerprint_key_version) VALUES($1,$2,1,$3,$4,200,$5,NULL)`, c.CommandID, kind, intentHash[:], body, c.ActorAdminID)
+		err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, intentHash[:], body, 200, nil, nil)
 	} else {
 		committedAt, timestampErr := nextDisableFenceTimestamp(ctx, tx, fence)
 		if timestampErr != nil {
 			return NodeCommandResult{}, timestampErr
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO public.asset_admin_command_receipts(command_id,command_kind,intent_encoding_version,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,committed_at,secret_fingerprint_key_version) VALUES($1,$2,1,$3,$4,200,$5,$6,NULL)`, c.CommandID, kind, intentHash[:], body, c.ActorAdminID, committedAt)
+		err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, intentHash[:], body, 200, &committedAt, nil)
 	}
 	if err != nil {
 		return NodeCommandResult{}, err

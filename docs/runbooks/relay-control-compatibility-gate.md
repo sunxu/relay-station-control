@@ -16,7 +16,7 @@ Compose 使用 application rollback unit 外的 `deploy/compatibility/relay-cont
 
 systemd/Linux bare-binary 使用 `deploy/compatibility/relay-control-compat.service`，其 `ExecStart` 固定为 `/usr/local/libexec/relay-control-compat-wrapper.sh`。gate 只 open selected artifact 一次，校验 regular/executable file 与权限、hash 该已打开对象，并以 Linux `execveat(AT_EMPTY_PATH)` 执行同一 file description；pathname 在校验后被替换不会改变被执行对象。缺少 descriptor exec 支持的平台 fail closed。`/etc/relay-station/control-compat.env` 只引用受保护的 gate、artifact、manifest、公钥路径和 `DATABASE_URL`，不把凭据写进 unit 或命令行。
 
-支持的 rollout 顺序是：先停止旧 Control 和自动重启；部署支持目标 class 的 gate、信任根和 wrapper；确认 Compose/systemd 只能经 wrapper 启动；执行 forward migration 写 floor；用同一 wrapper 校验选定 artifact 和 floor；通过后才启动 Control。rollback 仍使用同一 wrapper；floor 为 1 时 class 0 被拒绝，migration 34 把 floor 提升到 2 后 class 0 和 class 1 都会在 HTTP、Directory worker 或其它 Control loop 启动前被拒绝，只有 class 2 artifact 可启动。该保证覆盖受支持的 Compose/systemd deployment path，不声称阻止 host root 手工绕过部署路径。
+支持的 rollout 顺序是：先停止旧 Control 和自动重启；部署支持目标 class 的 gate、信任根和 wrapper；确认 Compose/systemd 只能经 wrapper 启动；执行 forward migration 写 floor；用同一 wrapper 校验选定 artifact 和 floor；通过后才启动 Control。rollback 仍使用同一 wrapper；floor 为 1 时 class 0 被拒绝，migration 34 把 floor 提升到 2 后 class 0 和 class 1 被拒绝，只有 class 2 artifact 可启动；migration 37 引入 global admin command registry 并把 floor 提升到 3 后 class 0/1/2 均被拒绝，只有 class 3 artifact 可启动。拒绝发生在 HTTP、Directory worker 或其它 Control loop 启动前。该保证覆盖受支持的 Compose/systemd deployment path，不声称阻止 host root 手工绕过部署路径。
 
 ## Verification
 
@@ -24,4 +24,4 @@ systemd/Linux bare-binary 使用 `deploy/compatibility/relay-control-compat.serv
 deploy/acceptance/relay-control-compat-gate.sh
 ```
 
-该脚本使用临时测试 artifact 和内存生成的 Ed25519 key 运行可重复的签名、篡改、digest、class、floor reader 单元测试，并检查 Compose/systemd wrapper shell 语法。Linux acceptance 还验证 pathname swap 后只能执行已验证 FD；Compose acceptance 验证 mutable tag、错误 OCI digest 均不会调用 Docker，正确签名 digest 启动完全相同的 digest-qualified image reference。测试不会生成或保存生产 key、真实 digest、数据库凭据或 raw external response。生产发布前，release acceptance 还必须使用实际签名 manifest、受支持的 wrapper、isolated PostgreSQL 18 floor fixture，并记录 class 1 rollback 在 floor 2 下未启动 Control、class 2 正常启动、marker/migration mismatch fail closed 的证据。
+该脚本使用临时测试 artifact 和内存生成的 Ed25519 key 运行可重复的签名、篡改、digest、class、floor reader 单元测试，并检查 Compose/systemd wrapper shell 语法。Linux acceptance 还验证 pathname swap 后只能执行已验证 FD；Compose acceptance 验证 mutable tag、错误 OCI digest 均不会调用 Docker，正确签名 digest 启动完全相同的 digest-qualified image reference。测试不会生成或保存生产 key、真实 digest、数据库凭据或 raw external response。生产发布前，release acceptance 还必须使用实际签名 manifest、受支持的 wrapper、isolated PostgreSQL 18 floor fixture，并记录目标 floor 下旧 class artifact 未启动 Control、当前 class artifact 正常通过，以及 marker/migration mismatch fail closed 的证据。Stage 7A 的目标证据是 class 2 在 floor 3 下被拒绝、class 3 正常通过。

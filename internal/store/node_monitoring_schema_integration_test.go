@@ -20,7 +20,7 @@ func TestNodeMonitoringOperationsMigrationPG18(t *testing.T) {
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "35"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	config, err := pgx.ParseConfig(databaseURL)
@@ -165,7 +165,16 @@ func TestNodeMonitoringOperationsMigrationPG18(t *testing.T) {
 	if activationInsert || !activationUpdate || activationDelete || activationTruncate {
 		t.Fatalf("runtime activation privileges=%t/%t/%t/%t", activationInsert, activationUpdate, activationDelete, activationTruncate)
 	}
-	if _, err = owner.Exec(ctx, `INSERT INTO asset_admin_command_receipts(command_id,command_kind,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,committed_at) VALUES($1,'node.monitoring_disable',decode(repeat('00',32),'hex'),jsonb_build_object('instance_id',$2::text),200,$3,(SELECT committed_at FROM asset_admin_command_receipts WHERE command_kind='node.monitoring_disable' LIMIT 1))`, uuid.New(), nodeID, adminID); err == nil {
+	tieCommandID := uuid.New()
+	tieTx, err := owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tieTx.Rollback(ctx)
+	if _, err = tieTx.Exec(ctx, `SELECT command_id FROM control_reserve_admin_command_v1($1::uuid,$2::uuid,'asset_admin'::text,'node.monitoring_disable'::text,1::smallint,decode(repeat('00',32),'hex'),NULL::smallint)`, tieCommandID, adminID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tieTx.Exec(ctx, `INSERT INTO asset_admin_command_receipts(command_id,command_kind,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,committed_at) VALUES($1,'node.monitoring_disable',decode(repeat('00',32),'hex'),jsonb_build_object('instance_id',$2::text),200,$3,(SELECT committed_at FROM asset_admin_command_receipts WHERE command_kind='node.monitoring_disable' LIMIT 1))`, tieCommandID, nodeID, adminID); err == nil {
 		t.Fatal("receipt timestamp tie unexpectedly succeeded")
 	}
 	if _, err = owner.Exec(ctx, `UPDATE asset_admin_command_receipts SET response_status=201 WHERE command_id=$1`, disable.CommandID); err == nil {

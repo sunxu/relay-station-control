@@ -80,7 +80,7 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	defer cancel()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "34"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	admin := uuid.New()
@@ -154,7 +154,13 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	}
 	legacyHash := sha256.Sum256(legacyIntent)
 	legacyBody := json.RawMessage(`{"result":"registered","asset":{"instance_id":"` + legacyID.String() + `"}}`)
+	if _, err = owner.Exec(ctx, `SELECT command_id FROM control_reserve_admin_command_v1($1::uuid,$2::uuid,'asset_admin'::text,'node.register'::text,1::smallint,$3::bytea,NULL::smallint)`, legacyCommandID, admin, legacyHash[:]); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = owner.Exec(ctx, `INSERT INTO asset_admin_command_receipts(command_id,command_kind,intent_encoding_version,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,secret_fingerprint_key_version) VALUES($1,'node.register',1,$2,$3,201,$4,NULL)`, legacyCommandID, legacyHash[:], legacyBody, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err = owner.QueryRow(ctx, `SELECT sanitized_result FROM asset_admin_command_receipts WHERE command_id=$1`, legacyCommandID).Scan(&legacyBody); err != nil {
 		t.Fatal(err)
 	}
 	var legacyNodesBefore, legacyAuditsBefore int
@@ -355,7 +361,7 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	if err = owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM relay_node_assets),(SELECT count(*) FROM asset_admin_command_receipts WHERE command_kind LIKE 'node.%'),(SELECT count(*) FROM audit_logs WHERE category='asset_node'),(SELECT node_generation FROM asset_registry_generations WHERE singleton_id=1)`).Scan(&nodes, &receipts, &audits, &generation); err != nil {
 		t.Fatal(err)
 	}
-	if nodes != 3 || receipts != 6 || audits != 6 || generation != 6 {
+	if nodes != 3 || receipts != 7 || audits != 6 || generation != 6 {
 		t.Fatalf("nodes/receipts/audits/generation=%d/%d/%d/%d", nodes, receipts, audits, generation)
 	}
 	var body map[string]any
@@ -369,7 +375,7 @@ func TestNodeLifecycleConcurrentSerializationPG18(t *testing.T) {
 	defer cancel()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "34"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	admin := uuid.New()
@@ -487,7 +493,7 @@ func TestNodeInventoryClaimTerminalizesRetiredPendingRunPG18(t *testing.T) {
 	defer cancel()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "34"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	admin, nodeID, policyID, runID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
@@ -544,7 +550,7 @@ func TestNodeLifecycleFinalizationPreservesEvidenceWithoutPromotionPG18(t *testi
 	defer cancel()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "34"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	admin, nodeID, lifecycleNodeID, policyID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
@@ -805,7 +811,7 @@ func TestNodeMonitoringFinalizeSerializationPG18(t *testing.T) {
 	defer cancel()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "34"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	policyID, writerFirstNode, finalizeFirstNode := uuid.New(), uuid.New(), uuid.New()

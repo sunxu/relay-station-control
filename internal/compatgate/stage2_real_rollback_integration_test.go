@@ -218,7 +218,7 @@ func createStage2RollbackDatabase(t *testing.T, ctx context.Context, root, owner
 	}
 	ownerURL := stage2RollbackDatabaseName(t, ownerBase, databaseName)
 	runtimeURL := stage2RollbackDatabaseName(t, runtimeBase, databaseName)
-	migrate := exec.CommandContext(ctx, "go", "tool", "goose", "-dir", "../migrations", "postgres", ownerURL, "up")
+	migrate := exec.CommandContext(ctx, "go", "tool", "goose", "-dir", "../migrations", "postgres", ownerURL, "up-to", "36")
 	migrate.Dir = filepath.Join(root, "tools")
 	if output, migrateErr := migrate.CombinedOutput(); migrateErr != nil {
 		cleanup()

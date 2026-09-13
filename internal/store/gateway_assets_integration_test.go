@@ -22,7 +22,7 @@ func TestGatewayLifecycleCommandsAndReplayPG18(t *testing.T) {
 	defer cancel()
 	databaseURL, database, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "33"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		t.Fatal(err)
 	}
 	adminID := uuid.New()
@@ -449,7 +449,16 @@ func TestGatewayReceiptActorFirstAndLazyK1PG18(t *testing.T) {
 	if _, err = owner.Exec(ctx, `ALTER TABLE asset_admin_command_receipts DROP CONSTRAINT asset_admin_command_receipts_encoding_check`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = owner.Exec(ctx, `ALTER TABLE admin_command_registry DISABLE TRIGGER admin_command_registry_immutable`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(ctx, `ALTER TABLE admin_command_registry DROP CONSTRAINT admin_command_registry_encoding_check`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = owner.Exec(ctx, `UPDATE asset_admin_command_receipts SET intent_encoding_version=2 WHERE command_id=$1`, command.CommandID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(ctx, `UPDATE admin_command_registry SET intent_encoding_version=2 WHERE command_id=$1`, command.CommandID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = repository.Register(ctx, command); !errors.Is(err, assetstore.ErrReceiptEncodingUnknown) {
@@ -516,7 +525,7 @@ func TestGatewayNonSecretCommandsAndReplayWithoutK1PG18(t *testing.T) {
 func newGatewayRuntimeFixtureWithOwner(t *testing.T, ctx context.Context) (*pgx.Conn, *pgxpool.Pool, *assetstore.GatewayLifecycleRepository, uuid.UUID, func()) {
 	t.Helper()
 	databaseURL, owner, cleanupDatabase := newGatewayLifecycleMigrationDatabase(t, ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "33"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		cleanupDatabase()
 		t.Fatal(err)
 	}
@@ -559,7 +568,7 @@ func mustGatewayRepository(t *testing.T, pool *pgxpool.Pool, key []byte) *assets
 func newGatewayRuntimeFixture(t *testing.T, ctx context.Context) (*pgxpool.Pool, *assetstore.GatewayLifecycleRepository, uuid.UUID, func()) {
 	t.Helper()
 	databaseURL, database, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "33"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
 		cleanup()
 		t.Fatal(err)
 	}
