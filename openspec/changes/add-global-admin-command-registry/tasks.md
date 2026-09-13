@@ -26,7 +26,7 @@
 
 - [x] 5.1 Run `make test build` after implementation plus focused Gateway/Node/Monitoring command replay tests.
 - [x] 5.2 Run change-specific PostgreSQL/container acceptance, `openspec validate --all --strict`, `git diff --check` and generated-file checks.
-- [ ] 5.3 Capture implementation-validation evidence, release ordering, final artifact digest/class/floor and clean-worktree status.
+- [x] 5.3 Capture implementation-validation evidence, release ordering, final artifact digest/class/floor and clean-worktree status.
 
 ## Planning gate
 
