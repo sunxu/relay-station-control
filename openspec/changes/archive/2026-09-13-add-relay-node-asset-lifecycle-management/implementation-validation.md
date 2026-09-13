@@ -21,12 +21,14 @@
 - Task 61 closeout evidence reconciliation: COMPLETE
 - Stage 2 implementation commit: `ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`
 - Stage 2 closeout commit: `fab572e58743533abda889118fa1a43f2f9ce094`
-- implementation commit: CREATED
+- Stage 2 reconciliation commit: `4123f0e3cfeb82cf19ccf3d014beefa47af9f28f`
+- implementation and closeout commits: PUSHED
 - Git/worktree closeout: COMPLETE
 - Archive-readiness P2 finding: FIXED
-- Independent archive-readiness re-review: AWAITING RE-REVIEW
-- Archive readiness: READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW
-- Archive: NOT RUN
+- Independent archive-readiness re-review: PASS
+- Archive readiness: PASS / APPROVED
+- Archive: COMPLETE
+- Stage 2: CLOSED / IMPLEMENTED / ARCHIVED
 - Stage 3 implementation: NOT STARTED
 
 ## Historical independent implementation review findings
@@ -57,8 +59,8 @@ are FIXED and retained as historical review evidence.
 The affected owning tasks and acceptance reruns are complete. Task 61 closeout evidence
 reconciliation completed before Git closeout. Git/worktree reconciliation was subsequently
 explicitly authorized and completed, Task 61 is COMPLETE, and the Stage 2 implementation commit is
-`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`. Archive remains NOT RUN and requires separate
-authorization; Stage 3 implementation remains NOT STARTED.
+`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`. At that historical review point archive remained
+NOT RUN and required separate authorization; Stage 3 implementation remained NOT STARTED.
 
 ## Implemented durable truth
 
@@ -150,5 +152,6 @@ Task 61 is complete. Independent implementation re-review passed, approved-scope
 and Runtime Acceptance evidence are complete, and implementation commit
 `ff36a39a8b41db52b84a1e3966a5f84c81c23b1d` was followed by a clean-worktree check, strict
 OpenSpec validation (28 passed / 0 failed), and `git diff --check` PASS. The archive-readiness P2
-evidence inconsistency is FIXED; archive readiness is READY FOR INDEPENDENT ARCHIVE-READINESS
-RE-REVIEW, whose independent disposition remains pending. No archive command was run.
+evidence inconsistency is FIXED, independent archive-readiness re-review passed, and archive was
+completed through the standard OpenSpec archive workflow. Stage 2 is CLOSED / IMPLEMENTED /
+ARCHIVED; Stage 3 implementation remains NOT STARTED.

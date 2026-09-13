@@ -4,7 +4,7 @@ Stage 2 implementation 已获明确授权并通过
 `openspec instructions apply add-relay-node-asset-lifecycle-management` 启动。
 每项预计不超过 2 小时，按依赖顺序执行并留下可审计 evidence。Task 61 的独立 review、
 closeout evidence reconciliation 与 Git/worktree reconciliation 均已完成；archive-readiness
-P2 finding 已修复，等待 independent archive-readiness re-review。
+P2 finding 已修复，independent archive-readiness re-review 已通过，Archive = COMPLETE。
 
 ## Shared foundation and compatibility
 
@@ -241,7 +241,9 @@ P2 finding 已修复，等待 independent archive-readiness re-review。
 Runtime Acceptance = PASS；Independent implementation review = PASS（P0=0 / P1=0 / P2=0）；
 previous implementation findings = FIXED / RECONCILED。Task 61 closeout evidence reconciliation =
 COMPLETE；Task 61 = COMPLETE；Stage 2 implementation commit =
-`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`；Git/worktree closeout = COMPLETE；Archive = NOT RUN；
+`ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`；Git/worktree closeout = COMPLETE；Archive = COMPLETE；
 Stage 2 closeout commit = `fab572e58743533abda889118fa1a43f2f9ce094`；Archive-readiness P2
-finding = FIXED；Independent archive-readiness re-review = AWAITING RE-REVIEW；Archive readiness =
-READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW。
+finding = FIXED；Stage 2 reconciliation commit =
+`4123f0e3cfeb82cf19ccf3d014beefa47af9f28f`；Independent archive-readiness re-review = PASS；
+Archive readiness = PASS / APPROVED；Archive = COMPLETE；Stage 2 = CLOSED / IMPLEMENTED /
+ARCHIVED；Stage 3 implementation = NOT STARTED。

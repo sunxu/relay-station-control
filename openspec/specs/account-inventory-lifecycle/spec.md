@@ -23,11 +23,24 @@ PostgreSQL SHALL 以 `(instance_id, account_key)` 唯一保存 `account_inventor
 
 ### Requirement: 只有 promotion-applied runtime Provider SHALL 推进生命周期
 
-只有当前 poll 对某 active Provider 同时满足 contract-valid runtime、provider snapshot complete、策略未变化、槽位较新且 `promotion_applied=true` 时，Control SHALL 使用该 Provider 的完整 snapshot item 集推进生命周期。transport/HTTP/contract 失败、disk fallback、Provider 不完整、重复身份、`policy_changed`、`stale_poll`、pending/retry/running/abandoned 槽、Gateway/Compose 状态和未提交事务 MUST NOT 增加、清零或重解释任何账号缺失状态。
+只有当前 poll 对某 active Provider 同时满足 contract-valid runtime、provider snapshot complete、Node active、当前 monitoring eligible、策略未变化、槽位较新且 `promotion_applied=true` 时，Control SHALL 使用该 Provider 的完整 snapshot item 集推进生命周期。transport/HTTP/contract 失败、disk fallback、Provider 不完整、重复身份、`policy_changed`、`monitoring_ineligible`、`node_retired`、`node_replaced`、`stale_poll`、pending/retry/running/abandoned 槽、Gateway/Compose 状态和未提交事务 MUST NOT 增加、清零或重解释任何账号缺失状态。
+
+Promotion MUST additionally prove the Node is active, retains the same stable identity and has a
+current eligible monitoring interval. Retired/replaced old Nodes cannot advance
+`account_inventory` lifecycle or be retargeted to a replacement identity.
+
+#### Scenario: Node lifecycle delta
+- **WHEN** the Node lifecycle condition described by this change is evaluated
+- **THEN** the existing baseline behavior remains intact and the lifecycle fence is also enforced
 
 #### Scenario: disk fallback 或 Provider 不完整
 - **WHEN** poll finalized 但某 Provider 未形成 promotion-applied runtime 快照
 - **THEN** 该 Provider 全部 lifecycle 行保持原值，既不累计 missing 也不把已有 missing 恢复为 present
+
+#### Scenario: monitoring-ineligible evidence 不推进 lifecycle
+- **WHEN** active Node 的 poll 以 `promotion_skipped_reason=monitoring_ineligible` finalized
+- **THEN** transport/Provider historical evidence 保留，但账号 lifecycle、availability、
+  request-quality 与 Provider current health 均不推进
 
 #### Scenario: 合法完整空集合
 - **WHEN** active Provider 的完整 runtime 空集合成功 promotion
@@ -85,6 +98,14 @@ Provider 从 active 移入已登记 out-of-scope 集的受审计策略事务 SHA
 
 Snapshot items、Provider 当前指针、promotion 标记、lifecycle 转换和 poll finalized MUST 在同一个 PostgreSQL 事务中提交，并只允许当前未过期 lease/fencing token 执行。实现 MUST 以 Provider/账号稳定顺序取得所需锁；同一 poll 的提交未知恢复、旧 Worker、重复 finalize 或并发策略切换 MUST NOT 重复增加 missing、倒退来源或形成混合状态。任一检查、写入或提交失败 MUST 全部回滚。
 
+Lifecycle promotion MUST use the short Node lock and poll fencing token. Restart, stale workers,
+replacement and duplicate finalize attempts cannot revive old current truth or advance a new
+identity.
+
+#### Scenario: Node lifecycle delta
+- **WHEN** the Node lifecycle condition described by this change is evaluated
+- **THEN** the existing baseline behavior remains intact and the lifecycle fence is also enforced
+
 #### Scenario: lifecycle 批量转换中数据库失败
 - **WHEN** 事务已更新部分账号后发生约束、连接或提交失败
 - **THEN** lifecycle、snapshot、Provider pointer、promotion 和 poll 终态全部回滚，旧状态继续有效
@@ -136,6 +157,13 @@ Control SHALL 保留仅供内部Store使用的有界、稳定排序lifecycle读�
 ### Requirement: lifecycle产品读取 MUST 保持只读与数据面隔离
 
 Lifecycle foundation SHALL 允许 `account-inventory-readonly-query` 向受认证管理员提供有界 current 投影，并允许独立 `account-inventory-history-compaction` 只从已提交历史生成日级摘要、覆盖率和受控清理到期历史。Query 与 history MUST NOT 提供账号导出、人工状态操作、补采、promotion、重建或删除入口；history MUST NOT 重算、删除或改变 current lifecycle，受控删除 current source poll 后外键可以置空但冗余来源和当前字段保持不变。本 capability 仍不实现 HMAC account ID、跨 Node 重复、趋势产品页或告警路由，也不修改 Gateway/Node 或增加既有固定账号清单只读 GET 之外的外部请求。
+
+Current operational reads MUST explicitly filter active Node plus monitoring/current eligibility;
+history/rollup/compaction preserve retired evidence and never infer a current target from it.
+
+#### Scenario: Node lifecycle delta
+- **WHEN** the Node lifecycle condition described by this change is evaluated
+- **THEN** the existing baseline behavior remains intact and the lifecycle fence is also enforced
 
 #### Scenario: 管理员访问现有产品界面
 - **WHEN** history compaction 部署后管理员访问产品界面

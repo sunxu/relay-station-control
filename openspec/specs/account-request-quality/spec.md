@@ -105,6 +105,14 @@ Control MUST 使用PostgreSQL additive append-only事件表，按node_id+event_h
 
 Account Quality查询 SHALL 按node_id+非NULL account_key返回15m或1h的request_count、success_count、failure_count、success_rate、p95_latency_ms、last_success_at、last_failure_at、last_failure_class；窗口使用DB UTC时间，p95为有效duration的percentile_cont(0.95)。只补Node/Provider同字段聚合与unresolved_request_count，不扩展UI、完整Node quality产品、quota或自动行为。
 
+Node and Provider quality derived targets MUST explicitly require active Node lifecycle and
+current monitoring eligibility. Historical request events remain retained and queryable, but a
+retired/replaced Node is never returned as a current eligible operational target.
+
+#### Scenario: Node lifecycle delta
+- **WHEN** the Node lifecycle condition described by this change is evaluated
+- **THEN** the existing baseline behavior remains intact and the lifecycle fence is also enforced
+
 #### Scenario: 两个窗口与 p95
 - **WHEN** 存在窗口内外及不同账号事件
 - **THEN** 两个窗口分别只统计目标账号窗口内事件，比例和p95与fixture一致
@@ -120,6 +128,14 @@ Account Quality查询 SHALL 按node_id+非NULL account_key返回15m或1h的reque
 ### Requirement: Account Request History SHALL 受当前Inventory membership约束
 
 Control SHALL仅从已有account_request_quality_events读取目标Node与非NULL account_key的最近7天具体事件。MUST先在既有current Inventory安全read model证明该账号存在，不能从events反推账号；无账号返回404，Inventory/DB故障返回503，禁止伪装empty。MUST NOT修改CLIProxy、collector、usage queue、event schema、retention、taxonomy或质量classification。
+
+Current membership checks MUST include active Node identity and lifecycle eligibility; they must
+not infer a replacement Node from old events or current account data. Historical events remain
+bound to the original Node.
+
+#### Scenario: Node lifecycle delta
+- **WHEN** the Node lifecycle condition described by this change is evaluated
+- **THEN** the existing baseline behavior remains intact and the lifecycle fence is also enforced
 
 #### Scenario: 存在账号有事件或无事件
 - **WHEN** Inventory目标账号存在

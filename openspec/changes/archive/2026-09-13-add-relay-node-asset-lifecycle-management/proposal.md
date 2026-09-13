@@ -114,7 +114,11 @@ completed implementation tasks = 67 / 67; Task 61 = COMPLETE;
 Task 61 closeout evidence reconciliation = COMPLETE;
 Stage 2 implementation commit = `ff36a39a8b41db52b84a1e3966a5f84c81c23b1d`;
 Stage 2 closeout commit = `fab572e58743533abda889118fa1a43f2f9ce094`;
+Stage 2 reconciliation commit = `4123f0e3cfeb82cf19ccf3d014beefa47af9f28f`;
 Git/worktree closeout = COMPLETE;
 Archive-readiness P2 finding = FIXED;
-Independent archive-readiness re-review = AWAITING RE-REVIEW;
-Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS RE-REVIEW.
+Independent archive-readiness re-review = PASS;
+Archive readiness = PASS / APPROVED;
+Archive = COMPLETE;
+Stage 2 = CLOSED / IMPLEMENTED / ARCHIVED;
+Stage 3 implementation = NOT STARTED.
