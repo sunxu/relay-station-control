@@ -64,6 +64,7 @@ type GatewayDirectoryFinalizeFailureReason string
 const (
 	GatewayDirectoryFinalizeFailureLostLease         GatewayDirectoryFinalizeFailureReason = "lost_lease"
 	GatewayDirectoryFinalizeFailureSourceTimeInvalid GatewayDirectoryFinalizeFailureReason = "source_time_invalid"
+	GatewayDirectoryFinalizeFailureGatewayInactive   GatewayDirectoryFinalizeFailureReason = "gateway_inactive"
 )
 
 type FinalizeSuccessResult struct {
@@ -128,7 +129,20 @@ func (repository *GatewayDirectoryIngestionRepository) executeAttempt(
 		IngestionRunID: nullableUUID(request.IngestionRunID), GatewayInstanceID: nullableUUID(request.GatewayInstanceID), LeaseFencingToken: nullableUUID(request.LeaseFencingToken),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return GatewayDirectoryAttemptResult{}, ErrGatewayDirectoryIngestionInconsistent
+		failureClass, classifyErr := repository.gatewayLifecycleFailureClass(ctx, request.GatewayInstanceID)
+		if classifyErr != nil {
+			return GatewayDirectoryAttemptResult{}, classifyErr
+		}
+		transition, transitionErr := repository.finishAttemptFailure(failureParent, request, GatewayDirectoryAttemptFailureInput{
+			Class: string(failureClass), Retryable: false,
+		})
+		if transitionErr != nil {
+			return GatewayDirectoryAttemptResult{}, transitionErr
+		}
+		if transition == nil {
+			return GatewayDirectoryAttemptResult{Failure: &GatewayDirectoryAttemptFailure{Request: request, Class: string(gatewaydirectoryFailureClassLeaseLost), Retryable: false, Disposition: GatewayDirectoryAttemptLostLease}}, nil
+		}
+		return GatewayDirectoryAttemptResult{Failure: transition}, nil
 	}
 	if err != nil {
 		return GatewayDirectoryAttemptResult{}, err
@@ -277,7 +291,34 @@ const (
 	gatewaydirectoryFailureClassSecretUnavailable gatewaydirectoryFailureClass = "secret_unavailable"
 	gatewaydirectoryFailureClassLeaseLost         gatewaydirectoryFailureClass = "lease_lost"
 	gatewaydirectoryFailureClassUnknownExecution  gatewaydirectoryFailureClass = "unknown_execution"
+	gatewaydirectoryFailureClassGatewayRetired    gatewaydirectoryFailureClass = "gateway_retired"
+	gatewaydirectoryFailureClassGatewayReplaced   gatewaydirectoryFailureClass = "gateway_replaced"
 )
+
+func lifecycleFailureClass(status, reason string) gatewaydirectoryFailureClass {
+	if status != gatewayLifecycleRetired {
+		return gatewaydirectoryFailureClassContractInvalid
+	}
+	switch reason {
+	case "administrator_retire":
+		return gatewaydirectoryFailureClassGatewayRetired
+	case "replacement":
+		return gatewaydirectoryFailureClassGatewayReplaced
+	default:
+		return gatewaydirectoryFailureClassContractInvalid
+	}
+}
+
+func (repository *GatewayDirectoryIngestionRepository) gatewayLifecycleFailureClass(ctx context.Context, gatewayID uuid.UUID) (gatewaydirectoryFailureClass, error) {
+	row, err := repository.queries.GetGatewayDirectoryLifecycleFailure(ctx, nullableUUID(gatewayID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return gatewaydirectoryFailureClassContractInvalid, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return lifecycleFailureClass(row.LifecycleStatus, row.RetireReason.String), nil
+}
 
 func classifyGatewayDirectoryAttemptFailure(err error) (string, bool, error) {
 	var fetchErr *gatewaydirectory.FetchError
@@ -343,7 +384,24 @@ func (repository *GatewayDirectoryIngestionRepository) FinalizeSuccessfulAttempt
 
 	if _, err := txQueries.LockGatewayDirectoryInstance(ctx, nullableUUID(success.Request.GatewayInstanceID)); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return GatewayDirectoryFinalizeResult{}, ErrGatewayDirectoryIngestionInconsistent
+			lifecycle, lookupErr := txQueries.LockGatewayDirectoryLifecycleFailure(ctx, nullableUUID(success.Request.GatewayInstanceID))
+			failureClass := gatewaydirectoryFailureClassContractInvalid
+			if lookupErr == nil {
+				failureClass = lifecycleFailureClass(lifecycle.LifecycleStatus, lifecycle.RetireReason.String)
+			} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return GatewayDirectoryFinalizeResult{}, lookupErr
+			}
+			result, updateErr := tx.Exec(ctx, `UPDATE gateway_directory_ingestion_runs SET status='failed',terminal_at=clock_timestamp(),last_failure_class=$4,outcome=NULL,lease_expires_at=NULL,lease_fencing_token=NULL WHERE ingestion_run_id=$1 AND gateway_instance_id=$2 AND status='running' AND lease_fencing_token=$3`, success.Request.IngestionRunID, success.Request.GatewayInstanceID, success.Request.LeaseFencingToken, string(failureClass))
+			if updateErr != nil {
+				return GatewayDirectoryFinalizeResult{}, updateErr
+			}
+			if result.RowsAffected() == 0 {
+				return GatewayDirectoryFinalizeResult{Failure: &GatewayDirectoryFinalizeFailure{Reason: GatewayDirectoryFinalizeFailureLostLease}}, nil
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return GatewayDirectoryFinalizeResult{}, err
+			}
+			return GatewayDirectoryFinalizeResult{Failure: &GatewayDirectoryFinalizeFailure{Reason: GatewayDirectoryFinalizeFailureGatewayInactive}}, nil
 		}
 		return GatewayDirectoryFinalizeResult{}, err
 	}

@@ -5,7 +5,12 @@ SELECT
     management_endpoint,
     COALESCE(reader_secret_configured, false)::boolean AS secret_configured,
     created_at,
-    updated_at
+    updated_at,
+    lifecycle_status,
+    revision,
+    retired_at,
+    retired_by,
+    retire_reason
 FROM gateway_instances
 WHERE singleton_id = 1;
 

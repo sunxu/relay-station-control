@@ -34,7 +34,7 @@ Gateway row MUST persist `lifecycle_status`、`retired_at`、`retired_by`、`ret
 
 所有 durable admin mutation 带客户端生成的 `command_id`；existing asset mutation 还带 `expected_revision`。HTTP/session preconditions（authenticated、active session、`super_admin`、CSRF）MUST 在进入 durable transaction 前完成；这不绕过 receipt lookup，而是保证未授权请求不能观察 receipt。数据库 receipt 表至少保存 `command_id`、`command_kind`、`intent_encoding_version=1`、`canonical_intent_hash`、sanitized result、actor admin ID、committed time。Receipt immutable，不保存 raw secret reference、credential、headers 或 raw response body。
 
-command_id 是全局 UUID PK，不以 actor 分区。认证/授权/CSRF 后获取 transaction advisory lock：key = SHA-256(UUID 的16字节) 的前8字节按 big-endian signed int64 解释。碰撞只串行化无关 command，lookup 始终使用完整 UUID，不能改变正确性。先查 receipt actor，再用 receipt-recorded encoding/key version 比较 intent，最后才进入 lifecycle/revision validation。
+command_id 是全局 UUID PK，不以 actor 分区。认证/授权/CSRF 后获取 transaction advisory lock：key = SHA-256(UUID 的16字节) 的前8字节按 big-endian signed int64 解释。碰撞只串行化无关 command，lookup 始终使用完整 UUID，不能改变正确性。transaction MUST 先 lookup receipt 并检查 actor，不能在此前验证endpoint/Secret、访问K1、构造canonical intent或检查revision/lifecycle/current state。实现使用lazy intent builder或等价最小结构；只有receipt不存在，或receipt存在且actor匹配后，才按下文版本与K1状态构造intent。
 
 ### Canonical intent v1 bytes
 
@@ -51,7 +51,15 @@ canonical_intent_hash = SHA-256(canonical_intent_v1_bytes)，存32字节 bytea�
 
 fingerprint = HMAC-SHA-256(K1, UTF8("relay-station/asset-admin-intent/v1/") || UTF8(command_kind) || 0x00 || UTF8(validated_reference))。raw reference MUST NOT 出现在 canonical bytes/receipt。receipt 增加 nullable secret_fingerprint_key_version（set为1，否则NULL）；replay使用receipt的version，而非当前默认值。
 
-K1 为独立32字节稳定 deployment Secret，由受控 Secret 文件提供（CONTROL_ASSET_INTENT_KEY_FILE），不复用 auth/session key，不依赖进程随机数或请求。Phase 6 v1 version=1 non-rotating；未来 rotation 是独立 contract change，v1 receipts 可重放期间 K1 MUST 可解析且不可删除。无key或key版本不支持时 fail closed 503，不退回unkeyed hash、不重新构造key。restart/upgrade沿用K1，key与fingerprint不返回或写日志。凭据文件权限/backup和restore验证作为部署task。
+K1 为独立32字节稳定 deployment Secret，由受控 `CONTROL_ASSET_INTENT_KEY_FILE` 提供，不复用 auth/session key，不依赖进程随机数或请求。文件 MUST 是regular file、不得是symlink、权限必须安全且内容exactly 32 raw bytes；missing、path/read failure、unsafe permissions、symlink或wrong length均表示K1 unavailable。满足基础文件验证即为可用K1 v1；Stage 1不认证K1 identity，不使用signed digest、identity anchor、额外trust metadata或deployment identity file。
+
+K1 v1 MUST 保持稳定、备份并跨restart/upgrade恢复，不得自动重新生成；raw K1不得进入receipt、日志、image、Compose YAML、environment variable或command line。只要version 1 receipt仍可能replay，operator必须保留正确历史K1。未来rotation属于独立contract change。
+
+K1只用于`SecretSet` canonical intent。`SecretAbsent`、`SecretClear`、Retire及其它不含SecretSet的command，其`secret_fingerprint_key_version=NULL`，构造或比较intent时 MUST NOT 读取K1。receipt不存在的新SecretSet command仅在K1可用时写version=1并计算fingerprint；K1 unavailable返回503，零mutation、receipt和success audit。
+
+durable command路径在认证后进入transaction、取得advisory lock并lookup receipt：receipt存在时先检查actor；actor mismatch立即409，不验证endpoint/Secret、不访问K1，也不检查revision/lifecycle/current state。actor匹配后读取receipt-recorded command kind、encoding version、secret key version、hash及persisted result/status；未知intent encoding返回503。key version NULL时不使用K1并lazy构造intent；key version 1时K1 unavailable返回503，可用时按v1构造intent。receipt无记录时才验证metadata/endpoint/Secret、按实际SecretSet需要解析K1、构造intent并进入domain validation/mutation。
+
+任何使用结构有效K1成功计算出的canonical intent hash若与receipt相等，则重放原status/body；若不同则统一返回409 command_conflict。Stage 1明确接受：历史K1若被错误替换成另一把权限与长度均合法的32-byte key，系统不能识别替换原因；same Secret request会得到不同hash并返回409。恢复正确历史K1后，同一请求重新得到相同hash并恢复replay。该trade-off降低错误诊断精度，不影响fail-closed correctness：不会错误replay、不会第二次mutation/receipt/audit，也不泄露Secret。receipt schema保持不变。
 
 每个 accepted/completed durable command exactly one receipt。状态变更成功写 exactly one mutation audit；state-idempotent completed no-op 不改 domain/revision、不写成功状态转换 audit，但仍写一次 receipt。Health/Connection Test 是 observation，不使用 mutation receipt；每次真实 probe 写一条 sanitized observation audit。
 

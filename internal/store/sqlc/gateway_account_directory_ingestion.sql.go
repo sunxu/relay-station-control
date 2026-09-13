@@ -96,6 +96,8 @@ WITH locked_gateway AS (
     SELECT instance_id, reader_secret_configured
     FROM gateway_instances
     WHERE instance_id = $1::uuid
+      AND lifecycle_status = 'active'
+      AND singleton_id = 1
     FOR UPDATE
 ), db_now AS (
     SELECT clock_timestamp() AS db_now
@@ -400,6 +402,8 @@ FROM gateway_instances AS gateway
 LEFT JOIN gateway_directory_current_state AS current_state
     ON current_state.gateway_instance_id = gateway.instance_id,
 db_now
+WHERE gateway.lifecycle_status = 'active'
+  AND gateway.singleton_id = 1
 `
 
 type GetGatewayDirectoryFreshnessMetricsRow struct {
@@ -486,6 +490,24 @@ func (q *Queries) GetGatewayDirectoryIngestionRunLease(ctx context.Context, arg 
 		&i.SnapshotID,
 		&i.AccountCount,
 	)
+	return i, err
+}
+
+const getGatewayDirectoryLifecycleFailure = `-- name: GetGatewayDirectoryLifecycleFailure :one
+SELECT lifecycle_status, retire_reason
+FROM gateway_instances
+WHERE instance_id = $1::uuid
+`
+
+type GetGatewayDirectoryLifecycleFailureRow struct {
+	LifecycleStatus string      `json:"lifecycle_status"`
+	RetireReason    pgtype.Text `json:"retire_reason"`
+}
+
+func (q *Queries) GetGatewayDirectoryLifecycleFailure(ctx context.Context, gatewayInstanceID pgtype.UUID) (GetGatewayDirectoryLifecycleFailureRow, error) {
+	row := q.db.QueryRow(ctx, getGatewayDirectoryLifecycleFailure, gatewayInstanceID)
+	var i GetGatewayDirectoryLifecycleFailureRow
+	err := row.Scan(&i.LifecycleStatus, &i.RetireReason)
 	return i, err
 }
 
@@ -743,6 +765,7 @@ func (q *Queries) ListGatewayDirectorySnapshotItems(ctx context.Context, snapsho
 const listGatewayInstanceIDs = `-- name: ListGatewayInstanceIDs :many
 SELECT instance_id
 FROM gateway_instances
+WHERE lifecycle_status = 'active' AND singleton_id = 1
 ORDER BY instance_id
 `
 
@@ -770,6 +793,8 @@ const lockGatewayDirectoryInstance = `-- name: LockGatewayDirectoryInstance :one
 SELECT instance_id
 FROM gateway_instances
 WHERE instance_id = $1::uuid
+  AND lifecycle_status = 'active'
+  AND singleton_id = 1
 FOR UPDATE
 `
 
@@ -778,6 +803,25 @@ func (q *Queries) LockGatewayDirectoryInstance(ctx context.Context, gatewayInsta
 	var instance_id pgtype.UUID
 	err := row.Scan(&instance_id)
 	return instance_id, err
+}
+
+const lockGatewayDirectoryLifecycleFailure = `-- name: LockGatewayDirectoryLifecycleFailure :one
+SELECT lifecycle_status, retire_reason
+FROM gateway_instances
+WHERE instance_id = $1::uuid
+FOR SHARE
+`
+
+type LockGatewayDirectoryLifecycleFailureRow struct {
+	LifecycleStatus string      `json:"lifecycle_status"`
+	RetireReason    pgtype.Text `json:"retire_reason"`
+}
+
+func (q *Queries) LockGatewayDirectoryLifecycleFailure(ctx context.Context, gatewayInstanceID pgtype.UUID) (LockGatewayDirectoryLifecycleFailureRow, error) {
+	row := q.db.QueryRow(ctx, lockGatewayDirectoryLifecycleFailure, gatewayInstanceID)
+	var i LockGatewayDirectoryLifecycleFailureRow
+	err := row.Scan(&i.LifecycleStatus, &i.RetireReason)
+	return i, err
 }
 
 const reconcileGatewayDirectoryIngestionRun = `-- name: ReconcileGatewayDirectoryIngestionRun :one

@@ -474,22 +474,35 @@ const (
 	ErrorCodeAccountNotFound                   ErrorCode = "account_not_found"
 	ErrorCodeAdministratorSelfDisableForbidden ErrorCode = "administrator_self_disable_forbidden"
 	ErrorCodeAlreadyUnbound                    ErrorCode = "already_unbound"
+	ErrorCodeAssetNotFound                     ErrorCode = "asset_not_found"
+	ErrorCodeAssetRetired                      ErrorCode = "asset_retired"
 	ErrorCodeAuthenticationFailed              ErrorCode = "authentication_failed"
 	ErrorCodeBootstrapUnavailable              ErrorCode = "bootstrap_unavailable"
 	ErrorCodeChallengeExpired                  ErrorCode = "challenge_expired"
+	ErrorCodeCommandConflict                   ErrorCode = "command_conflict"
 	ErrorCodeConflict                          ErrorCode = "conflict"
 	ErrorCodeCsrfInvalid                       ErrorCode = "csrf_invalid"
+	ErrorCodeCurrentGatewayExists              ErrorCode = "current_gateway_exists"
+	ErrorCodeCursorStale                       ErrorCode = "cursor_stale"
 	ErrorCodeDirectoryStale                    ErrorCode = "directory_stale"
 	ErrorCodeDirectoryUnavailable              ErrorCode = "directory_unavailable"
+	ErrorCodeDuplicateIdentity                 ErrorCode = "duplicate_identity"
 	ErrorCodeForbidden                         ErrorCode = "forbidden"
 	ErrorCodeInternalError                     ErrorCode = "internal_error"
+	ErrorCodeInvalidEndpoint                   ErrorCode = "invalid_endpoint"
 	ErrorCodeLastAdministratorProtected        ErrorCode = "last_administrator_protected"
 	ErrorCodeMfaRequired                       ErrorCode = "mfa_required"
 	ErrorCodeNoCurrentBinding                  ErrorCode = "no_current_binding"
 	ErrorCodeNodeConflict                      ErrorCode = "node_conflict"
 	ErrorCodeNotFound                          ErrorCode = "not_found"
+	ErrorCodeProbeFailed                       ErrorCode = "probe_failed"
+	ErrorCodeProbeTimeout                      ErrorCode = "probe_timeout"
 	ErrorCodeRateLimited                       ErrorCode = "rate_limited"
 	ErrorCodeReauthenticationRequired          ErrorCode = "reauthentication_required"
+	ErrorCodeRevisionExhausted                 ErrorCode = "revision_exhausted"
+	ErrorCodeSecretConfigurationInvalid        ErrorCode = "secret_configuration_invalid"
+	ErrorCodeServiceUnavailable                ErrorCode = "service_unavailable"
+	ErrorCodeStaleRevision                     ErrorCode = "stale_revision"
 	ErrorCodeTemporarilyUnavailable            ErrorCode = "temporarily_unavailable"
 	ErrorCodeUnauthorized                      ErrorCode = "unauthorized"
 	ErrorCodeValidationFailed                  ErrorCode = "validation_failed"
@@ -506,23 +519,37 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeAlreadyUnbound:
 		return true
+	case ErrorCodeAssetNotFound:
+		return true
+	case ErrorCodeAssetRetired:
+		return true
 	case ErrorCodeAuthenticationFailed:
 		return true
 	case ErrorCodeBootstrapUnavailable:
 		return true
 	case ErrorCodeChallengeExpired:
 		return true
+	case ErrorCodeCommandConflict:
+		return true
 	case ErrorCodeConflict:
 		return true
 	case ErrorCodeCsrfInvalid:
+		return true
+	case ErrorCodeCurrentGatewayExists:
+		return true
+	case ErrorCodeCursorStale:
 		return true
 	case ErrorCodeDirectoryStale:
 		return true
 	case ErrorCodeDirectoryUnavailable:
 		return true
+	case ErrorCodeDuplicateIdentity:
+		return true
 	case ErrorCodeForbidden:
 		return true
 	case ErrorCodeInternalError:
+		return true
+	case ErrorCodeInvalidEndpoint:
 		return true
 	case ErrorCodeLastAdministratorProtected:
 		return true
@@ -534,9 +561,21 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeNotFound:
 		return true
+	case ErrorCodeProbeFailed:
+		return true
+	case ErrorCodeProbeTimeout:
+		return true
 	case ErrorCodeRateLimited:
 		return true
 	case ErrorCodeReauthenticationRequired:
+		return true
+	case ErrorCodeRevisionExhausted:
+		return true
+	case ErrorCodeSecretConfigurationInvalid:
+		return true
+	case ErrorCodeServiceUnavailable:
+		return true
+	case ErrorCodeStaleRevision:
 		return true
 	case ErrorCodeTemporarilyUnavailable:
 		return true
@@ -549,18 +588,132 @@ func (e ErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for GatewayAssetLifecycleStatus.
+const (
+	GatewayAssetLifecycleStatusActive  GatewayAssetLifecycleStatus = "active"
+	GatewayAssetLifecycleStatusRetired GatewayAssetLifecycleStatus = "retired"
+)
+
+// Valid indicates whether the value is a known member of the GatewayAssetLifecycleStatus enum.
+func (e GatewayAssetLifecycleStatus) Valid() bool {
+	switch e {
+	case GatewayAssetLifecycleStatusActive:
+		return true
+	case GatewayAssetLifecycleStatusRetired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayAssetRetireReason.
+const (
+	GatewayAssetRetireReasonAdministratorRetire GatewayAssetRetireReason = "administrator_retire"
+	GatewayAssetRetireReasonLessThannil         GatewayAssetRetireReason = "<nil>"
+	GatewayAssetRetireReasonReplacement         GatewayAssetRetireReason = "replacement"
+)
+
+// Valid indicates whether the value is a known member of the GatewayAssetRetireReason enum.
+func (e GatewayAssetRetireReason) Valid() bool {
+	switch e {
+	case GatewayAssetRetireReasonAdministratorRetire:
+		return true
+	case GatewayAssetRetireReasonLessThannil:
+		return true
+	case GatewayAssetRetireReasonReplacement:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GatewayAssetResponseStatus.
 const (
-	NotRegistered GatewayAssetResponseStatus = "not_registered"
-	Registered    GatewayAssetResponseStatus = "registered"
+	GatewayAssetResponseStatusNotRegistered GatewayAssetResponseStatus = "not_registered"
+	GatewayAssetResponseStatusRegistered    GatewayAssetResponseStatus = "registered"
 )
 
 // Valid indicates whether the value is a known member of the GatewayAssetResponseStatus enum.
 func (e GatewayAssetResponseStatus) Valid() bool {
 	switch e {
-	case NotRegistered:
+	case GatewayAssetResponseStatusNotRegistered:
 		return true
-	case Registered:
+	case GatewayAssetResponseStatusRegistered:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayEditResultResult.
+const (
+	Updated GatewayEditResultResult = "updated"
+)
+
+// Valid indicates whether the value is a known member of the GatewayEditResultResult enum.
+func (e GatewayEditResultResult) Valid() bool {
+	switch e {
+	case Updated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayProbeResultResult.
+const (
+	Healthy GatewayProbeResultResult = "healthy"
+)
+
+// Valid indicates whether the value is a known member of the GatewayProbeResultResult enum.
+func (e GatewayProbeResultResult) Valid() bool {
+	switch e {
+	case Healthy:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayRegisterResultResult.
+const (
+	GatewayRegisterResultResultRegistered GatewayRegisterResultResult = "registered"
+)
+
+// Valid indicates whether the value is a known member of the GatewayRegisterResultResult enum.
+func (e GatewayRegisterResultResult) Valid() bool {
+	switch e {
+	case GatewayRegisterResultResultRegistered:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayReplaceResultResult.
+const (
+	Replaced GatewayReplaceResultResult = "replaced"
+)
+
+// Valid indicates whether the value is a known member of the GatewayReplaceResultResult enum.
+func (e GatewayReplaceResultResult) Valid() bool {
+	switch e {
+	case Replaced:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayRetireResultResult.
+const (
+	GatewayRetireResultResultRetired GatewayRetireResultResult = "retired"
+)
+
+// Valid indicates whether the value is a known member of the GatewayRetireResultResult enum.
+func (e GatewayRetireResultResult) Valid() bool {
+	switch e {
+	case GatewayRetireResultResultRetired:
 		return true
 	default:
 		return false
@@ -1515,6 +1668,27 @@ func (e TotpEnrollmentPeriodSeconds) Valid() bool {
 	}
 }
 
+// Defines values for ListGatewayAssetsParamsLifecycle.
+const (
+	ListGatewayAssetsParamsLifecycleActive  ListGatewayAssetsParamsLifecycle = "active"
+	ListGatewayAssetsParamsLifecycleAll     ListGatewayAssetsParamsLifecycle = "all"
+	ListGatewayAssetsParamsLifecycleRetired ListGatewayAssetsParamsLifecycle = "retired"
+)
+
+// Valid indicates whether the value is a known member of the ListGatewayAssetsParamsLifecycle enum.
+func (e ListGatewayAssetsParamsLifecycle) Valid() bool {
+	switch e {
+	case ListGatewayAssetsParamsLifecycleActive:
+		return true
+	case ListGatewayAssetsParamsLifecycleAll:
+		return true
+	case ListGatewayAssetsParamsLifecycleRetired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListNodeAccountAvailabilityOccurrencesParamsStatus.
 const (
 	ListNodeAccountAvailabilityOccurrencesParamsStatusACTIVE   ListNodeAccountAvailabilityOccurrencesParamsStatus = "ACTIVE"
@@ -1859,6 +2033,9 @@ type AdministratorListResponse struct {
 // AdministratorStatus defines model for AdministratorStatus.
 type AdministratorStatus string
 
+// AssetRevision defines model for AssetRevision.
+type AssetRevision = string
+
 // BindRelayNodeRequest defines model for BindRelayNodeRequest.
 type BindRelayNodeRequest struct {
 	// GatewayAccountId Positive decimal int64 identity, maximum 9223372036854775807. Server rejects overflow. BREAKING correction from numeric JSON; Gateway Directory source v1 remains numeric.
@@ -1988,6 +2165,9 @@ type DisplayName = string
 // DriverContractVersion defines model for DriverContractVersion.
 type DriverContractVersion = string
 
+// EmptyObject defines model for EmptyObject.
+type EmptyObject = map[string]interface{}
+
 // EnvironmentAsset defines model for EnvironmentAsset.
 type EnvironmentAsset struct {
 	EnvironmentId   string                          `json:"environment_id"`
@@ -2047,12 +2227,37 @@ type GatewayAccountRelayBindingsResponse struct {
 
 // GatewayAsset defines model for GatewayAsset.
 type GatewayAsset struct {
-	CreatedAt          time.Time          `json:"created_at"`
-	DisplayName        DisplayName        `json:"display_name"`
-	InstanceId         openapi_types.UUID `json:"instance_id"`
-	ManagementEndpoint ManagementEndpoint `json:"management_endpoint"`
-	SecretConfigured   bool               `json:"secret_configured"`
-	UpdatedAt          time.Time          `json:"updated_at"`
+	CreatedAt          time.Time                   `json:"created_at"`
+	DisplayName        DisplayName                 `json:"display_name"`
+	InstanceId         openapi_types.UUID          `json:"instance_id"`
+	LifecycleStatus    GatewayAssetLifecycleStatus `json:"lifecycle_status"`
+	ManagementEndpoint ManagementEndpoint          `json:"management_endpoint"`
+	RetireReason       *GatewayAssetRetireReason   `json:"retire_reason"`
+	RetiredAt          *time.Time                  `json:"retired_at"`
+	RetiredBy          *openapi_types.UUID         `json:"retired_by"`
+	Revision           AssetRevision               `json:"revision"`
+	SecretConfigured   bool                        `json:"secret_configured"`
+	UpdatedAt          time.Time                   `json:"updated_at"`
+}
+
+// GatewayAssetLifecycleStatus defines model for GatewayAsset.LifecycleStatus.
+type GatewayAssetLifecycleStatus string
+
+// GatewayAssetRetireReason defines model for GatewayAsset.RetireReason.
+type GatewayAssetRetireReason string
+
+// GatewayAssetDetailResponse defines model for GatewayAssetDetailResponse.
+type GatewayAssetDetailResponse struct {
+	Asset       GatewayAsset               `json:"asset"`
+	Predecessor *GatewayReplacementLineage `json:"predecessor"`
+	Successor   *GatewayReplacementLineage `json:"successor"`
+}
+
+// GatewayAssetListResponse defines model for GatewayAssetListResponse.
+type GatewayAssetListResponse struct {
+	GatewayCounts GatewayCounts  `json:"gateway_counts"`
+	Items         []GatewayAsset `json:"items"`
+	NextCursor    *string        `json:"next_cursor"`
 }
 
 // GatewayAssetResponse defines model for GatewayAssetResponse.
@@ -2063,6 +2268,106 @@ type GatewayAssetResponse struct {
 
 // GatewayAssetResponseStatus defines model for GatewayAssetResponse.Status.
 type GatewayAssetResponseStatus string
+
+// GatewayCounts defines model for GatewayCounts.
+type GatewayCounts struct {
+	Active  int `json:"active"`
+	Retired int `json:"retired"`
+	Total   int `json:"total"`
+}
+
+// GatewayEditRequest defines model for GatewayEditRequest.
+type GatewayEditRequest struct {
+	CommandId          openapi_types.UUID  `json:"command_id"`
+	DisplayName        *DisplayName        `json:"display_name,omitempty"`
+	ExpectedRevision   AssetRevision       `json:"expected_revision"`
+	ManagementEndpoint *ManagementEndpoint `json:"management_endpoint,omitempty"`
+	ReaderSecretRef    *string             `json:"reader_secret_ref,omitempty"`
+}
+
+// GatewayEditResult defines model for GatewayEditResult.
+type GatewayEditResult struct {
+	Asset  GatewayAsset            `json:"asset"`
+	Result GatewayEditResultResult `json:"result"`
+}
+
+// GatewayEditResultResult defines model for GatewayEditResult.Result.
+type GatewayEditResultResult string
+
+// GatewayProbeResult defines model for GatewayProbeResult.
+type GatewayProbeResult struct {
+	InstanceId openapi_types.UUID       `json:"instance_id"`
+	ObservedAt time.Time                `json:"observed_at"`
+	Result     GatewayProbeResultResult `json:"result"`
+}
+
+// GatewayProbeResultResult defines model for GatewayProbeResult.Result.
+type GatewayProbeResultResult string
+
+// GatewayRegisterRequest defines model for GatewayRegisterRequest.
+type GatewayRegisterRequest struct {
+	CommandId          openapi_types.UUID `json:"command_id"`
+	DisplayName        DisplayName        `json:"display_name"`
+	ManagementEndpoint ManagementEndpoint `json:"management_endpoint"`
+	NewInstanceId      openapi_types.UUID `json:"new_instance_id"`
+	ReaderSecretRef    *string            `json:"reader_secret_ref,omitempty"`
+}
+
+// GatewayRegisterResult defines model for GatewayRegisterResult.
+type GatewayRegisterResult struct {
+	Asset  GatewayAsset                `json:"asset"`
+	Result GatewayRegisterResultResult `json:"result"`
+}
+
+// GatewayRegisterResultResult defines model for GatewayRegisterResult.Result.
+type GatewayRegisterResultResult string
+
+// GatewayReplaceRequest defines model for GatewayReplaceRequest.
+type GatewayReplaceRequest struct {
+	CommandId          openapi_types.UUID `json:"command_id"`
+	DisplayName        DisplayName        `json:"display_name"`
+	ExpectedRevision   AssetRevision      `json:"expected_revision"`
+	ManagementEndpoint ManagementEndpoint `json:"management_endpoint"`
+	NewInstanceId      openapi_types.UUID `json:"new_instance_id"`
+	ReaderSecretRef    *string            `json:"reader_secret_ref,omitempty"`
+}
+
+// GatewayReplaceResult defines model for GatewayReplaceResult.
+type GatewayReplaceResult struct {
+	ClosedBindingCount int                        `json:"closed_binding_count"`
+	Lineage            GatewayReplacementLineage  `json:"lineage"`
+	NewAsset           GatewayAsset               `json:"new_asset"`
+	OldAsset           GatewayAsset               `json:"old_asset"`
+	Result             GatewayReplaceResultResult `json:"result"`
+}
+
+// GatewayReplaceResultResult defines model for GatewayReplaceResult.Result.
+type GatewayReplaceResultResult string
+
+// GatewayReplacementLineage defines model for GatewayReplacementLineage.
+type GatewayReplacementLineage struct {
+	CommandId     openapi_types.UUID `json:"command_id"`
+	NewInstanceId openapi_types.UUID `json:"new_instance_id"`
+	OldInstanceId openapi_types.UUID `json:"old_instance_id"`
+	ReplacedAt    time.Time          `json:"replaced_at"`
+	ReplacedBy    openapi_types.UUID `json:"replaced_by"`
+}
+
+// GatewayRetireRequest defines model for GatewayRetireRequest.
+type GatewayRetireRequest struct {
+	CommandId        openapi_types.UUID `json:"command_id"`
+	ExpectedRevision AssetRevision      `json:"expected_revision"`
+}
+
+// GatewayRetireResult defines model for GatewayRetireResult.
+type GatewayRetireResult struct {
+	Asset              GatewayAsset              `json:"asset"`
+	ClosedBindingCount int                       `json:"closed_binding_count"`
+	Result             GatewayRetireResultResult `json:"result"`
+}
+
+// GatewayRetireResultResult defines model for GatewayRetireResult.Result.
+type GatewayRetireResultResult string
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
@@ -2757,6 +3062,46 @@ type ResetAdministratorMfaParams struct {
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
 }
 
+// ListGatewayAssetsParams defines parameters for ListGatewayAssets.
+type ListGatewayAssetsParams struct {
+	Lifecycle *ListGatewayAssetsParamsLifecycle `form:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+	Limit     *PageLimit                        `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor    *PageCursor                       `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListGatewayAssetsParamsLifecycle defines parameters for ListGatewayAssets.
+type ListGatewayAssetsParamsLifecycle string
+
+// RegisterGatewayAssetParams defines parameters for RegisterGatewayAsset.
+type RegisterGatewayAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// EditGatewayAssetParams defines parameters for EditGatewayAsset.
+type EditGatewayAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// TestGatewayConnectionParams defines parameters for TestGatewayConnection.
+type TestGatewayConnectionParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ReplaceGatewayAssetParams defines parameters for ReplaceGatewayAsset.
+type ReplaceGatewayAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RetireGatewayAssetParams defines parameters for RetireGatewayAsset.
+type RetireGatewayAssetParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // ListNodeAssetsParams defines parameters for ListNodeAssets.
 type ListNodeAssetsParams struct {
 	Limit            *AssetPageLimit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -2956,6 +3301,21 @@ type DisableAdministratorJSONRequestBody = ReasonRequest
 
 // ResetAdministratorMfaJSONRequestBody defines body for ResetAdministratorMfa for application/json ContentType.
 type ResetAdministratorMfaJSONRequestBody = ReasonRequest
+
+// RegisterGatewayAssetJSONRequestBody defines body for RegisterGatewayAsset for application/json ContentType.
+type RegisterGatewayAssetJSONRequestBody = GatewayRegisterRequest
+
+// EditGatewayAssetJSONRequestBody defines body for EditGatewayAsset for application/json ContentType.
+type EditGatewayAssetJSONRequestBody = GatewayEditRequest
+
+// TestGatewayConnectionJSONRequestBody defines body for TestGatewayConnection for application/json ContentType.
+type TestGatewayConnectionJSONRequestBody = EmptyObject
+
+// ReplaceGatewayAssetJSONRequestBody defines body for ReplaceGatewayAsset for application/json ContentType.
+type ReplaceGatewayAssetJSONRequestBody = GatewayReplaceRequest
+
+// RetireGatewayAssetJSONRequestBody defines body for RetireGatewayAsset for application/json ContentType.
+type RetireGatewayAssetJSONRequestBody = GatewayRetireRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -3331,6 +3691,30 @@ type ServerInterface interface {
 	// GetGatewayAsset Read the single registered Gateway
 	// (GET /api/assets/gateway)
 	GetGatewayAsset(w http.ResponseWriter, r *http.Request)
+	// ListGatewayAssets List current or historical Gateway assets
+	// (GET /api/assets/gateways)
+	ListGatewayAssets(w http.ResponseWriter, r *http.Request, params ListGatewayAssetsParams)
+	// RegisterGatewayAsset Register the current Gateway asset
+	// (POST /api/assets/gateways)
+	RegisterGatewayAsset(w http.ResponseWriter, r *http.Request, params RegisterGatewayAssetParams)
+	// GetGatewayAssetById Read one current or historical Gateway asset
+	// (GET /api/assets/gateways/{instance_id})
+	GetGatewayAssetById(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId)
+	// EditGatewayAsset Edit current Gateway display and management configuration
+	// (PATCH /api/assets/gateways/{instance_id})
+	EditGatewayAsset(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params EditGatewayAssetParams)
+	// TestGatewayConnection Execute the explicit fixed Gateway connection test
+	// (POST /api/assets/gateways/{instance_id}/connection-test)
+	TestGatewayConnection(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params TestGatewayConnectionParams)
+	// GetGatewayHealth Execute the fixed Gateway health observation
+	// (GET /api/assets/gateways/{instance_id}/health)
+	GetGatewayHealth(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId)
+	// ReplaceGatewayAsset Atomically replace the current Gateway with a new identity
+	// (POST /api/assets/gateways/{instance_id}/replace)
+	ReplaceGatewayAsset(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params ReplaceGatewayAssetParams)
+	// RetireGatewayAsset Retire the current Gateway and clear the current slot
+	// (POST /api/assets/gateways/{instance_id}/retire)
+	RetireGatewayAsset(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params RetireGatewayAssetParams)
 	// ListNodeAssets List registered Relay Nodes
 	// (GET /api/assets/nodes)
 	ListNodeAssets(w http.ResponseWriter, r *http.Request, params ListNodeAssetsParams)
@@ -3502,6 +3886,54 @@ func (_ Unimplemented) ListNodeDrivers(w http.ResponseWriter, r *http.Request) {
 // GetGatewayAsset Read the single registered Gateway
 // (GET /api/assets/gateway)
 func (_ Unimplemented) GetGatewayAsset(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListGatewayAssets List current or historical Gateway assets
+// (GET /api/assets/gateways)
+func (_ Unimplemented) ListGatewayAssets(w http.ResponseWriter, r *http.Request, params ListGatewayAssetsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RegisterGatewayAsset Register the current Gateway asset
+// (POST /api/assets/gateways)
+func (_ Unimplemented) RegisterGatewayAsset(w http.ResponseWriter, r *http.Request, params RegisterGatewayAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGatewayAssetById Read one current or historical Gateway asset
+// (GET /api/assets/gateways/{instance_id})
+func (_ Unimplemented) GetGatewayAssetById(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EditGatewayAsset Edit current Gateway display and management configuration
+// (PATCH /api/assets/gateways/{instance_id})
+func (_ Unimplemented) EditGatewayAsset(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params EditGatewayAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TestGatewayConnection Execute the explicit fixed Gateway connection test
+// (POST /api/assets/gateways/{instance_id}/connection-test)
+func (_ Unimplemented) TestGatewayConnection(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params TestGatewayConnectionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGatewayHealth Execute the fixed Gateway health observation
+// (GET /api/assets/gateways/{instance_id}/health)
+func (_ Unimplemented) GetGatewayHealth(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReplaceGatewayAsset Atomically replace the current Gateway with a new identity
+// (POST /api/assets/gateways/{instance_id}/replace)
+func (_ Unimplemented) ReplaceGatewayAsset(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params ReplaceGatewayAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RetireGatewayAsset Retire the current Gateway and clear the current slot
+// (POST /api/assets/gateways/{instance_id}/retire)
+func (_ Unimplemented) RetireGatewayAsset(w http.ResponseWriter, r *http.Request, instanceId GatewayInstanceId, params RetireGatewayAssetParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4102,6 +4534,378 @@ func (siw *ServerInterfaceWrapper) GetGatewayAsset(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetGatewayAsset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListGatewayAssets operation middleware
+func (siw *ServerInterfaceWrapper) ListGatewayAssets(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListGatewayAssetsParams
+
+	// ------------- Optional query parameter "lifecycle" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "lifecycle", r.URL.Query(), &params.Lifecycle, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "lifecycle"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "lifecycle", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGatewayAssets(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegisterGatewayAsset operation middleware
+func (siw *ServerInterfaceWrapper) RegisterGatewayAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RegisterGatewayAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegisterGatewayAsset(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGatewayAssetById operation middleware
+func (siw *ServerInterfaceWrapper) GetGatewayAssetById(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGatewayAssetById(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EditGatewayAsset operation middleware
+func (siw *ServerInterfaceWrapper) EditGatewayAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EditGatewayAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EditGatewayAsset(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestGatewayConnection operation middleware
+func (siw *ServerInterfaceWrapper) TestGatewayConnection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TestGatewayConnectionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestGatewayConnection(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGatewayHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetGatewayHealth(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGatewayHealth(w, r, instanceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceGatewayAsset operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceGatewayAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceGatewayAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceGatewayAsset(w, r, instanceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetireGatewayAsset operation middleware
+func (siw *ServerInterfaceWrapper) RetireGatewayAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "instance_id" -------------
+	var instanceId GatewayInstanceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "instance_id", chi.URLParam(r, "instance_id"), &instanceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "instance_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetireGatewayAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetireGatewayAsset(w, r, instanceId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5856,6 +6660,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/gateway", wrapper.GetGatewayAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/gateways", wrapper.ListGatewayAssets)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/gateways", wrapper.RegisterGatewayAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/gateways/{instance_id}", wrapper.GetGatewayAssetById)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/assets/gateways/{instance_id}", wrapper.EditGatewayAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/gateways/{instance_id}/retire", wrapper.RetireGatewayAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/gateways/{instance_id}/replace", wrapper.ReplaceGatewayAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/assets/gateways/{instance_id}/health", wrapper.GetGatewayHealth)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/assets/gateways/{instance_id}/connection-test", wrapper.TestGatewayConnection)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/assets/nodes", wrapper.ListNodeAssets)

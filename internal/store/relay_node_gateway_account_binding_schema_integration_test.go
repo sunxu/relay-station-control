@@ -26,7 +26,7 @@ func newRelayBindingSchemaFixture(t *testing.T, ctx context.Context, database *i
 		otherAdminID: uuid.New(),
 		accountIDs:   []int64{101, 102, 103, 104, 105, 106, 107, 108, 109, 110},
 	}
-	insertGatewayInstance(t, ctx, database.owner, fixture.gatewayID, "https://binding-gateway.test", "file://binding-reader")
+	insertGatewayInstance(t, ctx, database.owner, fixture.gatewayID, "http://binding-gateway.test", "file://binding-reader")
 	if _, err := database.owner.Exec(ctx, `INSERT INTO node_drivers(
 		node_type, driver_contract_version, display_name
 	) VALUES ('binding-node','v1','Binding Node')`); err != nil {

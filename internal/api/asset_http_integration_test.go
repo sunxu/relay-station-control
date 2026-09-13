@@ -62,7 +62,7 @@ func TestAssetRegistryHTTPRuntimeReadsPaginationSecurityAndRecovery(t *testing.T
 	}
 	gatewayID, firstNodeID, secondNodeID := uuid.New(), uuid.MustParse("018f80d8-2017-7b3e-93ec-10f4b3672f2a"), uuid.MustParse("018f80d8-2017-7b3e-93ec-10f4b3672f2b")
 	if _, err = owner.Exec(ctx, `INSERT INTO gateway_instances(instance_id,display_name,management_endpoint,reader_secret_ref)
-		VALUES($1,'Gateway','https://gateway.example/management',$2)`, gatewayID, secretCanary); err != nil {
+		VALUES($1,'Gateway','http://gateway.example',$2)`, gatewayID, secretCanary); err != nil {
 		t.Fatal(err)
 	}
 	for id, name := range map[uuid.UUID]string{firstNodeID: "Node A", secondNodeID: "Node B"} {

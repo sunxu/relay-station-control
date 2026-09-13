@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +16,49 @@ import (
 	controljobs "github.com/sunxu/relay-station-control/internal/jobs"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
 )
+
+func TestLoadAssetIntentKeyFileValidation(t *testing.T) {
+	if key, err := loadAssetIntentKey(""); err != nil || key != nil {
+		t.Fatalf("empty key path: key=%x err=%v", key, err)
+	}
+	directory := t.TempDir()
+	validPath := filepath.Join(directory, "asset-intent-key")
+	want := []byte("01234567890123456789012345678901")
+	if err := os.WriteFile(validPath, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, err := loadAssetIntentKey(validPath)
+	if err != nil || !bytes.Equal(key, want) {
+		t.Fatalf("valid key: key=%x err=%v", key, err)
+	}
+	if _, err = loadAssetIntentKey(filepath.Join(directory, "missing")); err == nil {
+		t.Fatal("missing key file unexpectedly accepted")
+	}
+
+	wrongLengthPath := filepath.Join(directory, "wrong-length")
+	if err = os.WriteFile(wrongLengthPath, []byte("too short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = loadAssetIntentKey(wrongLengthPath); err == nil {
+		t.Fatal("wrong-length key unexpectedly accepted")
+	}
+
+	unsafePath := filepath.Join(directory, "unsafe")
+	if err = os.WriteFile(unsafePath, want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = loadAssetIntentKey(unsafePath); err == nil {
+		t.Fatal("unsafe key permissions unexpectedly accepted")
+	}
+
+	symlinkPath := filepath.Join(directory, "key-link")
+	if err = os.Symlink(validPath, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = loadAssetIntentKey(symlinkPath); err == nil {
+		t.Fatal("symlink key unexpectedly accepted")
+	}
+}
 
 func TestNewDatabasePoolRejectsInvalidURLWithoutLeaking(t *testing.T) {
 	_, err := newDatabasePool(context.Background(), "postgres://secret@%invalid/control")

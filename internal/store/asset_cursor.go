@@ -18,6 +18,8 @@ import (
 const nodeCursorVersion = 1
 
 var ErrInvalidNodeCursor = errors.New("store: invalid node cursor")
+var ErrInvalidGatewayCursor = errors.New("store: invalid gateway cursor")
+var ErrGatewayCursorStale = errors.New("store: gateway cursor stale")
 
 // NodeListFilters is the complete filter set bound into a node-list cursor.
 // Keeping this type closed prevents a cursor from being replayed under a
@@ -26,6 +28,94 @@ type NodeListFilters struct {
 	NodeType         string
 	Capability       string
 	MonitoringActive *bool
+}
+
+type GatewayCursor struct {
+	After       uuid.UUID
+	Environment string
+	Lifecycle   string
+	Generation  string
+}
+
+type GatewayCursorCodec struct{ keyring *authn.Keyring }
+
+type gatewayCursorPayload struct {
+	Version     int    `json:"v"`
+	KeyVersion  uint32 `json:"key_version"`
+	Lifecycle   string `json:"lifecycle"`
+	Environment string `json:"environment"`
+	After       string `json:"after"`
+	Generation  string `json:"generation"`
+	Digest      string `json:"digest"`
+}
+
+func NewGatewayCursorCodec(keyring *authn.Keyring) (*GatewayCursorCodec, error) {
+	if keyring == nil {
+		return nil, ErrInvalidGatewayCursor
+	}
+	if _, _, err := keyring.DeriveCurrent(authn.DomainAssetCursorDigest, sha256.Size); err != nil {
+		return nil, ErrInvalidGatewayCursor
+	}
+	return &GatewayCursorCodec{keyring: keyring}, nil
+}
+
+func (c *GatewayCursorCodec) Encode(value GatewayCursor) (string, error) {
+	if value.After == uuid.Nil || value.Generation == "" || value.Lifecycle == "" || value.Environment == "" {
+		return "", ErrInvalidGatewayCursor
+	}
+	v, key, err := c.keyring.DeriveCurrent(authn.DomainAssetCursorDigest, sha256.Size)
+	if err != nil {
+		return "", ErrInvalidGatewayCursor
+	}
+	p := gatewayCursorPayload{Version: 1, KeyVersion: uint32(v), Lifecycle: value.Lifecycle, Environment: value.Environment, After: value.After.String(), Generation: value.Generation}
+	p.Digest = hex.EncodeToString(gatewayCursorDigest(key, p))
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return "", ErrInvalidGatewayCursor
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func (c *GatewayCursorCodec) Decode(raw string, lifecycle, environment string) (GatewayCursor, error) {
+	if raw == "" {
+		return GatewayCursor{Lifecycle: lifecycle, Environment: environment}, nil
+	}
+	if len(raw) > 512 {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	b, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	var p gatewayCursorPayload
+	d := json.NewDecoder(strings.NewReader(string(b)))
+	d.DisallowUnknownFields()
+	if d.Decode(&p) != nil {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	if d.Decode(&struct{}{}) != io.EOF {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	key, err := c.keyring.Derive(authn.KeyVersion(p.KeyVersion), authn.DomainAssetCursorDigest, sha256.Size)
+	if err != nil {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	provided, err := hex.DecodeString(p.Digest)
+	if err != nil || p.Version != 1 || p.Lifecycle != lifecycle || p.Environment != environment || !hmac.Equal(provided, gatewayCursorDigest(key, p)) {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	after, err := uuid.Parse(p.After)
+	if err != nil || after == uuid.Nil {
+		return GatewayCursor{}, ErrInvalidGatewayCursor
+	}
+	return GatewayCursor{After: after, Lifecycle: p.Lifecycle, Environment: p.Environment, Generation: p.Generation}, nil
+}
+
+func gatewayCursorDigest(key []byte, p gatewayCursorPayload) []byte {
+	data, _ := json.Marshal([]any{"relay-control-gateway-cursor-v1", p.Version, p.KeyVersion, p.Environment, p.Lifecycle, p.After, p.Generation})
+	m := hmac.New(sha256.New, key)
+	m.Write(data)
+	return m.Sum(nil)
 }
 
 type nodeCursorPayload struct {

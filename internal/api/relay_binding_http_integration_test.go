@@ -55,7 +55,7 @@ func TestRelayBindingHTTPCompleteSuite(t *testing.T) {
 	gatewayID := uuid.New()
 	node1ID, node2ID := uuid.New(), uuid.New()
 	if _, err = owner.Exec(ctx, `INSERT INTO gateway_instances(instance_id,display_name,management_endpoint,reader_secret_ref)
-		VALUES($1,'Gateway Alpha','https://gw.example.com/api',$2)`, gatewayID, secretCanary); err != nil {
+		VALUES($1,'Gateway Alpha','http://gw.example.com',$2)`, gatewayID, secretCanary); err != nil {
 		t.Fatal(err)
 	}
 	for id, name := range map[uuid.UUID]string{node1ID: "Node Alpha", node2ID: "Node Beta"} {

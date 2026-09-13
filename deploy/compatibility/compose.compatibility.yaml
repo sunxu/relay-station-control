@@ -1,0 +1,5 @@
+# Supported deployment overlay. The external Compose wrapper verifies the
+# exact immutable OCI manifest digest before Docker creates this container.
+services:
+  control:
+    image: ${CONTROL_IMAGE:?CONTROL_IMAGE must be repository@sha256:digest}

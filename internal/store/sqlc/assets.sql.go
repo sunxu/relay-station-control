@@ -154,7 +154,12 @@ SELECT
     management_endpoint,
     COALESCE(reader_secret_configured, false)::boolean AS secret_configured,
     created_at,
-    updated_at
+    updated_at,
+    lifecycle_status,
+    revision,
+    retired_at,
+    retired_by,
+    retire_reason
 FROM gateway_instances
 WHERE singleton_id = 1
 `
@@ -166,6 +171,11 @@ type GetGatewayAssetRow struct {
 	SecretConfigured   bool               `json:"secret_configured"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	LifecycleStatus    string             `json:"lifecycle_status"`
+	Revision           int64              `json:"revision"`
+	RetiredAt          pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy          pgtype.UUID        `json:"retired_by"`
+	RetireReason       pgtype.Text        `json:"retire_reason"`
 }
 
 func (q *Queries) GetGatewayAsset(ctx context.Context) (GetGatewayAssetRow, error) {
@@ -178,6 +188,11 @@ func (q *Queries) GetGatewayAsset(ctx context.Context) (GetGatewayAssetRow, erro
 		&i.SecretConfigured,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LifecycleStatus,
+		&i.Revision,
+		&i.RetiredAt,
+		&i.RetiredBy,
+		&i.RetireReason,
 	)
 	return i, err
 }

@@ -27,6 +27,7 @@ const (
 	RelayBindingOutcomeAccountNotFound      RelayBindingOutcome = "account_not_found"
 	RelayBindingOutcomeNodeNotFound         RelayBindingOutcome = "node_not_found"
 	RelayBindingOutcomeGatewayNotFound      RelayBindingOutcome = "gateway_not_found"
+	RelayBindingOutcomeGatewayConflict      RelayBindingOutcome = "gateway_conflict"
 	RelayBindingOutcomeNodeConflict         RelayBindingOutcome = "node_conflict"
 	RelayBindingOutcomeAccountConflict      RelayBindingOutcome = "account_conflict"
 )
@@ -133,21 +134,28 @@ func (repository *RelayBindingRepository) Bind(
 		return RelayBindingResult{}, err
 	}
 
-	// 2. Lock Gateway Directory current state (lock order 2)
+	// 2. Lock and validate the current active Gateway asset (lock order 2).
+	gateway, err := txQueries.LockGatewayAssetForBinding(ctx, nullableUUID(params.GatewayInstanceID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RelayBindingResult{Outcome: RelayBindingOutcomeGatewayNotFound}, nil
+	}
+	if err != nil {
+		return RelayBindingResult{}, err
+	}
+	if gateway.LifecycleStatus != "active" || !gateway.SingletonID.Valid || gateway.SingletonID.Int16 != 1 {
+		return RelayBindingResult{Outcome: RelayBindingOutcomeGatewayConflict}, nil
+	}
+
+	// 3. Lock Gateway Directory current state (lock order 3)
 	currentState, err := txQueries.LockGatewayDirectoryCurrentState(ctx, nullableUUID(params.GatewayInstanceID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Check if gateway exists at all
-		_, gErr := txQueries.LockGatewayDirectoryInstance(ctx, nullableUUID(params.GatewayInstanceID))
-		if errors.Is(gErr, pgx.ErrNoRows) {
-			return RelayBindingResult{Outcome: RelayBindingOutcomeGatewayNotFound}, nil
-		}
 		return RelayBindingResult{Outcome: RelayBindingOutcomeDirectoryUnavailable}, nil
 	}
 	if err != nil {
 		return RelayBindingResult{}, err
 	}
 
-	// 3. Lock current Node binding (lock order 3)
+	// 4. Lock current Node binding (lock order 4)
 	existingNodeBinding, err := txQueries.LockCurrentRelayNodeGatewayAccountBindingByNode(ctx, nullableUUID(params.RelayNodeID))
 	if err == nil {
 		b := bindingFromSQLC(existingNodeBinding)
@@ -157,7 +165,7 @@ func (repository *RelayBindingRepository) Bind(
 		return RelayBindingResult{}, err
 	}
 
-	// 4. Lock target Account binding (lock order 4)
+	// 5. Lock target Account binding (lock order 5)
 	existingAccountBinding, err := txQueries.LockCurrentRelayNodeGatewayAccountBindingByAccount(ctx,
 		generated.LockCurrentRelayNodeGatewayAccountBindingByAccountParams{
 			GatewayInstanceID: nullableUUID(params.GatewayInstanceID),
@@ -171,7 +179,7 @@ func (repository *RelayBindingRepository) Bind(
 		return RelayBindingResult{}, err
 	}
 
-	// 5. Get single DB wall-clock time after all locks acquired
+	// 6. Get single DB wall-clock time after all locks acquired
 	dbTime, err := txQueries.GetRelayBindingDBTime(ctx)
 	if err != nil {
 		return RelayBindingResult{}, err
@@ -300,20 +308,28 @@ func (repository *RelayBindingRepository) Rebind(
 		return RelayBindingResult{}, err
 	}
 
-	// 2. Lock new Gateway Directory current state (lock order 2)
+	// 2. Lock and validate the new current active Gateway (lock order 2).
+	gateway, err := txQueries.LockGatewayAssetForBinding(ctx, nullableUUID(params.NewGatewayInstanceID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RelayBindingResult{Outcome: RelayBindingOutcomeGatewayNotFound}, nil
+	}
+	if err != nil {
+		return RelayBindingResult{}, err
+	}
+	if gateway.LifecycleStatus != "active" || !gateway.SingletonID.Valid || gateway.SingletonID.Int16 != 1 {
+		return RelayBindingResult{Outcome: RelayBindingOutcomeGatewayConflict}, nil
+	}
+
+	// 3. Lock new Gateway Directory current state (lock order 3)
 	currentState, err := txQueries.LockGatewayDirectoryCurrentState(ctx, nullableUUID(params.NewGatewayInstanceID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		_, gErr := txQueries.LockGatewayDirectoryInstance(ctx, nullableUUID(params.NewGatewayInstanceID))
-		if errors.Is(gErr, pgx.ErrNoRows) {
-			return RelayBindingResult{Outcome: RelayBindingOutcomeGatewayNotFound}, nil
-		}
 		return RelayBindingResult{Outcome: RelayBindingOutcomeDirectoryUnavailable}, nil
 	}
 	if err != nil {
 		return RelayBindingResult{}, err
 	}
 
-	// 3. Lock Node's current binding (lock order 3); if not bound, fail with no_current_binding
+	// 4. Lock Node's current binding (lock order 4); if not bound, fail with no_current_binding
 	existingNodeBinding, err := txQueries.LockCurrentRelayNodeGatewayAccountBindingByNode(ctx, nullableUUID(params.RelayNodeID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RelayBindingResult{Outcome: RelayBindingOutcomeNoCurrentBinding}, nil

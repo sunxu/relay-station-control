@@ -1,0 +1,17 @@
+[Unit]
+Description=Relay Station Control (compatibility-gated)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/relay-station/control-compat.env
+ExecStart=/usr/local/libexec/relay-control-compat-wrapper.sh
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

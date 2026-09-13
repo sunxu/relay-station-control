@@ -394,6 +394,13 @@ func (s *Server) handleMutationResult(w http.ResponseWriter, r *http.Request, re
 			RequestId: reqID,
 		})
 
+	case assetstore.RelayBindingOutcomeGatewayConflict:
+		writeJSON(w, http.StatusConflict, ErrorResponse{
+			Code:      ErrorCodeConflict,
+			Message:   "The Gateway is not active and current.",
+			RequestId: reqID,
+		})
+
 	case assetstore.RelayBindingOutcomeNodeConflict:
 		writeJSON(w, http.StatusConflict, ErrorResponse{
 			Code:      ErrorCodeNodeConflict,

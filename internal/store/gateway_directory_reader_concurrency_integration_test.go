@@ -300,7 +300,7 @@ func TestGatewayDirectoryReaderInitialConcurrency(t *testing.T) {
 		if err := db.owner.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action='asset.gateway_directory_reader_configured'`).Scan(&audits); err != nil {
 			t.Fatal(err)
 		}
-		if ref != "" || endpoint != "https://binding-gateway.test" || bindings != 1 || audits != 0 {
+		if ref != "" || endpoint != "http://binding-gateway.test" || bindings != 1 || audits != 0 {
 			t.Fatalf("ref=%q endpoint=%q bindings=%d audits=%d", ref, endpoint, bindings, audits)
 		}
 	})

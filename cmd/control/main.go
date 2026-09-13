@@ -222,6 +222,16 @@ func main() {
 		logger.Error("asset registry initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	intentKey, err := loadAssetIntentKey(os.Getenv("CONTROL_ASSET_INTENT_KEY_FILE"))
+	if err != nil {
+		logger.Warn("asset command intent key unavailable", "component", "assets", "reason", "invalid_key_file")
+		intentKey = nil
+	}
+	gatewayLifecycleRepository, err := assetstore.NewGatewayLifecycleRepository(pool, intentKey)
+	if err != nil {
+		logger.Error("gateway lifecycle initialization failed", "component", "assets")
+		os.Exit(1)
+	}
 	assetMetrics := controlapi.NewAssetMetrics()
 	crossNodeDuplicateReader, err := assetstore.NewCrossNodeDuplicateOwnershipRepository(pool)
 	if err != nil {
@@ -374,6 +384,10 @@ func main() {
 		os.Exit(1)
 	}
 	apiServer.SetRelayBindingRepository(relayBindingRepository)
+	if err := apiServer.SetGatewayLifecycleManager(gatewayLifecycleRepository); err != nil {
+		logger.Error("gateway lifecycle API initialization failed", "component", "assets")
+		os.Exit(1)
+	}
 	apiServer.SetCrossNodeDuplicateOwnershipOccurrenceReader(crossNodeDuplicateOccurrences)
 	apiServer.SetNodeDuplicateHistoryReader(crossNodeDuplicateOccurrences)
 	providerStates, err := assetstore.NewAccountInventoryProviderStateRepository(pool)
@@ -531,6 +545,21 @@ func envBool(name string, fallback bool) (bool, error) {
 		return fallback, nil
 	}
 	return strconv.ParseBool(value)
+}
+
+func loadAssetIntentKey(path string) ([]byte, error) {
+	if path == "" {
+		return nil, nil
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {
+		return nil, errors.New("asset intent key file is unsafe")
+	}
+	value, err := os.ReadFile(path)
+	if err != nil || len(value) != 32 {
+		return nil, errors.New("asset intent key must contain exactly 32 bytes")
+	}
+	return value, nil
 }
 
 func envIntBounded(name string, fallback, minimum, maximum int) (int, error) {

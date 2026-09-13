@@ -361,6 +361,18 @@ type AccountRequestQualityEvent struct {
 	AuthFailureReason pgtype.Text        `json:"auth_failure_reason"`
 }
 
+type AssetAdminCommandReceipt struct {
+	CommandID                   pgtype.UUID        `json:"command_id"`
+	CommandKind                 string             `json:"command_kind"`
+	IntentEncodingVersion       int16              `json:"intent_encoding_version"`
+	CanonicalIntentHash         []byte             `json:"canonical_intent_hash"`
+	SanitizedResult             []byte             `json:"sanitized_result"`
+	ResponseStatus              int16              `json:"response_status"`
+	ActorAdminID                pgtype.UUID        `json:"actor_admin_id"`
+	CommittedAt                 pgtype.Timestamptz `json:"committed_at"`
+	SecretFingerprintKeyVersion pgtype.Int2        `json:"secret_fingerprint_key_version"`
+}
+
 type AsyncJob struct {
 	JobID                    pgtype.UUID        `json:"job_id"`
 	IdempotencyKey           string             `json:"idempotency_key"`
@@ -551,6 +563,13 @@ type ControlBootstrapState struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ControlRuntimeCompatibility struct {
+	SingletonID         int16              `json:"singleton_id"`
+	SchemaVersion       int32              `json:"schema_version"`
+	Phase6EvidenceFloor int32              `json:"phase6_evidence_floor"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CrossNodeDuplicateOccurrence struct {
 	OccurrenceID        pgtype.UUID        `json:"occurrence_id"`
 	EnvironmentID       string             `json:"environment_id"`
@@ -601,6 +620,15 @@ type Environment struct {
 	EnvironmentType string             `json:"environment_type"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type GatewayAssetReplacement struct {
+	ReplacementID pgtype.UUID        `json:"replacement_id"`
+	OldInstanceID pgtype.UUID        `json:"old_instance_id"`
+	NewInstanceID pgtype.UUID        `json:"new_instance_id"`
+	ReplacedAt    pgtype.Timestamptz `json:"replaced_at"`
+	ReplacedBy    pgtype.UUID        `json:"replaced_by"`
+	CommandID     pgtype.UUID        `json:"command_id"`
 }
 
 type GatewayDirectoryCurrentState struct {
@@ -655,7 +683,7 @@ type GatewayDirectorySnapshotItem struct {
 }
 
 type GatewayInstance struct {
-	SingletonID            int16              `json:"singleton_id"`
+	SingletonID            pgtype.Int2        `json:"singleton_id"`
 	InstanceID             pgtype.UUID        `json:"instance_id"`
 	DisplayName            string             `json:"display_name"`
 	ManagementEndpoint     string             `json:"management_endpoint"`
@@ -663,6 +691,11 @@ type GatewayInstance struct {
 	ReaderSecretConfigured pgtype.Bool        `json:"reader_secret_configured"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	LifecycleStatus        string             `json:"lifecycle_status"`
+	RetiredAt              pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy              pgtype.UUID        `json:"retired_by"`
+	RetireReason           pgtype.Text        `json:"retire_reason"`
+	Revision               int64              `json:"revision"`
 }
 
 type NodeCapability struct {

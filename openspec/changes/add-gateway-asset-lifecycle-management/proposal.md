@@ -26,7 +26,7 @@ Phase 6 已批准 Gateway & Relay Node Management Detailed Requirements。当前
 
 ## Impact
 
-只修改 Control 的 forward migration、queries/sqlc、Store/service/API/UI、audit/metrics、测试和 runbook 规划；不直接实现本 change。本 change 是后续 Node lifecycle/operations changes 的 shared foundation。
+只修改 Control 的 forward migration、queries/sqlc、Store/service/API/UI、audit/metrics、测试和 runbook 规划；不直接实现本 change。本 change 是后续 Node lifecycle/operations changes 的 shared foundation。K1继续由受保护的`CONTROL_ASSET_INTENT_KEY_FILE`提供，不增加identity/digest anchor或deployment metadata，也不改变migration 33、compatibility class 1或floor 1。
 
 ## Non-Goals
 

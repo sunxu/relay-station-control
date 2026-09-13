@@ -33,6 +33,8 @@ var gatewayDirectoryFailureClassLabels = [...]string{
 	"http_5xx",
 	"http_non_retryable",
 	"contract_invalid",
+	"gateway_retired",
+	"gateway_replaced",
 	"source_time_invalid",
 	"hard_limit",
 	"secret_unavailable",

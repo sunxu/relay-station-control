@@ -8,9 +8,15 @@ FROM control_query_gateway_directory_target_v1(
     sqlc.arg(lease_fencing_token)::uuid
 ) AS target;
 
+-- name: GetGatewayDirectoryLifecycleFailure :one
+SELECT lifecycle_status, retire_reason
+FROM gateway_instances
+WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid;
+
 -- name: ListGatewayInstanceIDs :many
 SELECT instance_id
 FROM gateway_instances
+WHERE lifecycle_status = 'active' AND singleton_id = 1
 ORDER BY instance_id;
 
 -- name: CreateOrGetGatewayDirectoryIngestionRun :one
@@ -18,6 +24,8 @@ WITH locked_gateway AS (
     SELECT instance_id, reader_secret_configured
     FROM gateway_instances
     WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid
+      AND lifecycle_status = 'active'
+      AND singleton_id = 1
     FOR UPDATE
 ), db_now AS (
     SELECT clock_timestamp() AS db_now
@@ -212,7 +220,15 @@ SELECT * FROM updated;
 SELECT instance_id
 FROM gateway_instances
 WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid
+  AND lifecycle_status = 'active'
+  AND singleton_id = 1
 FOR UPDATE;
+
+-- name: LockGatewayDirectoryLifecycleFailure :one
+SELECT lifecycle_status, retire_reason
+FROM gateway_instances
+WHERE instance_id = sqlc.arg(gateway_instance_id)::uuid
+FOR SHARE;
 
 -- name: GetGatewayDirectoryCurrentStateForUpdate :one
 SELECT *
@@ -246,7 +262,9 @@ SELECT
 FROM gateway_instances AS gateway
 LEFT JOIN gateway_directory_current_state AS current_state
     ON current_state.gateway_instance_id = gateway.instance_id,
-db_now;
+db_now
+WHERE gateway.lifecycle_status = 'active'
+  AND gateway.singleton_id = 1;
 
 -- name: GetGatewayDirectoryFinalizeRunningRun :one
 SELECT *

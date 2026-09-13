@@ -26,12 +26,17 @@ type EnvironmentAsset struct {
 }
 
 type GatewayAsset struct {
-	InstanceID         uuid.UUID
-	DisplayName        string
-	ManagementEndpoint string
-	SecretConfigured   bool
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	InstanceID         uuid.UUID  `json:"instance_id"`
+	LifecycleStatus    string     `json:"lifecycle_status"`
+	Revision           int64      `json:"revision,string"`
+	DisplayName        string     `json:"display_name"`
+	ManagementEndpoint string     `json:"management_endpoint"`
+	SecretConfigured   bool       `json:"secret_configured"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	RetiredAt          *time.Time `json:"retired_at"`
+	RetiredBy          *uuid.UUID `json:"retired_by"`
+	RetireReason       *string    `json:"retire_reason"`
 }
 
 type NodeMonitoring struct {
@@ -126,12 +131,33 @@ func (repository *AssetRepository) Gateway(ctx context.Context) (*GatewayAsset, 
 	}
 	return &GatewayAsset{
 		InstanceID:         uuidFromPG(row.InstanceID),
+		LifecycleStatus:    row.LifecycleStatus,
+		Revision:           row.Revision,
 		DisplayName:        row.DisplayName,
 		ManagementEndpoint: row.ManagementEndpoint,
 		SecretConfigured:   row.SecretConfigured,
 		CreatedAt:          row.CreatedAt.Time.UTC(),
 		UpdatedAt:          row.UpdatedAt.Time.UTC(),
+		RetiredAt:          nullableTime(row.RetiredAt),
+		RetiredBy:          optionalUUID(row.RetiredBy),
+		RetireReason:       optionalText(row.RetireReason),
 	}, nil
+}
+
+func optionalUUID(value pgtype.UUID) *uuid.UUID {
+	if !value.Valid {
+		return nil
+	}
+	parsed := uuidFromPG(value)
+	return &parsed
+}
+
+func optionalText(value pgtype.Text) *string {
+	if !value.Valid {
+		return nil
+	}
+	result := value.String
+	return &result
 }
 
 func (repository *AssetRepository) ListNodes(ctx context.Context, filters NodeListFilters, after uuid.UUID, limit int) (NodeAssetPage, error) {

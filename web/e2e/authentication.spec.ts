@@ -178,6 +178,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   const assetPaths = new Set([
     "/api/environment",
     "/api/assets/gateway",
+    "/api/assets/gateways",
     "/api/assets/nodes",
     "/api/assets/drivers",
     "/api/assets/provider-policies/current",
@@ -201,12 +202,30 @@ test("real administrator lifecycle survives restart and keeps one-time material 
         gateway: {
           instance_id: "00000000-0000-4000-8000-000000000001",
           display_name: "E2E Gateway",
-          management_endpoint: "https://gateway.invalid:8443",
+          management_endpoint: "http://gateway.invalid:8317",
+          lifecycle_status: "active",
+          revision: "1",
+          singleton_id: 1,
           secret_configured: true,
           reader_secret_ref: "vault://test-only/CANARY-GATEWAY-REF",
           created_at: "2026-08-25T00:00:00Z",
           updated_at: "2026-08-25T00:00:00Z",
         },
+      },
+      "/api/assets/gateways": {
+        items: [{
+          instance_id: "00000000-0000-4000-8000-000000000001",
+          display_name: "E2E Gateway",
+          management_endpoint: "http://gateway.invalid:8317",
+          lifecycle_status: "active",
+          revision: "1",
+          singleton_id: 1,
+          secret_configured: true,
+          created_at: "2026-08-25T00:00:00Z",
+          updated_at: "2026-08-25T00:00:00Z",
+        }],
+        next_cursor: null,
+        gateway_counts: { active: 1, retired: 0, total: 1 },
       },
       "/api/assets/nodes": {
         items: [{
@@ -256,25 +275,25 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   browserAssetRequests.length = 0;
   await primary.goto("/assets");
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(6);
   console.log("[e2e] authenticated direct /assets rendered Asset Registry");
 
   browserAssetRequests.length = 0;
   await primary.goto("/assets/");
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(6);
   console.log("[e2e] authenticated direct /assets/ rendered Asset Registry");
 
   browserAssetRequests.length = 0;
   await primary.reload();
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(6);
   console.log("[e2e] authenticated /assets/ reload rendered Asset Registry");
 
   await expect(primary.getByText("E2E Gateway")).toBeVisible();
   await expect(primary.getByText("E2E Node")).toBeVisible();
   await expect(primary.getByText("尚未配置当前 Provider 策略")).toBeVisible();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(6);
   const controlOrigin = new URL(baseURL!).origin;
   expect(browserAssetRequests.every((request) => request.method === "GET" && new URL(request.url).origin === controlOrigin)).toBe(true);
   expect(staticResponses.length).toBeGreaterThan(0);

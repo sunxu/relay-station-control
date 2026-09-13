@@ -39,7 +39,7 @@ func TestGatewayDirectoryCoordinatorNoWorkAndShapeValidation(t *testing.T) {
 	ctx := context.Background()
 	gatewayID := uuid.New()
 	secretRef := "file://gateway-directory/reader"
-	insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+	insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 
 	runID := uuid.New()
 	currentSlot := requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
@@ -77,7 +77,7 @@ func TestGatewayDirectoryCoordinatorSuccessChangedAndUnchanged(t *testing.T) {
 		}
 		gatewayID := uuid.New()
 		secretRef := "file://gateway-directory/reader"
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 		requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 		fixedAt := time.Now().UTC().Add(-time.Minute)
 		body := gatewayDirectoryJSON(t, fixedAt, "Alpha")
@@ -116,7 +116,7 @@ func TestGatewayDirectoryCoordinatorSuccessChangedAndUnchanged(t *testing.T) {
 		}
 		gatewayID := uuid.New()
 		secretRef := "file://gateway-directory/reader"
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 		currentSlot := requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 		fixedAt := time.Now().UTC().Add(-time.Minute)
 		previous := gatewaydirectory.DirectoryResponse{
@@ -181,7 +181,7 @@ func TestGatewayDirectoryCoordinatorSourceTimeInvalid(t *testing.T) {
 	}
 	gatewayID := uuid.New()
 	secretRef := "file://gateway-directory/reader"
-	insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+	insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 	requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")

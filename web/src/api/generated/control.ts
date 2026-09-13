@@ -366,6 +366,20 @@ export const GatewayAssetResponseStatus = {
   not_registered: 'not_registered',
 } as const;
 
+export type GatewayAssetLifecycleStatus = typeof GatewayAssetLifecycleStatus[keyof typeof GatewayAssetLifecycleStatus];
+
+
+export const GatewayAssetLifecycleStatus = {
+  active: 'active',
+  retired: 'retired',
+} as const;
+
+/**
+ * @maxLength 19
+ * @pattern ^[1-9][0-9]{0,18}$
+ */
+export type AssetRevision = string;
+
 /**
  * @minLength 1
  * @maxLength 100
@@ -380,19 +394,185 @@ export type DisplayName = string;
  */
 export type ManagementEndpoint = string;
 
+/**
+ * @nullable
+ */
+export type GatewayAssetRetireReason = typeof GatewayAssetRetireReason[keyof typeof GatewayAssetRetireReason] | null;
+
+
+export const GatewayAssetRetireReason = {
+  administrator_retire: 'administrator_retire',
+  replacement: 'replacement',
+} as const;
+
 export interface GatewayAsset {
   instance_id: string;
+  lifecycle_status: GatewayAssetLifecycleStatus;
+  revision: AssetRevision;
   display_name: DisplayName;
   management_endpoint: ManagementEndpoint;
   secret_configured: boolean;
   created_at: string;
   updated_at: string;
+  /** @nullable */
+  retired_at: string | null;
+  /** @nullable */
+  retired_by: string | null;
+  /** @nullable */
+  retire_reason: GatewayAssetRetireReason;
 }
 
 export interface GatewayAssetResponse {
   status: GatewayAssetResponseStatus;
   gateway?: GatewayAsset;
 }
+
+export interface GatewayCounts {
+  /** @minimum 0 */
+  active: number;
+  /** @minimum 0 */
+  retired: number;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface GatewayAssetListResponse {
+  items: GatewayAsset[];
+  /**
+     * @maxLength 512
+     * @nullable
+     */
+  next_cursor: string | null;
+  gateway_counts: GatewayCounts;
+}
+
+export interface GatewayReplacementLineage {
+  old_instance_id: string;
+  new_instance_id: string;
+  replaced_at: string;
+  replaced_by: string;
+  command_id: string;
+}
+
+export interface GatewayAssetDetailResponse {
+  asset: GatewayAsset;
+  predecessor: GatewayReplacementLineage | null;
+  successor: GatewayReplacementLineage | null;
+}
+
+export interface GatewayRegisterRequest {
+  command_id: string;
+  new_instance_id: string;
+  display_name: DisplayName;
+  management_endpoint: ManagementEndpoint;
+  /**
+     * @minLength 6
+     * @maxLength 512
+     * @nullable
+     */
+  reader_secret_ref?: string | null;
+}
+
+export interface GatewayEditRequest {
+  command_id: string;
+  expected_revision: AssetRevision;
+  display_name?: DisplayName;
+  management_endpoint?: ManagementEndpoint;
+  /**
+     * @minLength 6
+     * @maxLength 512
+     * @nullable
+     */
+  reader_secret_ref?: string | null;
+}
+
+export interface GatewayRetireRequest {
+  command_id: string;
+  expected_revision: AssetRevision;
+}
+
+export interface GatewayReplaceRequest {
+  command_id: string;
+  expected_revision: AssetRevision;
+  new_instance_id: string;
+  display_name: DisplayName;
+  management_endpoint: ManagementEndpoint;
+  /**
+     * @minLength 6
+     * @maxLength 512
+     * @nullable
+     */
+  reader_secret_ref?: string | null;
+}
+
+export type GatewayRegisterResultResult = typeof GatewayRegisterResultResult[keyof typeof GatewayRegisterResultResult];
+
+
+export const GatewayRegisterResultResult = {
+  registered: 'registered',
+} as const;
+
+export interface GatewayRegisterResult {
+  result: GatewayRegisterResultResult;
+  asset: GatewayAsset;
+}
+
+export type GatewayEditResultResult = typeof GatewayEditResultResult[keyof typeof GatewayEditResultResult];
+
+
+export const GatewayEditResultResult = {
+  updated: 'updated',
+} as const;
+
+export interface GatewayEditResult {
+  result: GatewayEditResultResult;
+  asset: GatewayAsset;
+}
+
+export type GatewayRetireResultResult = typeof GatewayRetireResultResult[keyof typeof GatewayRetireResultResult];
+
+
+export const GatewayRetireResultResult = {
+  retired: 'retired',
+} as const;
+
+export interface GatewayRetireResult {
+  result: GatewayRetireResultResult;
+  asset: GatewayAsset;
+  /** @minimum 0 */
+  closed_binding_count: number;
+}
+
+export type GatewayReplaceResultResult = typeof GatewayReplaceResultResult[keyof typeof GatewayReplaceResultResult];
+
+
+export const GatewayReplaceResultResult = {
+  replaced: 'replaced',
+} as const;
+
+export interface GatewayReplaceResult {
+  result: GatewayReplaceResultResult;
+  old_asset: GatewayAsset;
+  new_asset: GatewayAsset;
+  /** @minimum 0 */
+  closed_binding_count: number;
+  lineage: GatewayReplacementLineage;
+}
+
+export type GatewayProbeResultResult = typeof GatewayProbeResultResult[keyof typeof GatewayProbeResultResult];
+
+
+export const GatewayProbeResultResult = {
+  healthy: 'healthy',
+} as const;
+
+export interface GatewayProbeResult {
+  instance_id: string;
+  result: GatewayProbeResultResult;
+  observed_at: string;
+}
+
+export interface EmptyObject { [key: string]: unknown }
 
 /**
  * @minLength 2
@@ -886,6 +1066,19 @@ export const ErrorCode = {
   account_conflict: 'account_conflict',
   already_unbound: 'already_unbound',
   no_current_binding: 'no_current_binding',
+  asset_not_found: 'asset_not_found',
+  asset_retired: 'asset_retired',
+  current_gateway_exists: 'current_gateway_exists',
+  duplicate_identity: 'duplicate_identity',
+  stale_revision: 'stale_revision',
+  revision_exhausted: 'revision_exhausted',
+  command_conflict: 'command_conflict',
+  cursor_stale: 'cursor_stale',
+  invalid_endpoint: 'invalid_endpoint',
+  secret_configuration_invalid: 'secret_configuration_invalid',
+  probe_timeout: 'probe_timeout',
+  probe_failed: 'probe_failed',
+  service_unavailable: 'service_unavailable',
 } as const;
 
 export interface ErrorResponse {
@@ -1762,6 +1955,29 @@ limit?: PageLimitParameter;
 cursor?: PageCursorParameter;
 status?: AdministratorStatus;
 };
+
+export type ListGatewayAssetsParams = {
+lifecycle?: ListGatewayAssetsLifecycle;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: PageLimitParameter;
+/**
+ * @minLength 1
+ * @maxLength 512
+ */
+cursor?: PageCursorParameter;
+};
+
+export type ListGatewayAssetsLifecycle = typeof ListGatewayAssetsLifecycle[keyof typeof ListGatewayAssetsLifecycle];
+
+
+export const ListGatewayAssetsLifecycle = {
+  active: 'active',
+  retired: 'retired',
+  all: 'all',
+} as const;
 
 export type ListNodeAssetsParams = {
 /**
@@ -4524,6 +4740,1108 @@ export function useGetGatewayAsset<TData = Awaited<ReturnType<typeof getGatewayA
 
 
 
+
+export type listGatewayAssetsResponse200 = {
+  data: GatewayAssetListResponse
+  status: 200
+}
+
+export type listGatewayAssetsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listGatewayAssetsResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listGatewayAssetsResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listGatewayAssetsResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listGatewayAssetsResponseSuccess = (listGatewayAssetsResponse200) & {
+  headers: Headers;
+};
+export type listGatewayAssetsResponseError = (listGatewayAssetsResponse400 | listGatewayAssetsResponse401 | listGatewayAssetsResponse409 | listGatewayAssetsResponse503) & {
+  headers: Headers;
+};
+
+export type listGatewayAssetsResponse = (listGatewayAssetsResponseSuccess | listGatewayAssetsResponseError)
+
+export const getListGatewayAssetsUrl = (params?: ListGatewayAssetsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assets/gateways?${stringifiedParams}` : `/api/assets/gateways`
+}
+
+/**
+ * @summary List current or historical Gateway assets
+ */
+export const listGatewayAssets = async (params?: ListGatewayAssetsParams, options?: RequestInit): Promise<listGatewayAssetsResponse> => {
+
+  const res = await fetch(getListGatewayAssetsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listGatewayAssetsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listGatewayAssetsResponse
+}
+
+
+
+
+
+export const getListGatewayAssetsQueryKey = (params?: ListGatewayAssetsParams,) => {
+    return [
+    `/api/assets/gateways`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListGatewayAssetsQueryOptions = <TData = Awaited<ReturnType<typeof listGatewayAssets>>, TError = ErrorResponse>(params?: ListGatewayAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayAssets>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGatewayAssetsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGatewayAssets>>> = ({ signal }) => listGatewayAssets(params, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGatewayAssets>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListGatewayAssetsQueryResult = NonNullable<Awaited<ReturnType<typeof listGatewayAssets>>>
+export type ListGatewayAssetsQueryError = ErrorResponse
+
+
+export function useListGatewayAssets<TData = Awaited<ReturnType<typeof listGatewayAssets>>, TError = ErrorResponse>(
+ params: undefined |  ListGatewayAssetsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayAssets>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listGatewayAssets>>,
+          TError,
+          Awaited<ReturnType<typeof listGatewayAssets>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListGatewayAssets<TData = Awaited<ReturnType<typeof listGatewayAssets>>, TError = ErrorResponse>(
+ params?: ListGatewayAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayAssets>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listGatewayAssets>>,
+          TError,
+          Awaited<ReturnType<typeof listGatewayAssets>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListGatewayAssets<TData = Awaited<ReturnType<typeof listGatewayAssets>>, TError = ErrorResponse>(
+ params?: ListGatewayAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayAssets>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List current or historical Gateway assets
+ */
+
+export function useListGatewayAssets<TData = Awaited<ReturnType<typeof listGatewayAssets>>, TError = ErrorResponse>(
+ params?: ListGatewayAssetsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayAssets>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListGatewayAssetsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type registerGatewayAssetResponse201 = {
+  data: GatewayRegisterResult
+  status: 201
+}
+
+export type registerGatewayAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type registerGatewayAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type registerGatewayAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type registerGatewayAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type registerGatewayAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type registerGatewayAssetResponseSuccess = (registerGatewayAssetResponse201) & {
+  headers: Headers;
+};
+export type registerGatewayAssetResponseError = (registerGatewayAssetResponse400 | registerGatewayAssetResponse401 | registerGatewayAssetResponse403 | registerGatewayAssetResponse409 | registerGatewayAssetResponse503) & {
+  headers: Headers;
+};
+
+export type registerGatewayAssetResponse = (registerGatewayAssetResponseSuccess | registerGatewayAssetResponseError)
+
+export const getRegisterGatewayAssetUrl = () => {
+
+
+
+
+  return `/api/assets/gateways`
+}
+
+/**
+ * @summary Register the current Gateway asset
+ */
+export const registerGatewayAsset = async (gatewayRegisterRequest: GatewayRegisterRequest, options?: RequestInit): Promise<registerGatewayAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRegisterGatewayAssetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(gatewayRegisterRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: registerGatewayAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as registerGatewayAssetResponse
+}
+
+
+
+
+
+export const getRegisterGatewayAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerGatewayAsset>>, TError,RegisterGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof registerGatewayAsset>>, TError,RegisterGatewayAssetMutationVariables, TContext> => {
+
+const mutationKey = ['registerGatewayAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerGatewayAsset>>, RegisterGatewayAssetMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerGatewayAsset(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterGatewayAssetMutationResult = NonNullable<Awaited<ReturnType<typeof registerGatewayAsset>>>
+    export type RegisterGatewayAssetMutationBody = GatewayRegisterRequest
+    export type RegisterGatewayAssetMutationError = ErrorResponse
+    export type RegisterGatewayAssetMutationVariables = {data: GatewayRegisterRequest}
+
+    /**
+ * @summary Register the current Gateway asset
+ */
+export const useRegisterGatewayAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerGatewayAsset>>, TError,RegisterGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof registerGatewayAsset>>,
+        TError,
+        RegisterGatewayAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRegisterGatewayAssetMutationOptions(options), queryClient);
+    }
+
+export type getGatewayAssetByIdResponse200 = {
+  data: GatewayAssetDetailResponse
+  status: 200
+}
+
+export type getGatewayAssetByIdResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getGatewayAssetByIdResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getGatewayAssetByIdResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getGatewayAssetByIdResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getGatewayAssetByIdResponseSuccess = (getGatewayAssetByIdResponse200) & {
+  headers: Headers;
+};
+export type getGatewayAssetByIdResponseError = (getGatewayAssetByIdResponse400 | getGatewayAssetByIdResponse401 | getGatewayAssetByIdResponse404 | getGatewayAssetByIdResponse503) & {
+  headers: Headers;
+};
+
+export type getGatewayAssetByIdResponse = (getGatewayAssetByIdResponseSuccess | getGatewayAssetByIdResponseError)
+
+export const getGetGatewayAssetByIdUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/gateways/${instanceId}`
+}
+
+/**
+ * @summary Read one current or historical Gateway asset
+ */
+export const getGatewayAssetById = async (instanceId: string, options?: RequestInit): Promise<getGatewayAssetByIdResponse> => {
+
+  const res = await fetch(getGetGatewayAssetByIdUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getGatewayAssetByIdResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getGatewayAssetByIdResponse
+}
+
+
+
+
+
+export const getGetGatewayAssetByIdQueryKey = (instanceId: string,) => {
+    return [
+    `/api/assets/gateways/${instanceId}`
+    ] as const;
+    }
+
+
+export const getGetGatewayAssetByIdQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayAssetById>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAssetById>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGatewayAssetByIdQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGatewayAssetById>>> = ({ signal }) => getGatewayAssetById(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGatewayAssetById>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGatewayAssetByIdQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayAssetById>>>
+export type GetGatewayAssetByIdQueryError = ErrorResponse
+
+
+export function useGetGatewayAssetById<TData = Awaited<ReturnType<typeof getGatewayAssetById>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAssetById>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayAssetById>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayAssetById>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayAssetById<TData = Awaited<ReturnType<typeof getGatewayAssetById>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAssetById>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayAssetById>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayAssetById>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayAssetById<TData = Awaited<ReturnType<typeof getGatewayAssetById>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAssetById>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one current or historical Gateway asset
+ */
+
+export function useGetGatewayAssetById<TData = Awaited<ReturnType<typeof getGatewayAssetById>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayAssetById>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGatewayAssetByIdQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type editGatewayAssetResponse200 = {
+  data: GatewayEditResult
+  status: 200
+}
+
+export type editGatewayAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type editGatewayAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type editGatewayAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type editGatewayAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type editGatewayAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type editGatewayAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type editGatewayAssetResponseSuccess = (editGatewayAssetResponse200) & {
+  headers: Headers;
+};
+export type editGatewayAssetResponseError = (editGatewayAssetResponse400 | editGatewayAssetResponse401 | editGatewayAssetResponse403 | editGatewayAssetResponse404 | editGatewayAssetResponse409 | editGatewayAssetResponse503) & {
+  headers: Headers;
+};
+
+export type editGatewayAssetResponse = (editGatewayAssetResponseSuccess | editGatewayAssetResponseError)
+
+export const getEditGatewayAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/gateways/${instanceId}`
+}
+
+/**
+ * @summary Edit current Gateway display and management configuration
+ */
+export const editGatewayAsset = async (instanceId: string,
+    gatewayEditRequest: GatewayEditRequest, options?: RequestInit): Promise<editGatewayAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getEditGatewayAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(gatewayEditRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: editGatewayAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as editGatewayAssetResponse
+}
+
+
+
+
+
+export const getEditGatewayAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editGatewayAsset>>, TError,EditGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof editGatewayAsset>>, TError,EditGatewayAssetMutationVariables, TContext> => {
+
+const mutationKey = ['editGatewayAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof editGatewayAsset>>, EditGatewayAssetMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  editGatewayAsset(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EditGatewayAssetMutationResult = NonNullable<Awaited<ReturnType<typeof editGatewayAsset>>>
+    export type EditGatewayAssetMutationBody = GatewayEditRequest
+    export type EditGatewayAssetMutationError = ErrorResponse
+    export type EditGatewayAssetMutationVariables = {instanceId: string;data: GatewayEditRequest}
+
+    /**
+ * @summary Edit current Gateway display and management configuration
+ */
+export const useEditGatewayAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editGatewayAsset>>, TError,EditGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof editGatewayAsset>>,
+        TError,
+        EditGatewayAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEditGatewayAssetMutationOptions(options), queryClient);
+    }
+
+export type retireGatewayAssetResponse200 = {
+  data: GatewayRetireResult
+  status: 200
+}
+
+export type retireGatewayAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type retireGatewayAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type retireGatewayAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type retireGatewayAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type retireGatewayAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type retireGatewayAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type retireGatewayAssetResponseSuccess = (retireGatewayAssetResponse200) & {
+  headers: Headers;
+};
+export type retireGatewayAssetResponseError = (retireGatewayAssetResponse400 | retireGatewayAssetResponse401 | retireGatewayAssetResponse403 | retireGatewayAssetResponse404 | retireGatewayAssetResponse409 | retireGatewayAssetResponse503) & {
+  headers: Headers;
+};
+
+export type retireGatewayAssetResponse = (retireGatewayAssetResponseSuccess | retireGatewayAssetResponseError)
+
+export const getRetireGatewayAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/gateways/${instanceId}/retire`
+}
+
+/**
+ * @summary Retire the current Gateway and clear the current slot
+ */
+export const retireGatewayAsset = async (instanceId: string,
+    gatewayRetireRequest: GatewayRetireRequest, options?: RequestInit): Promise<retireGatewayAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireGatewayAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(gatewayRetireRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireGatewayAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireGatewayAssetResponse
+}
+
+
+
+
+
+export const getRetireGatewayAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retireGatewayAsset>>, TError,RetireGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof retireGatewayAsset>>, TError,RetireGatewayAssetMutationVariables, TContext> => {
+
+const mutationKey = ['retireGatewayAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retireGatewayAsset>>, RetireGatewayAssetMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  retireGatewayAsset(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetireGatewayAssetMutationResult = NonNullable<Awaited<ReturnType<typeof retireGatewayAsset>>>
+    export type RetireGatewayAssetMutationBody = GatewayRetireRequest
+    export type RetireGatewayAssetMutationError = ErrorResponse
+    export type RetireGatewayAssetMutationVariables = {instanceId: string;data: GatewayRetireRequest}
+
+    /**
+ * @summary Retire the current Gateway and clear the current slot
+ */
+export const useRetireGatewayAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retireGatewayAsset>>, TError,RetireGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof retireGatewayAsset>>,
+        TError,
+        RetireGatewayAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRetireGatewayAssetMutationOptions(options), queryClient);
+    }
+
+export type replaceGatewayAssetResponse200 = {
+  data: GatewayReplaceResult
+  status: 200
+}
+
+export type replaceGatewayAssetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type replaceGatewayAssetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type replaceGatewayAssetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type replaceGatewayAssetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type replaceGatewayAssetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type replaceGatewayAssetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type replaceGatewayAssetResponseSuccess = (replaceGatewayAssetResponse200) & {
+  headers: Headers;
+};
+export type replaceGatewayAssetResponseError = (replaceGatewayAssetResponse400 | replaceGatewayAssetResponse401 | replaceGatewayAssetResponse403 | replaceGatewayAssetResponse404 | replaceGatewayAssetResponse409 | replaceGatewayAssetResponse503) & {
+  headers: Headers;
+};
+
+export type replaceGatewayAssetResponse = (replaceGatewayAssetResponseSuccess | replaceGatewayAssetResponseError)
+
+export const getReplaceGatewayAssetUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/gateways/${instanceId}/replace`
+}
+
+/**
+ * @summary Atomically replace the current Gateway with a new identity
+ */
+export const replaceGatewayAsset = async (instanceId: string,
+    gatewayReplaceRequest: GatewayReplaceRequest, options?: RequestInit): Promise<replaceGatewayAssetResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReplaceGatewayAssetUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(gatewayReplaceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceGatewayAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceGatewayAssetResponse
+}
+
+
+
+
+
+export const getReplaceGatewayAssetMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceGatewayAsset>>, TError,ReplaceGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceGatewayAsset>>, TError,ReplaceGatewayAssetMutationVariables, TContext> => {
+
+const mutationKey = ['replaceGatewayAsset'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceGatewayAsset>>, ReplaceGatewayAssetMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  replaceGatewayAsset(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceGatewayAssetMutationResult = NonNullable<Awaited<ReturnType<typeof replaceGatewayAsset>>>
+    export type ReplaceGatewayAssetMutationBody = GatewayReplaceRequest
+    export type ReplaceGatewayAssetMutationError = ErrorResponse
+    export type ReplaceGatewayAssetMutationVariables = {instanceId: string;data: GatewayReplaceRequest}
+
+    /**
+ * @summary Atomically replace the current Gateway with a new identity
+ */
+export const useReplaceGatewayAsset = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceGatewayAsset>>, TError,ReplaceGatewayAssetMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof replaceGatewayAsset>>,
+        TError,
+        ReplaceGatewayAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReplaceGatewayAssetMutationOptions(options), queryClient);
+    }
+
+export type getGatewayHealthResponse200 = {
+  data: GatewayProbeResult
+  status: 200
+}
+
+export type getGatewayHealthResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getGatewayHealthResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getGatewayHealthResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getGatewayHealthResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getGatewayHealthResponse502 = {
+  data: ErrorResponse
+  status: 502
+}
+
+export type getGatewayHealthResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getGatewayHealthResponse504 = {
+  data: ErrorResponse
+  status: 504
+}
+
+export type getGatewayHealthResponseSuccess = (getGatewayHealthResponse200) & {
+  headers: Headers;
+};
+export type getGatewayHealthResponseError = (getGatewayHealthResponse400 | getGatewayHealthResponse401 | getGatewayHealthResponse404 | getGatewayHealthResponse409 | getGatewayHealthResponse502 | getGatewayHealthResponse503 | getGatewayHealthResponse504) & {
+  headers: Headers;
+};
+
+export type getGatewayHealthResponse = (getGatewayHealthResponseSuccess | getGatewayHealthResponseError)
+
+export const getGetGatewayHealthUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/gateways/${instanceId}/health`
+}
+
+/**
+ * @summary Execute the fixed Gateway health observation
+ */
+export const getGatewayHealth = async (instanceId: string, options?: RequestInit): Promise<getGatewayHealthResponse> => {
+
+  const res = await fetch(getGetGatewayHealthUrl(instanceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getGatewayHealthResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getGatewayHealthResponse
+}
+
+
+
+
+
+export const getGetGatewayHealthQueryKey = (instanceId: string,) => {
+    return [
+    `/api/assets/gateways/${instanceId}/health`
+    ] as const;
+    }
+
+
+export const getGetGatewayHealthQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayHealth>>, TError = ErrorResponse>(instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayHealth>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGatewayHealthQueryKey(instanceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGatewayHealth>>> = ({ signal }) => getGatewayHealth(instanceId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: instanceId !== null && instanceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGatewayHealth>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGatewayHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayHealth>>>
+export type GetGatewayHealthQueryError = ErrorResponse
+
+
+export function useGetGatewayHealth<TData = Awaited<ReturnType<typeof getGatewayHealth>>, TError = ErrorResponse>(
+ instanceId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayHealth>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayHealth>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayHealth>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayHealth<TData = Awaited<ReturnType<typeof getGatewayHealth>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayHealth>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayHealth>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayHealth>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayHealth<TData = Awaited<ReturnType<typeof getGatewayHealth>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayHealth>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Execute the fixed Gateway health observation
+ */
+
+export function useGetGatewayHealth<TData = Awaited<ReturnType<typeof getGatewayHealth>>, TError = ErrorResponse>(
+ instanceId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayHealth>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGatewayHealthQueryOptions(instanceId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type testGatewayConnectionResponse200 = {
+  data: GatewayProbeResult
+  status: 200
+}
+
+export type testGatewayConnectionResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type testGatewayConnectionResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type testGatewayConnectionResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type testGatewayConnectionResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type testGatewayConnectionResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type testGatewayConnectionResponse502 = {
+  data: ErrorResponse
+  status: 502
+}
+
+export type testGatewayConnectionResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type testGatewayConnectionResponse504 = {
+  data: ErrorResponse
+  status: 504
+}
+
+export type testGatewayConnectionResponseSuccess = (testGatewayConnectionResponse200) & {
+  headers: Headers;
+};
+export type testGatewayConnectionResponseError = (testGatewayConnectionResponse400 | testGatewayConnectionResponse401 | testGatewayConnectionResponse403 | testGatewayConnectionResponse404 | testGatewayConnectionResponse409 | testGatewayConnectionResponse502 | testGatewayConnectionResponse503 | testGatewayConnectionResponse504) & {
+  headers: Headers;
+};
+
+export type testGatewayConnectionResponse = (testGatewayConnectionResponseSuccess | testGatewayConnectionResponseError)
+
+export const getTestGatewayConnectionUrl = (instanceId: string,) => {
+
+
+
+
+  return `/api/assets/gateways/${instanceId}/connection-test`
+}
+
+/**
+ * @summary Execute the explicit fixed Gateway connection test
+ */
+export const testGatewayConnection = async (instanceId: string,
+    emptyObject: EmptyObject, options?: RequestInit): Promise<testGatewayConnectionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getTestGatewayConnectionUrl(instanceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(emptyObject)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: testGatewayConnectionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as testGatewayConnectionResponse
+}
+
+
+
+
+
+export const getTestGatewayConnectionMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testGatewayConnection>>, TError,TestGatewayConnectionMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof testGatewayConnection>>, TError,TestGatewayConnectionMutationVariables, TContext> => {
+
+const mutationKey = ['testGatewayConnection'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testGatewayConnection>>, TestGatewayConnectionMutationVariables> = (props) => {
+          const {instanceId,data} = props ?? {};
+
+          return  testGatewayConnection(instanceId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestGatewayConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof testGatewayConnection>>>
+    export type TestGatewayConnectionMutationBody = EmptyObject
+    export type TestGatewayConnectionMutationError = ErrorResponse
+    export type TestGatewayConnectionMutationVariables = {instanceId: string;data: EmptyObject}
+
+    /**
+ * @summary Execute the explicit fixed Gateway connection test
+ */
+export const useTestGatewayConnection = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testGatewayConnection>>, TError,TestGatewayConnectionMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof testGatewayConnection>>,
+        TError,
+        TestGatewayConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getTestGatewayConnectionMutationOptions(options), queryClient);
+    }
 
 export type listNodeAssetsResponse200 = {
   data: NodeAssetListResponse

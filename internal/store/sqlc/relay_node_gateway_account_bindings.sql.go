@@ -567,6 +567,26 @@ func (q *Queries) LockCurrentRelayNodeGatewayAccountBindingByNode(ctx context.Co
 	return i, err
 }
 
+const lockGatewayAssetForBinding = `-- name: LockGatewayAssetForBinding :one
+SELECT instance_id, lifecycle_status, singleton_id
+FROM gateway_instances
+WHERE instance_id = $1::uuid
+FOR UPDATE
+`
+
+type LockGatewayAssetForBindingRow struct {
+	InstanceID      pgtype.UUID `json:"instance_id"`
+	LifecycleStatus string      `json:"lifecycle_status"`
+	SingletonID     pgtype.Int2 `json:"singleton_id"`
+}
+
+func (q *Queries) LockGatewayAssetForBinding(ctx context.Context, instanceID pgtype.UUID) (LockGatewayAssetForBindingRow, error) {
+	row := q.db.QueryRow(ctx, lockGatewayAssetForBinding, instanceID)
+	var i LockGatewayAssetForBindingRow
+	err := row.Scan(&i.InstanceID, &i.LifecycleStatus, &i.SingletonID)
+	return i, err
+}
+
 const lockGatewayDirectoryCurrentState = `-- name: LockGatewayDirectoryCurrentState :one
 SELECT gateway_instance_id, current_snapshot_id, current_content_fingerprint, last_success_received_at, last_source_generated_at, last_success_run_id, updated_at
 FROM gateway_directory_current_state

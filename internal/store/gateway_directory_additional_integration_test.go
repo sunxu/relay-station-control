@@ -66,7 +66,7 @@ func TestGatewayDirectoryRecoveryEvidence(t *testing.T) {
 
 	t.Run("duplicate scheduler same slot is idempotent", func(t *testing.T) {
 		gatewayID := uuid.New()
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 		run1, created1, skipped1, err := repository.ScheduleCurrent(ctx, gatewayID)
 		if err != nil {
 			t.Fatal(err)
@@ -88,7 +88,7 @@ func TestGatewayDirectoryRecoveryEvidence(t *testing.T) {
 
 	t.Run("expired lease reclaims same durable run and stale fencing is rejected", func(t *testing.T) {
 		gatewayID := uuid.New()
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 		resolver := writeGatewayDirectorySecretResolver(t, secretRef, "reader-token")
 		serverCalls := 0
 		body1 := gatewayDirectoryJSON(t, time.Now().UTC().Add(-time.Minute), "Alpha")
@@ -209,7 +209,7 @@ func TestGatewayDirectorySensitiveValuesAreNotReflected(t *testing.T) {
 	t.Run("secret reference and token", func(t *testing.T) {
 		gatewayID := uuid.New()
 		secretRef := "file://gateway-directory/secret-canary"
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 		requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 		resolver := writeGatewayDirectorySecretResolver(t, "file://gateway-directory/reader", "token-canary")
 		run, _, _, err := repository.ScheduleCurrent(ctx, gatewayID)
@@ -247,7 +247,7 @@ func TestGatewayDirectorySensitiveValuesAreNotReflected(t *testing.T) {
 	t.Run("malformed url", func(t *testing.T) {
 		gatewayID := uuid.New()
 		secretRef := "file://gateway-directory/reader"
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-canary.invalid/path", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-canary.invalid/path", secretRef)
 		requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 		resolver := writeGatewayDirectorySecretResolver(t, secretRef, "reader-token")
 		if _, _, _, err := repository.ScheduleCurrent(ctx, gatewayID); err != nil {
@@ -331,9 +331,9 @@ func TestGatewayDirectoryMetricsSnapshotAndCollector(t *testing.T) {
 	staleGatewayID := uuid.New()
 	unknownGatewayID := uuid.New()
 	secretRef := "file://gateway-directory/reader"
-	insertGatewayInstance(t, ctx, database.owner, freshGatewayID, "https://fresh.gateway.test", secretRef)
-	insertGatewayInstance(t, ctx, database.owner, staleGatewayID, "https://stale.gateway.test", secretRef)
-	insertGatewayInstance(t, ctx, database.owner, unknownGatewayID, "https://unknown.gateway.test", secretRef)
+	insertGatewayInstance(t, ctx, database.owner, freshGatewayID, "http://fresh.gateway.test", secretRef)
+	insertGatewayInstance(t, ctx, database.owner, staleGatewayID, "http://stale.gateway.test", secretRef)
+	insertGatewayInstance(t, ctx, database.owner, unknownGatewayID, "http://unknown.gateway.test", secretRef)
 
 	currentSlot := requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 	insertGatewayDirectoryPendingRun(t, ctx, database.owner, uuid.New(), freshGatewayID, currentSlot)
@@ -432,6 +432,7 @@ func TestGatewayDirectoryMetricsSnapshotAndCollector(t *testing.T) {
 			"failure_class=transport": true, "failure_class=timeout": true, "failure_class=partial_read": true,
 			"failure_class=http_429": true, "failure_class=http_5xx": true, "failure_class=http_non_retryable": true,
 			"failure_class=contract_invalid": true, "failure_class=source_time_invalid": true, "failure_class=hard_limit": true,
+			"failure_class=gateway_retired": true, "failure_class=gateway_replaced": true,
 			"failure_class=secret_unavailable": true, "failure_class=finalize_transient": true, "failure_class=lease_lost": true,
 			"failure_class=unknown_execution": true, "failure_class=start_deadline_expired": true,
 		},

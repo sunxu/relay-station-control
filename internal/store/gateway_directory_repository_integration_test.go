@@ -153,7 +153,7 @@ func TestGatewayDirectoryRepositoryWorkflowAndRecovery(t *testing.T) {
 
 	gatewayID := uuid.New()
 	secretRef := "file://gateway-directory/reader"
-	insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory.test", secretRef)
+	insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 	resolver := writeGatewayDirectorySecretResolver(t, secretRef, "reader-token")
 	serverState := &directoryServerState{}
 	serverState.set(http.StatusOK, []byte(`{"schema_version":1,"generated_at":"`+time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)+`","accounts":[{"id":1,"name":"Alpha","platform":"linux","type":"apikey","url":null,"status":"active"}]}`))
@@ -248,7 +248,7 @@ func TestGatewayDirectoryRepositoryWorkflowAndRecovery(t *testing.T) {
 
 	t.Run("schedule current concurrency", func(t *testing.T) {
 		gatewayID := uuid.New()
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory-concurrency.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory-concurrency.test", secretRef)
 		start := make(chan struct{})
 		errs := make(chan error, 2)
 		results := make(chan bool, 2)
@@ -295,7 +295,7 @@ func TestGatewayDirectoryRepositoryWorkflowAndRecovery(t *testing.T) {
 	t.Run("claim runnable concurrency", func(t *testing.T) {
 		requireClaimWindow(t, currentSlot)
 		gatewayID := uuid.New()
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://gateway-directory-claim.test", secretRef)
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory-claim.test", secretRef)
 		runID := uuid.New()
 		insertGatewayDirectoryPendingRun(t, ctx, database.owner, runID, gatewayID, currentSlot)
 		start := make(chan struct{})

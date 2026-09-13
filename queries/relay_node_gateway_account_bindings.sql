@@ -7,6 +7,12 @@ FROM relay_node_assets
 WHERE instance_id = sqlc.arg(instance_id)::uuid
 FOR UPDATE;
 
+-- name: LockGatewayAssetForBinding :one
+SELECT instance_id, lifecycle_status, singleton_id
+FROM gateway_instances
+WHERE instance_id = sqlc.arg(instance_id)::uuid
+FOR UPDATE;
+
 -- name: LockGatewayDirectoryCurrentState :one
 SELECT *
 FROM gateway_directory_current_state

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/google/uuid"
 
@@ -37,7 +38,13 @@ func (s *Server) GetGatewayAsset(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAssetRead(w, r, AssetReadGateway) {
 		return
 	}
-	gateway, err := s.assets.Gateway(r.Context())
+	var gateway *assetstore.GatewayAsset
+	var err error
+	if s.gatewayAssets != nil {
+		gateway, err = s.gatewayAssets.Current(r.Context())
+	} else {
+		gateway, err = s.assets.Gateway(r.Context())
+	}
 	if err != nil {
 		s.assetReadError(w, r, AssetReadGateway, err)
 		return
@@ -45,12 +52,12 @@ func (s *Server) GetGatewayAsset(w http.ResponseWriter, r *http.Request) {
 	if gateway == nil {
 		s.recordAssetRead(AssetReadGateway, AssetReadResultEmpty)
 		s.refreshAssetCounts(r)
-		writeJSON(w, http.StatusOK, GatewayAssetResponse{Status: NotRegistered})
+		writeJSON(w, http.StatusOK, GatewayAssetResponse{Status: GatewayAssetResponseStatusNotRegistered})
 		return
 	}
 	s.recordAssetRead(AssetReadGateway, AssetReadResultSuccess)
 	s.refreshAssetCounts(r)
-	writeJSON(w, http.StatusOK, GatewayAssetResponse{Status: Registered, Gateway: gatewayResponse(gateway)})
+	writeJSON(w, http.StatusOK, GatewayAssetResponse{Status: GatewayAssetResponseStatusRegistered, Gateway: gatewayResponse(gateway)})
 }
 
 func (s *Server) ListNodeAssets(w http.ResponseWriter, r *http.Request, params ListNodeAssetsParams) {
@@ -242,11 +249,18 @@ func (s *Server) refreshAssetCounts(r *http.Request) {
 }
 
 func gatewayResponse(gateway *assetstore.GatewayAsset) *GatewayAsset {
-	return &GatewayAsset{
+	result := &GatewayAsset{
 		InstanceId: gateway.InstanceID, DisplayName: gateway.DisplayName,
 		ManagementEndpoint: gateway.ManagementEndpoint, SecretConfigured: gateway.SecretConfigured,
+		LifecycleStatus: GatewayAssetLifecycleStatus(gateway.LifecycleStatus), Revision: strconv.FormatInt(gateway.Revision, 10),
+		RetiredAt: gateway.RetiredAt, RetiredBy: gateway.RetiredBy,
 		CreatedAt: gateway.CreatedAt, UpdatedAt: gateway.UpdatedAt,
 	}
+	if gateway.RetireReason != nil {
+		value := GatewayAssetRetireReason(*gateway.RetireReason)
+		result.RetireReason = &value
+	}
+	return result
 }
 
 func nodeResponse(node assetstore.NodeAsset) NodeAsset {

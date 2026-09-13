@@ -39,7 +39,7 @@ func insertGatewayInstance(t *testing.T, ctx context.Context, pool *pgxpool.Pool
 		1, $1, 'Gateway Directory Test', $2, $3,
 		clock_timestamp(), clock_timestamp()
 	)
-	ON CONFLICT (singleton_id) DO UPDATE SET
+	ON CONFLICT (singleton_id) WHERE singleton_id = 1 DO UPDATE SET
 		instance_id = EXCLUDED.instance_id,
 		display_name = EXCLUDED.display_name,
 		management_endpoint = EXCLUDED.management_endpoint,

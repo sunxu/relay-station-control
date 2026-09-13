@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
 
 	rootdrivers "github.com/sunxu/relay-station-control/internal/drivers"
+	"github.com/sunxu/relay-station-control/internal/drivers/gatewaymanagement"
 )
 
 const (
@@ -47,7 +46,7 @@ func (e *FetchError) Unwrap() error {
 // Client performs exactly one fixed read-only Directory request against a
 // validated management origin.
 type Client struct {
-	baseURL        *url.URL
+	baseURL        gatewaymanagement.Origin
 	httpClient     *http.Client
 	secretResolver rootdrivers.SecretResolver
 }
@@ -77,7 +76,7 @@ func NewClient(managementOrigin string, secretResolver rootdrivers.SecretResolve
 }
 
 func (c *Client) Fetch(ctx context.Context, reference rootdrivers.SecretReference) (DirectoryResponse, [sha256.Size]byte, error) {
-	if c == nil || c.baseURL == nil || c.httpClient == nil || c.secretResolver == nil {
+	if c == nil || c.httpClient == nil || c.secretResolver == nil {
 		return DirectoryResponse{}, [sha256.Size]byte{}, &FetchError{
 			Reason:    rootdrivers.ReasonSecretUnavailable,
 			Retryable: false,
@@ -92,12 +91,7 @@ func (c *Client) Fetch(ctx context.Context, reference rootdrivers.SecretReferenc
 	var response DirectoryResponse
 	var fingerprint [sha256.Size]byte
 	err = secret.Use(func(token string) error {
-		requestURL := *c.baseURL
-		requestURL.Path = directoryPath
-		requestURL.RawQuery = ""
-		requestURL.Fragment = ""
-
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL.URL(directoryPath), nil)
 		if err != nil {
 			return &FetchError{Reason: rootdrivers.ReasonResponseInvalid, Retryable: false, Err: err}
 		}
@@ -144,29 +138,18 @@ func (c *Client) Fetch(ctx context.Context, reference rootdrivers.SecretReferenc
 	return response, fingerprint, nil
 }
 
-func validateManagementOrigin(raw string) (*url.URL, error) {
-	if raw == "" || strings.TrimSpace(raw) != raw {
-		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
+func validateManagementOrigin(raw string) (gatewaymanagement.Origin, error) {
+	origin, err := gatewaymanagement.ValidateOrigin(raw)
+	if err == nil {
+		return origin, nil
 	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.User != nil || parsed.Host == "" ||
-		parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
+	// Preserve Directory's existing closed reason mapping while sharing the
+	// single HTTP-only origin validator with the Gateway health probe.
+	var originErr *gatewaymanagement.OriginError
+	if errors.As(err, &originErr) && (originErr.Reason == gatewaymanagement.OriginHTTPSReject || originErr.Reason == gatewaymanagement.OriginSchemeReject) {
+		return gatewaymanagement.Origin{}, &FetchError{Reason: rootdrivers.ReasonTLSRejected, Retryable: false}
 	}
-	if strings.ToLower(parsed.Scheme) != "http" {
-		return nil, &FetchError{Reason: rootdrivers.ReasonTLSRejected, Retryable: false}
-	}
-	if parsed.Path != "" && parsed.Path != "/" {
-		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
-	}
-	if strings.Contains(parsed.Hostname(), "..") {
-		return nil, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
-	}
-	normalized := *parsed
-	normalized.Scheme = "http"
-	normalized.Path = ""
-	normalized.RawPath = ""
-	return &normalized, nil
+	return gatewaymanagement.Origin{}, &FetchError{Reason: rootdrivers.ReasonTargetRejected, Retryable: false}
 }
 
 func classifySecretResolveError(err error) error {

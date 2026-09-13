@@ -32,6 +32,53 @@ func testNodeCursorCodec(t *testing.T, current int, versions ...int) *NodeCursor
 	return codec
 }
 
+func testGatewayCursorCodec(t *testing.T) *GatewayCursorCodec {
+	t.Helper()
+	keyring, err := authn.ParseKeyring([]byte(`{"format_version":1,"environment":"dev","current":1,"keys":[{"version":1,"key":"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"}]}`), authn.EnvironmentDev)
+	if err != nil {
+		t.Fatalf("parse test keyring: %v", err)
+	}
+	codec, err := NewGatewayCursorCodec(keyring)
+	if err != nil {
+		t.Fatalf("new Gateway cursor codec: %v", err)
+	}
+	return codec
+}
+
+func TestGatewayCursorRoundTripAndScope(t *testing.T) {
+	codec := testGatewayCursorCodec(t)
+	want := GatewayCursor{
+		After:       uuid.MustParse("018f80d8-2017-7b3e-93ec-10f4b3672f2a"),
+		Environment: "dev-environment",
+		Lifecycle:   "retired",
+		Generation:  "7",
+	}
+	cursor, err := codec.Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := codec.Decode(cursor, want.Lifecycle, want.Environment)
+	if err != nil || got != want {
+		t.Fatalf("Gateway cursor round trip = %#v, %v; want %#v", got, err, want)
+	}
+	for _, scope := range []struct{ lifecycle, environment string }{
+		{"active", want.Environment},
+		{want.Lifecycle, "another-environment"},
+	} {
+		if _, err := codec.Decode(cursor, scope.lifecycle, scope.environment); err != ErrInvalidGatewayCursor {
+			t.Fatalf("cross-scope Gateway cursor error = %v, want %v", err, ErrInvalidGatewayCursor)
+		}
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := base64.RawURLEncoding.EncodeToString([]byte(strings.Replace(string(raw), `"generation":"7"`, `"generation":"8"`, 1)))
+	if _, err := codec.Decode(tampered, want.Lifecycle, want.Environment); err != ErrInvalidGatewayCursor {
+		t.Fatalf("tampered Gateway cursor error = %v, want %v", err, ErrInvalidGatewayCursor)
+	}
+}
+
 func TestNodeCursorRoundTripAndEmptyFirstPage(t *testing.T) {
 	active := true
 	codec := testNodeCursorCodec(t, 1, 1)

@@ -678,6 +678,221 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/assets/gateways:
+    get:
+      operationId: listGatewayAssets
+      summary: List current or historical Gateway assets
+      tags: [assets]
+      parameters:
+        - name: lifecycle
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, retired, all]
+            default: active
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Stable instance-ID ordered Gateway page.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayAssetListResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: registerGatewayAsset
+      summary: Register the current Gateway asset
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatewayRegisterRequest" }
+      responses:
+        "201":
+          description: Gateway registered.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayRegisterResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/gateways/{instance_id}:
+    get:
+      operationId: getGatewayAssetById
+      summary: Read one current or historical Gateway asset
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+      responses:
+        "200":
+          description: Gateway detail and direct replacement lineage.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayAssetDetailResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: editGatewayAsset
+      summary: Edit current Gateway display and management configuration
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatewayEditRequest" }
+      responses:
+        "200":
+          description: Gateway updated.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayEditResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/gateways/{instance_id}/retire:
+    post:
+      operationId: retireGatewayAsset
+      summary: Retire the current Gateway and clear the current slot
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatewayRetireRequest" }
+      responses:
+        "200":
+          description: Gateway retired and current bindings closed.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayRetireResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/gateways/{instance_id}/replace:
+    post:
+      operationId: replaceGatewayAsset
+      summary: Atomically replace the current Gateway with a new identity
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatewayReplaceRequest" }
+      responses:
+        "200":
+          description: Gateway atomically replaced.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayReplaceResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/gateways/{instance_id}/health:
+    get:
+      operationId: getGatewayHealth
+      summary: Execute the fixed Gateway health observation
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+      responses:
+        "200":
+          description: Gateway health observation succeeded.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayProbeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/assets/gateways/{instance_id}/connection-test:
+    post:
+      operationId: testGatewayConnection
+      summary: Execute the explicit fixed Gateway connection test
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/GatewayInstanceId"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmptyObject" }
+      responses:
+        "200":
+          description: Gateway connection observation succeeded.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Request-ID: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GatewayProbeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /api/assets/nodes:
     get:
       operationId: listNodeAssets
@@ -2186,11 +2401,16 @@ components:
     GatewayAsset:
       type: object
       additionalProperties: false
-      required: [instance_id, display_name, management_endpoint, secret_configured, created_at, updated_at]
+      required: [instance_id, lifecycle_status, revision, display_name, management_endpoint, secret_configured, created_at, updated_at, retired_at, retired_by, retire_reason]
       properties:
         instance_id:
           type: string
           format: uuid
+        lifecycle_status:
+          type: string
+          enum: [active, retired]
+        revision:
+          $ref: "#/components/schemas/AssetRevision"
         display_name:
           $ref: "#/components/schemas/DisplayName"
         management_endpoint:
@@ -2203,6 +2423,172 @@ components:
         updated_at:
           type: string
           format: date-time
+        retired_at:
+          type: [string, "null"]
+          format: date-time
+        retired_by:
+          type: [string, "null"]
+          format: uuid
+        retire_reason:
+          type: [string, "null"]
+          enum: [administrator_retire, replacement, null]
+
+    AssetRevision:
+      type: string
+      pattern: "^[1-9][0-9]{0,18}$"
+      maxLength: 19
+
+    GatewayCounts:
+      type: object
+      additionalProperties: false
+      required: [active, retired, total]
+      properties:
+        active: { type: integer, minimum: 0 }
+        retired: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+
+    GatewayAssetListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, gateway_counts]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/GatewayAsset" }
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 512
+        gateway_counts: { $ref: "#/components/schemas/GatewayCounts" }
+
+    GatewayReplacementLineage:
+      type: object
+      additionalProperties: false
+      required: [old_instance_id, new_instance_id, replaced_at, replaced_by, command_id]
+      properties:
+        old_instance_id: { type: string, format: uuid }
+        new_instance_id: { type: string, format: uuid }
+        replaced_at: { type: string, format: date-time }
+        replaced_by: { type: string, format: uuid }
+        command_id: { type: string, format: uuid }
+
+    GatewayAssetDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [asset, predecessor, successor]
+      properties:
+        asset: { $ref: "#/components/schemas/GatewayAsset" }
+        predecessor:
+          oneOf:
+            - $ref: "#/components/schemas/GatewayReplacementLineage"
+            - type: "null"
+        successor:
+          oneOf:
+            - $ref: "#/components/schemas/GatewayReplacementLineage"
+            - type: "null"
+
+    GatewayRegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, new_instance_id, display_name, management_endpoint]
+      properties:
+        command_id: { type: string, format: uuid }
+        new_instance_id: { type: string, format: uuid }
+        display_name: { $ref: "#/components/schemas/DisplayName" }
+        management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
+        reader_secret_ref:
+          type: [string, "null"]
+          minLength: 6
+          maxLength: 512
+
+    GatewayEditRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, expected_revision]
+      minProperties: 3
+      properties:
+        command_id: { type: string, format: uuid }
+        expected_revision: { $ref: "#/components/schemas/AssetRevision" }
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+        management_endpoint:
+          $ref: "#/components/schemas/ManagementEndpoint"
+        reader_secret_ref:
+          type: [string, "null"]
+          minLength: 6
+          maxLength: 512
+
+    GatewayRetireRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, expected_revision]
+      properties:
+        command_id: { type: string, format: uuid }
+        expected_revision: { $ref: "#/components/schemas/AssetRevision" }
+
+    GatewayReplaceRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, expected_revision, new_instance_id, display_name, management_endpoint]
+      properties:
+        command_id: { type: string, format: uuid }
+        expected_revision: { $ref: "#/components/schemas/AssetRevision" }
+        new_instance_id: { type: string, format: uuid }
+        display_name: { $ref: "#/components/schemas/DisplayName" }
+        management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
+        reader_secret_ref:
+          type: [string, "null"]
+          minLength: 6
+          maxLength: 512
+
+    GatewayRegisterResult:
+      type: object
+      additionalProperties: false
+      required: [result, asset]
+      properties:
+        result: { type: string, enum: [registered] }
+        asset: { $ref: "#/components/schemas/GatewayAsset" }
+
+    GatewayEditResult:
+      type: object
+      additionalProperties: false
+      required: [result, asset]
+      properties:
+        result: { type: string, enum: [updated] }
+        asset: { $ref: "#/components/schemas/GatewayAsset" }
+
+    GatewayRetireResult:
+      type: object
+      additionalProperties: false
+      required: [result, asset, closed_binding_count]
+      properties:
+        result: { type: string, enum: [retired] }
+        asset: { $ref: "#/components/schemas/GatewayAsset" }
+        closed_binding_count: { type: integer, minimum: 0 }
+
+    GatewayReplaceResult:
+      type: object
+      additionalProperties: false
+      required: [result, old_asset, new_asset, closed_binding_count, lineage]
+      properties:
+        result: { type: string, enum: [replaced] }
+        old_asset: { $ref: "#/components/schemas/GatewayAsset" }
+        new_asset: { $ref: "#/components/schemas/GatewayAsset" }
+        closed_binding_count: { type: integer, minimum: 0 }
+        lineage: { $ref: "#/components/schemas/GatewayReplacementLineage" }
+
+    GatewayProbeResult:
+      type: object
+      additionalProperties: false
+      required: [instance_id, result, observed_at]
+      properties:
+        instance_id: { type: string, format: uuid }
+        result: { type: string, enum: [healthy] }
+        observed_at: { type: string, format: date-time }
+
+    EmptyObject:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
 
     NodeAssetListResponse:
       type: object
@@ -2871,6 +3257,19 @@ components:
         - account_conflict
         - already_unbound
         - no_current_binding
+        - asset_not_found
+        - asset_retired
+        - current_gateway_exists
+        - duplicate_identity
+        - stale_revision
+        - revision_exhausted
+        - command_conflict
+        - cursor_stale
+        - invalid_endpoint
+        - secret_configuration_invalid
+        - probe_timeout
+        - probe_failed
+        - service_unavailable
 
     ErrorResponse:
       type: object

@@ -28,6 +28,8 @@ type Server struct {
 	service                       *authn.Service
 	resolver                      *authn.SourceResolver
 	assets                        assetstore.AssetReader
+	gatewayAssets                 assetstore.GatewayLifecycleManager
+	gatewayCursor                 *assetstore.GatewayCursorCodec
 	assetMetrics                  *AssetMetrics
 	nodeCursor                    *assetstore.NodeCursorCodec
 	jobs                          assetstore.JobReader
@@ -132,6 +134,18 @@ func (s *Server) AccountInventoryMetrics() *AccountInventoryMetrics {
 
 func (s *Server) SetRelayBindingRepository(repository *assetstore.RelayBindingRepository) {
 	s.relayBindings = repository
+}
+
+func (s *Server) SetGatewayLifecycleManager(manager assetstore.GatewayLifecycleManager) error {
+	if manager == nil || s.service == nil {
+		return errors.New("api: gateway lifecycle manager unavailable")
+	}
+	codec, err := assetstore.NewGatewayCursorCodec(s.service.Config().Keyring)
+	if err != nil {
+		return errors.New("api: gateway cursor initialization failed")
+	}
+	s.gatewayAssets, s.gatewayCursor = manager, codec
+	return nil
 }
 
 // SetCrossNodeDuplicateOwnershipOccurrenceReader wires the Phase 5 read-only
