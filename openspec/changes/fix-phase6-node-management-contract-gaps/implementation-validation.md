@@ -17,8 +17,12 @@ Disposition = CHANGES REQUIRED
 - P1-2 Probe lifecycle fence: FIXED
 - P2-1 canonical Purpose: FIXED
 - Additional UI internal-host validator finding: FIXED
-- Corrective candidate: P0 = 0 / P1 = 0 / P2 = 0
-- Review readiness: READY FOR INDEPENDENT CORRECTIVE IMPLEMENTATION REVIEW
+- Corrective implementation: COMPLETE
+- Independent corrective implementation review: PASS
+- Final corrective review: P0 = 0 / P1 = 0 / P2 = 0
+- Corrective implementation commit: `0ef6700c5d95af411138e1caf77ce80849a6e58d`
+- Git/worktree closeout: COMPLETE
+- Archive readiness: READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
 - Phase 6: CLOSED / IMPLEMENTED / ARCHIVED
 - Phase 7: PLANNED / NOT STARTED
 
@@ -54,5 +58,6 @@ Disposition = CHANGES REQUIRED
 - New business table: 0
 - Compatibility class/floor: `2 / 2`
 - Migration: 36
-- git add / commit / push: NOT RUN
+- Corrective implementation commit: CREATED
+- Git/worktree closeout: COMPLETE
 - Archive: NOT RUN

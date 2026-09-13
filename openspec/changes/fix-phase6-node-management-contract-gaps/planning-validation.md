@@ -8,8 +8,10 @@
 - New business table/column: `0 / 0`。
 - Migration: `36` implemented and validated on PostgreSQL 18.6。
 - Phase 7: `PLANNED / NOT STARTED`。
-- Corrective implementation: `COMPLETE — RE-REVIEW CANDIDATE`。
+- Corrective implementation: `COMPLETE`。
 - Runtime Acceptance: `PASS`。
-- Independent corrective implementation review: `AWAITING REVIEW`。
-- git add / commit / push: `NOT RUN`。
+- Independent corrective implementation review: `PASS`，`P0=0 / P1=0 / P2=0`。
+- Corrective implementation commit: `0ef6700c5d95af411138e1caf77ce80849a6e58d`。
+- Git/worktree closeout: `COMPLETE`。
+- Archive readiness: `READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW`。
 - Archive: `NOT RUN`。
