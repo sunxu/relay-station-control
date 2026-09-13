@@ -1,7 +1,7 @@
 # asset-admin-command Specification
 
 ## Purpose
-TBD - created by archiving change add-gateway-asset-lifecycle-management. Update Purpose after archive.
+定义 Gateway 与 Relay Node 管理 mutation 共用的 durable command receipt、actor-first lookup、canonical intent、Secret 指纹、幂等 replay、事务原子性和不可变审计基础。
 
 ## Requirements
 

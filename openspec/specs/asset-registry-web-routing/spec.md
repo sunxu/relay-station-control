@@ -1,7 +1,7 @@
 # asset-registry-web-routing Specification
 
 ## Purpose
-TBD - created by archiving change fix-control-web-static-resource-prefix. Update Purpose after archive.
+定义 Control Asset Registry Web 静态资源和 SPA 路由在根路径与直接访问、刷新、反向代理及生产构建下的一致行为，确保管理页面可加载而不影响 API 路由与安全边界。
 
 ## Requirements
 

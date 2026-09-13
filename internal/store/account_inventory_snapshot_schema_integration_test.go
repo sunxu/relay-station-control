@@ -72,11 +72,21 @@ func insertSnapshotPollFixtureWithProviders(
 	) VALUES ($1,$2,'Snapshot Test Driver')`, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO driver_capabilities(
+		node_type,driver_contract_version,capability
+	) VALUES ($1,$2,'management_account_inventory_read')`, fixture.nodeType, fixture.contract); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_assets(
 		instance_id,display_name,node_type,driver_contract_version,
 		management_endpoint,reader_secret_ref
 	) VALUES ($1,'Snapshot Test Node',$2,$3,'http://snapshot.example',
 		'docker-secret://synthetic/snapshot-reader')`, fixture.instanceID, fixture.nodeType, fixture.contract); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO node_capabilities(
+		instance_id,node_type,driver_contract_version,capability
+	) VALUES ($1,$2,$3,'management_account_inventory_read')`, fixture.instanceID, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_versions(
@@ -111,6 +121,11 @@ func insertSnapshotPollFixtureWithProviders(
 	if !databaseNow.Before(slot.Add(295 * time.Second)) {
 		time.Sleep(time.Until(slot.Add(5*time.Minute)) + 100*time.Millisecond)
 		slot = currentPollSlot(t, ctx, database.owner)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) VALUES ($1,$2,'deployment_enable','integration-test',$2)`, fixture.instanceID, slot); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := database.owner.Exec(ctx, `INSERT INTO account_inventory_poll_runs (
 		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,

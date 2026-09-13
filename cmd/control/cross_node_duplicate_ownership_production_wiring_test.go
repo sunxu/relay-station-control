@@ -150,7 +150,7 @@ func seedCrossNodeDuplicateOwnershipFixture(t *testing.T, ctx context.Context, o
 			instance_id,display_name,node_type,driver_contract_version,
 			management_endpoint,reader_secret_ref
 		) VALUES ($1,'Ownership Production Wiring Node',$2,$3,$4,NULL)`,
-			nodeID, fixture.nodeType, fixture.contract, "https://node-"+nodeID.String()+".test"); err != nil {
+			nodeID, fixture.nodeType, fixture.contract, "http://node-"+nodeID.String()+".test"); err != nil {
 			t.Fatal(err)
 		}
 		fixture.nodes = append(fixture.nodes, nodeID)

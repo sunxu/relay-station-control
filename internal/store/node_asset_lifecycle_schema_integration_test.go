@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -111,7 +112,7 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	}
 
 	first, second, third := uuid.New(), uuid.New(), uuid.New()
-	register := assetstore.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "node-register", NewInstanceID: first, DisplayName: assetstore.StringPatch{Present: true, Value: "Node A"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "https://node-a.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_health_read", "management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretSet, Value: "vault://node/a"}}
+	register := assetstore.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "node-register", NewInstanceID: first, DisplayName: assetstore.StringPatch{Present: true, Value: "Node A"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "http://node-a.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_health_read", "management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretSet, Value: "vault://node/a"}}
 	created, err := repository.Register(ctx, register)
 	if err != nil || created.HTTPStatus != 201 {
 		t.Fatalf("register status=%d err=%v", created.HTTPStatus, err)
@@ -145,6 +146,31 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	replay, err := repository.Register(ctx, register)
 	if err != nil || !replay.Replayed || !jsonEqual(created.Body, replay.Body) {
 		t.Fatalf("replay=%#v err=%v", replay, err)
+	}
+	legacyID, legacyCommandID := uuid.New(), uuid.New()
+	legacyIntent, err := json.Marshal([]any{1, "node.register", legacyID.String(), "Legacy HTTPS Node", "https://legacy-node.example", "cliproxyapi", "v1", []any{"management_health_read"}, []any{"absent", nil, nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyHash := sha256.Sum256(legacyIntent)
+	legacyBody := json.RawMessage(`{"result":"registered","asset":{"instance_id":"` + legacyID.String() + `"}}`)
+	if _, err = owner.Exec(ctx, `INSERT INTO asset_admin_command_receipts(command_id,command_kind,intent_encoding_version,canonical_intent_hash,sanitized_result,response_status,actor_admin_id,secret_fingerprint_key_version) VALUES($1,'node.register',1,$2,$3,201,$4,NULL)`, legacyCommandID, legacyHash[:], legacyBody, admin); err != nil {
+		t.Fatal(err)
+	}
+	var legacyNodesBefore, legacyAuditsBefore int
+	if err = owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM relay_node_assets),(SELECT count(*) FROM audit_logs WHERE category='asset_node')`).Scan(&legacyNodesBefore, &legacyAuditsBefore); err != nil {
+		t.Fatal(err)
+	}
+	legacyReplay, err := repository.Register(ctx, assetstore.NodeCommand{CommandID: legacyCommandID, ActorAdminID: admin, NewInstanceID: legacyID, DisplayName: assetstore.StringPatch{Present: true, Value: "Legacy HTTPS Node"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "https://legacy-node.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_health_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretAbsent}})
+	if err != nil || !legacyReplay.Replayed || legacyReplay.HTTPStatus != 201 || string(legacyReplay.Body) != string(legacyBody) {
+		t.Fatalf("legacy HTTPS replay=%#v err=%v", legacyReplay, err)
+	}
+	var legacyNodesAfter, legacyAuditsAfter int
+	if err = owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM relay_node_assets),(SELECT count(*) FROM audit_logs WHERE category='asset_node')`).Scan(&legacyNodesAfter, &legacyAuditsAfter); err != nil {
+		t.Fatal(err)
+	}
+	if legacyNodesBefore != legacyNodesAfter || legacyAuditsBefore != legacyAuditsAfter {
+		t.Fatalf("legacy HTTPS replay side effects nodes/audits=%d/%d -> %d/%d", legacyNodesBefore, legacyAuditsBefore, legacyNodesAfter, legacyAuditsAfter)
 	}
 	withoutKey, err := assetstore.NewNodeLifecycleRepository(pool, nil)
 	if err != nil {
@@ -236,7 +262,7 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	if _, err = pollRepository.AuthorizeDispatch(ctx, inventorypoll.DispatchAuthorizationRequest{PollRunID: pollRunID, FencingToken: token, Attempt: 1, RequestTimeout: time.Second}); !errors.Is(err, assetstore.ErrPollRunLeaseLost) {
 		t.Fatalf("duplicate authorization=%v", err)
 	}
-	replace := assetstore.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "node-replace", InstanceID: first, ExpectedRevision: 3, NewInstanceID: second, DisplayName: assetstore.StringPatch{Present: true, Value: "Node B"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "https://node-b.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretClear}}
+	replace := assetstore.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "node-replace", InstanceID: first, ExpectedRevision: 3, NewInstanceID: second, DisplayName: assetstore.StringPatch{Present: true, Value: "Node B"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "http://node-b.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretClear}}
 	replaceResult, replaceErr := withoutKey.Replace(ctx, replace)
 	if replaceErr != nil || replaceResult.HTTPStatus != 200 {
 		t.Fatalf("replace=%s err=%v", replaceResult.Body, replaceErr)
@@ -300,7 +326,7 @@ func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	if err = owner.QueryRow(ctx, `SELECT dispatch_authorized_attempt IS NULL AND dispatch_authorized_at IS NULL AND dispatch_authorized_fencing_token IS NULL FROM account_inventory_poll_runs WHERE poll_run_id=$1`, pollRunID).Scan(&authorizationCleared); err != nil || !authorizationCleared {
 		t.Fatalf("authorization cleared=%t err=%v", authorizationCleared, err)
 	}
-	chainReplace := assetstore.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "node-replace-chain", InstanceID: second, ExpectedRevision: 1, NewInstanceID: third, DisplayName: assetstore.StringPatch{Present: true, Value: "Node C"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "https://node-c.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretAbsent}}
+	chainReplace := assetstore.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "node-replace-chain", InstanceID: second, ExpectedRevision: 1, NewInstanceID: third, DisplayName: assetstore.StringPatch{Present: true, Value: "Node C"}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "http://node-c.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretAbsent}}
 	if result, replaceErr := withoutKey.Replace(ctx, chainReplace); replaceErr != nil || result.HTTPStatus != 200 {
 		t.Fatalf("chain replace=%s err=%v", result.Body, replaceErr)
 	}
@@ -376,7 +402,7 @@ func TestNodeLifecycleConcurrentSerializationPG18(t *testing.T) {
 	registerCommand := func(commandID, instanceID uuid.UUID, name string) assetstore.NodeCommand {
 		return assetstore.NodeCommand{
 			CommandID: commandID, ActorAdminID: admin, RequestID: "race", NewInstanceID: instanceID,
-			DisplayName: assetstore.StringPatch{Present: true, Value: name}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "https://race-node.example"},
+			DisplayName: assetstore.StringPatch{Present: true, Value: name}, ManagementEndpoint: assetstore.StringPatch{Present: true, Value: "http://race-node.example"},
 			NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_account_inventory_read"}, Secret: assetstore.SecretPatch{Operation: assetstore.SecretAbsent},
 		}
 	}

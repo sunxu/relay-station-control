@@ -161,7 +161,7 @@ func (r *NodeLifecycleRepository) Register(ctx context.Context, c NodeCommand) (
 		if c.CommandID == uuid.Nil || c.ActorAdminID == uuid.Nil || c.NewInstanceID == uuid.Nil || !validNodeDisplay(c.DisplayName) || !c.ManagementEndpoint.Present || !validNodeIdentifier(c.NodeType) || !validNodeIdentifier(c.DriverContractVersion) {
 			return nil, nil, ErrInvalidNode
 		}
-		endpoint, err := normalizeNodeEndpoint(c.ManagementEndpoint.Value)
+		endpoint, err := normalizeNodeEndpointForIntent(c.ManagementEndpoint.Value, replay)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -217,7 +217,7 @@ func (r *NodeLifecycleRepository) Edit(ctx context.Context, c NodeCommand) (Node
 			return nil, nil, ErrInvalidNode
 		}
 		if c.ManagementEndpoint.Present {
-			v, e := normalizeNodeEndpoint(c.ManagementEndpoint.Value)
+			v, e := normalizeNodeEndpointForIntent(c.ManagementEndpoint.Value, replay)
 			if e != nil {
 				return nil, nil, e
 			}
@@ -293,7 +293,7 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 			if c.NewInstanceID == uuid.Nil || c.NewInstanceID == c.InstanceID || !validNodeDisplay(c.DisplayName) || !c.ManagementEndpoint.Present || !validNodeIdentifier(c.NodeType) || !validNodeIdentifier(c.DriverContractVersion) {
 				return nil, nil, ErrInvalidNode
 			}
-			v, e := normalizeNodeEndpoint(c.ManagementEndpoint.Value)
+			v, e := normalizeNodeEndpointForIntent(c.ManagementEndpoint.Value, replay)
 			if e != nil {
 				return nil, nil, e
 			}
@@ -577,11 +577,18 @@ func validNodeDisplay(p StringPatch) bool {
 	return p.Present && len(p.Value) >= 1 && len(p.Value) <= 100 && strings.TrimSpace(p.Value) == p.Value
 }
 func normalizeNodeEndpoint(v string) (string, error) {
+	return normalizeNodeEndpointForIntent(v, false)
+}
+
+// normalizeNodeEndpointForIntent preserves the released v1 canonical intent
+// normalization for completed receipt comparison. allowHistoricalHTTPS is only
+// set by the actor-matched replay branch; new commands remain HTTP-only.
+func normalizeNodeEndpointForIntent(v string, allowHistoricalHTTPS bool) (string, error) {
 	if strings.TrimSpace(v) != v || len(v) < 8 || len(v) > 2048 || strings.ContainsAny(v, "\r\n\t ?#@") {
 		return "", ErrInvalidNodeEndpoint
 	}
 	parsed, err := url.Parse(v)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || (parsed.Scheme != "http" && !(allowHistoricalHTTPS && parsed.Scheme == "https")) || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", ErrInvalidNodeEndpoint
 	}
 	host := strings.ToLower(parsed.Hostname())

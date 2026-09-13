@@ -115,6 +115,31 @@ describe("Gateway management controls", () => {
     await waitFor(() => expect(gatewayApiMock.register).toHaveBeenCalledWith(expect.objectContaining({ new_instance_id: gateway.instance_id, management_endpoint: gateway.management_endpoint }), "csrf-proof"));
   });
 
+  it("accepts a single-label internal HTTP host and rejects HTTPS", async () => {
+    const api = assetApi();
+    const gatewayApiMock = gatewayApi();
+    vi.mocked(gatewayApiMock.list).mockResolvedValue({ items: [], next_cursor: null, gateway_counts: { active: 0, retired: 0, total: 0 } });
+    vi.mocked(gatewayApiMock.register).mockResolvedValue({ asset: gateway });
+    render(<AssetRegistryView api={api} gatewayApi={gatewayApiMock} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    const card = await screen.findByTestId("gateway-management-card");
+
+    fireEvent.click(await within(card).findByRole("button", { name: "登记 Gateway" }));
+    fireEvent.change(await screen.findByLabelText("新 Instance ID"), { target: { value: gateway.instance_id } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "Docker Gateway" } });
+    fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "http://gateway:8080" } });
+    fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+    await waitFor(() => expect(gatewayApiMock.register).toHaveBeenCalledWith(expect.objectContaining({ management_endpoint: "http://gateway:8080" }), "csrf-proof"));
+
+    vi.mocked(gatewayApiMock.register).mockClear();
+    fireEvent.click(await within(card).findByRole("button", { name: "登记 Gateway" }));
+    fireEvent.change(await screen.findByLabelText("新 Instance ID"), { target: { value: "00000000-0000-4000-8000-000000000004" } });
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "HTTPS Gateway" } });
+    fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "https://gateway:8080" } });
+    fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+    expect(await screen.findByText("仅支持 http://")).toBeInTheDocument();
+    expect(gatewayApiMock.register).not.toHaveBeenCalled();
+  });
+
   it("submits an edit with the current revision and CSRF token", async () => {
     const api = assetApi();
     const gatewayApiMock = gatewayApi();

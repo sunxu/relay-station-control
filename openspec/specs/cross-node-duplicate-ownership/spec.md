@@ -1,7 +1,7 @@
 # cross-node-duplicate-ownership Specification
 
 ## Purpose
-TBD - created by archiving change add-cross-node-duplicate-ownership. Update Purpose after archive.
+定义跨 Relay Node 重复账号归属的检测、证据持久化、保守解析、告警与展示契约，确保 Control 只观察和报告冲突，不自动修改 CLIProxyAPI 或 Gateway 的账号与调度真相。
 
 ## Requirements
 

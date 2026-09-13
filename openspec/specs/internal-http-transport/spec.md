@@ -1,7 +1,7 @@
 # internal-http-transport Specification
 
 ## Purpose
-TBD - created by archiving change standardize-internal-http-transport. Update Purpose after archive.
+定义 Control 对内部管理目标执行 HTTP 请求时统一的 endpoint 安全、DNS/IP 防护、超时、响应大小、重定向、代理、错误分类与敏感信息隔离契约，避免形成任意网络访问能力。
 
 ## Requirements
 

@@ -46,7 +46,7 @@ test("authenticated administrator can manage Gateway lifecycle through Control A
   const browserRequestURLs: string[] = [];
   page.on("request", (request) => browserRequestURLs.push(request.url()));
 
-  await page.route("**/api/**", async (route) => {
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     requests.push(`${request.method()} ${url.pathname}`);

@@ -56,13 +56,15 @@ func NewNodeMonitoringRepository(pool *pgxpool.Pool) (*NodeMonitoringRepository,
 }
 
 // AuthorizeNodeProbe snapshots the fixed, secret-free probe target in a short
-// read-only transaction. Probe authorization never reads or returns the Node's
-// Reader Secret reference; the probe Driver does not need credentials.
+// transaction. The database-side authorizer owns the Node lifecycle read lock;
+// this method commits before the caller performs any network operation.
+// Probe authorization never reads or returns the Node's Reader Secret
+// reference; the probe Driver does not need credentials.
 func (r *NodeMonitoringRepository) AuthorizeNodeProbe(ctx context.Context, instanceID uuid.UUID) (drivers.NodeTarget, error) {
 	if instanceID == uuid.Nil {
 		return drivers.NodeTarget{}, ErrInvalidNode
 	}
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
 		return drivers.NodeTarget{}, err
 	}

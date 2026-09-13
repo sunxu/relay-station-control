@@ -20,7 +20,7 @@ const firstNode: NodeAsset = {
   displayName: "Singapore Node",
   nodeType: "cliproxyapi",
   driverContractVersion: "v1",
-  managementEndpoint: "https://node.invalid:8317",
+  managementEndpoint: "http://node.invalid:8317",
   secretConfigured: true,
   capabilities: ["management_health_read"],
   monitoringActive: true,
@@ -241,6 +241,35 @@ describe("asset registry read-only view", () => {
 		expect(screen.getByTestId("node-monitoring-disable-button")).toBeInTheDocument();
 		expect(api.nodeDetail).toHaveBeenCalledWith(firstNode.instanceId);
 	}, 15_000);
+
+	it("accepts internal Docker HTTP endpoints and rejects HTTPS for Node registration", async () => {
+		const api = makeApi();
+		api.registerNode = vi.fn().mockResolvedValue(undefined);
+		vi.mocked(api.nodes).mockResolvedValue({ items: [], nextCursor: null });
+		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+
+		fireEvent.click(await screen.findByRole("button", { name: "登记 Node" }));
+		fireEvent.change(await screen.findByLabelText("新 Instance ID"), { target: { value: "00000000-0000-4000-8000-000000000102" } });
+		fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "Docker Node" } });
+		fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "http://node:8317" } });
+		fireEvent.change(screen.getByRole("textbox", { name: "Node 类型" }), { target: { value: "cliproxyapi" } });
+		fireEvent.change(screen.getByLabelText("Driver 合约"), { target: { value: "v1" } });
+		fireEvent.change(screen.getByLabelText("Capabilities（逗号分隔）"), { target: { value: "management_health_read" } });
+		fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+		await waitFor(() => expect(api.registerNode).toHaveBeenCalledWith(expect.objectContaining({ management_endpoint: "http://node:8317" }), "csrf-proof"));
+
+		vi.mocked(api.registerNode).mockClear();
+		fireEvent.click(await screen.findByRole("button", { name: "登记 Node" }));
+		fireEvent.change(await screen.findByLabelText("新 Instance ID"), { target: { value: "00000000-0000-4000-8000-000000000103" } });
+		fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "HTTPS Node" } });
+		fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "https://node:8317" } });
+		fireEvent.change(screen.getByRole("textbox", { name: "Node 类型" }), { target: { value: "cliproxyapi" } });
+		fireEvent.change(screen.getByLabelText("Driver 合约"), { target: { value: "v1" } });
+		fireEvent.change(screen.getByLabelText("Capabilities（逗号分隔）"), { target: { value: "management_health_read" } });
+		fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+		expect(await screen.findByText("仅支持 http://")).toBeInTheDocument();
+		expect(api.registerNode).not.toHaveBeenCalled();
+	});
 
 	it("runs probes only after explicit clicks and confirms immediate disable", async () => {
 		const api = makeApi();

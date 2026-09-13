@@ -1,7 +1,7 @@
 # relay-node-asset-lifecycle Specification
 
 ## Purpose
-TBD - created by archiving change add-relay-node-asset-lifecycle-management. Update Purpose after archive.
+定义 Relay Node 资产的稳定身份、生命周期、revision、替换 lineage、监控与绑定关闭、durable command replay 及运行态隔离契约，使退役和替换在单一 PostgreSQL 边界内保持不可逆且可审计。
 
 ## Requirements
 

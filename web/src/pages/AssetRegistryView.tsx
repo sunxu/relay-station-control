@@ -33,6 +33,7 @@ import {
   useNodeAssets,
 } from "../api/asset-hooks";
 import { formatDateTime } from "../time";
+import { validateInternalHttpEndpoint } from "../validation/internal-http-endpoint";
 
 const { Text } = Typography;
 const pageSize = 50;
@@ -192,7 +193,7 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
         {modal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" rules={[{ required: true, message: "请输入 UUID" }]}><Input placeholder="UUID" /></Form.Item>}
         <Form.Item name="display_name" label="显示名称" rules={[{ required: true, message: "请输入显示名称" }]}><Input maxLength={100} /></Form.Item>
-        <Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, type: "url", message: "请输入有效的 http:// 地址" }, { validator: (_, value) => value && !value.startsWith("http://") ? Promise.reject(new Error("仅支持 http://")) : Promise.resolve() }]}><Input placeholder="http://gateway:8317" /></Form.Item>
+        <Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://gateway:8317" /></Form.Item>
         <Form.Item name="reader_secret_ref" label="Reader Secret reference（可选）" extra="仅提交引用；页面不会回显已保存的 Secret reference。"><Input.Password autoComplete="new-password" placeholder={modal === "edit" ? "留空表示不修改" : "可选"} /></Form.Item>
         {modal === "edit" && <Form.Item name="clear_secret" valuePropName="checked"><Checkbox>清除已保存的 Secret reference</Checkbox></Form.Item>}
       </Form>
@@ -304,7 +305,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			new_instance_id: undefined,
 			reader_secret_ref: undefined,
 			clear_secret: false,
-		} : { display_name: "", management_endpoint: "https://", node_type: "", driver_contract_version: "", capabilities: "", new_instance_id: "" });
+		} : { display_name: "", management_endpoint: "http://", node_type: "", driver_contract_version: "", capabilities: "", new_instance_id: "" });
 	};
 	const submitNode = async (values: NodeFormValues) => {
 		if (!nodeModal) return;
@@ -581,7 +582,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			<Form form={nodeForm} layout="vertical" onFinish={(values) => void submitNode(values)}>
 				{nodeModal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" rules={[{ required: true }]}><Input placeholder="UUID" /></Form.Item>}
 				<Form.Item name="display_name" label="显示名称" rules={[{ required: true }]}><Input maxLength={100} /></Form.Item>
-				<Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, type: "url" }]}><Input /></Form.Item>
+				<Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://node:8317" /></Form.Item>
 				{nodeModal !== "edit" && <>
 					<Form.Item name="node_type" label="Node 类型" rules={[{ required: true }]}><Input /></Form.Item>
 					<Form.Item name="driver_contract_version" label="Driver 合约" rules={[{ required: true }]}><Input /></Form.Item>

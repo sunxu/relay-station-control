@@ -224,7 +224,44 @@ func createStage2RollbackDatabase(t *testing.T, ctx context.Context, root, owner
 		cleanup()
 		t.Fatalf("migrate rollback database: %v\n%s", migrateErr, output)
 	}
+	verification, err := pgx.ConnectConfig(ctx, mustStage2RollbackDatabaseConfig(t, ownerURL))
+	if err != nil {
+		cleanup()
+		t.Fatalf("connect rollback database for migration 36 verification: %v", err)
+	}
+	defer verification.Close(ctx)
+	var version, floor int
+	if err := verification.QueryRow(ctx, `SELECT max(version_id) FILTER (WHERE is_applied),
+		(SELECT phase6_evidence_floor FROM control_runtime_compatibility WHERE singleton_id=1)
+		FROM goose_db_version`).Scan(&version, &floor); err != nil {
+		cleanup()
+		t.Fatalf("read rollback schema version/floor: %v", err)
+	}
+	if version != 36 || floor != 2 {
+		cleanup()
+		t.Fatalf("rollback schema version/floor=%d/%d, want 36/2", version, floor)
+	}
+	var httpConstraintValidated bool
+	if err := verification.QueryRow(ctx, `SELECT convalidated FROM pg_constraint
+		WHERE conrelid='public.relay_node_assets'::regclass
+		  AND conname='relay_node_assets_http_only_check'`).Scan(&httpConstraintValidated); err != nil {
+		cleanup()
+		t.Fatalf("read Node HTTP-only constraint: %v", err)
+	}
+	if !httpConstraintValidated {
+		cleanup()
+		t.Fatal("Stage2 rollback database has an unvalidated Node HTTP-only constraint")
+	}
 	return ownerURL, runtimeURL, cleanup
+}
+
+func mustStage2RollbackDatabaseConfig(t *testing.T, databaseURL string) *pgx.ConnConfig {
+	t.Helper()
+	config, err := pgx.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config
 }
 
 func stage2RollbackDatabaseName(t *testing.T, raw, name string) string {

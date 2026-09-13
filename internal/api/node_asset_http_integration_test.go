@@ -120,7 +120,7 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 	}
 	registerBodies := make([]string, len(ids))
 	for index, id := range ids {
-		registerBodies[index] = fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Node %d","management_endpoint":"https://node-%d.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read","management_health_read"],"reader_secret_ref":"vault://node/%d"}`,
+		registerBodies[index] = fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Node %d","management_endpoint":"http://node-%d.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read","management_health_read"],"reader_secret_ref":"vault://node/%d"}`,
 			uuid.New(), id, index+1, index+1, index+1)
 		response := do(http.MethodPost, "/api/assets/nodes", registerBodies[index], csrf)
 		if response.Code != http.StatusCreated || strings.Contains(response.Body.String(), "reader_secret_ref") || !strings.Contains(response.Body.String(), `"revision":"1"`) {
@@ -132,6 +132,41 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 				t.Fatalf("register replay status=%d body=%s", replay.Code, replay.Body.String())
 			}
 		}
+	}
+
+	var beforeInvalidNodes, beforeInvalidReceipts, beforeInvalidAudits int
+	if err = owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM relay_node_assets),
+		(SELECT count(*) FROM asset_admin_command_receipts WHERE command_kind LIKE 'node.%'),
+		(SELECT count(*) FROM audit_logs WHERE category='asset_node')`).Scan(&beforeInvalidNodes, &beforeInvalidReceipts, &beforeInvalidAudits); err != nil {
+		t.Fatal(err)
+	}
+	invalidRegisterID := uuid.MustParse("00000000-0000-4000-8000-000000000105")
+	invalidRegister := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Invalid HTTPS","management_endpoint":"https://invalid-register.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_health_read"]}`,
+		uuid.New(), invalidRegisterID)
+	invalidEdit := fmt.Sprintf(`{"command_id":"%s","expected_revision":"1","management_endpoint":"https://invalid-edit.example"}`, uuid.New())
+	invalidReplaceID := uuid.MustParse("00000000-0000-4000-8000-000000000106")
+	invalidReplace := fmt.Sprintf(`{"command_id":"%s","expected_revision":"1","new_instance_id":"%s","display_name":"Invalid replacement","management_endpoint":"https://invalid-replace.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_health_read"]}`,
+		uuid.New(), invalidReplaceID)
+	for name, request := range map[string]struct{ method, path, body string }{
+		"register": {method: http.MethodPost, path: "/api/assets/nodes", body: invalidRegister},
+		"edit":     {method: http.MethodPatch, path: "/api/assets/nodes/" + ids[1].String(), body: invalidEdit},
+		"replace":  {method: http.MethodPost, path: "/api/assets/nodes/" + ids[1].String() + "/replace", body: invalidReplace},
+	} {
+		response := do(request.method, request.path, request.body, csrf)
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_endpoint"`) {
+			t.Fatalf("%s HTTPS admission status=%d body=%s", name, response.Code, response.Body.String())
+		}
+	}
+	var afterInvalidNodes, afterInvalidReceipts, afterInvalidAudits int
+	if err = owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM relay_node_assets),
+		(SELECT count(*) FROM asset_admin_command_receipts WHERE command_kind LIKE 'node.%'),
+		(SELECT count(*) FROM audit_logs WHERE category='asset_node')`).Scan(&afterInvalidNodes, &afterInvalidReceipts, &afterInvalidAudits); err != nil {
+		t.Fatal(err)
+	}
+	if beforeInvalidNodes != afterInvalidNodes || beforeInvalidReceipts != afterInvalidReceipts || beforeInvalidAudits != afterInvalidAudits {
+		t.Fatalf("HTTPS admission changed nodes/receipts/audits=%d/%d/%d -> %d/%d/%d", beforeInvalidNodes, beforeInvalidReceipts, beforeInvalidAudits, afterInvalidNodes, afterInvalidReceipts, afterInvalidAudits)
 	}
 
 	registrar, err := owner.Acquire(ctx)

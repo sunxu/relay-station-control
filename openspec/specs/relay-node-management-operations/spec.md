@@ -1,7 +1,7 @@
 # relay-node-management-operations Specification
 
 ## Purpose
-TBD - created by archiving change add-relay-node-management-operations. Update Purpose after archive.
+定义 Relay Node Health、Connection Test 与即时 Monitoring Enable/Disable 的受保护 API、bounded secret-free Probe、immutable Disable receipt fence、并发串行化、审计与低基数指标契约。
 
 ## Requirements
 

@@ -58,8 +58,11 @@ func TestNodeCanonicalIntentV1Fixtures(t *testing.T) {
 
 func TestNormalizeNodeEndpointMatchesAssetContract(t *testing.T) {
 	valid := map[string]string{
-		"HTTPS://NODE.EXAMPLE:443/a/%2e%41": "https://node.example/a/%2E%41",
-		"http://[2001:0db8::1]:80/path/":    "http://[2001:db8::1]/path/",
+		"http://node:8317":                    "http://node:8317",
+		"http://host.docker.internal:8317":    "http://host.docker.internal:8317",
+		"http://node.example:8317/management": "http://node.example:8317/management",
+		"http://192.168.1.10:8317":            "http://192.168.1.10:8317",
+		"http://[2001:0db8::1]:80/path/":      "http://[2001:db8::1]/path/",
 	}
 	for input, want := range valid {
 		got, err := normalizeNodeEndpoint(input)
@@ -68,12 +71,22 @@ func TestNormalizeNodeEndpointMatchesAssetContract(t *testing.T) {
 		}
 	}
 	for _, input := range []string{
-		"ftp://node.example", "https://node.example/a/../b", "https://node.example/%2fadmin",
+		"ftp://node.example", "https://node.example", "https://node.example/a/../b", "https://node.example/%2fadmin",
 		"https://node.example/%5cadmin", "https://node.example:0", "https://node..example",
 	} {
 		if _, err := normalizeNodeEndpoint(input); err != ErrInvalidNodeEndpoint {
 			t.Fatalf("invalid endpoint %q error=%v", input, err)
 		}
+	}
+}
+
+func TestNormalizeNodeEndpointHistoricalReplayKeepsHTTPS(t *testing.T) {
+	got, err := normalizeNodeEndpointForIntent("HTTPS://NODE.EXAMPLE:443/a/%2e%41", true)
+	if err != nil || got != "https://node.example/a/%2E%41" {
+		t.Fatalf("historical replay normalization=%q err=%v", got, err)
+	}
+	if _, err = normalizeNodeEndpointForIntent("https://node.example", false); err != ErrInvalidNodeEndpoint {
+		t.Fatalf("new-command HTTPS error=%v", err)
 	}
 }
 

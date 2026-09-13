@@ -1,7 +1,7 @@
 # gateway-asset-lifecycle Specification
 
 ## Purpose
-TBD - created by archiving change add-gateway-asset-lifecycle-management. Update Purpose after archive.
+定义 Gateway 资产的稳定身份、HTTP-only endpoint、revision、退役与替换 lineage、绑定和 Directory 生命周期关闭，以及共享 durable command receipt、审计和并发失败关闭契约。
 
 ## Requirements
 

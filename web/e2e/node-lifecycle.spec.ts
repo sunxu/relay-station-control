@@ -24,7 +24,7 @@ function node(instance_id: string, display_name: string, revision: string, lifec
     display_name,
     node_type: "cliproxyapi",
     driver_contract_version: "v1",
-    management_endpoint: "https://node.invalid:8317",
+    management_endpoint: "http://node.invalid:8317",
     secret_configured: true,
     capabilities: ["management_account_inventory_read"],
     monitoring: { monitoring_active: false, effective_from: null, effective_to: null },

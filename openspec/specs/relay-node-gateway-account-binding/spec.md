@@ -1,7 +1,7 @@
 # relay-node-gateway-account-binding Specification
 
 ## Purpose
-TBD - created by archiving change add-relay-node-gateway-account-binding. Update Purpose after archive.
+定义 Relay Node 与 Gateway Account 的显式绑定、解绑和原子重绑契约，包括 current/history 唯一性、Directory 解析、生命周期关闭、并发串行化、审计与失败关闭行为。
 
 ## Requirements
 
