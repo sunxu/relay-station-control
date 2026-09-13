@@ -111,9 +111,12 @@ Second review P2 stale evidence finding = FIXED
 Final independent implementation re-review = PASS (P0 = 0, P1 = 0, P2 = 0)
 Independent implementation review = PASS
 Stage 3 implementation commit = b17c673f1146a6bdf7bc9a5e7fc4c33b8c597566
+Stage 3 closeout commit = b1d4ebac1cbe6772918d872c2f067297104ae17a
 Implementation commit = CREATED
 Task 50 = COMPLETE
 Task 50 closeout evidence reconciliation = COMPLETE
 Git/worktree closeout = COMPLETE
-Archive readiness = READY FOR INDEPENDENT ARCHIVE-READINESS REVIEW
-Archive = NOT RUN
+Archive-readiness review = PASS / APPROVED (P0 = 0, P1 = 0, P2 = 0)
+Archive readiness = PASS / APPROVED
+Archive = COMPLETE
+Stage 3 = CLOSED / IMPLEMENTED / ARCHIVED
