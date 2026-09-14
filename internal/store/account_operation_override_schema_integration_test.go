@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sunxu/relay-station-control/internal/accountadmin"
 	store "github.com/sunxu/relay-station-control/internal/store"
 )
@@ -72,6 +74,9 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 	if !bytes.Equal(storedHash, wantHash[:]) {
 		t.Fatalf("derived override hash=%x, want %x", storedHash, wantHash)
 	}
+	if !bytes.Equal(storedHash, referenceOverrideHash(t, "account.lifecycle_override", operation.CommandID, command.Reason, command.Detail)) {
+		t.Fatal("derived override hash did not match independent reference encoder")
+	}
 	firstReceipt, err := repo.Receipt(ctx, command.CommandID)
 	if err != nil {
 		t.Fatal(err)
@@ -125,12 +130,82 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 	if err != nil || updated.SameAccountOverrideAt == nil || updated.ExecutionState != store.AccountDispatched {
 		t.Fatalf("same-account override projection = %#v, err=%v", updated, err)
 	}
+	var sameHash []byte
+	if err := p.QueryRow(ctx, `SELECT canonical_intent_hash FROM admin_command_registry WHERE command_id=$1`, sameCommand.CommandID).Scan(&sameHash); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(sameHash, referenceOverrideHash(t, "account.same_account_override", secondTarget.CommandID, sameCommand.Reason, sameCommand.Detail)) {
+		t.Fatal("same-account override hash did not match independent reference encoder")
+	}
+	if bytes.Equal(wantHash[:], sameHash) {
+		t.Fatal("different override kinds unexpectedly share canonical hash")
+	}
+
+	// The same kind and target with two frozen reasons must produce two distinct,
+	// independently verifiable command identities.
+	reasonTarget := acceptOverrideTarget(t, ctx, repo, admin, node, "reason-binding@example.invalid")
+	if _, _, err := repo.AdmitAccountDispatch(ctx, reasonTarget.CommandID, node, reasonTarget.AccountKey, "reason-binding"); err != nil {
+		t.Fatal(err)
+	}
+	reasonA := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: reasonTarget.CommandID, Reason: "risk_accepted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+	if _, err := service.LifecycleOverride(ctx, reasonA); err != nil {
+		t.Fatal(err)
+	}
+	reasonBTarget := acceptOverrideTarget(t, ctx, repo, admin, node, "reason-binding-b@example.invalid")
+	if _, _, err := repo.AdmitAccountDispatch(ctx, reasonBTarget.CommandID, node, reasonBTarget.AccountKey, "reason-binding-b"); err != nil {
+		t.Fatal(err)
+	}
+	reasonB := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: reasonBTarget.CommandID, Reason: "process_restarted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+	if _, err := service.LifecycleOverride(ctx, reasonB); err != nil {
+		t.Fatal(err)
+	}
+	hashA := queryOverrideHash(t, ctx, p, reasonA.CommandID)
+	hashB := queryOverrideHash(t, ctx, p, reasonB.CommandID)
+	if !bytes.Equal(hashA, referenceOverrideHash(t, "account.lifecycle_override", reasonTarget.CommandID, reasonA.Reason, reasonA.Detail)) || !bytes.Equal(hashB, referenceOverrideHash(t, "account.lifecycle_override", reasonBTarget.CommandID, reasonB.Reason, reasonB.Detail)) || bytes.Equal(hashA, hashB) {
+		t.Fatal("reason binding did not produce distinct reference-matching hashes")
+	}
+
+	// The same kind and reason with two targets must also produce distinct hashes.
+	targetA := acceptOverrideTarget(t, ctx, repo, admin, node, "target-binding-a@example.invalid")
+	targetB := acceptOverrideTarget(t, ctx, repo, admin, node, "target-binding-b@example.invalid")
+	for _, target := range []store.AccountAdminOperation{targetA, targetB} {
+		if _, _, err := repo.AdmitAccountDispatch(ctx, target.CommandID, node, target.AccountKey, "target-binding"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	targetCommandA := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: targetA.CommandID, Reason: "risk_accepted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+	targetCommandB := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: targetB.CommandID, Reason: "risk_accepted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+	if _, err := service.LifecycleOverride(ctx, targetCommandA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.LifecycleOverride(ctx, targetCommandB); err != nil {
+		t.Fatal(err)
+	}
+	targetHashA := queryOverrideHash(t, ctx, p, targetCommandA.CommandID)
+	targetHashB := queryOverrideHash(t, ctx, p, targetCommandB.CommandID)
+	if !bytes.Equal(targetHashA, referenceOverrideHash(t, "account.lifecycle_override", targetA.CommandID, targetCommandA.Reason, targetCommandA.Detail)) || !bytes.Equal(targetHashB, referenceOverrideHash(t, "account.lifecycle_override", targetB.CommandID, targetCommandB.Reason, targetCommandB.Detail)) || bytes.Equal(targetHashA, targetHashB) {
+		t.Fatal("target binding was not reflected in the canonical hash")
+	}
 
 	// Invalid and missing targets are terminal override commands with no target mutation.
 	invalid := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: uuid.New(), Reason: "unknown", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+	invalidBefore := queryOverrideFields(t, ctx, p, operation.CommandID)
 	if _, err := service.LifecycleOverride(ctx, invalid); !errors.Is(err, store.ErrInvalidAccountOperation) && !errors.Is(err, accountadmin.ErrInvalidCommand) {
 		t.Fatalf("invalid reason error=%v", err)
 	}
+	if got := queryOverrideFields(t, ctx, p, operation.CommandID); got != invalidBefore {
+		t.Fatalf("invalid reason changed override fields: before=%#v after=%#v", invalidBefore, got)
+	}
+	assertNoCommandEvidence(t, ctx, p, invalid.CommandID)
+	invalidTarget := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: uuid.Nil, Reason: "risk_accepted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+	invalidTargetBefore := queryOverrideFields(t, ctx, p, operation.CommandID)
+	if _, err := service.LifecycleOverride(ctx, invalidTarget); !errors.Is(err, accountadmin.ErrInvalidCommand) {
+		t.Fatalf("invalid target error=%v", err)
+	}
+	if got := queryOverrideFields(t, ctx, p, operation.CommandID); got != invalidTargetBefore {
+		t.Fatalf("invalid target changed override fields: before=%#v after=%#v", invalidTargetBefore, got)
+	}
+	assertNoCommandEvidence(t, ctx, p, invalidTarget.CommandID)
 	missing := accountadmin.OverrideCommand{CommandID: uuid.New(), ActorAdminID: admin, TargetOperation: uuid.New(), Reason: "risk_accepted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
 	if _, err := service.LifecycleOverride(ctx, missing); !errors.Is(err, store.ErrAccountOperationNotFound) {
 		t.Fatalf("missing target error=%v", err)
@@ -156,56 +231,76 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 		t.Fatal("runtime direct override update unexpectedly succeeded")
 	}
 	// Migration 46's permissive seven-argument runtime signature is gone.
-	// These four attempts model the old caller-controlled hash cases. Since the
-	// legacy entry point is absent, none can create a reservation or any other
-	// durable state through the runtime role.
-	negativeCases := []struct {
-		name, kind, reason string
-		target             uuid.UUID
-		hash               []byte
-	}{
-		{name: "wrong reason", kind: "lifecycle", reason: "node_stopped", target: operation.CommandID, hash: mustOverrideHash(t, store.AccountLifecycleOverride, operation.CommandID, "process_restarted")},
-		{name: "wrong target", kind: "lifecycle", reason: "risk_accepted", target: operation.CommandID, hash: mustOverrideHash(t, store.AccountLifecycleOverride, uuid.New(), "risk_accepted")},
-		{name: "wrong kind", kind: "same", reason: "risk_accepted", target: operation.CommandID, hash: mustOverrideHash(t, store.AccountLifecycleOverride, operation.CommandID, "risk_accepted")},
-		{name: "random hash", kind: "lifecycle", reason: "risk_accepted", target: operation.CommandID, hash: bytes.Repeat([]byte{0xa5}, 32)},
+	legacyCommandID := uuid.New()
+	if _, err := p.Exec(ctx, `SELECT public.control_apply_lifecycle_override_v1($1,$2,$3,$4,$5,$6,$7)`, legacyCommandID, admin, operation.CommandID, "risk_accepted", "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK", bytes.Repeat([]byte{0xa5}, 32), "legacy"); err == nil {
+		t.Fatal("legacy override signature unexpectedly remained callable")
 	}
-	for _, tc := range negativeCases {
-		t.Run(tc.name, func(t *testing.T) {
-			commandID := uuid.New()
-			var err error
-			if tc.kind == "same" {
-				_, err = p.Exec(ctx, `SELECT public.control_apply_same_account_override_v1($1,$2,$3,$4,$5,$6,$7)`, commandID, admin, tc.target, tc.reason, "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK", tc.hash, "negative")
-			} else {
-				_, err = p.Exec(ctx, `SELECT public.control_apply_lifecycle_override_v1($1,$2,$3,$4,$5,$6,$7)`, commandID, admin, tc.target, tc.reason, "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK", tc.hash, "negative")
-			}
-			if err == nil {
-				t.Fatal("legacy permissive override signature unexpectedly callable")
-			}
-			var count int
-			for _, query := range []string{
-				`SELECT count(*) FROM admin_command_registry WHERE command_id=$1`,
-				`SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1`,
-				`SELECT count(*) FROM audit_logs WHERE details->>'command_id'=$1`,
-			} {
-				if err := p.QueryRow(ctx, query, commandID).Scan(&count); err != nil {
-					t.Fatal(err)
-				}
-				if count != 0 {
-					t.Fatalf("%s created %d rows", query, count)
-				}
-			}
-		})
+	assertNoCommandEvidence(t, ctx, p, legacyCommandID)
+}
+
+type overrideFields struct {
+	lifecycleAt, lifecycleBy, lifecycleReason, sameAt, sameBy, sameReason any
+}
+
+func queryOverrideFields(t *testing.T, ctx context.Context, p *pgxpool.Pool, operationID uuid.UUID) overrideFields {
+	t.Helper()
+	var fields overrideFields
+	if err := p.QueryRow(ctx, `SELECT lifecycle_override_at,lifecycle_override_by,lifecycle_override_reason,same_account_override_at,same_account_override_by,same_account_override_reason FROM account_admin_operations WHERE command_id=$1`, operationID).Scan(&fields.lifecycleAt, &fields.lifecycleBy, &fields.lifecycleReason, &fields.sameAt, &fields.sameBy, &fields.sameReason); err != nil {
+		t.Fatal(err)
+	}
+	return fields
+}
+
+func queryOverrideHash(t *testing.T, ctx context.Context, p *pgxpool.Pool, commandID uuid.UUID) []byte {
+	t.Helper()
+	var hash []byte
+	if err := p.QueryRow(ctx, `SELECT canonical_intent_hash FROM admin_command_registry WHERE command_id=$1`, commandID).Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	return hash
+}
+
+func assertNoCommandEvidence(t *testing.T, ctx context.Context, p *pgxpool.Pool, commandID uuid.UUID) {
+	t.Helper()
+	for _, query := range []string{
+		`SELECT count(*) FROM admin_command_registry WHERE command_id=$1`,
+		`SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1`,
+		`SELECT count(*) FROM audit_logs WHERE details->>'command_id'=$1`,
+	} {
+		var count int
+		if err := p.QueryRow(ctx, query, commandID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s created %d rows", query, count)
+		}
 	}
 }
 
-func mustOverrideHash(t *testing.T, kind store.AccountOperationKind, target uuid.UUID, reason string) []byte {
+// referenceOverrideHash is deliberately independent of the production encoder.
+// It mirrors the frozen compact JSON array encoding defined for intent v1.
+func referenceOverrideHash(t *testing.T, kind string, target uuid.UUID, reason, detail string) []byte {
 	t.Helper()
-	intent, err := accountadmin.CanonicalOverrideIntentV1(kind, target, reason, "")
-	if err != nil {
+	confirmation := "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"
+	if kind == "account.same_account_override" {
+		confirmation = "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK"
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode([]any{"account-intent-v1", kind, target.String(), reason, confirmation, nilIfEmpty(detail)}); err != nil {
 		t.Fatal(err)
 	}
-	hash := sha256.Sum256(intent)
+	encodedBytes := bytes.TrimSuffix(encoded.Bytes(), []byte{'\n'})
+	hash := sha256.Sum256(encodedBytes)
 	return hash[:]
+}
+
+func nilIfEmpty(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func acceptOverrideTarget(t *testing.T, ctx context.Context, repo *store.AccountOperationRepository, admin, node uuid.UUID, email string) store.AccountAdminOperation {
