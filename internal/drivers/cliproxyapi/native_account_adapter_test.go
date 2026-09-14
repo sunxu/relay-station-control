@@ -33,7 +33,7 @@ func TestNativeAdapterRuntimeGuardPreventsMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := adapter.DeleteAuthFile(context.Background(), "safe.json")
+	outcome, err := adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid")
 	if err == nil || outcome.FailureCode != NativeFailureUnsupportedNodeVersion || mutations.Load() != 0 {
 		t.Fatalf("outcome=%+v err=%v mutations=%d", outcome, err, mutations.Load())
 	}
@@ -68,7 +68,7 @@ func TestNativeAdapterFixedRoutesAndFreshSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := adapter.SetAuthFileDisabled(context.Background(), "account.json", "1", true)
+	outcome, err := adapter.SetAuthFileDisabled(context.Background(), "antigravity", "a@example.invalid", true)
 	if err != nil || outcome.Kind != NativeOutcomeApplied || gets.Load() != 1 || mutations.Load() != 1 {
 		t.Fatalf("outcome=%+v err=%v gets=%d mutations=%d", outcome, err, gets.Load(), mutations.Load())
 	}
@@ -101,14 +101,192 @@ func TestNativeAdapterUploadAndDeleteUseSingleFixedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome, err := adapter.UploadAuthFile(context.Background(), "a.json", []byte(`{"type":"antigravity","email":"a@example.invalid"}`)); err != nil || outcome.Kind != NativeOutcomeApplied {
+	if outcome, err := adapter.UploadAuthFile(context.Background(), "antigravity", "a@example.invalid", []byte(`{"type":"antigravity","email":"a@example.invalid"}`)); err != nil || outcome.Kind != NativeOutcomeApplied {
 		t.Fatalf("upload=%+v err=%v", outcome, err)
 	}
-	if outcome, err := adapter.DeleteAuthFile(context.Background(), "a.json"); err != nil || outcome.Kind != NativeOutcomeApplied {
-		t.Fatalf("delete=%+v err=%v", outcome, err)
-	}
-	if len(mutationMethods) != 2 || mutationMethods[0] != "POST /v0/management/auth-files?name=a.json" || mutationMethods[1] != "DELETE /v0/management/auth-files?name=a.json" {
+	if len(mutationMethods) != 1 || mutationMethods[0] != "POST /v0/management/auth-files?name=antigravity-a%40example.invalid.json" {
 		t.Fatalf("mutations=%v", mutationMethods)
+	}
+}
+
+func TestNativeAdapterDeleteBindsFreshTarget(t *testing.T) {
+	var gets atomic.Int32
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CPA-VERSION", FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", FrozenRuntimeCommit)
+		if r.Method == http.MethodGet {
+			gets.Add(1)
+			name := "first.json"
+			if gets.Load() > 1 {
+				name = "second.json"
+			}
+			_, _ = io.WriteString(w, `{"files":[{"name":"`+name+`","provider":"antigravity","email":"a@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+			return
+		}
+		gotPath = r.URL.RequestURI()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	config, err := (rootdrivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/v0/management/auth-files?name=first.json" {
+		t.Fatalf("path=%s", gotPath)
+	}
+}
+
+func TestNativeAdapterRepeatedMutationsUseFreshTargets(t *testing.T) {
+	var gets, deletes atomic.Int32
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CPA-VERSION", FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", FrozenRuntimeCommit)
+		if r.Method == http.MethodGet {
+			call := gets.Add(1)
+			name := "first.json"
+			if call == 2 {
+				name = "second.json"
+			}
+			_, _ = io.WriteString(w, `{"files":[{"name":"`+name+`","provider":"antigravity","email":"a@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+			return
+		}
+		deletes.Add(1)
+		paths = append(paths, r.URL.RequestURI())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	config, err := (rootdrivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if gets.Load() != 2 || deletes.Load() != 2 || len(paths) != 2 || paths[0] != "/v0/management/auth-files?name=first.json" || paths[1] != "/v0/management/auth-files?name=second.json" {
+		t.Fatalf("gets=%d deletes=%d paths=%v", gets.Load(), deletes.Load(), paths)
+	}
+}
+
+func TestNativeAdapterArtifactChangeBlocksNextMutation(t *testing.T) {
+	var gets, mutations atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if gets.Add(1) == 1 {
+				w.Header().Set("X-CPA-VERSION", FrozenRuntimeVersion)
+				w.Header().Set("X-CPA-COMMIT", FrozenRuntimeCommit)
+				_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"a@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+				return
+			}
+			w.Header().Set("X-CPA-VERSION", "7.3.1")
+			w.Header().Set("X-CPA-COMMIT", FrozenRuntimeCommit)
+			_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"a@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+			return
+		}
+		mutations.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	config, err := (rootdrivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid")
+	if err == nil || outcome.FailureCode != NativeFailureUnsupportedNodeVersion || mutations.Load() != 1 {
+		t.Fatalf("outcome=%+v err=%v mutations=%d", outcome, err, mutations.Load())
+	}
+}
+
+func TestNativeAdapterArtifactGuardIsEnforcedByMutation(t *testing.T) {
+	tests := []struct {
+		name    string
+		version []string
+		commit  []string
+	}{
+		{name: "missing version", commit: []string{FrozenRuntimeCommit}},
+		{name: "missing commit", version: []string{FrozenRuntimeVersion}},
+		{name: "duplicate version", version: []string{FrozenRuntimeVersion, FrozenRuntimeVersion}, commit: []string{FrozenRuntimeCommit}},
+		{name: "duplicate commit", version: []string{FrozenRuntimeVersion}, commit: []string{FrozenRuntimeCommit, FrozenRuntimeCommit}},
+		{name: "wrong version", version: []string{"7.3.1"}, commit: []string{FrozenRuntimeCommit}},
+		{name: "wrong commit", version: []string{FrozenRuntimeVersion}, commit: []string{"2be9991"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var mutations atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					for _, value := range test.version {
+						w.Header().Add("X-CPA-VERSION", value)
+					}
+					for _, value := range test.commit {
+						w.Header().Add("X-CPA-COMMIT", value)
+					}
+					_, _ = io.WriteString(w, `{"files":[]}`)
+					return
+				}
+				mutations.Add(1)
+			}))
+			defer server.Close()
+			config, err := (rootdrivers.ManagementConfig{}).Validate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapter, err := NewNativeAdapter(server.URL, config, "synthetic-management-key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			outcome, err := adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid")
+			if err == nil || outcome.FailureCode != NativeFailureUnsupportedNodeVersion || mutations.Load() != 0 {
+				t.Fatalf("outcome=%+v err=%v mutations=%d", outcome, err, mutations.Load())
+			}
+		})
+	}
+}
+
+func TestNativeAdapterMutationResponseBounds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CPA-VERSION", FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", FrozenRuntimeCommit)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"files":[]}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, strings.Repeat("x", 70<<10))
+	}))
+	defer server.Close()
+	config, err := (rootdrivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := adapter.UploadAuthFile(context.Background(), "antigravity", "a@example.invalid", []byte(`{"type":"antigravity","email":"a@example.invalid"}`))
+	if err == nil || outcome.Kind != NativeOutcomeUnknown {
+		t.Fatalf("outcome=%+v err=%v", outcome, err)
 	}
 }
 

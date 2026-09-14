@@ -20,6 +20,9 @@ const (
 	FrozenRuntimeVersion          = "7.3.2"
 	FrozenRuntimeCommit           = "2be99911510c3168199015aad915b8457fc82111"
 	nativeMutationBodyLimit int64 = 64 << 10
+	nativeUploadPrefix            = "antigravity-"
+	nativeUploadSuffix            = ".json"
+	maxCreateEmailBytes           = 238
 )
 
 var safeNativeBasename = regexp.MustCompile(`^[^/\\\x00]+$`)
@@ -311,50 +314,79 @@ func ClassifyUploadAdmission(snapshot NativeSnapshot, provider, email, basename 
 	return ""
 }
 
-func (a *NativeAdapter) SetAuthFileDisabled(ctx context.Context, name, authIndex string, disabled bool) (NativeMutationOutcome, error) {
-	if !validNativeBasename(name) || !validAuthIndex(authIndex) {
-		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: NativeFailureInvalidRequest}, errors.New("invalid native target")
-	}
-	if snapshot, err := a.SnapshotAuthFiles(ctx); err != nil {
+func (a *NativeAdapter) SetAuthFileDisabled(ctx context.Context, provider, email string, disabled bool) (NativeMutationOutcome, error) {
+	snapshot, err := a.SnapshotAuthFiles(ctx)
+	if err != nil {
 		return snapshotFailure(snapshot, err)
+	}
+	target, code, err := ResolveMutationTarget(snapshot, provider, email)
+	if err != nil {
+		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: code}, err
 	}
 	body, err := json.Marshal(struct {
 		Name      string `json:"name"`
 		AuthIndex string `json:"auth_index"`
 		Disabled  bool   `json:"disabled"`
-	}{name, authIndex, disabled})
+	}{target.Name, target.AuthIndex, disabled})
 	if err != nil {
 		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: NativeFailureNodeManagementUnavailable}, err
 	}
 	return a.mutate(ctx, nativeMutationStatus, "", body)
 }
 
-func (a *NativeAdapter) DisableAuthFile(ctx context.Context, name, authIndex string) (NativeMutationOutcome, error) {
-	return a.SetAuthFileDisabled(ctx, name, authIndex, true)
+func (a *NativeAdapter) DisableAuthFile(ctx context.Context, provider, email string) (NativeMutationOutcome, error) {
+	return a.SetAuthFileDisabled(ctx, provider, email, true)
 }
 
-func (a *NativeAdapter) EnableAuthFile(ctx context.Context, name, authIndex string) (NativeMutationOutcome, error) {
-	return a.SetAuthFileDisabled(ctx, name, authIndex, false)
+func (a *NativeAdapter) EnableAuthFile(ctx context.Context, provider, email string) (NativeMutationOutcome, error) {
+	return a.SetAuthFileDisabled(ctx, provider, email, false)
 }
 
-func (a *NativeAdapter) DeleteAuthFile(ctx context.Context, name string) (NativeMutationOutcome, error) {
-	if !validNativeBasename(name) {
-		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: NativeFailureInvalidRequest}, errors.New("invalid native basename")
-	}
-	if snapshot, err := a.SnapshotAuthFiles(ctx); err != nil {
+func (a *NativeAdapter) DeleteAuthFile(ctx context.Context, provider, email string) (NativeMutationOutcome, error) {
+	snapshot, err := a.SnapshotAuthFiles(ctx)
+	if err != nil {
 		return snapshotFailure(snapshot, err)
 	}
-	return a.mutate(ctx, nativeMutationDelete, name, nil)
+	target, code, err := ResolveMutationTarget(snapshot, provider, email)
+	if err != nil {
+		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: code}, err
+	}
+	return a.mutate(ctx, nativeMutationDelete, target.Name, nil)
 }
 
-func (a *NativeAdapter) UploadAuthFile(ctx context.Context, name string, credential []byte) (NativeMutationOutcome, error) {
-	if !validNativeBasename(name) || len(credential) == 0 || int64(len(credential)) > 1<<20 {
+// UploadAuthFile performs Upload New. The physical basename is derived from
+// the logical identity and is never accepted from the caller.
+func (a *NativeAdapter) UploadAuthFile(ctx context.Context, provider, email string, credential []byte) (NativeMutationOutcome, error) {
+	provider, email = strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(email))
+	name := nativeUploadPrefix + email + nativeUploadSuffix
+	if provider != "antigravity" || email == "" || len(email) > maxCreateEmailBytes || !validNativeBasename(name) || len(credential) == 0 || int64(len(credential)) > 1<<20 {
 		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: NativeFailureInvalidRequest}, errors.New("invalid native upload")
 	}
-	if snapshot, err := a.SnapshotAuthFiles(ctx); err != nil {
+	snapshot, err := a.SnapshotAuthFiles(ctx)
+	if err != nil {
 		return snapshotFailure(snapshot, err)
 	}
+	if code := ClassifyUploadAdmission(snapshot, provider, email, name); code != "" {
+		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: code}, errors.New(string(code))
+	}
 	return a.mutate(ctx, nativeMutationUpload, name, credential)
+}
+
+// ReplaceAuthFile performs Replace Existing. The physical basename is
+// resolved from this call's fresh snapshot and is never caller-supplied.
+func (a *NativeAdapter) ReplaceAuthFile(ctx context.Context, provider, email string, credential []byte) (NativeMutationOutcome, error) {
+	if len(credential) == 0 || int64(len(credential)) > 1<<20 {
+		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: NativeFailureInvalidRequest}, errors.New("invalid native upload")
+	}
+	snapshot, err := a.SnapshotAuthFiles(ctx)
+	if err != nil {
+		return snapshotFailure(snapshot, err)
+	}
+	target, code, err := ResolveMutationTarget(snapshot, provider, email)
+	if err != nil {
+		return NativeMutationOutcome{Kind: NativeOutcomeFailed, FailureCode: code}, err
+	}
+	return a.mutate(ctx, nativeMutationUpload, target.Name, credential)
 }
 
 func snapshotFailure(snapshot NativeSnapshot, err error) (NativeMutationOutcome, error) {
@@ -404,7 +436,9 @@ func (a *NativeAdapter) mutate(ctx context.Context, kind nativeMutationKind, nam
 		return NativeMutationOutcome{Kind: NativeOutcomeUnknown}, classifyRequestError(OperationInventory, ctx, err)
 	}
 	defer response.Body.Close()
-	_, _, _ = readBounded(response.Body, nativeMutationBodyLimit)
+	if _, tooLarge, readErr := readBounded(response.Body, nativeMutationBodyLimit); tooLarge || readErr != nil {
+		return NativeMutationOutcome{Kind: NativeOutcomeUnknown}, errors.New("native mutation response unavailable")
+	}
 	return classifyNativeResponse(kind, response.StatusCode), nil
 }
 
