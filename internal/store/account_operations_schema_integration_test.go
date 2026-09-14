@@ -51,7 +51,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "44"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "45"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,6 +117,9 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	}
 	if _, err := p.Exec(ctx, `TRUNCATE account_admin_command_receipts`); err == nil {
 		t.Fatal("runtime receipt TRUNCATE unexpectedly succeeded")
+	}
+	if _, err := p.Exec(ctx, `SELECT * FROM control_terminalize_account_operation_noop_v1($1,$2)`, firstID, "legacy-noop"); err == nil {
+		t.Fatal("legacy noop terminalizer unexpectedly remained runtime-callable")
 	}
 	commandReplay, err := r.ReplayTerminal(ctx, firstCommand)
 	if err != nil || commandReplay.HTTPStatus != receipt.HTTPStatus || !bytes.Equal(commandReplay.ResponseBody, receipt.ResponseBody) {

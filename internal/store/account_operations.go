@@ -324,25 +324,6 @@ func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, i
 	return admitted, op, nil
 }
 
-func (r *AccountOperationRepository) TerminalizeNoop(ctx context.Context, id uuid.UUID, requestID string) (AccountAdminOperation, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return AccountAdminOperation{}, err
-	}
-	defer tx.Rollback(ctx)
-	if err = lockAdminCommand(ctx, tx, id); err != nil {
-		return AccountAdminOperation{}, err
-	}
-	op, err := scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_terminalize_account_operation_noop_v1($1,$2)`, id, requestID))
-	if err != nil {
-		return AccountAdminOperation{}, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return AccountAdminOperation{}, err
-	}
-	return op, nil
-}
-
 // AdmitAccountNoop atomically applies same-account admission and the
 // command-specific no-op terminal result before returning to the caller.
 func (r *AccountOperationRepository) AdmitAccountNoop(ctx context.Context, id, nodeID uuid.UUID, accountKey, requestID string) (bool, AccountAdminOperation, error) {
