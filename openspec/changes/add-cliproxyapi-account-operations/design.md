@@ -355,8 +355,8 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Simplification Corrective Round 6
-Previous independent re-review = P0 0 / P1 4 / P2 3 / CHANGES REQUIRED
+Native-First Simplification Corrective Round 7
+Previous independent re-review = P0 0 / P1 1 / P2 2 / CHANGES REQUIRED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate

@@ -3,15 +3,15 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Simplification Corrective Round 6.
+- Architecture direction: Native-First Simplification Corrective Round 7.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
 - Native-First Simplification: no Phase 7 verification state/workflow, scheduler, reconciler, durable job, lease or worker; normal Inventory remains independent business observation.
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
-- Previous independent re-review: P0=0, P1=4, P2=3 / CHANGES REQUIRED.
-- All Round 6 P1/P2 resolutions: incorporated.
+- Previous independent re-review: P0=0, P1=1, P2=2 / CHANGES REQUIRED.
+- All Round 7 P1/P2 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
@@ -42,7 +42,7 @@ Pinned v7.3.2 source inspection confirms the current planning subset:
 
 ## Native-First corrective resolutions incorporated
 
-Round 6 additionally removes Phase 7 verification-owned state/workflow and keeps normal Inventory as independent observation; stable reviewed pre-mutation status/context, including the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping, remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
+Round 7 additionally keeps Phase 7 verification-owned state/workflow removed and normal Inventory independent; stable reviewed pre-mutation status/context, including the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping, remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
 It also freezes the source-reviewed native upload exception: `POST /v0/management/auth-files` HTTP 503 from `authManager == nil` before body read/write is terminal `failed/node_management_unavailable` with a receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 

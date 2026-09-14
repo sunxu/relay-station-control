@@ -34,8 +34,8 @@ Every fresh `GET /v0/management/auth-files` response MUST contain exactly one bo
 
 After this gate, Control MUST classify raw entries transiently. `mutation_eligible_targets` accept only manager-backed `source=file`, `runtime_only=false`, auth_index of 1..256 UTF-8 bytes without controls, safe basename and valid provider/email; provider and type must normalize identically when both exist. Memory/runtime-only, incomplete and disk-fallback entries are ineligible for target mutation. `occupancy_evidence` is broader and MUST conservatively include usable evidence of same identity or basename occupancy even when an entry is not mutation eligible. A clean, structurally valid, version-valid empty `files=[]` response may prove Upload New absence, but an existing-target operation returns `account_target_not_found`; degraded or unusable evidence returns `node_management_unavailable`. Eligible entries are then projected to provider/type, normalized email, basename, auth_index and disabled only. Classification fields, source/runtime flags, full path, status message, ID/token-like fields, raw metadata, quota/cooldown/request counters, headers/proxy/note/routing fields, unknown fields and raw objects MUST be discarded and MUST NOT enter PostgreSQL, receipts, audit, logs, traces, metrics or browser/API output.
 
-#### Scenario: Snapshot is disk fallback
-- **WHEN** the response has no runtime-manager-backed source/runtime/auth_index evidence
+#### Scenario: Non-empty snapshot is disk fallback
+- **WHEN** a non-empty response has disk-fallback, malformed, degraded or otherwise unusable source/runtime/auth_index evidence
 - **THEN** Control returns `node_management_unavailable`, sends zero mutation and persists/exposes no transient classification field
 
 #### Scenario: Runtime identity header mismatches
@@ -84,6 +84,14 @@ Before native mutation, one short PostgreSQL transaction MUST lock Node first, r
 - **WHEN** command A is dispatched or outcome-unknown and command B targets the same Node/account, including after a lifecycle override
 - **THEN** command B returns `account_operation_in_progress` and sends zero native mutation
 
+#### Scenario: Non-empty snapshot contains fallback or degraded evidence
+- **WHEN** a non-empty snapshot contains disk-fallback, malformed, degraded or otherwise unusable evidence that prevents safe mutation-eligibility or occupancy classification
+- **THEN** Control returns `node_management_unavailable` and sends zero native mutation
+
+#### Scenario: Clean empty snapshot permits Upload New
+- **WHEN** the runtime headers are valid, the response shape is valid, and `files=[]`
+- **THEN** Upload New may treat the identity as absent and the generated basename as unoccupied, while Disable, Enable, Remove and Replace Existing return `account_target_not_found`
+
 ### Requirement: Disable and Enable no-op SHALL be decided before native dispatch
 
 After command acceptance, runtime gate, fresh exactly-one resolution and dispatch eligibility, Disable with safe snapshot disabled=true or Enable with disabled=false MUST send zero PATCH and terminalize `remote_noop` with normal audit and exact terminal replay. If desired state differs, Control transitions to dispatched and sends PATCH exactly once; stable 2xx is `remote_applied` and MUST NOT be reclassified as noop from read-back.
@@ -94,7 +102,7 @@ After command acceptance, runtime gate, fresh exactly-one resolution and dispatc
 
 ### Requirement: Native outcomes SHALL be classified conservatively without automatic redispatch
 
-Known successful terminal 2xx after a mutation request MUST map to `remote_applied`. Only adapter-reviewed, provably pre-mutation 4xx may map to `failed`. Timeout, connection loss, response loss and ambiguous native 5xx after request may have arrived MUST map to `outcome_unknown`. Control MUST NOT parse raw native strings to infer commit stage.
+Known successful terminal 2xx after a mutation request MUST map to `remote_applied`. Stable reviewed pre-mutation status/context may map to `failed`. Timeout, connection loss, response loss and ambiguous native 5xx after request may have arrived MUST map to `outcome_unknown`. Control MUST NOT parse raw native strings to infer commit stage.
 
 Every mutation kind follows this rule. A `dispatched` or `outcome_unknown` operation MUST NOT be automatically redispatched after retry, reconciliation or restart. Same-command POST replay returns current projection with 202 and zero remote mutation.
 
