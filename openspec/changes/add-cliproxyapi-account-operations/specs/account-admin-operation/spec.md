@@ -20,11 +20,13 @@ Account commands MUST use domain `account_admin`, encoding version 1 and exactly
 
 ### Requirement: Account command acceptance SHALL be atomic and pre-dispatch
 
-An account mutation is accepted only after one atomic PostgreSQL transaction commits both the Stage 7A registry reservation and an `account_admin_operations` row in `prepared`. Before that commit, authentication/session/super-admin/CSRF, actor-first conflict priority, closed request/canonical identity validation, upload bounds/schema/denylist/HMAC validation and required Node existence lookup MUST complete. No native HTTP may occur before acceptance. Pre-acceptance errors produce no new registry reservation, operation row, receipt or native mutation and return error-only; an actor-first conflict never discloses a target operation.
+An account mutation is accepted only after one atomic PostgreSQL transaction commits both the Stage 7A registry reservation and an `account_admin_operations` row in `prepared`. Before that commit, authentication/session/super-admin/CSRF, actor-first conflict priority, closed request/canonical identity validation, upload bounds/schema/denylist/HMAC validation and required Node existence lookup MUST complete. No native HTTP may occur before acceptance. Pre-acceptance errors produce no new registry reservation, operation row, receipt or native mutation and return error-only; an actor-first conflict never discloses a target operation. A requested provider outside the closed Phase 7 surface, an unsafe Upload New generated basename and an unavailable/unsafe upload intent key are pre-acceptance `unsupported_provider`, `invalid_request` and `service_unavailable` respectively.
 
 `prepared` means accepted, zero previous remote dispatch and no committed deterministic terminal result. It is not a queue or waiting state. Only the exact same-command mutation POST may resume the same operation with fresh checks; GET never resumes it. Upload resume requires the exact credential bytes and upload HMAC; a different fingerprint is `command_conflict` with zero native request.
 
-After acceptance, a deterministic failure before remote dispatch MUST atomically transition `prepared -> failed`, persist terminal audit and the immutable receipt, and return error plus operation. The state remains failed on replay; later external changes require a new command ID. The required deterministic failures are `node_retired`, `node_monitoring_ineligible`, `unsupported_node_version`, `node_management_unavailable`, `account_target_not_found`, `account_target_ambiguous`, `account_target_exists`, `account_filename_conflict` and `account_operation_in_progress`, with null `dispatch_started_at` and zero native mutation. The reviewed post-dispatch Upload POST 503 exception remains a separate `failed/node_management_unavailable` mapping.
+After acceptance, a deterministic failure before remote dispatch MUST atomically transition `prepared -> failed`, persist terminal audit and the immutable receipt, and return error plus operation. The state remains failed on replay; later external changes require a new command ID. The required deterministic failures are `node_retired`, `node_monitoring_ineligible`, `unsupported_provider` when the matching active Provider policy is unavailable, `unsupported_node_version`, `node_management_unavailable`, `invalid_request` for an unsafe Replace Existing inherited basename, `account_target_not_found`, `account_target_ambiguous`, `account_target_exists`, `account_filename_conflict` and `account_operation_in_progress`, with null `dispatch_started_at` and zero native mutation. The reviewed post-dispatch Upload POST 503 exception remains a separate `failed/node_management_unavailable` mapping.
+
+For post-acceptance eligibility, Control MUST evaluate Node lifecycle, monitoring eligibility, the inventory-read capability, matching active Provider policy and same-account serialization in that order. If the matching active Provider policy is absent or inactive, Control MUST terminalize `prepared -> failed` as `unsupported_provider`; it MUST NOT use `node_monitoring_ineligible`. If a fresh inherited Replace Existing basename fails the shared safe-basename validator, Control MUST terminalize `prepared -> failed` as `invalid_request`. Every such accepted pre-dispatch failure has an immutable receipt, an error-plus-operation response and requires a new command ID after conditions change.
 
 #### Scenario: Accepted command is blocked by a same-account operation
 - **WHEN** command B is already `prepared` and fresh dispatch checks find command A `dispatched` or `outcome_unknown` with no same-account override
@@ -41,6 +43,26 @@ After acceptance, a deterministic failure before remote dispatch MUST atomically
 #### Scenario: Deterministic failure response is lost
 - **WHEN** `prepared -> failed` and its receipt commit succeed but the HTTP response is lost
 - **THEN** exact same-command replay returns the persisted status/body with zero re-evaluation and zero native mutation
+
+#### Scenario: Requested provider is outside the closed surface
+- **WHEN** a new command requests a provider other than the supported Phase 7 provider
+- **THEN** Control returns pre-acceptance `409 unsupported_provider` error-only with no registry reservation, operation, receipt or native request
+
+#### Scenario: Active Provider policy is unavailable after acceptance
+- **WHEN** a valid Antigravity operation is `prepared` but no matching active Provider policy exists during ordered dispatch eligibility
+- **THEN** Control commits `prepared -> failed` with `unsupported_provider`, an error-plus-operation body and an immutable receipt; a later policy change requires a new command ID
+
+#### Scenario: Upload New generated basename is unsafe
+- **WHEN** submitted data produces a 239-byte normalized email or an unsafe generated basename
+- **THEN** Control returns pre-acceptance `400 invalid_request` error-only with no reservation, operation, receipt or native request
+
+#### Scenario: Replace Existing inherited basename is unsafe
+- **WHEN** a fresh exactly-one target is found after acceptance but its inherited native basename fails the shared validator
+- **THEN** Control commits `prepared -> failed` with `invalid_request`, an error-plus-operation body and an immutable receipt without sanitizing or sending native mutation
+
+#### Scenario: Upload intent key is unavailable
+- **WHEN** `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE` is missing, unsafe, symlinked, unreadable or the wrong length before acceptance
+- **THEN** Control returns pre-acceptance `503 service_unavailable` error-only with no reservation, operation, receipt or native request
 
 ### Requirement: Control SHALL call only the reviewed native CLIProxyAPI subset
 

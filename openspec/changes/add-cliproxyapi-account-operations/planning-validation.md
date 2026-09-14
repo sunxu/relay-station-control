@@ -11,12 +11,12 @@
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
 - Final independent architecture re-review: P0=0, P1=0, P2=3 non-blocking documentation/finalization findings / PASS; three finalization findings resolved and persisted as P0=0, P1=0, P2=0 / PASS.
-- Planning reconciliation: Gate 1 finalization complete.
-- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 is `READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW`.
+- Planning reconciliation: Gate 1 finalization complete; Gate 2 Corrective Round 2 is incorporated and awaits independent re-review.
+- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 Corrective Round 2 is `READY FOR INDEPENDENT RE-REVIEW`.
 - ADR status: `ACCEPTED`.
 - Detailed Requirements: `FREEZE CANDIDATE`.
 - OpenSpec Change B: `READY CANDIDATE`.
-- Planning / specification readiness: `READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW`.
+- Planning / specification readiness: `READY FOR INDEPENDENT RE-REVIEW`.
 - Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
 - Implementation: `NOT STARTED`.
@@ -64,7 +64,7 @@ It also freezes the source-reviewed native upload exception: `POST /v0/managemen
 
 ## Readiness acceptance still required
 
-Independent architecture re-review must verify:
+Independent Gate 2 Requirements / OpenSpec Planning Readiness Re-review must verify:
 
 - the exact native subset and safe projection match pinned v7.3.2 source;
 - the final runtime artifact commit to enforce is independently frozen before final Implementation Readiness; Gate 2 is planning/specification readiness and does not require that final artifact pin;
@@ -95,6 +95,7 @@ The following matrix is the deterministic planning acceptance set for independen
 - Global command boundary: Stage 7A cross-domain conflict/replay; all seven canonical command intents; upload HMAC golden vectors; wrong-key replay.
 - Native compatibility and boundary: fresh runtime header exact match, missing/duplicate/mismatch handling; the four-route native allowlist; safe snapshot projection; file-backed mutation eligibility; memory/runtime-only exclusion; disk-fallback and malformed/degraded evidence; clean empty Upload New.
 - Admission and targeting: identity and basename collisions; UTF-8 238-byte create-email acceptance and 239-byte rejection; exactly-one existing-target resolution; safe basename validation.
+- Phase-aware errors: unsupported requested provider is pre-acceptance error-only; missing active Provider policy is accepted `prepared -> failed` `unsupported_provider` with receipt; Upload New basename and upload-intent-key failures are pre-acceptance; unsafe Replace Existing inherited basename is accepted `prepared -> failed` `invalid_request` with receipt.
 - Outcomes and recovery: Disable/Enable pre-dispatch noop; sent stable 2xx; reviewed Upload POST 503; ambiguous 5xx; timeout, connection loss and response loss; prepared crash and exact resume; upload credential re-supply and wrong-credential conflict; concurrent prepared retry; dispatched/outcome_unknown restart; zero automatic redispatch.
 - Serialization and overrides: same-account A/B race; PostgreSQL invariant; Retire-first/dispatch-first; lifecycle override and same-account override missing-target, invalid-state, already-set, success, exact replay and different-command race; cross-type override race; each override waives only its own blocker; old unknown request may complete after same-account override.
 - Observation, secrecy and receipts: normal Inventory independent observation; no Phase 7 verification workflow/state/scheduler/reconciler; Secret scans; no raw native response, credential or Management Key exposure; error-only and error-plus-operation response classes; immutable receipt exact replay; override transaction rollback before commit and commit/response-loss replay.
@@ -107,10 +108,23 @@ ADR = ACCEPTED
 Gate 1 = CLOSED / PASS
 Detailed Requirements = FREEZE CANDIDATE
 OpenSpec Change B = READY CANDIDATE
-Planning / specification readiness = READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW
+Previous independent Gate 2 re-review: P0=0 / P1=2 / P2=2 / CHANGES REQUIRED
+Round 2 resolutions: INCORPORATED
+Planning / specification readiness = READY FOR INDEPENDENT RE-REVIEW
 Runtime artifact identity = NOT YET FROZEN
 Node alignment = NOT STARTED
 Node revert = NOT RUN
 Final Implementation Readiness = NOT READY
 Stage 7B implementation = NOT STARTED
 ```
+
+## Phase-aware error acceptance matrix
+
+The following distinctions are normative planning requirements and are evaluated by phase. They do not authorize implementation.
+
+- Pre-acceptance requested-provider rejection: a provider outside the closed Phase 7 surface returns `409 unsupported_provider` error-only; the new command has no registry reservation, operation, receipt or native request.
+- Accepted pre-dispatch Provider policy failure: a valid Antigravity request with no matching active Provider policy atomically commits `prepared -> failed` with `409 unsupported_provider`, an error-plus-operation body and an immutable receipt; later policy recovery requires a new command ID.
+- Upload New local filename admission: an unsafe generated basename or 239-byte normalized email returns pre-acceptance `400 invalid_request` error-only with no reservation, operation, receipt or native request.
+- Replace Existing inherited basename admission: an unsafe fresh native basename after acceptance atomically commits `prepared -> failed` with `400 invalid_request`, an error-plus-operation body and an immutable receipt; it is never sanitized, truncated, hashed or replaced.
+- Upload intent key failure: missing, unreadable, unsafe, symlinked or wrong-length `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE` returns pre-acceptance `503 service_unavailable` error-only with no reservation, operation, receipt or native request; there is no asset K1 fallback.
+- Other accepted deterministic pre-dispatch failures (`node_retired`, `node_monitoring_ineligible`, `unsupported_node_version`, `node_management_unavailable`, target/occupancy errors and `account_operation_in_progress`) commit `prepared -> failed`, retain null `dispatch_started_at`, create a receipt and require a new command after conditions change.

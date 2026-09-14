@@ -353,6 +353,23 @@ Audit records actor/request/command/operation/Node/provider/protected business i
 
 Stable Control errors include `invalid_request`, `node_not_found`, `node_retired`, `node_management_unavailable`, `node_monitoring_ineligible`, `unsupported_provider`, `account_target_not_found`, `account_target_ambiguous`, `account_operation_in_progress`, `account_operation_not_overridable`, `lifecycle_override_already_set`, `same_account_override_already_set`, `command_conflict`, `upload_too_large`, `upload_invalid`, `identity_mismatch`, `remote_outcome_unknown` and `service_unavailable`. Raw native messages are never relayed.
 
+### Phase-aware acceptance and error contract
+
+The acceptance boundary is normative: a new account mutation exists only after one PostgreSQL transaction commits the global registry reservation together with `account_admin_operations(execution_state=prepared)`. Before that commit, no reservation, operation, receipt or native request may survive. Pre-acceptance failures are error-only and include authentication/authorization/CSRF, request or Upload New validation (`invalid_request`, `upload_too_large`, `upload_invalid`, `identity_mismatch`), requested-provider `unsupported_provider`, `node_not_found`, upload intent-key `service_unavailable`, and actor-first `command_conflict`.
+
+After acceptance, deterministic failures before native dispatch terminalize `prepared -> failed`, set no `dispatch_started_at`, persist terminal audit and an immutable receipt, and return error plus operation. This set includes `node_retired`, `node_monitoring_ineligible`, missing/inactive matching Provider policy as `unsupported_provider`, `unsupported_node_version`, `node_management_unavailable`, unsafe Replace Existing inherited basename as `invalid_request`, target/occupancy errors and `account_operation_in_progress`. Exact same-command replay returns the receipt; when conditions change, a new command ID is required. Dispatch eligibility checks Node lifecycle, monitoring, inventory-read capability, Provider policy and same-account serialization in that order.
+
+| error code / cause | phase | operation | state | receipt | body | same command |
+|---|---|---:|---|---|---|---|
+| `unsupported_provider` — requested provider outside closed surface | pre-acceptance | no | none | no | error-only | may resubmit after correcting request |
+| `unsupported_provider` — valid request but no active Provider policy | accepted pre-dispatch | yes | `failed` | yes | error + operation | exact receipt; new ID after policy change |
+| `invalid_request` — Upload New generated basename unsafe | pre-acceptance | no | none | no | error-only | may resubmit corrected request |
+| `invalid_request` — Replace Existing inherited basename unsafe | accepted pre-dispatch | yes | `failed` | yes | error + operation | exact receipt; new ID after repair |
+| `service_unavailable` — upload intent key missing/unsafe/wrong length | pre-acceptance | no | none | no | error-only | may evaluate normally once key is restored |
+| `node_retired`, `node_monitoring_ineligible`, `unsupported_node_version`, `node_management_unavailable`, target/occupancy errors, `account_operation_in_progress` | accepted pre-dispatch | yes | `failed` | yes | error + operation | exact receipt; new ID after conditions change |
+
+The reviewed v7.3.2 Upload POST `503` at `authManager == nil` before credential-body read/write remains a separate dispatched `failed/node_management_unavailable` exception. Stable native 2xx is `remote_applied`; timeout, connection/response loss and ambiguous or unreviewed 5xx remain `outcome_unknown`. No raw native error text is parsed.
+
 ### 14. Compatibility, supersession and rollout
 
 Stage 7A remains satisfied at migration 37 and class/floor 3/3. Native-First implementation compatibility class/floor is assigned only with reviewed Control artifact/schema evidence. Forward schema/receipts remain preserved on rollback.
@@ -386,11 +403,15 @@ This historical candidate did not declare Architecture Review PASS, Detailed Req
 
 ## Current Gate 2 candidate
 
+### Gate 2 Corrective Round 2 status
+
+Previous independent Gate 2 re-review: `P0=0 / P1=2 / P2=2 / CHANGES REQUIRED`；Round 2 resolutions: `INCORPORATED`。Gate 1 remains `CLOSED / PASS`; Detailed Requirements are `FREEZE CANDIDATE`; OpenSpec Change B is `READY CANDIDATE`; Gate 2 and planning/specification readiness are `READY FOR INDEPENDENT RE-REVIEW`。Runtime artifact identity remains `NOT YET FROZEN`; implementation is not authorized.
+
 ```text
 Architecture Review = PASS
 ADR = ACCEPTED
 Gate 1 = CLOSED / PASS
-Gate 2 = READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW
+Gate 2 = READY FOR INDEPENDENT RE-REVIEW
 Detailed Requirements = FREEZE CANDIDATE
 OpenSpec Change B = READY CANDIDATE
 Runtime artifact identity = NOT YET FROZEN
