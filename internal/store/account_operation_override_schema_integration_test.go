@@ -156,9 +156,56 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 		t.Fatal("runtime direct override update unexpectedly succeeded")
 	}
 	// Migration 46's permissive seven-argument runtime signature is gone.
-	if _, err := p.Exec(ctx, `SELECT public.control_apply_lifecycle_override_v1($1,$2,$3,$4,$5,$6,$7)`, uuid.New(), admin, operation.CommandID, "risk_accepted", "", make([]byte, 32), "legacy"); err == nil {
-		t.Fatal("legacy override signature unexpectedly remained callable")
+	// These four attempts model the old caller-controlled hash cases. Since the
+	// legacy entry point is absent, none can create a reservation or any other
+	// durable state through the runtime role.
+	negativeCases := []struct {
+		name, kind, reason string
+		target             uuid.UUID
+		hash               []byte
+	}{
+		{name: "wrong reason", kind: "lifecycle", reason: "node_stopped", target: operation.CommandID, hash: mustOverrideHash(t, store.AccountLifecycleOverride, operation.CommandID, "process_restarted")},
+		{name: "wrong target", kind: "lifecycle", reason: "risk_accepted", target: operation.CommandID, hash: mustOverrideHash(t, store.AccountLifecycleOverride, uuid.New(), "risk_accepted")},
+		{name: "wrong kind", kind: "same", reason: "risk_accepted", target: operation.CommandID, hash: mustOverrideHash(t, store.AccountLifecycleOverride, operation.CommandID, "risk_accepted")},
+		{name: "random hash", kind: "lifecycle", reason: "risk_accepted", target: operation.CommandID, hash: bytes.Repeat([]byte{0xa5}, 32)},
 	}
+	for _, tc := range negativeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			commandID := uuid.New()
+			var err error
+			if tc.kind == "same" {
+				_, err = p.Exec(ctx, `SELECT public.control_apply_same_account_override_v1($1,$2,$3,$4,$5,$6,$7)`, commandID, admin, tc.target, tc.reason, "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK", tc.hash, "negative")
+			} else {
+				_, err = p.Exec(ctx, `SELECT public.control_apply_lifecycle_override_v1($1,$2,$3,$4,$5,$6,$7)`, commandID, admin, tc.target, tc.reason, "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK", tc.hash, "negative")
+			}
+			if err == nil {
+				t.Fatal("legacy permissive override signature unexpectedly callable")
+			}
+			var count int
+			for _, query := range []string{
+				`SELECT count(*) FROM admin_command_registry WHERE command_id=$1`,
+				`SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1`,
+				`SELECT count(*) FROM audit_logs WHERE details->>'command_id'=$1`,
+			} {
+				if err := p.QueryRow(ctx, query, commandID).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				if count != 0 {
+					t.Fatalf("%s created %d rows", query, count)
+				}
+			}
+		})
+	}
+}
+
+func mustOverrideHash(t *testing.T, kind store.AccountOperationKind, target uuid.UUID, reason string) []byte {
+	t.Helper()
+	intent, err := accountadmin.CanonicalOverrideIntentV1(kind, target, reason, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(intent)
+	return hash[:]
 }
 
 func acceptOverrideTarget(t *testing.T, ctx context.Context, repo *store.AccountOperationRepository, admin, node uuid.UUID, email string) store.AccountAdminOperation {
