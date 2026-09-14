@@ -405,7 +405,7 @@ This historical candidate did not declare Architecture Review PASS, Detailed Req
 
 ### Gate 2 final and Gate 3 finalization status
 
-Independent Gate 2 final re-review: `P0=0 / P1=0 / P2=2 non-blocking / PASS`; final Gate 2 findings `P0=0 / P1=0 / P2=0`. Gate 1 and Gate 2 are `CLOSED / PASS`; Detailed Requirements are `FROZEN`; OpenSpec Change B is `READY`; planning/specification readiness is `PASS`. Gate 3 is `CLOSED / PASS` after Node alignment, native acceptance and artifact pin; runtime artifact identity is `FROZEN`; Final Implementation Readiness is `PASS`; Gate 4 is next and implementation remains unauthorized.
+Independent Gate 2 final re-review: `P0=0 / P1=0 / P2=2 non-blocking / PASS`; final Gate 2 findings `P0=0 / P1=0 / P2=0`. Gate 1 and Gate 2 are `CLOSED / PASS`; Detailed Requirements are `FROZEN`; OpenSpec Change B is `READY`; planning/specification readiness is `PASS`. Gate 3 is `CLOSED / PASS` after Node alignment, native acceptance and artifact pin; runtime artifact identity is `FROZEN`; Final Implementation Readiness is `PASS`; Gate 4 is `IN PROGRESS` with Round 1 persistence/domain implementation as an `IMPLEMENTED CANDIDATE`.
 
 ```text
 Architecture Review = PASS
@@ -418,8 +418,9 @@ Runtime artifact identity = FROZEN
 Final Implementation Readiness = PASS
 Node alignment = COMPLETE
 Node revert = COMPLETE
-Gate 4 = NEXT
-Stage 7B implementation = NOT STARTED
+Gate 4 = IN PROGRESS
+Stage 7B Round 1 Persistence + Domain Core = IMPLEMENTED CANDIDATE
+Native adapter / API / UI / E2E = NOT STARTED
 ```
 
 ## Acceptance boundary and pre-dispatch terminality
