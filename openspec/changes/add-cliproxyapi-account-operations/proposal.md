@@ -9,7 +9,7 @@ This change plans the Control account-operation product surface after the global
 - Add a minimal `account_admin_operations` durable execution/recovery projection with orthogonal `execution_state` and `verification_state`; it is not a generic workflow engine.
 - Provide explicit single-account Disable, Enable, Remove, Upload New and Replace Existing administrator operations for Antigravity.
 - Resolve `(node_instance_id, account_key)` to exactly one current physical target at operation time and require a generic opaque Node-side precondition.
-- Depend on external `Node Account Management Contract v1`: persistence errors, serialized mutation, strict 256 KiB single-file Antigravity allowlist, explicit create/replace, atomic replacement, secret-safe postcondition proof, bounded synchronous mutation, Control `dispatch_token` reuse as Node `dispatch_token_v1`, durable same-token fenced recovery resolve, and stable sanitized errors.
+- Depend on the accepted external `Node Account Management Contract v1` at revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`: persistence errors, serialized mutation, strict 256 KiB single-file Antigravity allowlist, explicit create/replace, atomic replacement, secret-safe postcondition proof, bounded synchronous mutation, fresh authenticated capability discovery, Control `dispatch_token` reuse as Node `dispatch_token_v1`, durable same-token fenced recovery resolve, and stable sanitized errors.
 - Use the Change A global command registry/actor-first namespace; use a separate Phase 7 upload-intent fingerprint key rather than expanding Phase 6 asset K1 semantics.
 - Add bounded dispatch/quiescence fences that block Node Retire/Replace until remote mutation can no longer begin/continue; require active monitoring/capability/provider-policy eligibility before dispatch.
 - Wake/request only the existing fixed-slot Inventory scheduler, then verify business convergence from accepted normal Inventory evidence. No off-grid/special Phase 7 poll is created.
@@ -23,7 +23,7 @@ This change plans the Control account-operation product surface after the global
 
 ### Modified Capabilities
 
-- `asset-admin-command`: Phase 7 uses the global registry from Change A, keeps existing asset K1 unchanged and materializes terminal replay evidence only under the reviewed account-operation contract.
+- `asset-admin-command`: Phase 7 uses the global registry from archived Change A, keeps existing asset K1 unchanged, and uses a separate immutable account-command terminal receipt contract without expanding the asset-only receipt relation.
 - `relay-node-asset-lifecycle`: Retire/Replace must reject while a dispatched account operation lacks proven remote quiescence.
 - `account-inventory-poll-run`: account operations may only wake/request the existing UTC fixed-slot scheduler; dispatch also requires current monitoring/capability/policy eligibility.
 - `account-inventory-snapshot`: Inventory verifies only business convergence and cannot by itself prove uploaded credential bytes.
@@ -31,8 +31,8 @@ This change plans the Control account-operation product surface after the global
 ## Dependencies
 
 1. Ops frozen baseline `594a349435dbb6c2d4265be79fb913015b1b05c5`.
-2. `add-global-admin-command-registry` planning/implementation and its compatibility barrier.
-3. External pinned `Node Account Management Contract v1` hardened artifact. Planning discovery baseline: local fork `273d624c70f6eb8bdd7b049df396c306acd3f8d0`, observed upstream `ac02da6c05e18f465aa7e3ed5b0a65a2f060917d`; implementation must re-check freshness and pin final fork/image digest.
+2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
+3. Accepted Node Account Management Contract v1 artifact: revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
 
 ## Impact
@@ -45,4 +45,4 @@ No OAuth/Re-auth, automatic repair/move/remove, Credential Vault, generic Workfl
 
 ## Planning status
 
-Planning = COMPLETE candidate. Dependency readiness = WAITING ON `add-global-admin-command-registry` implementation/readiness plus pinned Node Account Management Contract v1. Independent readiness review = REQUIRED. Implementation = NOT STARTED.
+Planning = COMPLETE. Stage 7A and Stage 7N dependencies = SATISFIED candidate. B-P1-1 terminal receipt, B-P1-2 Node mutation capability gate and B-P1-3 exact product API resolutions are incorporated. Implementation readiness = READY FOR INDEPENDENT RE-REVIEW. Implementation = NOT STARTED.

@@ -1,18 +1,18 @@
 ## 1. Dependency and Node contract gate
 
-- [ ] 1.1 Require `add-global-admin-command-registry` readiness/implementation before Change B apply; record exact dependency commit/migration/floor.
-- [ ] 1.2 Re-check current CLIProxyAPI upstream, pin exact upstream baseline, identify selective ports, implement/review external Node Account Management Contract v1 in the Node repo under its own workflow, and pin final fork commit/image digest.
-- [ ] 1.3 Prove Node v1 bounded synchronous mutation/quiescence, durable `dispatch_token_v1` admission fences, same-token fenced recovery resolve, precondition, strict upload allowlist, persistence error propagation, atomic replacement, postcondition proof and sanitized errors before Control remote mutation is enabled.
+- [x] 1.1 Record satisfied `add-global-admin-command-registry` dependency: migration 37 and compatibility class/floor 3/3.
+- [x] 1.2 Record independently accepted Node Contract v1 revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`.
+- [x] 1.3 Reconcile accepted Node v1 bounded mutation/quiescence, durable dispatch fencing, strict upload, proof and sanitized error dependencies into Change B planning.
 
 ## 2. Control durable operation foundation
 
-- [ ] 2.1 Add additive migration for `account_admin_operations`, constraints/ACL/controlled writers and any audit allowlist/indexes; no raw credential/path.
+- [ ] 2.1 Add additive migration for `account_admin_operations`, separate immutable `account_admin_command_receipts`, constraints/ACL/controlled writers and any audit allowlist/indexes; no raw credential/path.
 - [ ] 2.2 Add sqlc/Store projection and state-transition functions with row locking, monotonic state shape, dispatch/quiescence metadata and restart recovery reads.
 - [ ] 2.3 Integrate global admin command registry actor-first reservation; preserve separate Phase 7 upload fingerprint key and existing asset K1.
 
 ## 3. Node adapter and target resolution
 
-- [ ] 3.1 Add a bounded Control Node account-management client/adapter using HTTP-only base endpoint + Management Key server-side only.
+- [ ] 3.1 Add a bounded Control Node account-management client/adapter using HTTP-only base endpoint + Management Key server-side only; require fresh exact authenticated contract discovery before mutation.
 - [ ] 3.2 Implement fresh exactly-one `(Node,account_key)` resolution, opaque target precondition and fixed sanitized error mapping.
 - [ ] 3.3 Enforce no browser/raw path/auth_index identity exposure and no `/auth-files/download` proxy.
 
@@ -51,4 +51,4 @@
 
 ## Planning gate
 
-Planning = COMPLETE candidate. Dependency readiness = WAITING ON global registry + pinned Node Account Management Contract v1. Independent readiness review = REQUIRED. This task list does not authorize implementation.
+Planning = COMPLETE. Dependencies = SATISFIED candidate. Implementation readiness = READY FOR INDEPENDENT RE-REVIEW. Implementation = NOT STARTED. This task list does not authorize implementation.

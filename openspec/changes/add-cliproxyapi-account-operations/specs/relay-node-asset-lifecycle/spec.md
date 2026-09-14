@@ -15,3 +15,11 @@ Retire/Replace MUST, after acquiring the existing Node-first lifecycle lock, ins
 #### Scenario: Quiescence deadline expires without Node proof
 - **WHEN** the conservative `quiescence_deadline` passes but no terminal response, successful durable token-fencing resolve, or proven process restart exists
 - **THEN** Retire/Replace remains blocked because elapsed time alone cannot prove the remote mutation stopped
+
+### Requirement: Node mutation capability SHALL be explicitly declared and runtime-verified
+
+Change B MUST add `management_account_mutation_v1` to the approved CLIProxyAPI Driver contract capability set without changing the existing immutable per-Node capability ownership rule. A Node may dispatch account mutation only when its durable capability declaration contains both `management_account_inventory_read` and `management_account_mutation_v1` and fresh authenticated runtime discovery confirms the exact frozen v1 contract. Migration MUST NOT silently grant the new capability to existing Node identities; an existing Node that lacks it requires the normal explicit lifecycle path, including Replace where immutable capability ownership requires a new identity.
+
+#### Scenario: Existing Node lacks mutation capability
+- **WHEN** an active legacy Node has Inventory-read capability but no durable `management_account_mutation_v1` declaration
+- **THEN** Control returns `unsupported_node_contract` with zero remote mutation and does not infer support from image or commit metadata

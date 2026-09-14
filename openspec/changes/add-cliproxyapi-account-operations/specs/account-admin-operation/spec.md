@@ -26,7 +26,9 @@ Disable/Enable/Remove/Replace MUST resolve `(node_instance_id, canonical account
 
 ### Requirement: Account dispatch SHALL require lifecycle and monitoring eligibility
 
-Before remote mutation, a short transaction MUST lock the Node first, verify active lifecycle, then lock/read current monitoring according to the existing Node-first graph and require a current non-cancelled activation, `management_account_inventory_read` capability and matching active Provider policy. It MUST then reject a same-target live operation, lock the prepared account operation, persist dispatch/quiescence metadata and atomically transition `prepared -> dispatched`. No DB lock is held across HTTP.
+Before remote mutation, Control MUST first perform fresh authenticated `GET /v0/management/account-contract/v1` discovery and require `contract=node-account-management`, `version=v1`, provider `antigravity`, capabilities `management_account_inventory_read` and `management_account_mutation_v1`, and exact constants `max_credential_bytes=262144`, `max_request_read_duration_ms=5000`, `max_mutation_duration_ms=15000`, `max_quiescence_duration_ms=25000`, `min_post_commit_quiescence_reserve_ms=10000`. A missing capability, unsupported store, version/constant mismatch, invalid response or unavailable discovery MUST return `unsupported_node_contract` and send zero resolve/mutation request. Artifact metadata MUST NOT substitute for discovery.
+
+After successful discovery, a short transaction MUST lock the Node first, verify active lifecycle, then lock/read current monitoring according to the existing Node-first graph and require a current non-cancelled activation, both required persisted Node capabilities and matching active Provider policy. It MUST then reject a same-target live operation, lock the prepared account operation, persist dispatch/quiescence metadata and atomically transition `prepared -> dispatched`. No DB lock is held across HTTP. Runtime discovery and DB authorization are independent mandatory gates.
 
 #### Scenario: Active Node monitoring is disabled
 - **WHEN** Node lifecycle is active but no current eligible monitoring activation exists
@@ -35,6 +37,10 @@ Before remote mutation, a short transaction MUST lock the Node first, verify act
 #### Scenario: Monitoring Disable wins the Node lock
 - **WHEN** administrator Disable commits before account dispatch authorization obtains the Node lock
 - **THEN** account dispatch re-reads monitoring ineligible and sends zero remote request
+
+#### Scenario: Runtime contract differs from persisted capability
+- **WHEN** the Node row advertises mutation capability but fresh authenticated discovery omits it or returns any mismatched v1 constant
+- **THEN** Control returns `unsupported_node_contract`, sends zero target resolve/mutation request and does not treat commit headers as authorization
 
 ### Requirement: Remote mutation SHALL remain fenced until quiescence is proven
 
@@ -61,6 +67,44 @@ After response loss, Control MUST perform an authenticated resolve using the sam
 #### Scenario: Mutation succeeds but Inventory never proves convergence
 - **WHEN** remote execution is confirmed but accepted Inventory evidence does not arrive before the verification deadline
 - **THEN** execution remains `remote_applied` while verification becomes `timeout`
+
+### Requirement: Terminal account receipts SHALL preserve exact original POST replay
+
+Change B MUST create a separate immutable `account_admin_command_receipts` relation keyed and integrity-bound to `admin_command_registry`; it MUST NOT add account commands to `asset_admin_command_receipts`. Receipt rows MUST preserve actor, `account_admin` domain, kind, intent encoding/hash/key version, HTTP status, `application/json` content type, exact canonical response bytes and DB commit time. Runtime roles MUST have no unrestricted INSERT/UPDATE/DELETE/TRUNCATE privilege, and controlled insertion MUST reject a missing/divergent registry reservation or nonterminal operation.
+
+Only `remote_applied`, `remote_noop`, `remote_partial` and `failed` are receipt-eligible. Transition to one of those states, terminal audit and receipt insertion MUST commit atomically before the response is sent. `prepared`, `dispatched` and `outcome_unknown` MUST NOT have a terminal receipt. A deterministic failure after operation acceptance but before remote dispatch becomes terminal `failed` with its exact mapped response; a failure before request acceptance/global reservation creates neither operation nor receipt. `remote_partial` is terminal and persists its exact `502` response.
+
+Exact same actor/domain/kind/intent terminal replay MUST return the stored HTTP status and response bytes. Mutable recovery or verification updates MUST NOT rewrite the receipt; current verification is available only from the operation GET projection.
+
+#### Scenario: Response is lost with unknown outcome
+- **WHEN** the remote response is lost and recovery has not established a terminal execution result
+- **THEN** execution remains `outcome_unknown`, no terminal receipt exists, and same-command POST replay returns `202` current projection with zero redispatch
+
+#### Scenario: Remote partial terminalization
+- **WHEN** Node proves a physical commit followed by a bounded runtime or marker partial failure
+- **THEN** Control atomically records `remote_partial`, terminal audit and immutable `502 remote_partial` receipt, then exact replay returns those persisted bytes
+
+#### Scenario: Failure before remote dispatch after acceptance
+- **WHEN** a command and operation were accepted but a deterministic dispatch prerequisite fails before any Node mutation request
+- **THEN** Control records terminal `failed` and its exact mapped receipt atomically, with zero remote mutation
+
+### Requirement: Account operation HTTP surfaces SHALL have a frozen exact contract
+
+The routes MUST be exactly `POST /api/account-operations/disable`, `POST /api/account-operations/enable`, `POST /api/account-operations/remove`, `POST /api/account-operations/upload-new`, `POST /api/account-operations/replace-existing` and `GET /api/account-operations/{command_id}`.
+
+JSON bodies MUST be at most 8192 bytes. Disable and Enable bodies MUST contain exactly lowercase UUID `command_id`, UUID `node_instance_id` and canonical `account_key` of at most 385 UTF-8 bytes. Remove MUST additionally contain exact `confirmation="REMOVE"`. Upload New and Replace Existing MUST use multipart of at most 270336 bytes with exactly one `request` part (`application/json`, at most 8192 bytes) and one `credential` part (at most 262144 bytes); request contains exactly `command_id`, `node_instance_id`, `account_key`, and credential identity MUST match. Unknown fields and parts are invalid.
+
+The public operation projection MUST contain exactly `command_id`, `node_instance_id`, `account_key`, `operation_kind`, `execution_state`, `verification_state`, nullable `result`, nullable `error_code`, `created_at` and `updated_at`. `operation_kind` MUST be `disable|enable|remove|upload_new|replace_existing`; `result` MUST be null or `applied|noop|partial|failed`; timestamps MUST be UTC RFC3339. `prepared|dispatched` use null result/error, `remote_applied` uses `applied`, `remote_noop` uses `noop`, `remote_partial` uses `partial/remote_partial`, `outcome_unknown` uses null/`remote_outcome_unknown`, and `failed` uses `failed/<fixed error>`. The projection MUST exclude Management Key, dispatch token, target precondition, postcondition proof, raw Node response, filename/path and credential. Terminal success returns `200 {"operation":...}`; nonterminal acceptance/replay returns `202 {"operation":...}`; terminal partial returns `502` with sanitized error and operation; GET returns `200` current projection or `404 operation_not_found`. Every response MUST use `Cache-Control: no-store`.
+
+The stable status mapping MUST be: `400 invalid_request`; `401 unauthenticated`; `403 forbidden`; `404 node_not_found|account_target_not_found|operation_not_found`; `409 command_conflict|node_retired|node_monitoring_ineligible|unsupported_node_contract|unsupported_provider|account_target_ambiguous|account_target_changed|account_operation_in_progress`; `413 upload_too_large`; `422 upload_invalid|identity_mismatch`; `502 remote_partial|remote_failed`; `503 node_management_unavailable|service_unavailable`. `remote_outcome_unknown` MUST be represented as a `202` projection. Error text is bounded and sanitized.
+
+#### Scenario: Same command is still nonterminal
+- **WHEN** the same actor and intent repeats a POST whose operation is `prepared`, `dispatched` or `outcome_unknown`
+- **THEN** Control returns `202` with the current public projection, sends no new remote request and creates no terminal receipt
+
+#### Scenario: Exact terminal replay after verification changes
+- **WHEN** a terminal command is replayed after its mutable verification state changed
+- **THEN** POST returns the original receipt status/body exactly and GET returns the newer verification projection
 
 ### Requirement: Disable and Enable SHALL confirm durable Node state before remote success
 

@@ -22,18 +22,22 @@ No repair automation, OAuth, move, batch/all, credential vault, scheduler owners
 
 ### 1. Product API shape
 
-Planned protected routes:
+The protected v1 product routes are frozen as:
 
 ```text
 POST /api/account-operations/disable          JSON {command_id,node_instance_id,account_key}
 POST /api/account-operations/enable           JSON {command_id,node_instance_id,account_key}
 POST /api/account-operations/remove           JSON {command_id,node_instance_id,account_key,confirmation}
-POST /api/account-operations/upload-new       multipart: command_id,node_instance_id,file
-POST /api/account-operations/replace-existing multipart: command_id,node_instance_id,account_key,file
+POST /api/account-operations/upload-new       multipart: request,credential
+POST /api/account-operations/replace-existing multipart: request,credential
 GET  /api/account-operations/{command_id}
 ```
 
-POST routes require active authenticated `super_admin`, same-origin and CSRF. `GET` is protected/read-only and no-store. Browser never receives Node Management Key or raw credential. Accepted remote execution returns a sanitized operation projection; verification is observed through the projection endpoint. Exact HTTP status/body details are spec-owned and generated from OpenAPI during implementation.
+JSON requests are at most 8192 bytes and reject unknown fields. Disable/Enable require exactly canonical lowercase UUID `command_id`, UUID `node_instance_id` and canonical `account_key` of at most 385 UTF-8 bytes; Remove additionally requires `confirmation="REMOVE"`. Each upload multipart body is at most 270336 bytes and contains exactly one `request` part (`application/json`, at most 8192 bytes) and one `credential` part (at most 262144 bytes). The Upload New request object contains `command_id`, `node_instance_id` and `account_key`; Replace Existing uses the same fields and resolves that existing account. Credential identity MUST equal the request account identity.
+
+POST routes require active authenticated `super_admin`, same-origin and CSRF. `GET` is protected/read-only. Every response, including errors, carries `Cache-Control: no-store`. Browser never receives Node Management Key, dispatch token, target precondition, postcondition proof, raw Node response, path or credential.
+
+The public operation projection is exactly `command_id`, `node_instance_id`, `account_key`, `operation_kind`, `execution_state`, `verification_state`, nullable `result`, nullable `error_code`, `created_at` and `updated_at`. `operation_kind` is `disable|enable|remove|upload_new|replace_existing`; `result` is null or `applied|noop|partial|failed`; timestamps are UTC RFC3339 strings. `prepared|dispatched` use null result/error; `remote_applied` uses `applied`; `remote_noop` uses `noop`; `remote_partial` uses `partial/remote_partial`; `outcome_unknown` uses null/`remote_outcome_unknown`; `failed` uses `failed/<fixed error code>`. A terminal success returns `200 {"operation":<projection>}`. A nonterminal accepted command (`prepared`, `dispatched` or `outcome_unknown`) returns `202` with the same body shape; exact same-command nonterminal replay returns the current projection with `202` and zero redispatch. A terminal `remote_partial` returns `502 {"error":{"code":"remote_partial","message":<sanitized>},"operation":<projection>}`. Other terminal failures use the fixed mapping in Decision 18 and include the operation projection. `GET` returns `200 {"operation":<current projection>}` or `404 operation_not_found`; it is the only surface that exposes later verification updates.
 
 ### 2. Global command acceptance
 
@@ -41,7 +45,29 @@ Change B depends on `add-global-admin-command-registry`. After auth/session/supe
 
 New valid account command reservation and `account_admin_operations` creation occur atomically in one short DB transaction. Existing nonterminal same-actor/domain/intent POST retries return the current operation projection and MUST NOT redispatch solely because the POST repeated. Cross-actor or cross-domain/kind reuse is `command_conflict`.
 
-Terminal immutable exact replay evidence remains separate from mutable operation state. OpenSpec implementation MUST define terminal receipt materialization so it never claims a remote completion before execution evidence is terminal enough; verification updates do not rewrite an immutable original POST receipt.
+Terminal immutable exact replay evidence remains separate from mutable operation state. Change B SHALL add `account_admin_command_receipts`; it MUST NOT broaden the asset-only `asset_admin_command_receipts` contract. Receipt eligibility is exact: `remote_applied`, `remote_noop`, `remote_partial` and `failed` are terminal and require a receipt; `prepared`, `dispatched` and `outcome_unknown` are nonterminal and MUST NOT have one. `outcome_unknown` remains recoverable and repeated POST returns `202` current projection without redispatch until recovery establishes a terminal execution state.
+
+A failure before request acceptance/global reservation creates no operation and no receipt. Once a new command and operation are atomically accepted, a deterministic failure before remote dispatch transitions the operation to `failed` and atomically materializes the exact mapped terminal HTTP status/body. `remote_partial` is terminal and atomically materializes its `502` response. Transition to any terminal execution state, terminal audit and receipt insertion occur in one transaction; failure rolls all three back. The original POST terminal response is sent only after that transaction commits.
+
+The immutable receipt stores the exact canonical response bytes and status returned by the original POST. Exact same actor/domain/kind/intent replay returns those bytes and status without reconstructing current operation or verification truth. Later `verification_state`, `verified_at` or other recovery/verification updates change only `account_admin_operations` and MUST NOT update the receipt. Runtime roles receive no direct receipt DML.
+
+The additive receipt schema is frozen as:
+
+```text
+command_id uuid PRIMARY KEY FK admin_command_registry(command_id) AND FK account_admin_operations(command_id)
+actor_admin_id uuid NOT NULL
+command_domain text NOT NULL CHECK = 'account_admin'
+command_kind text NOT NULL
+intent_encoding_version smallint NOT NULL
+canonical_intent_hash bytea NOT NULL CHECK length=32
+secret_fingerprint_key_version smallint NULL
+http_status smallint NOT NULL
+content_type text NOT NULL CHECK = 'application/json'
+response_body bytea NOT NULL
+committed_at timestamptz NOT NULL
+```
+
+Registry actor/domain/kind/encoding/hash/key-version integrity is enforced at the database boundary by a composite FK/controlled insertion contract. UPDATE, DELETE and TRUNCATE are rejected; only the controlled terminalization path may insert. A receipt without the matching global reservation or matching terminal account operation fails closed.
 
 ### 3. Exact planned account operation schema
 
@@ -95,7 +121,7 @@ lock Node
 -> validate lifecycle=active
 -> lock/read monitoring according to existing Node-first graph
 -> validate current non-cancelled monitoring eligibility
--> validate management_account_inventory_read capability + active Provider policy
+-> validate management_account_inventory_read + management_account_mutation_v1 capabilities + active Provider policy
 -> reject any same-target live operation
 -> lock current operation
 -> validate prepared
@@ -104,7 +130,9 @@ lock Node
 COMMIT
 ```
 
-Failure before commit sends zero remote request and creates no live dispatch fence. `node_monitoring_ineligible` is the fixed product error for an active Node lacking current eligible monitoring/capability/policy. Control never auto-enables monitoring.
+Failure before commit sends zero mutation request and creates no live dispatch fence. `node_monitoring_ineligible` is the fixed product error for missing current eligible monitoring, Inventory-read capability or active Provider policy. Missing `management_account_mutation_v1` or any runtime contract mismatch is `unsupported_node_contract`. Control never auto-enables monitoring or silently adds Node capabilities.
+
+Before this dispatch-authorization transaction, Control performs a fresh authenticated `GET /v0/management/account-contract/v1` against the selected fixed Node target. It requires `contract=node-account-management`, `version=v1`, provider `antigravity`, both `management_account_inventory_read` and `management_account_mutation_v1`, and exact constants `262144/5000/15000/25000/10000` for credential bytes, request-read, mutation, quiescence and post-commit reserve. Missing capability, version/constant mismatch, unsupported store, invalid response or failed authenticated discovery returns `unsupported_node_contract` with zero resolve/mutation request. The subsequent short DB transaction independently rechecks the persisted Node capabilities and lifecycle/monitoring/policy. Artifact commit/image headers are evidence only and cannot replace either gate.
 
 ### 7. Deadline and clock model
 
@@ -136,7 +164,7 @@ Client timeout, `dispatch_deadline`, `remote_mutation_deadline`, `quiescence_dea
 
 ### 9. Node Account Management Contract v1 (external prerequisite)
 
-The pinned Node artifact MUST expose generic management semantics for:
+The satisfied Node dependency is pinned to revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`. The artifact exposes generic management semantics for:
 
 - status persistence error propagation;
 - serialized mutation;
@@ -150,7 +178,7 @@ The pinned Node artifact MUST expose generic management semantics for:
 - canonical lowercase UUID `dispatch_token_v1` on every mutation and same-token durable fenced resolve for response-loss recovery;
 - stable sanitized error classes.
 
-Control planning does not invent an OpenSpec tree in the Node repo. Before implementation, re-check upstream, pin exact upstream baseline, selectively port relevant upstream changes, add required hardening, build/pin fork commit and image digest. Do not wholesale rebase solely for Phase 7.
+Stage 7A is also satisfied at migration `37` and compatibility class/floor `3 / 3`. Control implementation MUST keep these exact dependency pins in release evidence and fail closed if runtime contract discovery does not match them semantically.
 
 ### 10. Antigravity Secret/upload policy
 
@@ -218,7 +246,7 @@ Verification deadline is 10 minutes from execution becoming verification-eligibl
 
 Audit records actor/request/command/operation/node/provider/protected account identity, sanitized target/result and verification state; Remove has a distinct high-risk action. No credential/raw Node body/full path. Metrics use only low-cardinality operation/provider/result/error/execution-class/verification labels.
 
-Fixed errors include `invalid_request`, `node_not_found`, `node_retired`, `node_management_unavailable`, `node_monitoring_ineligible`, `unsupported_provider`, `account_target_not_found`, `account_target_ambiguous`, `account_target_changed`, `account_operation_in_progress`, `command_conflict`, upload errors, `remote_partial`, `remote_outcome_unknown`, verification errors and `service_unavailable`; raw Node strings never become API contract.
+Fixed HTTP mapping is: `400 invalid_request`; `401 unauthenticated`; `403 forbidden` (including authorization/origin/CSRF); `404 node_not_found|account_target_not_found|operation_not_found`; `409 command_conflict|node_retired|node_monitoring_ineligible|unsupported_node_contract|unsupported_provider|account_target_ambiguous|account_target_changed|account_operation_in_progress`; `413 upload_too_large`; `422 upload_invalid|identity_mismatch`; `502 remote_partial|remote_failed`; and `503 node_management_unavailable|service_unavailable`. `remote_outcome_unknown` is represented by a `202` operation projection, not a terminal error receipt. Errors use `{"error":{"code":<fixed>,"message":<bounded sanitized>}}`; terminal operation errors additionally include `operation`. Raw Node strings never become API contract.
 
 ### 19. Compatibility / rollout
 
