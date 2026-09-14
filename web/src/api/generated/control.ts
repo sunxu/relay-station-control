@@ -29,6 +29,183 @@ import type {
   UseQueryResult
 } from '@tanstack/react-query';
 
+export interface AccountOperationRequest {
+  command_id: string;
+  node_instance_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 385
+     */
+  account_key: string;
+}
+
+export type AccountRemoveRequest = AccountOperationRequest & {
+  confirmation: 'REMOVE';
+};
+
+export interface AccountOperationUpload {
+  /** @maxLength 8192 */
+  request: Blob;
+  /** @maxLength 1048576 */
+  credential: Blob;
+}
+
+export type OverrideReason = typeof OverrideReason[keyof typeof OverrideReason];
+
+
+export const OverrideReason = {
+  process_restarted: 'process_restarted',
+  node_stopped: 'node_stopped',
+  risk_accepted: 'risk_accepted',
+} as const;
+
+export interface LifecycleOverrideRequest {
+  command_id: string;
+  reason: OverrideReason;
+  confirmation: 'OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK';
+  /** @maxLength 512 */
+  detail?: string;
+}
+
+export interface SameAccountOverrideRequest {
+  command_id: string;
+  reason: OverrideReason;
+  confirmation: 'OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK';
+  /** @maxLength 512 */
+  detail?: string;
+}
+
+export type AccountOperationProjectionOperationKind = typeof AccountOperationProjectionOperationKind[keyof typeof AccountOperationProjectionOperationKind];
+
+
+export const AccountOperationProjectionOperationKind = {
+  disable: 'disable',
+  enable: 'enable',
+  remove: 'remove',
+  upload_new: 'upload_new',
+  replace_existing: 'replace_existing',
+} as const;
+
+export type AccountOperationProjectionExecutionState = typeof AccountOperationProjectionExecutionState[keyof typeof AccountOperationProjectionExecutionState];
+
+
+export const AccountOperationProjectionExecutionState = {
+  prepared: 'prepared',
+  dispatched: 'dispatched',
+  remote_applied: 'remote_applied',
+  remote_noop: 'remote_noop',
+  outcome_unknown: 'outcome_unknown',
+  failed: 'failed',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AccountOperationProjectionResult = typeof AccountOperationProjectionResult[keyof typeof AccountOperationProjectionResult] | null;
+
+
+export const AccountOperationProjectionResult = {
+  applied: 'applied',
+  noop: 'noop',
+  failed: 'failed',
+} as const;
+
+export interface AccountOperationProjection {
+  command_id: string;
+  node_instance_id: string;
+  account_key: string;
+  operation_kind: AccountOperationProjectionOperationKind;
+  execution_state: AccountOperationProjectionExecutionState;
+  /** @nullable */
+  result: AccountOperationProjectionResult;
+  /** @nullable */
+  error_code: string | null;
+  lifecycle_overridden: boolean;
+  /** @nullable */
+  lifecycle_override_reason?: string | null;
+  same_account_overridden: boolean;
+  /** @nullable */
+  same_account_override_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountOperationResponse {
+  operation: AccountOperationProjection;
+}
+
+export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
+
+
+export const ErrorCode = {
+  authentication_failed: 'authentication_failed',
+  mfa_required: 'mfa_required',
+  challenge_expired: 'challenge_expired',
+  rate_limited: 'rate_limited',
+  unauthorized: 'unauthorized',
+  forbidden: 'forbidden',
+  csrf_invalid: 'csrf_invalid',
+  validation_failed: 'validation_failed',
+  conflict: 'conflict',
+  bootstrap_unavailable: 'bootstrap_unavailable',
+  reauthentication_required: 'reauthentication_required',
+  last_administrator_protected: 'last_administrator_protected',
+  administrator_self_disable_forbidden: 'administrator_self_disable_forbidden',
+  not_found: 'not_found',
+  internal_error: 'internal_error',
+  temporarily_unavailable: 'temporarily_unavailable',
+  directory_unavailable: 'directory_unavailable',
+  directory_stale: 'directory_stale',
+  account_not_found: 'account_not_found',
+  node_conflict: 'node_conflict',
+  account_conflict: 'account_conflict',
+  already_unbound: 'already_unbound',
+  no_current_binding: 'no_current_binding',
+  asset_not_found: 'asset_not_found',
+  asset_retired: 'asset_retired',
+  current_gateway_exists: 'current_gateway_exists',
+  duplicate_identity: 'duplicate_identity',
+  stale_revision: 'stale_revision',
+  revision_exhausted: 'revision_exhausted',
+  command_conflict: 'command_conflict',
+  capability_unsupported: 'capability_unsupported',
+  monitoring_future_conflict: 'monitoring_future_conflict',
+  monitoring_boundary_conflict: 'monitoring_boundary_conflict',
+  monitoring_state_conflict: 'monitoring_state_conflict',
+  generation_exhausted: 'generation_exhausted',
+  cursor_stale: 'cursor_stale',
+  invalid_endpoint: 'invalid_endpoint',
+  secret_configuration_invalid: 'secret_configuration_invalid',
+  probe_timeout: 'probe_timeout',
+  probe_failed: 'probe_failed',
+  service_unavailable: 'service_unavailable',
+} as const;
+
+export interface ErrorResponse {
+  code: ErrorCode;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  message: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  request_id: string;
+  /**
+     * @minimum 1
+     * @maximum 86400
+     */
+  retry_after_seconds?: number;
+}
+
+export interface AccountOperationErrorResponse {
+  error: ErrorResponse;
+  operation?: AccountOperationProjection;
+}
+
 export type AccountInventoryPollCapacityStatus = typeof AccountInventoryPollCapacityStatus[keyof typeof AccountInventoryPollCapacityStatus];
 
 
@@ -1244,73 +1421,6 @@ export interface AdministratorListResponse {
   next_cursor?: string | null;
 }
 
-export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
-
-
-export const ErrorCode = {
-  authentication_failed: 'authentication_failed',
-  mfa_required: 'mfa_required',
-  challenge_expired: 'challenge_expired',
-  rate_limited: 'rate_limited',
-  unauthorized: 'unauthorized',
-  forbidden: 'forbidden',
-  csrf_invalid: 'csrf_invalid',
-  validation_failed: 'validation_failed',
-  conflict: 'conflict',
-  bootstrap_unavailable: 'bootstrap_unavailable',
-  reauthentication_required: 'reauthentication_required',
-  last_administrator_protected: 'last_administrator_protected',
-  administrator_self_disable_forbidden: 'administrator_self_disable_forbidden',
-  not_found: 'not_found',
-  internal_error: 'internal_error',
-  temporarily_unavailable: 'temporarily_unavailable',
-  directory_unavailable: 'directory_unavailable',
-  directory_stale: 'directory_stale',
-  account_not_found: 'account_not_found',
-  node_conflict: 'node_conflict',
-  account_conflict: 'account_conflict',
-  already_unbound: 'already_unbound',
-  no_current_binding: 'no_current_binding',
-  asset_not_found: 'asset_not_found',
-  asset_retired: 'asset_retired',
-  current_gateway_exists: 'current_gateway_exists',
-  duplicate_identity: 'duplicate_identity',
-  stale_revision: 'stale_revision',
-  revision_exhausted: 'revision_exhausted',
-  command_conflict: 'command_conflict',
-  capability_unsupported: 'capability_unsupported',
-  monitoring_future_conflict: 'monitoring_future_conflict',
-  monitoring_boundary_conflict: 'monitoring_boundary_conflict',
-  monitoring_state_conflict: 'monitoring_state_conflict',
-  generation_exhausted: 'generation_exhausted',
-  cursor_stale: 'cursor_stale',
-  invalid_endpoint: 'invalid_endpoint',
-  secret_configuration_invalid: 'secret_configuration_invalid',
-  probe_timeout: 'probe_timeout',
-  probe_failed: 'probe_failed',
-  service_unavailable: 'service_unavailable',
-} as const;
-
-export interface ErrorResponse {
-  code: ErrorCode;
-  /**
-     * @minLength 1
-     * @maxLength 256
-     */
-  message: string;
-  /**
-     * @minLength 8
-     * @maxLength 128
-     * @pattern ^[A-Za-z0-9._:-]+$
-     */
-  request_id: string;
-  /**
-     * @minimum 1
-     * @maximum 86400
-     */
-  retry_after_seconds?: number;
-}
-
 export type RelayBindingResolution = typeof RelayBindingResolution[keyof typeof RelayBindingResolution];
 
 
@@ -2130,6 +2240,16 @@ export interface NodeDuplicateHistoryResponse {
   /** @nullable */
   next_cursor: string | null;
 }
+
+/**
+ * Account operation projection.
+ */
+export type AccountOperationResponseResponse = AccountOperationResponse;
+
+/**
+ * Account operation result or frozen error response.
+ */
+export type AccountOperationMutationResponse = AccountOperationResponse | AccountOperationErrorResponse;
 
 /**
  * Runtime-only bootstrap secret. It must never be logged, persisted, or returned.
@@ -10706,4 +10826,1095 @@ export const useQueryProblemAccounts = <TError = ErrorResponse,
         TContext
       > => {
       return useMutation(getQueryProblemAccountsMutationOptions(options), queryClient);
+    }
+
+export type disableAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type disableAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type disableAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableAccountOperationResponse413 = {
+  data: ErrorResponse
+  status: 413
+}
+
+export type disableAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableAccountOperationResponseSuccess = (disableAccountOperationResponse200 | disableAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type disableAccountOperationResponseError = (disableAccountOperationResponse400 | disableAccountOperationResponse401 | disableAccountOperationResponse403 | disableAccountOperationResponse404 | disableAccountOperationResponse409 | disableAccountOperationResponse413 | disableAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type disableAccountOperationResponse = (disableAccountOperationResponseSuccess | disableAccountOperationResponseError)
+
+export const getDisableAccountOperationUrl = () => {
+
+
+
+
+  return `/api/account-operations/disable`
+}
+
+/**
+ * @summary Disable one Antigravity account
+ */
+export const disableAccountOperation = async (accountOperationRequest: AccountOperationRequest, options?: RequestInit): Promise<disableAccountOperationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDisableAccountOperationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(accountOperationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableAccountOperationResponse
+}
+
+
+
+
+
+export const getDisableAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableAccountOperation>>, TError,DisableAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof disableAccountOperation>>, TError,DisableAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['disableAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disableAccountOperation>>, DisableAccountOperationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  disableAccountOperation(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisableAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof disableAccountOperation>>>
+    export type DisableAccountOperationMutationBody = AccountOperationRequest
+    export type DisableAccountOperationMutationError = ErrorResponse
+    export type DisableAccountOperationMutationVariables = {data: AccountOperationRequest}
+
+    /**
+ * @summary Disable one Antigravity account
+ */
+export const useDisableAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableAccountOperation>>, TError,DisableAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof disableAccountOperation>>,
+        TError,
+        DisableAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDisableAccountOperationMutationOptions(options), queryClient);
+    }
+
+export type enableAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type enableAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type enableAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableAccountOperationResponse413 = {
+  data: ErrorResponse
+  status: 413
+}
+
+export type enableAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableAccountOperationResponseSuccess = (enableAccountOperationResponse200 | enableAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type enableAccountOperationResponseError = (enableAccountOperationResponse400 | enableAccountOperationResponse401 | enableAccountOperationResponse403 | enableAccountOperationResponse404 | enableAccountOperationResponse409 | enableAccountOperationResponse413 | enableAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type enableAccountOperationResponse = (enableAccountOperationResponseSuccess | enableAccountOperationResponseError)
+
+export const getEnableAccountOperationUrl = () => {
+
+
+
+
+  return `/api/account-operations/enable`
+}
+
+/**
+ * @summary Enable one Antigravity account
+ */
+export const enableAccountOperation = async (accountOperationRequest: AccountOperationRequest, options?: RequestInit): Promise<enableAccountOperationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getEnableAccountOperationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(accountOperationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableAccountOperationResponse
+}
+
+
+
+
+
+export const getEnableAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enableAccountOperation>>, TError,EnableAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof enableAccountOperation>>, TError,EnableAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['enableAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enableAccountOperation>>, EnableAccountOperationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  enableAccountOperation(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnableAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof enableAccountOperation>>>
+    export type EnableAccountOperationMutationBody = AccountOperationRequest
+    export type EnableAccountOperationMutationError = ErrorResponse
+    export type EnableAccountOperationMutationVariables = {data: AccountOperationRequest}
+
+    /**
+ * @summary Enable one Antigravity account
+ */
+export const useEnableAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enableAccountOperation>>, TError,EnableAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof enableAccountOperation>>,
+        TError,
+        EnableAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEnableAccountOperationMutationOptions(options), queryClient);
+    }
+
+export type removeAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type removeAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type removeAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type removeAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type removeAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type removeAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type removeAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type removeAccountOperationResponse413 = {
+  data: ErrorResponse
+  status: 413
+}
+
+export type removeAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type removeAccountOperationResponseSuccess = (removeAccountOperationResponse200 | removeAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type removeAccountOperationResponseError = (removeAccountOperationResponse400 | removeAccountOperationResponse401 | removeAccountOperationResponse403 | removeAccountOperationResponse404 | removeAccountOperationResponse409 | removeAccountOperationResponse413 | removeAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type removeAccountOperationResponse = (removeAccountOperationResponseSuccess | removeAccountOperationResponseError)
+
+export const getRemoveAccountOperationUrl = () => {
+
+
+
+
+  return `/api/account-operations/remove`
+}
+
+/**
+ * @summary Remove one Antigravity account
+ */
+export const removeAccountOperation = async (accountRemoveRequest: AccountRemoveRequest, options?: RequestInit): Promise<removeAccountOperationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRemoveAccountOperationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(accountRemoveRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as removeAccountOperationResponse
+}
+
+
+
+
+
+export const getRemoveAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAccountOperation>>, TError,RemoveAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof removeAccountOperation>>, TError,RemoveAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['removeAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeAccountOperation>>, RemoveAccountOperationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  removeAccountOperation(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof removeAccountOperation>>>
+    export type RemoveAccountOperationMutationBody = AccountRemoveRequest
+    export type RemoveAccountOperationMutationError = ErrorResponse
+    export type RemoveAccountOperationMutationVariables = {data: AccountRemoveRequest}
+
+    /**
+ * @summary Remove one Antigravity account
+ */
+export const useRemoveAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAccountOperation>>, TError,RemoveAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeAccountOperation>>,
+        TError,
+        RemoveAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveAccountOperationMutationOptions(options), queryClient);
+    }
+
+export type uploadNewAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type uploadNewAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type uploadNewAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type uploadNewAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type uploadNewAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type uploadNewAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type uploadNewAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type uploadNewAccountOperationResponse413 = {
+  data: ErrorResponse
+  status: 413
+}
+
+export type uploadNewAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type uploadNewAccountOperationResponseSuccess = (uploadNewAccountOperationResponse200 | uploadNewAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type uploadNewAccountOperationResponseError = (uploadNewAccountOperationResponse400 | uploadNewAccountOperationResponse401 | uploadNewAccountOperationResponse403 | uploadNewAccountOperationResponse404 | uploadNewAccountOperationResponse409 | uploadNewAccountOperationResponse413 | uploadNewAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type uploadNewAccountOperationResponse = (uploadNewAccountOperationResponseSuccess | uploadNewAccountOperationResponseError)
+
+export const getUploadNewAccountOperationUrl = () => {
+
+
+
+
+  return `/api/account-operations/upload-new`
+}
+
+/**
+ * @summary Upload a new Antigravity account
+ */
+export const uploadNewAccountOperation = async (accountOperationUpload: AccountOperationUpload, options?: RequestInit): Promise<uploadNewAccountOperationResponse> => {
+    const formData = new FormData();
+formData.append(`request`, accountOperationUpload.request);
+formData.append(`credential`, accountOperationUpload.credential);
+
+  const res = await fetch(getUploadNewAccountOperationUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: uploadNewAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as uploadNewAccountOperationResponse
+}
+
+
+
+
+
+export const getUploadNewAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadNewAccountOperation>>, TError,UploadNewAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadNewAccountOperation>>, TError,UploadNewAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['uploadNewAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadNewAccountOperation>>, UploadNewAccountOperationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadNewAccountOperation(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadNewAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof uploadNewAccountOperation>>>
+    export type UploadNewAccountOperationMutationBody = AccountOperationUpload
+    export type UploadNewAccountOperationMutationError = ErrorResponse
+    export type UploadNewAccountOperationMutationVariables = {data: AccountOperationUpload}
+
+    /**
+ * @summary Upload a new Antigravity account
+ */
+export const useUploadNewAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadNewAccountOperation>>, TError,UploadNewAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof uploadNewAccountOperation>>,
+        TError,
+        UploadNewAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUploadNewAccountOperationMutationOptions(options), queryClient);
+    }
+
+export type replaceExistingAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type replaceExistingAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type replaceExistingAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type replaceExistingAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type replaceExistingAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type replaceExistingAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type replaceExistingAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type replaceExistingAccountOperationResponse413 = {
+  data: ErrorResponse
+  status: 413
+}
+
+export type replaceExistingAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type replaceExistingAccountOperationResponseSuccess = (replaceExistingAccountOperationResponse200 | replaceExistingAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type replaceExistingAccountOperationResponseError = (replaceExistingAccountOperationResponse400 | replaceExistingAccountOperationResponse401 | replaceExistingAccountOperationResponse403 | replaceExistingAccountOperationResponse404 | replaceExistingAccountOperationResponse409 | replaceExistingAccountOperationResponse413 | replaceExistingAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type replaceExistingAccountOperationResponse = (replaceExistingAccountOperationResponseSuccess | replaceExistingAccountOperationResponseError)
+
+export const getReplaceExistingAccountOperationUrl = () => {
+
+
+
+
+  return `/api/account-operations/replace-existing`
+}
+
+/**
+ * @summary Replace an existing Antigravity account
+ */
+export const replaceExistingAccountOperation = async (accountOperationUpload: AccountOperationUpload, options?: RequestInit): Promise<replaceExistingAccountOperationResponse> => {
+    const formData = new FormData();
+formData.append(`request`, accountOperationUpload.request);
+formData.append(`credential`, accountOperationUpload.credential);
+
+  const res = await fetch(getReplaceExistingAccountOperationUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceExistingAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceExistingAccountOperationResponse
+}
+
+
+
+
+
+export const getReplaceExistingAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceExistingAccountOperation>>, TError,ReplaceExistingAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceExistingAccountOperation>>, TError,ReplaceExistingAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['replaceExistingAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceExistingAccountOperation>>, ReplaceExistingAccountOperationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  replaceExistingAccountOperation(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceExistingAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof replaceExistingAccountOperation>>>
+    export type ReplaceExistingAccountOperationMutationBody = AccountOperationUpload
+    export type ReplaceExistingAccountOperationMutationError = ErrorResponse
+    export type ReplaceExistingAccountOperationMutationVariables = {data: AccountOperationUpload}
+
+    /**
+ * @summary Replace an existing Antigravity account
+ */
+export const useReplaceExistingAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceExistingAccountOperation>>, TError,ReplaceExistingAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof replaceExistingAccountOperation>>,
+        TError,
+        ReplaceExistingAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReplaceExistingAccountOperationMutationOptions(options), queryClient);
+    }
+
+export type getAccountOperationResponse200 = {
+  data: AccountOperationResponseResponse
+  status: 200
+}
+
+export type getAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getAccountOperationResponseSuccess = (getAccountOperationResponse200) & {
+  headers: Headers;
+};
+export type getAccountOperationResponseError = (getAccountOperationResponse401 | getAccountOperationResponse404) & {
+  headers: Headers;
+};
+
+export type getAccountOperationResponse = (getAccountOperationResponseSuccess | getAccountOperationResponseError)
+
+export const getGetAccountOperationUrl = (commandId: string,) => {
+
+
+
+
+  return `/api/account-operations/${commandId}`
+}
+
+/**
+ * @summary Read an account operation
+ */
+export const getAccountOperation = async (commandId: string, options?: RequestInit): Promise<getAccountOperationResponse> => {
+
+  const res = await fetch(getGetAccountOperationUrl(commandId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAccountOperationResponse
+}
+
+
+
+
+
+export const getGetAccountOperationQueryKey = (commandId: string,) => {
+    return [
+    `/api/account-operations/${commandId}`
+    ] as const;
+    }
+
+
+export const getGetAccountOperationQueryOptions = <TData = Awaited<ReturnType<typeof getAccountOperation>>, TError = ErrorResponse>(commandId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountOperation>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAccountOperationQueryKey(commandId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAccountOperation>>> = ({ signal }) => getAccountOperation(commandId, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: commandId !== null && commandId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAccountOperation>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAccountOperationQueryResult = NonNullable<Awaited<ReturnType<typeof getAccountOperation>>>
+export type GetAccountOperationQueryError = ErrorResponse
+
+
+export function useGetAccountOperation<TData = Awaited<ReturnType<typeof getAccountOperation>>, TError = ErrorResponse>(
+ commandId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountOperation>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccountOperation>>,
+          TError,
+          Awaited<ReturnType<typeof getAccountOperation>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccountOperation<TData = Awaited<ReturnType<typeof getAccountOperation>>, TError = ErrorResponse>(
+ commandId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountOperation>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccountOperation>>,
+          TError,
+          Awaited<ReturnType<typeof getAccountOperation>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccountOperation<TData = Awaited<ReturnType<typeof getAccountOperation>>, TError = ErrorResponse>(
+ commandId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountOperation>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read an account operation
+ */
+
+export function useGetAccountOperation<TData = Awaited<ReturnType<typeof getAccountOperation>>, TError = ErrorResponse>(
+ commandId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccountOperation>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetAccountOperationQueryOptions(commandId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type lifecycleOverrideAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type lifecycleOverrideAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type lifecycleOverrideAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type lifecycleOverrideAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type lifecycleOverrideAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type lifecycleOverrideAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type lifecycleOverrideAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type lifecycleOverrideAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type lifecycleOverrideAccountOperationResponseSuccess = (lifecycleOverrideAccountOperationResponse200 | lifecycleOverrideAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type lifecycleOverrideAccountOperationResponseError = (lifecycleOverrideAccountOperationResponse400 | lifecycleOverrideAccountOperationResponse401 | lifecycleOverrideAccountOperationResponse403 | lifecycleOverrideAccountOperationResponse404 | lifecycleOverrideAccountOperationResponse409 | lifecycleOverrideAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type lifecycleOverrideAccountOperationResponse = (lifecycleOverrideAccountOperationResponseSuccess | lifecycleOverrideAccountOperationResponseError)
+
+export const getLifecycleOverrideAccountOperationUrl = (operationCommandId: string,) => {
+
+
+
+
+  return `/api/account-operations/${operationCommandId}/lifecycle-override`
+}
+
+/**
+ * @summary Override an unknown lifecycle operation block
+ */
+export const lifecycleOverrideAccountOperation = async (operationCommandId: string,
+    lifecycleOverrideRequest: LifecycleOverrideRequest, options?: RequestInit): Promise<lifecycleOverrideAccountOperationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLifecycleOverrideAccountOperationUrl(operationCommandId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(lifecycleOverrideRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: lifecycleOverrideAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as lifecycleOverrideAccountOperationResponse
+}
+
+
+
+
+
+export const getLifecycleOverrideAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof lifecycleOverrideAccountOperation>>, TError,LifecycleOverrideAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof lifecycleOverrideAccountOperation>>, TError,LifecycleOverrideAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['lifecycleOverrideAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof lifecycleOverrideAccountOperation>>, LifecycleOverrideAccountOperationMutationVariables> = (props) => {
+          const {operationCommandId,data} = props ?? {};
+
+          return  lifecycleOverrideAccountOperation(operationCommandId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LifecycleOverrideAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof lifecycleOverrideAccountOperation>>>
+    export type LifecycleOverrideAccountOperationMutationBody = LifecycleOverrideRequest
+    export type LifecycleOverrideAccountOperationMutationError = ErrorResponse
+    export type LifecycleOverrideAccountOperationMutationVariables = {operationCommandId: string;data: LifecycleOverrideRequest}
+
+    /**
+ * @summary Override an unknown lifecycle operation block
+ */
+export const useLifecycleOverrideAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof lifecycleOverrideAccountOperation>>, TError,LifecycleOverrideAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof lifecycleOverrideAccountOperation>>,
+        TError,
+        LifecycleOverrideAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLifecycleOverrideAccountOperationMutationOptions(options), queryClient);
+    }
+
+export type sameAccountOverrideAccountOperationResponse200 = {
+  data: AccountOperationMutationResponse
+  status: 200
+}
+
+export type sameAccountOverrideAccountOperationResponse202 = {
+  data: AccountOperationMutationResponse
+  status: 202
+}
+
+export type sameAccountOverrideAccountOperationResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type sameAccountOverrideAccountOperationResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type sameAccountOverrideAccountOperationResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type sameAccountOverrideAccountOperationResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type sameAccountOverrideAccountOperationResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type sameAccountOverrideAccountOperationResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type sameAccountOverrideAccountOperationResponseSuccess = (sameAccountOverrideAccountOperationResponse200 | sameAccountOverrideAccountOperationResponse202) & {
+  headers: Headers;
+};
+export type sameAccountOverrideAccountOperationResponseError = (sameAccountOverrideAccountOperationResponse400 | sameAccountOverrideAccountOperationResponse401 | sameAccountOverrideAccountOperationResponse403 | sameAccountOverrideAccountOperationResponse404 | sameAccountOverrideAccountOperationResponse409 | sameAccountOverrideAccountOperationResponse503) & {
+  headers: Headers;
+};
+
+export type sameAccountOverrideAccountOperationResponse = (sameAccountOverrideAccountOperationResponseSuccess | sameAccountOverrideAccountOperationResponseError)
+
+export const getSameAccountOverrideAccountOperationUrl = (operationCommandId: string,) => {
+
+
+
+
+  return `/api/account-operations/${operationCommandId}/same-account-override`
+}
+
+/**
+ * @summary Override an unknown same-account operation block
+ */
+export const sameAccountOverrideAccountOperation = async (operationCommandId: string,
+    sameAccountOverrideRequest: SameAccountOverrideRequest, options?: RequestInit): Promise<sameAccountOverrideAccountOperationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSameAccountOverrideAccountOperationUrl(operationCommandId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sameAccountOverrideRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: sameAccountOverrideAccountOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as sameAccountOverrideAccountOperationResponse
+}
+
+
+
+
+
+export const getSameAccountOverrideAccountOperationMutationOptions = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sameAccountOverrideAccountOperation>>, TError,SameAccountOverrideAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof sameAccountOverrideAccountOperation>>, TError,SameAccountOverrideAccountOperationMutationVariables, TContext> => {
+
+const mutationKey = ['sameAccountOverrideAccountOperation'];
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sameAccountOverrideAccountOperation>>, SameAccountOverrideAccountOperationMutationVariables> = (props) => {
+          const {operationCommandId,data} = props ?? {};
+
+          return  sameAccountOverrideAccountOperation(operationCommandId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SameAccountOverrideAccountOperationMutationResult = NonNullable<Awaited<ReturnType<typeof sameAccountOverrideAccountOperation>>>
+    export type SameAccountOverrideAccountOperationMutationBody = SameAccountOverrideRequest
+    export type SameAccountOverrideAccountOperationMutationError = ErrorResponse
+    export type SameAccountOverrideAccountOperationMutationVariables = {operationCommandId: string;data: SameAccountOverrideRequest}
+
+    /**
+ * @summary Override an unknown same-account operation block
+ */
+export const useSameAccountOverrideAccountOperation = <TError = ErrorResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sameAccountOverrideAccountOperation>>, TError,SameAccountOverrideAccountOperationMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof sameAccountOverrideAccountOperation>>,
+        TError,
+        SameAccountOverrideAccountOperationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSameAccountOverrideAccountOperationMutationOptions(options), queryClient);
     }

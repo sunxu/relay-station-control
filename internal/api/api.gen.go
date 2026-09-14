@@ -195,6 +195,102 @@ func (e AccountInventorySnapshotFreshness) Valid() bool {
 	}
 }
 
+// Defines values for AccountOperationProjectionExecutionState.
+const (
+	AccountOperationProjectionExecutionStateDispatched     AccountOperationProjectionExecutionState = "dispatched"
+	AccountOperationProjectionExecutionStateFailed         AccountOperationProjectionExecutionState = "failed"
+	AccountOperationProjectionExecutionStateOutcomeUnknown AccountOperationProjectionExecutionState = "outcome_unknown"
+	AccountOperationProjectionExecutionStatePrepared       AccountOperationProjectionExecutionState = "prepared"
+	AccountOperationProjectionExecutionStateRemoteApplied  AccountOperationProjectionExecutionState = "remote_applied"
+	AccountOperationProjectionExecutionStateRemoteNoop     AccountOperationProjectionExecutionState = "remote_noop"
+)
+
+// Valid indicates whether the value is a known member of the AccountOperationProjectionExecutionState enum.
+func (e AccountOperationProjectionExecutionState) Valid() bool {
+	switch e {
+	case AccountOperationProjectionExecutionStateDispatched:
+		return true
+	case AccountOperationProjectionExecutionStateFailed:
+		return true
+	case AccountOperationProjectionExecutionStateOutcomeUnknown:
+		return true
+	case AccountOperationProjectionExecutionStatePrepared:
+		return true
+	case AccountOperationProjectionExecutionStateRemoteApplied:
+		return true
+	case AccountOperationProjectionExecutionStateRemoteNoop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountOperationProjectionOperationKind.
+const (
+	Disable         AccountOperationProjectionOperationKind = "disable"
+	Enable          AccountOperationProjectionOperationKind = "enable"
+	Remove          AccountOperationProjectionOperationKind = "remove"
+	ReplaceExisting AccountOperationProjectionOperationKind = "replace_existing"
+	UploadNew       AccountOperationProjectionOperationKind = "upload_new"
+)
+
+// Valid indicates whether the value is a known member of the AccountOperationProjectionOperationKind enum.
+func (e AccountOperationProjectionOperationKind) Valid() bool {
+	switch e {
+	case Disable:
+		return true
+	case Enable:
+		return true
+	case Remove:
+		return true
+	case ReplaceExisting:
+		return true
+	case UploadNew:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountOperationProjectionResult.
+const (
+	AccountOperationProjectionResultApplied     AccountOperationProjectionResult = "applied"
+	AccountOperationProjectionResultFailed      AccountOperationProjectionResult = "failed"
+	AccountOperationProjectionResultLessThannil AccountOperationProjectionResult = "<nil>"
+	AccountOperationProjectionResultNoop        AccountOperationProjectionResult = "noop"
+)
+
+// Valid indicates whether the value is a known member of the AccountOperationProjectionResult enum.
+func (e AccountOperationProjectionResult) Valid() bool {
+	switch e {
+	case AccountOperationProjectionResultApplied:
+		return true
+	case AccountOperationProjectionResultFailed:
+		return true
+	case AccountOperationProjectionResultLessThannil:
+		return true
+	case AccountOperationProjectionResultNoop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountRemoveRequestConfirmation.
+const (
+	REMOVE AccountRemoveRequestConfirmation = "REMOVE"
+)
+
+// Valid indicates whether the value is a known member of the AccountRemoveRequestConfirmation enum.
+func (e AccountRemoveRequestConfirmation) Valid() bool {
+	switch e {
+	case REMOVE:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdministratorAuthSource.
 const (
 	Local AdministratorAuthSource = "local"
@@ -885,6 +981,21 @@ func (e JobStatus) Valid() bool {
 	}
 }
 
+// Defines values for LifecycleOverrideRequestConfirmation.
+const (
+	OVERRIDEUNKNOWNOPERATIONLIFECYCLEBLOCK LifecycleOverrideRequestConfirmation = "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"
+)
+
+// Valid indicates whether the value is a known member of the LifecycleOverrideRequestConfirmation enum.
+func (e LifecycleOverrideRequestConfirmation) Valid() bool {
+	switch e {
+	case OVERRIDEUNKNOWNOPERATIONLIFECYCLEBLOCK:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MfaChallengeResponseState.
 const (
 	MfaChallengeResponseStateMfaRequired MfaChallengeResponseState = "mfa_required"
@@ -1503,6 +1614,27 @@ func (e NodeReplaceResultResult) Valid() bool {
 	}
 }
 
+// Defines values for OverrideReason.
+const (
+	NodeStopped      OverrideReason = "node_stopped"
+	ProcessRestarted OverrideReason = "process_restarted"
+	RiskAccepted     OverrideReason = "risk_accepted"
+)
+
+// Valid indicates whether the value is a known member of the OverrideReason enum.
+func (e OverrideReason) Valid() bool {
+	switch e {
+	case NodeStopped:
+		return true
+	case ProcessRestarted:
+		return true
+	case RiskAccepted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemAccountIssueReason.
 const (
 	ProblemAccountIssueReasonAccountBlocked              ProblemAccountIssueReason = "account_blocked"
@@ -1794,6 +1926,21 @@ func (e RelayNodeGatewayAccountBindingDetailEndReason) Valid() bool {
 	case RelayNodeGatewayAccountBindingDetailEndReasonAdministratorRebind:
 		return true
 	case RelayNodeGatewayAccountBindingDetailEndReasonAdministratorUnbind:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SameAccountOverrideRequestConfirmation.
+const (
+	OVERRIDEUNKNOWNOPERATIONSAMEACCOUNTBLOCK SameAccountOverrideRequestConfirmation = "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK"
+)
+
+// Valid indicates whether the value is a known member of the SameAccountOverrideRequestConfirmation enum.
+func (e SameAccountOverrideRequestConfirmation) Valid() bool {
+	switch e {
+	case OVERRIDEUNKNOWNOPERATIONSAMEACCOUNTBLOCK:
 		return true
 	default:
 		return false
@@ -2156,6 +2303,67 @@ type AccountInventoryQueryResponse struct {
 
 // AccountInventorySnapshotFreshness defines model for AccountInventorySnapshotFreshness.
 type AccountInventorySnapshotFreshness string
+
+// AccountOperationErrorResponse defines model for AccountOperationErrorResponse.
+type AccountOperationErrorResponse struct {
+	Error     ErrorResponse               `json:"error"`
+	Operation *AccountOperationProjection `json:"operation,omitempty"`
+}
+
+// AccountOperationProjection defines model for AccountOperationProjection.
+type AccountOperationProjection struct {
+	AccountKey                string                                   `json:"account_key"`
+	CommandId                 openapi_types.UUID                       `json:"command_id"`
+	CreatedAt                 time.Time                                `json:"created_at"`
+	ErrorCode                 *string                                  `json:"error_code"`
+	ExecutionState            AccountOperationProjectionExecutionState `json:"execution_state"`
+	LifecycleOverridden       bool                                     `json:"lifecycle_overridden"`
+	LifecycleOverrideReason   *string                                  `json:"lifecycle_override_reason,omitempty"`
+	NodeInstanceId            openapi_types.UUID                       `json:"node_instance_id"`
+	OperationKind             AccountOperationProjectionOperationKind  `json:"operation_kind"`
+	Result                    *AccountOperationProjectionResult        `json:"result"`
+	SameAccountOverridden     bool                                     `json:"same_account_overridden"`
+	SameAccountOverrideReason *string                                  `json:"same_account_override_reason,omitempty"`
+	UpdatedAt                 time.Time                                `json:"updated_at"`
+}
+
+// AccountOperationProjectionExecutionState defines model for AccountOperationProjection.ExecutionState.
+type AccountOperationProjectionExecutionState string
+
+// AccountOperationProjectionOperationKind defines model for AccountOperationProjection.OperationKind.
+type AccountOperationProjectionOperationKind string
+
+// AccountOperationProjectionResult defines model for AccountOperationProjection.Result.
+type AccountOperationProjectionResult string
+
+// AccountOperationRequest defines model for AccountOperationRequest.
+type AccountOperationRequest struct {
+	AccountKey     string             `json:"account_key"`
+	CommandId      openapi_types.UUID `json:"command_id"`
+	NodeInstanceId openapi_types.UUID `json:"node_instance_id"`
+}
+
+// AccountOperationResponse defines model for AccountOperationResponse.
+type AccountOperationResponse struct {
+	Operation AccountOperationProjection `json:"operation"`
+}
+
+// AccountOperationUpload defines model for AccountOperationUpload.
+type AccountOperationUpload struct {
+	Credential openapi_types.File `json:"credential"`
+	Request    openapi_types.File `json:"request"`
+}
+
+// AccountRemoveRequest defines model for AccountRemoveRequest.
+type AccountRemoveRequest struct {
+	AccountKey     string                           `json:"account_key"`
+	CommandId      openapi_types.UUID               `json:"command_id"`
+	Confirmation   AccountRemoveRequestConfirmation `json:"confirmation"`
+	NodeInstanceId openapi_types.UUID               `json:"node_instance_id"`
+}
+
+// AccountRemoveRequestConfirmation defines model for AccountRemoveRequest.Confirmation.
+type AccountRemoveRequestConfirmation string
 
 // ActivationToken defines model for ActivationToken.
 type ActivationToken = string
@@ -2668,6 +2876,17 @@ type JobSummary struct {
 	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
+// LifecycleOverrideRequest defines model for LifecycleOverrideRequest.
+type LifecycleOverrideRequest struct {
+	CommandId    openapi_types.UUID                   `json:"command_id"`
+	Confirmation LifecycleOverrideRequestConfirmation `json:"confirmation"`
+	Detail       *string                              `json:"detail,omitempty"`
+	Reason       OverrideReason                       `json:"reason"`
+}
+
+// LifecycleOverrideRequestConfirmation defines model for LifecycleOverrideRequest.Confirmation.
+type LifecycleOverrideRequestConfirmation string
+
 // LoginName defines model for LoginName.
 type LoginName = string
 
@@ -3106,6 +3325,9 @@ type NormalizedAccountEmail = string
 // OperationReason defines model for OperationReason.
 type OperationReason = string
 
+// OverrideReason defines model for OverrideReason.
+type OverrideReason string
+
 // ProblemAccountIssue defines model for ProblemAccountIssue.
 type ProblemAccountIssue struct {
 	OccurrenceId openapi_types.UUID          `json:"occurrence_id"`
@@ -3277,6 +3499,17 @@ type RelayNodeGatewayAccountBindingDetailBindReason string
 // RelayNodeGatewayAccountBindingDetailEndReason defines model for RelayNodeGatewayAccountBindingDetail.EndReason.
 type RelayNodeGatewayAccountBindingDetailEndReason string
 
+// SameAccountOverrideRequest defines model for SameAccountOverrideRequest.
+type SameAccountOverrideRequest struct {
+	CommandId    openapi_types.UUID                     `json:"command_id"`
+	Confirmation SameAccountOverrideRequestConfirmation `json:"confirmation"`
+	Detail       *string                                `json:"detail,omitempty"`
+	Reason       OverrideReason                         `json:"reason"`
+}
+
+// SameAccountOverrideRequestConfirmation defines model for SameAccountOverrideRequest.Confirmation.
+type SameAccountOverrideRequestConfirmation string
+
 // SessionMfaAssurance defines model for SessionMfaAssurance.
 type SessionMfaAssurance struct {
 	Completed bool       `json:"completed"`
@@ -3377,11 +3610,58 @@ type PageCursor = string
 // PageLimit defines model for PageLimit.
 type PageLimit = int
 
+// AccountOperationMutation defines model for AccountOperationMutation.
+type AccountOperationMutation struct {
+	union json.RawMessage
+}
+
 // Error defines model for Error.
 type Error = ErrorResponse
 
 // QueryAccountInventoryParams defines parameters for QueryAccountInventory.
 type QueryAccountInventoryParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// DisableAccountOperationParams defines parameters for DisableAccountOperation.
+type DisableAccountOperationParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// EnableAccountOperationParams defines parameters for EnableAccountOperation.
+type EnableAccountOperationParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RemoveAccountOperationParams defines parameters for RemoveAccountOperation.
+type RemoveAccountOperationParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ReplaceExistingAccountOperationParams defines parameters for ReplaceExistingAccountOperation.
+type ReplaceExistingAccountOperationParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// UploadNewAccountOperationParams defines parameters for UploadNewAccountOperation.
+type UploadNewAccountOperationParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// LifecycleOverrideAccountOperationParams defines parameters for LifecycleOverrideAccountOperation.
+type LifecycleOverrideAccountOperationParams struct {
+	// XCSRFToken Random proof bound to the current administrator session.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// SameAccountOverrideAccountOperationParams defines parameters for SameAccountOverrideAccountOperation.
+type SameAccountOverrideAccountOperationParams struct {
 	// XCSRFToken Random proof bound to the current administrator session.
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
 }
@@ -3687,6 +3967,27 @@ type ListNodeAccountRequestHistoryParams struct {
 
 // QueryAccountInventoryJSONRequestBody defines body for QueryAccountInventory for application/json ContentType.
 type QueryAccountInventoryJSONRequestBody = AccountInventoryQueryRequest
+
+// DisableAccountOperationJSONRequestBody defines body for DisableAccountOperation for application/json ContentType.
+type DisableAccountOperationJSONRequestBody = AccountOperationRequest
+
+// EnableAccountOperationJSONRequestBody defines body for EnableAccountOperation for application/json ContentType.
+type EnableAccountOperationJSONRequestBody = AccountOperationRequest
+
+// RemoveAccountOperationJSONRequestBody defines body for RemoveAccountOperation for application/json ContentType.
+type RemoveAccountOperationJSONRequestBody = AccountRemoveRequest
+
+// ReplaceExistingAccountOperationMultipartRequestBody defines body for ReplaceExistingAccountOperation for multipart/form-data ContentType.
+type ReplaceExistingAccountOperationMultipartRequestBody = AccountOperationUpload
+
+// UploadNewAccountOperationMultipartRequestBody defines body for UploadNewAccountOperation for multipart/form-data ContentType.
+type UploadNewAccountOperationMultipartRequestBody = AccountOperationUpload
+
+// LifecycleOverrideAccountOperationJSONRequestBody defines body for LifecycleOverrideAccountOperation for application/json ContentType.
+type LifecycleOverrideAccountOperationJSONRequestBody = LifecycleOverrideRequest
+
+// SameAccountOverrideAccountOperationJSONRequestBody defines body for SameAccountOverrideAccountOperation for application/json ContentType.
+type SameAccountOverrideAccountOperationJSONRequestBody = SameAccountOverrideRequest
 
 // CompleteAdministratorActivationJSONRequestBody defines body for CompleteAdministratorActivation for application/json ContentType.
 type CompleteAdministratorActivationJSONRequestBody = AdministratorActivationRequest
@@ -4078,6 +4379,68 @@ func (t *LoginResponse) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsAccountOperationResponse returns the union data inside the AccountOperationMutation as a AccountOperationResponse
+func (t AccountOperationMutation) AsAccountOperationResponse() (AccountOperationResponse, error) {
+	var body AccountOperationResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAccountOperationResponse overwrites any union data inside the AccountOperationMutation as the provided AccountOperationResponse
+func (t *AccountOperationMutation) FromAccountOperationResponse(v AccountOperationResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeAccountOperationResponse performs a merge with any union data inside the AccountOperationMutation, using the provided AccountOperationResponse
+func (t *AccountOperationMutation) MergeAccountOperationResponse(v AccountOperationResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAccountOperationErrorResponse returns the union data inside the AccountOperationMutation as a AccountOperationErrorResponse
+func (t AccountOperationMutation) AsAccountOperationErrorResponse() (AccountOperationErrorResponse, error) {
+	var body AccountOperationErrorResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAccountOperationErrorResponse overwrites any union data inside the AccountOperationMutation as the provided AccountOperationErrorResponse
+func (t *AccountOperationMutation) FromAccountOperationErrorResponse(v AccountOperationErrorResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeAccountOperationErrorResponse performs a merge with any union data inside the AccountOperationMutation, using the provided AccountOperationErrorResponse
+func (t *AccountOperationMutation) MergeAccountOperationErrorResponse(v AccountOperationErrorResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t AccountOperationMutation) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *AccountOperationMutation) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetNodeInventoryProviderStates Read complete Provider snapshot and latest health evidence
@@ -4089,6 +4452,30 @@ type ServerInterface interface {
 	// QueryAccountInventory Query one Relay Node current account inventory
 	// (POST /api/account-inventory/query)
 	QueryAccountInventory(w http.ResponseWriter, r *http.Request, params QueryAccountInventoryParams)
+	// DisableAccountOperation Disable one Antigravity account
+	// (POST /api/account-operations/disable)
+	DisableAccountOperation(w http.ResponseWriter, r *http.Request, params DisableAccountOperationParams)
+	// EnableAccountOperation Enable one Antigravity account
+	// (POST /api/account-operations/enable)
+	EnableAccountOperation(w http.ResponseWriter, r *http.Request, params EnableAccountOperationParams)
+	// RemoveAccountOperation Remove one Antigravity account
+	// (POST /api/account-operations/remove)
+	RemoveAccountOperation(w http.ResponseWriter, r *http.Request, params RemoveAccountOperationParams)
+	// ReplaceExistingAccountOperation Replace an existing Antigravity account
+	// (POST /api/account-operations/replace-existing)
+	ReplaceExistingAccountOperation(w http.ResponseWriter, r *http.Request, params ReplaceExistingAccountOperationParams)
+	// UploadNewAccountOperation Upload a new Antigravity account
+	// (POST /api/account-operations/upload-new)
+	UploadNewAccountOperation(w http.ResponseWriter, r *http.Request, params UploadNewAccountOperationParams)
+	// GetAccountOperation Read an account operation
+	// (GET /api/account-operations/{command_id})
+	GetAccountOperation(w http.ResponseWriter, r *http.Request, commandId openapi_types.UUID)
+	// LifecycleOverrideAccountOperation Override an unknown lifecycle operation block
+	// (POST /api/account-operations/{operation_command_id}/lifecycle-override)
+	LifecycleOverrideAccountOperation(w http.ResponseWriter, r *http.Request, operationCommandId openapi_types.UUID, params LifecycleOverrideAccountOperationParams)
+	// SameAccountOverrideAccountOperation Override an unknown same-account operation block
+	// (POST /api/account-operations/{operation_command_id}/same-account-override)
+	SameAccountOverrideAccountOperation(w http.ResponseWriter, r *http.Request, operationCommandId openapi_types.UUID, params SameAccountOverrideAccountOperationParams)
 	// CompleteAdministratorActivation Enroll TOTP or complete administrator activation
 	// (POST /api/admin-activations/complete)
 	CompleteAdministratorActivation(w http.ResponseWriter, r *http.Request)
@@ -4284,6 +4671,54 @@ func (_ Unimplemented) GetAccountInventoryPollCapacity(w http.ResponseWriter, r 
 // QueryAccountInventory Query one Relay Node current account inventory
 // (POST /api/account-inventory/query)
 func (_ Unimplemented) QueryAccountInventory(w http.ResponseWriter, r *http.Request, params QueryAccountInventoryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DisableAccountOperation Disable one Antigravity account
+// (POST /api/account-operations/disable)
+func (_ Unimplemented) DisableAccountOperation(w http.ResponseWriter, r *http.Request, params DisableAccountOperationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EnableAccountOperation Enable one Antigravity account
+// (POST /api/account-operations/enable)
+func (_ Unimplemented) EnableAccountOperation(w http.ResponseWriter, r *http.Request, params EnableAccountOperationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RemoveAccountOperation Remove one Antigravity account
+// (POST /api/account-operations/remove)
+func (_ Unimplemented) RemoveAccountOperation(w http.ResponseWriter, r *http.Request, params RemoveAccountOperationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReplaceExistingAccountOperation Replace an existing Antigravity account
+// (POST /api/account-operations/replace-existing)
+func (_ Unimplemented) ReplaceExistingAccountOperation(w http.ResponseWriter, r *http.Request, params ReplaceExistingAccountOperationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UploadNewAccountOperation Upload a new Antigravity account
+// (POST /api/account-operations/upload-new)
+func (_ Unimplemented) UploadNewAccountOperation(w http.ResponseWriter, r *http.Request, params UploadNewAccountOperationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAccountOperation Read an account operation
+// (GET /api/account-operations/{command_id})
+func (_ Unimplemented) GetAccountOperation(w http.ResponseWriter, r *http.Request, commandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// LifecycleOverrideAccountOperation Override an unknown lifecycle operation block
+// (POST /api/account-operations/{operation_command_id}/lifecycle-override)
+func (_ Unimplemented) LifecycleOverrideAccountOperation(w http.ResponseWriter, r *http.Request, operationCommandId openapi_types.UUID, params LifecycleOverrideAccountOperationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SameAccountOverrideAccountOperation Override an unknown same-account operation block
+// (POST /api/account-operations/{operation_command_id}/same-account-override)
+func (_ Unimplemented) SameAccountOverrideAccountOperation(w http.ResponseWriter, r *http.Request, operationCommandId openapi_types.UUID, params SameAccountOverrideAccountOperationParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4720,6 +5155,365 @@ func (siw *ServerInterfaceWrapper) QueryAccountInventory(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.QueryAccountInventory(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) DisableAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DisableAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableAccountOperation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) EnableAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EnableAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableAccountOperation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) RemoveAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemoveAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveAccountOperation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceExistingAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceExistingAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceExistingAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceExistingAccountOperation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadNewAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) UploadNewAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UploadNewAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadNewAccountOperation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "command_id" -------------
+	var commandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "command_id", chi.URLParam(r, "command_id"), &commandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "command_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccountOperation(w, r, commandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LifecycleOverrideAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) LifecycleOverrideAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation_command_id" -------------
+	var operationCommandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation_command_id", chi.URLParam(r, "operation_command_id"), &operationCommandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operation_command_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LifecycleOverrideAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LifecycleOverrideAccountOperation(w, r, operationCommandId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SameAccountOverrideAccountOperation operation middleware
+func (siw *ServerInterfaceWrapper) SameAccountOverrideAccountOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation_command_id" -------------
+	var operationCommandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation_command_id", chi.URLParam(r, "operation_command_id"), &operationCommandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operation_command_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SameAccountOverrideAccountOperationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SameAccountOverrideAccountOperation(w, r, operationCommandId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7685,6 +8479,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/problem-accounts/query", wrapper.QueryProblemAccounts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/disable", wrapper.DisableAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/enable", wrapper.EnableAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/remove", wrapper.RemoveAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/upload-new", wrapper.UploadNewAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/replace-existing", wrapper.ReplaceExistingAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/account-operations/{command_id}", wrapper.GetAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/{operation_command_id}/lifecycle-override", wrapper.LifecycleOverrideAccountOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/account-operations/{operation_command_id}/same-account-override", wrapper.SameAccountOverrideAccountOperation)
 	})
 
 	return r

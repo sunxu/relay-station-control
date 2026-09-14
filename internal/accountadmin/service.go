@@ -89,6 +89,27 @@ func NewServiceWithIntentKeyPath(operations operationStore, nodes NodeResolver, 
 	return newService(operations, nodes, intentKeyPath, true)
 }
 
+// CanonicalIntentForCommand prepares the frozen command identity bytes for an
+// API caller. Upload fingerprints are calculated inside the service boundary;
+// the credential is never returned or persisted by this helper.
+func (s *Service) CanonicalIntentForCommand(command Command) ([]byte, error) {
+	if err := validateCommand(command); err != nil {
+		return nil, err
+	}
+	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
+		path := command.IntentKeyPath
+		if s.intentKeyBound {
+			path = s.intentKeyPath
+		}
+		_, fingerprint, err := store.AccountUploadIntentFingerprint(path, command.Credential)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal([]any{"account-intent-v1", "account." + string(command.Kind), command.NodeInstanceID.String(), command.AccountKey, 1, hex.EncodeToString(fingerprint)})
+	}
+	return canonicalNonUploadIntent(command)
+}
+
 func newService(operations operationStore, nodes NodeResolver, intentKeyPath string, intentKeyBound bool) (*Service, error) {
 	if operations == nil || nodes == nil {
 		return nil, errors.New("account admin: missing dependency")

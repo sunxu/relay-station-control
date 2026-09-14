@@ -2047,6 +2047,181 @@ paths:
         "403": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
 
+  /api/account-operations/disable:
+    post:
+      operationId: disableAccountOperation
+      summary: Disable one Antigravity account
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AccountOperationRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/account-operations/enable:
+    post:
+      operationId: enableAccountOperation
+      summary: Enable one Antigravity account
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AccountOperationRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/account-operations/remove:
+    post:
+      operationId: removeAccountOperation
+      summary: Remove one Antigravity account
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AccountRemoveRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/account-operations/upload-new:
+    post:
+      operationId: uploadNewAccountOperation
+      summary: Upload a new Antigravity account
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/AccountOperationUpload"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/account-operations/replace-existing:
+    post:
+      operationId: replaceExistingAccountOperation
+      summary: Replace an existing Antigravity account
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/AccountOperationUpload"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/account-operations/{command_id}:
+    get:
+      operationId: getAccountOperation
+      summary: Read an account operation
+      tags: [account-operations]
+      parameters:
+        - name: command_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/account-operations/{operation_command_id}/lifecycle-override:
+    post:
+      operationId: lifecycleOverrideAccountOperation
+      summary: Override an unknown lifecycle operation block
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+        - name: operation_command_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LifecycleOverrideRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/account-operations/{operation_command_id}/same-account-override:
+    post:
+      operationId: sameAccountOverrideAccountOperation
+      summary: Override an unknown same-account operation block
+      tags: [account-operations]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+        - name: operation_command_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SameAccountOverrideRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/AccountOperationMutation"}
+        "202": {$ref: "#/components/responses/AccountOperationMutation"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+
 components:
   securitySchemes:
     SessionCookie:
@@ -2197,8 +2372,108 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    AccountOperationResponse:
+      description: Account operation projection.
+      headers:
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/AccountOperationResponse"}
+    AccountOperationMutation:
+      description: Account operation result or frozen error response.
+      headers:
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - {$ref: "#/components/schemas/AccountOperationResponse"}
+              - {$ref: "#/components/schemas/AccountOperationErrorResponse"}
 
   schemas:
+    AccountOperationRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, node_instance_id, account_key]
+      properties:
+        command_id: {type: string, format: uuid}
+        node_instance_id: {type: string, format: uuid}
+        account_key: {type: string, minLength: 1, maxLength: 385}
+    AccountRemoveRequest:
+      allOf:
+        - {$ref: "#/components/schemas/AccountOperationRequest"}
+        - type: object
+          additionalProperties: false
+          required: [confirmation]
+          properties:
+            confirmation: {type: string, const: REMOVE}
+    AccountOperationUpload:
+      type: object
+      additionalProperties: false
+      required: [request, credential]
+      properties:
+        request:
+          type: string
+          format: binary
+          maxLength: 8192
+        credential:
+          type: string
+          format: binary
+          maxLength: 1048576
+    OverrideReason:
+      type: string
+      enum: [process_restarted, node_stopped, risk_accepted]
+    LifecycleOverrideRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, reason, confirmation]
+      properties:
+        command_id: {type: string, format: uuid}
+        reason: {$ref: "#/components/schemas/OverrideReason"}
+        confirmation: {type: string, const: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"}
+        detail: {type: string, maxLength: 512}
+    SameAccountOverrideRequest:
+      type: object
+      additionalProperties: false
+      required: [command_id, reason, confirmation]
+      properties:
+        command_id: {type: string, format: uuid}
+        reason: {$ref: "#/components/schemas/OverrideReason"}
+        confirmation: {type: string, const: "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK"}
+        detail: {type: string, maxLength: 512}
+    AccountOperationProjection:
+      type: object
+      additionalProperties: false
+      required: [command_id, node_instance_id, account_key, operation_kind, execution_state, result, error_code, lifecycle_overridden, same_account_overridden, created_at, updated_at]
+      properties:
+        command_id: {type: string, format: uuid}
+        node_instance_id: {type: string, format: uuid}
+        account_key: {type: string}
+        operation_kind: {type: string, enum: [disable, enable, remove, upload_new, replace_existing]}
+        execution_state: {type: string, enum: [prepared, dispatched, remote_applied, remote_noop, outcome_unknown, failed]}
+        result: {type: [string, "null"], enum: [applied, noop, failed, null]}
+        error_code: {type: [string, "null"]}
+        lifecycle_overridden: {type: boolean}
+        lifecycle_override_reason: {type: [string, "null"]}
+        same_account_overridden: {type: boolean}
+        same_account_override_reason: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AccountOperationResponse:
+      type: object
+      additionalProperties: false
+      required: [operation]
+      properties:
+        operation: {$ref: "#/components/schemas/AccountOperationProjection"}
+    AccountOperationErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: {$ref: "#/components/schemas/ErrorResponse"}
+        operation: {$ref: "#/components/schemas/AccountOperationProjection"}
     AccountInventoryPollCapacity:
       type: object
       additionalProperties: false
