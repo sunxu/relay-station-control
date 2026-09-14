@@ -9,12 +9,15 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 - Add minimal durable `account_admin_operations` execution/recovery truth with orthogonal verification state and durable same-`(node_instance_id,account_key)` serialization.
 - Expose explicit single-account Control APIs for Disable, Enable, Remove, Upload New, Replace Existing and operation read; add a separate high-risk lifecycle-block override.
 - Restrict the Node adapter to native `GET /auth-files`, `PATCH /auth-files/status`, single-name `DELETE /auth-files`, and raw-JSON `POST /auth-files?name=`. No arbitrary management passthrough.
-- Convert every raw native auth snapshot immediately to `provider/type`, normalized email, basename, auth_index and disabled; discard all other native fields.
+- Gate every fresh snapshot on exact `X-CPA-VERSION` and pinned `X-CPA-COMMIT`, classify manager-backed file eligibility using transient source/runtime evidence, then project to the minimal safe target fields.
 - Use fresh exactly-one provider/email target resolution. `name` and `auth_index` remain ephemeral native request evidence, not durable/public identity.
 - Accept upstream native last-writer-wins: Upload New is best-effort create; Replace Existing is best-effort replace. No CAS, target incarnation or Node postcondition proof.
-- Bound Control credential ingress to 1 MiB, validate minimal Antigravity identity, and reject pinned-v7.3.2 runtime/routing/management metadata without taking ownership of provider credential schema.
+- Bound Control credential ingress to 1 MiB, validate minimal Antigravity identity, canonicalize metadata aliases, and reject the complete reviewed v7.3.2 runtime/routing/management denylist without taking ownership of provider credential schema.
 - Preserve global command actor-first identity, immutable terminal replay, no automatic redispatch after ambiguous outcome, Node-first lifecycle locking, normal Inventory convergence, audit and Secret boundaries.
 - Treat timeout, connection/response loss and ambiguous native 5xx as `outcome_unknown`; block lifecycle until explicit high-risk override or stable terminal classification.
+- Decide Disable/Enable noop from the fresh pre-dispatch snapshot and send zero PATCH; any sent successful PATCH is applied.
+- Give lifecycle override its own global command identity and receipt while keeping it unable to unblock same-account mutation serialization.
+- Preserve exact account canonical intent v1 and upload HMAC equality without restoring any Node-side proof/fencing protocol.
 
 ## Capabilities
 
@@ -31,7 +34,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## Dependencies
 
-1. Ops Native-First Corrective Round 1 candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First Corrective Round 2 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -48,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Corrective Round 1: P0 = 0, P1 = 0 candidate, P2 = 0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`. Detailed Requirements are not newly declared frozen, implementation readiness is not declared ready, and Stage 7B implementation is `NOT STARTED`.
+Native-First Corrective Round 2 follows consolidated independent review P0=0, P1=9, P2=3 / CHANGES REQUIRED. All P1/P2 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`; ADR remains `PROPOSED`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.

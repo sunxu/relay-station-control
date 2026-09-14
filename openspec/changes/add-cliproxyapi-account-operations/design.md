@@ -52,9 +52,23 @@ Content-Type: application/json
 
 Control MUST NOT call `DELETE all=true`, multi-name/body delete, multipart native upload, `PATCH /auth-files/fields`, `GET /auth-files/download`, `POST /auth-files/refresh`, OAuth endpoints or any arbitrary management passthrough. The management key remains server-side memory/config only and never reaches browser, PostgreSQL, receipt, audit, log, trace or metric. Transport remains HTTP-only, fixed-target, no redirect, no proxy/fallback/retry, bounded response/body/time and sanitized error mapping.
 
-### 2. Safe native snapshot projection
+### 2. Runtime artifact gate and two-stage snapshot classification
 
-`GET /v0/management/auth-files` is untrusted management input. The adapter MUST parse a bounded response and immediately produce only:
+`GET /v0/management/auth-files` is untrusted management input. Before parsing or interpreting its body, the adapter MUST require the response to contain exactly one `X-CPA-VERSION` and exactly one `X-CPA-COMMIT`. Each value is bounded to 96 ASCII bytes; version syntax is `v` followed by decimal dot-separated components with no whitespace, and commit syntax is exactly 40 lowercase hexadecimal characters. Missing, duplicate, malformed, unknown or mismatched values return `unsupported_node_version` with zero mutation.
+
+The approved runtime version is exactly `v7.3.2`. The semantic upstream source baseline is `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`, but that value is the expected runtime commit only for a stock upstream artifact built from that exact commit. If an ordinary reviewed fork commit becomes the final artifact, release evidence MUST pin that exact artifact source commit and prove its relevant baseline is upstream v7.3.2; Control then enforces the pinned fork commit. Configuration or database expectation MUST NOT substitute for absent response headers. The final runtime artifact commit is not yet frozen, so Stage 7B is not implementation-ready.
+
+After the header gate, snapshot handling has two stages:
+
+```text
+raw native entry
+-> transient mutation-eligibility classification
+-> safe target projection
+```
+
+The v7.3.2 adapter accepts a physical mutation target only from a runtime-manager-backed snapshot entry with exact `source="file"`, `runtime_only=false`, auth_index of 1..256 UTF-8 bytes with no control character, validated safe basename, and valid provider/email. If both provider and type are present they MUST normalize identically. `runtime_only=true`, `source="memory"`, missing source/runtime evidence, missing auth_index and otherwise incomplete entries are never physical mutation targets. The disk-fallback response has no manager-backed source/runtime/auth_index evidence; if the response is wholly fallback-shaped, or an empty response cannot prove manager-backed mode, the adapter returns `node_management_unavailable` and performs zero mutation. It MUST NOT infer safe absence for Upload New from such a response.
+
+Only after classification does the adapter produce:
 
 ```text
 provider/type
@@ -64,7 +78,7 @@ auth_index
 disabled
 ```
 
-`name` MUST be a validated basename and `auth_index` a bounded opaque string. Full path, ID token, status/status_message, unavailable/runtime_only/source, success/failure counters, recent requests, quota/model quota, cooldown/next-retry data, timestamps, project/routing metadata, headers, proxy, notes, token-like values, unknown fields and the raw object are discarded. Raw native bytes/object MUST NOT enter PostgreSQL, receipts, audit, logs, traces, metrics or Control API/browser responses.
+`source` and `runtime_only` may exist only transiently during classification. They and full path, ID token, status/status_message, unavailable, success/failure counters, recent requests, quota/model quota, cooldown/next-retry data, timestamps, project/routing metadata, headers, proxy, notes, token-like values, unknown fields and the raw object MUST be discarded and MUST NOT enter PostgreSQL, receipts, audit, logs, traces, metrics or Control API/browser responses.
 
 ### 3. Fresh exactly-one target resolution
 
@@ -77,7 +91,7 @@ target = (node_instance_id, account_key)
 
 Disable, Enable, Remove and Replace Existing MUST obtain a fresh native snapshot immediately before dispatch and match normalized provider plus normalized email. Zero matches returns `account_target_not_found`; more than one returns `account_target_ambiguous`; exactly one yields ephemeral `name/auth_index`. Control MUST NOT choose first/latest, infer a filename, or use Inventory alone as physical target truth. Native name/auth_index MUST NOT be persisted or exposed as business identity.
 
-Upload New also obtains a fresh snapshot and requires the expected identity to be absent before native POST. This is a best-effort admission observation, not atomic create-if-absent.
+Upload New also obtains the same fresh version-valid, non-degraded snapshot. It requires both the expected provider+normalized-email identity to be absent and the generated basename to be unoccupied by every current physical file-backed entry. Existing identity returns `account_target_exists`; occupied basename for another identity returns `account_filename_conflict`; both are 409 with zero native POST. This remains a best-effort admission observation, not atomic create-if-absent.
 
 ### 4. Native mutation semantics and accepted races
 
@@ -120,17 +134,28 @@ request-retry
 excluded_models
 excluded-models
 proxy_url
+proxy-url
 note
 websockets
 prefix
 models
 disable_cooling
+disable-cooling
 fingerprint_profile
+fingerprint-profile
+base_url
+base-url
+model_aliases
+model-aliases
+request_scoped_errors
+request-scoped-errors
+tool_prefix_disabled
+tool-prefix-disabled
 ```
 
-Any occurrence is `upload_invalid`; Control MUST NOT silently strip it. New provider credential fields not in this denylist may pass through to CLIProxyAPI validation. This does not make Control provider credential schema truth.
+Control MUST apply the pinned v7.3.2 `CanonicalCredentialMetadataKey()` alias mapping before testing the canonical key against this denylist; canonical and legacy aliases therefore have identical disposition. Any denied occurrence is `upload_invalid`; Control MUST NOT silently strip it. `api_key`/`api-key` is classified as provider credential material rather than runtime control and is not denied solely by this list; normal identity/minimum checks and CLIProxyAPI schema handling still apply. New provider credential fields not in this denylist may pass through to CLIProxyAPI validation. This does not make Control provider credential schema truth.
 
-Upload New generates `antigravity-<normalized_email>.json`. `MAX_NATIVE_BASENAME_BYTES=255`, fixed prefix/suffix is 17 bytes and `MAX_CREATE_EMAIL_BYTES=238`, all measured as UTF-8 bytes. Oversize input returns `invalid_request` with zero Node mutation; no truncation, hash fallback or alternate filename is allowed. Replace inherits the fresh exact basename and requires non-empty basename-only UTF-8, no separator/traversal/control character and at most 255 bytes.
+Upload New generates `antigravity-<normalized_email>.json`. `MAX_NATIVE_BASENAME_BYTES=255`, fixed prefix/suffix is 17 bytes and `MAX_CREATE_EMAIL_BYTES=238`, all measured as UTF-8 bytes. The generated name MUST then pass the same validator as Replace: non-empty basename only, no `/`, `\\`, NUL, control character or traversal form, and at most 255 UTF-8 bytes. Oversize or unsafe input returns `invalid_request` with zero Node request; no truncation, hash fallback or alternate filename is allowed. Replace inherits the fresh exact basename and applies the same validator.
 
 ### 6. Product API shape
 
@@ -143,14 +168,14 @@ POST /api/account-operations/remove
 POST /api/account-operations/upload-new
 POST /api/account-operations/replace-existing
 GET  /api/account-operations/{command_id}
-POST /api/account-operations/{command_id}/lifecycle-override
+POST /api/account-operations/{operation_command_id}/lifecycle-override
 ```
 
-Disable/Enable JSON bodies contain exactly lowercase UUID `command_id`, UUID `node_instance_id` and canonical `account_key` (maximum 385 UTF-8 bytes). Remove additionally requires `confirmation="REMOVE"`. Upload routes accept exactly one `request` JSON part with those three fields and one credential part under Decision 5. Lifecycle override contains exactly `reason`, `confirmation="OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"` and optional audit-only `detail` up to 512 UTF-8 bytes.
+Disable/Enable JSON bodies contain exactly lowercase UUID `command_id`, UUID `node_instance_id` and canonical `account_key` (maximum 385 UTF-8 bytes). Remove additionally requires `confirmation="REMOVE"`. Upload routes accept exactly one `request` JSON part with those three fields and one credential part under Decision 5. In the lifecycle-override route, the path UUID is the target operation command ID; its body contains exactly a new independent lowercase UUID `command_id`, `reason`, `confirmation="OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"` and optional audit-only `detail` up to 512 UTF-8 bytes.
 
 Unknown JSON fields, duplicate multipart parts, a missing part, any extra part and malformed UUID/account identity are `400 invalid_request`. The credential part is sent to CLIProxyAPI as the exact validated JSON bytes; browser input never supplies native basename, auth_index, Management Key or final path.
 
-POST mutation routes require active authenticated `super_admin`, same-origin and CSRF. GET is authenticated/read-only. Override has the same checks plus typed high-risk confirmation. Every response, including errors, is `Cache-Control: no-store`. Public operation projection contains exactly `command_id,node_instance_id,account_key,operation_kind,execution_state,verification_state,result,error_code,lifecycle_overridden,lifecycle_override_reason,created_at,updated_at`; it excludes native name/auth_index, Management Key, upload fingerprint, raw response and credential.
+POST mutation routes require active authenticated `super_admin`, same-origin and CSRF. GET is authenticated/read-only. Override has the same checks plus typed high-risk confirmation. Every response, including errors, is `Cache-Control: no-store`. Public operation projection contains exactly `command_id,node_instance_id,account_key,operation_kind,execution_state,verification_state,result,error_code,lifecycle_overridden,lifecycle_override_reason,created_at,updated_at`; it excludes native name/auth_index, Management Key, upload fingerprint, raw response and credential. `result` is exactly null or `applied|noop|failed`: prepared/dispatched/outcome-unknown use null, remote-applied uses applied, remote-noop uses noop, and failed uses failed with a stable error_code.
 
 Terminal success returns exactly `200 {"operation":<projection>}`. `prepared|dispatched|outcome_unknown` returns exactly `202 {"operation":<projection>}`. A terminal mapped failure returns `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"},"operation":<projection>}` at the mapped status. GET returns `200 {"operation":<current-projection>}` or `404 operation_not_found`. Same-command nonterminal replay returns the same current-projection shape with 202 and zero redispatch. Exact terminal replay returns the original persisted status and canonical body bytes. Override success returns `200 {"operation":<current-projection>}` and does not change execution or verification state.
 
@@ -162,9 +187,10 @@ The public status mapping is frozen as follows:
 403 authorization_required | csrf_failed
 404 node_not_found | account_target_not_found | operation_not_found
 409 node_retired | node_monitoring_ineligible | unsupported_provider
-409 account_target_ambiguous | account_operation_in_progress | command_conflict
+409 account_target_ambiguous | account_target_exists | account_filename_conflict
+409 account_operation_in_progress | lifecycle_override_already_set | command_conflict
 413 upload_too_large
-503 node_management_unavailable | service_unavailable
+503 node_management_unavailable | unsupported_node_version | service_unavailable
 ```
 
 An accepted request whose native outcome is ambiguous is not returned as an error envelope: it returns the 202 operation projection with `execution_state=outcome_unknown`, `result=null` and `error_code=remote_outcome_unknown`. Verification fields in every operation projection are current mutable truth and remain independent of the immutable terminal POST receipt.
@@ -178,7 +204,7 @@ command_id uuid PRIMARY KEY FK admin_command_registry(command_id)
 node_instance_id uuid NOT NULL FK relay_node_assets(instance_id)
 account_key text NOT NULL
 operation_kind text CHECK IN ('disable','enable','remove','upload_new','replace_existing')
-execution_state text CHECK IN ('prepared','dispatched','remote_applied','remote_noop','remote_partial','outcome_unknown','failed')
+execution_state text CHECK IN ('prepared','dispatched','remote_applied','remote_noop','outcome_unknown','failed')
 verification_state text CHECK IN ('not_started','pending','verified','timeout','inconclusive')
 dispatch_started_at timestamptz NULL
 remote_result_code text NULL
@@ -188,7 +214,7 @@ verification_started_at timestamptz NULL
 verification_deadline timestamptz NULL
 verified_at timestamptz NULL
 lifecycle_override_at timestamptz NULL
-lifecycle_override_by uuid NULL FK administrator_users(id)
+lifecycle_override_by uuid NULL FK control_admin_users(admin_id) ON UPDATE RESTRICT ON DELETE RESTRICT
 lifecycle_override_reason text NULL CHECK IN ('process_restarted','node_stopped','risk_accepted')
 created_at timestamptz NOT NULL
 updated_at timestamptz NOT NULL
@@ -200,9 +226,57 @@ The three override fields are all-null or all-non-null. Free-form override detai
 
 After auth/session/super_admin/CSRF, Control acquires the shared UUID-derived advisory serialization and performs actor-first global registry lookup before target, upload Secret parsing/fingerprinting or Node calls. New reservation and operation creation are atomic. Cross-actor/domain/kind/intent reuse is `command_conflict`.
 
-Change B adds immutable `account_admin_command_receipts`, separate from asset-only receipts. `remote_applied`, `remote_noop` and `failed` are receipt-eligible. `prepared`, `dispatched` and `outcome_unknown` are not. `remote_partial` remains in the generic enum for a future machine-stable protocol, but the v7.3.2 adapter MUST NOT manufacture it from ambiguous 5xx/raw text; if no stable evidence exists, state is `outcome_unknown` and there is no receipt.
+Change B adds immutable `account_admin_command_receipts`, separate from asset-only receipts. For account mutations, `remote_applied`, `remote_noop` and `failed` are receipt-eligible; `prepared`, `dispatched` and `outcome_unknown` are not. Phase 7 v1 has no additional intermediate failure state. If no stable evidence exists, state is `outcome_unknown` and there is no receipt.
 
 A failure before global acceptance creates no operation/receipt. A stable terminal transition, terminal audit and receipt insertion commit atomically before response. Exact same actor/domain/kind/intent terminal replay returns stored HTTP status and canonical response bytes. Verification and lifecycle override changes MUST NOT rewrite that immutable original POST response.
+
+The receipt relation supports both account mutation commands and independent lifecycle-override commands:
+
+```text
+command_id uuid PRIMARY KEY FK admin_command_registry(command_id)
+target_operation_command_id uuid NOT NULL FK account_admin_operations(command_id)
+actor_admin_id uuid NOT NULL FK control_admin_users(admin_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+command_domain text NOT NULL CHECK = 'account_admin'
+command_kind text NOT NULL
+intent_encoding_version smallint NOT NULL CHECK = 1
+canonical_intent_hash bytea NOT NULL CHECK octet_length=32
+secret_fingerprint_key_version smallint NULL
+http_status smallint NOT NULL
+content_type text NOT NULL CHECK = 'application/json'
+response_body bytea NOT NULL
+committed_at timestamptz NOT NULL
+```
+
+Registry actor/domain/kind/encoding/hash/key-version integrity is enforced by the same composite identity relationship as Stage 7A. For a mutation receipt, `command_id=target_operation_command_id`; for an override receipt they differ. Runtime roles receive no unrestricted INSERT/UPDATE/DELETE/TRUNCATE.
+
+#### Canonical account intent v1
+
+All account commands use `command_domain="account_admin"`, `intent_encoding_version=1` and these exact command kinds:
+
+```text
+account.disable
+account.enable
+account.remove
+account.upload_new
+account.replace_existing
+account.lifecycle_override
+```
+
+Canonical bytes are UTF-8 JSON arrays with no insignificant whitespace. UUIDs are lowercase hyphenated ASCII. `account_key` is the validated canonical UTF-8 string. Strings use literal UTF-8 except JSON-required escapes for quote, reverse solidus and U+0000..U+001F; those control escapes use lowercase `\u00xx`, and HTML escaping is disabled. No Unicode normalization is performed after request validation. Array shapes and field order are exact:
+
+```json
+["account-intent-v1","account.disable","<node_instance_id>","<account_key>"]
+["account-intent-v1","account.enable","<node_instance_id>","<account_key>"]
+["account-intent-v1","account.remove","<node_instance_id>","<account_key>","REMOVE"]
+["account-intent-v1","account.upload_new","<node_instance_id>","<account_key>",1,"<lowercase-hex-upload-hmac>"]
+["account-intent-v1","account.replace_existing","<node_instance_id>","<account_key>",1,"<lowercase-hex-upload-hmac>"]
+["account-intent-v1","account.lifecycle_override","<target_operation_command_id>","<reason>","OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK",null]
+["account-intent-v1","account.lifecycle_override","<target_operation_command_id>","<reason>","OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK","<present-detail>"]
+```
+
+The two override forms distinguish absent detail from present detail. If present, detail MUST be 1..512 UTF-8 bytes, contain no control character, and is encoded exactly as validated without trimming or normalization; an empty present value is invalid. `canonical_intent_hash=SHA-256(canonical bytes)`. Non-upload and override reservations use null `secret_fingerprint_key_version`; upload commands use version 1.
+
+Upload credential bytes never enter canonical intent. `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE` is a stable deployment Secret containing exactly 32 raw bytes in a regular non-symlink file with strict owner-only permissions equivalent to asset K1 checks. The HMAC is `HMAC-SHA-256(key, UTF8("relay-station/account-operation-upload-intent/v1") || 0x00 || exact_credential_bytes)` and is encoded as 64 lowercase hexadecimal ASCII characters in the array. Missing, unreadable, unsafe, symlink or wrong-length key returns `service_unavailable`; there is no automatic generation or asset-K1 fallback. A structurally valid wrong key deterministically produces canonical hash mismatch and `command_conflict` for historical replay; restoring the original key restores replay.
 
 ### 9. Durable same-account dispatch serialization
 
@@ -216,7 +290,7 @@ lock Node
 -> require current non-cancelled monitoring
 -> require management_account_inventory_read + matching active Provider policy
 -> acquire/check durable (node_instance_id,account_key) serialization
--> reject another operation in dispatched or unresolved outcome_unknown without override
+-> reject another operation in dispatched or unresolved outcome_unknown, regardless of lifecycle override
 -> lock current operation
 -> require execution_state=prepared
 -> set dispatch_started_at and prepared -> dispatched
@@ -226,22 +300,29 @@ COMMIT
 
 No DB lock crosses native HTTP. Same-target races, Control restart and lifecycle races are resolved from durable rows/constraints, not process memory. There is no Relay mutation capability discovery and no Node mutation protocol constant gate; deployment compatibility evidence is pinned upstream v7.3.2 plus the future reviewed Control adapter artifact.
 
-### 10. Conservative native outcome mapping
+### 10. Disable/Enable no-op and conservative native outcome mapping
+
+After global command acceptance, runtime artifact gate, fresh mutation-eligible exactly-one resolution and durable dispatch eligibility, Control evaluates the safe snapshot `disabled` value before sending PATCH. Disable with `disabled=true`, or Enable with `disabled=false`, sends zero native PATCH and terminalizes as `remote_noop`; audit, immutable terminal receipt, exact replay and normal verification eligibility still apply. When desired state differs, Control commits `prepared -> dispatched` and sends PATCH exactly once; stable native 2xx is always `remote_applied` and MUST NOT be reclassified as noop by later read-back.
 
 ```text
-known successful terminal native 2xx -> remote_applied or remote_noop
+pre-dispatch desired state already satisfied -> remote_noop, zero PATCH
+known successful terminal native 2xx after PATCH/POST/DELETE -> remote_applied
 provably pre-mutation mapped native 4xx -> failed
 timeout / connection loss / response loss -> outcome_unknown
 ambiguous native 5xx after request may have arrived -> outcome_unknown
 ```
 
-Control maps only adapter-reviewed status/context and never parses raw native error strings to infer filesystem/runtime commit stage. Native 500 MUST NOT become `remote_partial`. Read-back and Inventory may show business convergence but MUST NOT retroactively invent exact execution evidence. Every mutation kind follows this rule. Automatic redispatch of `dispatched` or `outcome_unknown` is prohibited, including same-command POST replay and restart recovery.
+Control maps only adapter-reviewed status/context and never parses raw native error strings to infer filesystem/runtime commit stage. Read-back and Inventory may show business convergence but MUST NOT retroactively invent exact execution evidence or noop. Every mutation kind follows this rule. Automatic redispatch of `dispatched` or `outcome_unknown` is prohibited, including same-command POST replay and restart recovery.
 
 ### 11. Node lifecycle blocking and manual override
 
 Retire/Replace locks the same Node first, then inspects same-Node account operations. `dispatched` and unresolved `outcome_unknown` block lifecycle unless that exact operation has a durable reviewed override. There is no automatic quiescence proof or deadline expiry release.
 
-The action name is **Override Unknown Operation Lifecycle Block**. It sets only `lifecycle_override_at/by/reason`; it does not change execution state, verification, receipt eligibility or redispatch authority. `outcome_unknown` remains unknown. Reasons are `process_restarted|node_stopped|risk_accepted`. `risk_accepted` explicitly waives the guarantee that a previously dispatched request can never mutate the old Node after lifecycle proceeds. All reasons require super_admin, active session, same-origin/CSRF, typed confirmation and distinct high-risk audit; operator detail is audit-only.
+The action name is **Override Unknown Operation Lifecycle Block**. The path UUID identifies the target account operation; the body `command_id` is a new independent administrator command. After authentication/session/super_admin/CSRF, Control acquires the shared global command advisory serialization, performs actor-first registry lookup/reservation, and validates the canonical `account.lifecycle_override` intent before locking and changing the target operation. Cross-actor/domain/kind/intent reuse is `command_conflict`. Exact replay returns the override command's immutable terminal receipt with zero second mutation; it never reuses or overwrites the target account mutation receipt.
+
+The first valid override sets only `lifecycle_override_at/by/reason`; it does not change execution state, verification or redispatch authority. `outcome_unknown` remains unknown. Reasons are `process_restarted|node_stopped|risk_accepted`. `risk_accepted` explicitly waives the guarantee that a previously dispatched request can never mutate the old Node after lifecycle proceeds. All reasons require super_admin, active session, same-origin/CSRF, typed confirmation and distinct high-risk audit; operator detail is audit-only. Override mutation, audit and its separate receipt commit atomically.
+
+A later different override command after those fields are set returns stable `409 lifecycle_override_already_set`, changes no override value and atomically records that command's terminal receipt for exact replay. An override is consulted only by Node Retire/Replace. A `dispatched` or unresolved `outcome_unknown` row continues to block every new same-account Disable, Enable, Remove, Upload New and Replace Existing regardless of override fields. Lifecycle override is neither operation resolution nor same-account serialization override.
 
 Node-first lock order is mandatory for dispatch and lifecycle. Acceptance covers Retire-first vs dispatch, dispatch-first vs Retire, same-account A vs B and Control restart with a live operation.
 
@@ -273,18 +354,21 @@ No Node revert occurs in this planning change. Historical Stage 7N results remai
 
 ## Acceptance Strategy
 
-Future acceptance MUST cover exact native route allowlisting; snapshot Secret/raw-field rejection; 1 MiB boundaries; denylist pass/reject vectors; 238/239-byte filename boundary; best-effort create/replace and accepted lost-update races; ambiguous 5xx/timeouts to outcome_unknown; zero automatic redispatch; terminal receipt eligibility; PostgreSQL same-account serialization; Node-first lifecycle races/restart; all override reasons and high-risk audit; Inventory convergence; Secret scans; pinned v7.3.2 adapter tests; API/UI; and compatibility rollback.
+Future acceptance MUST cover exact native route allowlisting; exact-once runtime identity headers including duplicate/mismatch; manager/file versus memory/runtime-only/disk-fallback/empty classification; snapshot Secret/raw-field rejection; 1 MiB boundaries; complete alias denylist pass/reject vectors; shared Create/Replace safe-basename and 238/239-byte boundaries; identity and basename collision admission; best-effort create/replace and accepted lost-update races; pre-PATCH noop versus sent-PATCH applied; ambiguous 5xx/timeouts to outcome_unknown; zero automatic redispatch; exact canonical intent/HMAC golden vectors and wrong-key replay; mutation and independent override receipt eligibility/replay; PostgreSQL same-account serialization unaffected by lifecycle override; Node-first lifecycle races/restart; first/later override semantics and high-risk audit; Inventory convergence; Secret scans; pinned v7.3.2 adapter/runtime-artifact tests; API/UI; and compatibility rollback.
 
 ## Planning history and current gate
 
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Corrective Round 1
+Native-First Corrective Round 2
+Previous consolidated review = P0 0 / P1 9 / P2 3 / CHANGES REQUIRED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate
 Architecture status = READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW
+ADR = PROPOSED
+Node revert = NOT RUN
 Stage 7B implementation = NOT STARTED
 ```
 

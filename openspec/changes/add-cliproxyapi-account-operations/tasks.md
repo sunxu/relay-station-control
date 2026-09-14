@@ -13,29 +13,30 @@
 ## 3. Native CLIProxyAPI adapter
 
 - [ ] 3.1 Implement the fixed v7.3.2 native allowlist only: auth-files GET, exact status PATCH, single-name DELETE and raw-JSON POST; reject all-delete, multi-delete, native multipart, fields/download/refresh/OAuth and arbitrary passthrough.
-- [ ] 3.2 Project bounded raw auth-files input immediately to provider/type, normalized email, validated basename, bounded auth_index and disabled; discard all path, token-adjacent, runtime and unknown fields.
-- [ ] 3.3 Resolve Disable/Enable/Remove/Replace from a fresh exactly-one provider+normalized-email match; return stable missing/ambiguous errors and keep name/auth_index ephemeral.
-- [ ] 3.4 Keep Management Key server-side only and use a fixed HTTP-only bounded client with no redirect, proxy, retry or raw native error exposure.
+- [ ] 3.2 Require exact-once valid `X-CPA-VERSION=v7.3.2` and independently pinned runtime `X-CPA-COMMIT` before snapshot interpretation; mismatch returns `unsupported_node_version` with zero mutation.
+- [ ] 3.3 Classify manager-backed `source=file`, non-runtime-only entries transiently before safe projection; reject memory/incomplete/disk-fallback and manager-unproven empty snapshots, then discard classification/path/token/runtime/unknown fields.
+- [ ] 3.4 Resolve Disable/Enable/Remove/Replace from a fresh exactly-one provider+normalized-email match; return stable missing/ambiguous errors and keep name/auth_index ephemeral.
+- [ ] 3.5 Keep Management Key server-side only and use a fixed HTTP-only bounded client with no redirect, proxy, retry or raw native error exposure.
 
 ## 4. Credential ingress and filename admission
 
 - [ ] 4.1 Bound credential ingress to 1 MiB and request metadata to the frozen multipart envelope; reject malformed, duplicate and oversized parts before native dispatch.
-- [ ] 4.2 Validate a top-level JSON object, `type=antigravity`, expected normalized email and the frozen runtime-control denylist while allowing unrecognized provider credential fields to pass through unchanged.
-- [ ] 4.3 Generate Upload New basename `antigravity-<normalized_email>.json` with 255-byte component and 238-byte normalized-email limits; Replace inherits and validates the exact fresh native basename.
-- [ ] 4.4 Preserve exact command equality through the Control upload-intent fingerprint without treating native read-back as credential proof.
+- [ ] 4.2 Validate a top-level JSON object, `type=antigravity`, expected normalized email and the complete alias-canonicalized v7.3.2 runtime-control denylist while allowing unrecognized provider credential fields to pass through unchanged.
+- [ ] 4.3 Generate Upload New basename `antigravity-<normalized_email>.json` with 255-byte component and 238-byte normalized-email limits, apply the shared safe-basename validator, and require both identity and basename absence; Replace inherits and validates the exact fresh native basename.
+- [ ] 4.4 Implement the exact canonical account intent v1 arrays and `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE` HMAC contract, including hard-coded golden vectors and deterministic wrong-key replay, without treating native read-back as credential proof.
 
 ## 5. Dispatch, outcome and lifecycle serialization
 
 - [ ] 5.1 In a short Node-first transaction require active lifecycle, current monitoring eligibility, Inventory-read capability, provider policy and durable same-account availability; transition `prepared -> dispatched`, then perform native HTTP outside the transaction.
-- [ ] 5.2 Block new destructive dispatch for the same account while an operation is `dispatched` or unresolved `outcome_unknown`; prove Retire/Replace uses the same Node-first blocker graph and survives Control restart.
-- [ ] 5.3 Map known 2xx to terminal results, only reviewed provably pre-mutation 4xx to failed, and timeout/connection loss/response loss/ambiguous native 5xx to `outcome_unknown`; never parse raw strings for commit stages or automatically redispatch.
-- [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** with durable actor/time/reason, exact confirmation and audit; leave execution/verification/receipt state unchanged.
+- [ ] 5.2 Block new destructive dispatch for the same account while an operation is `dispatched` or unresolved `outcome_unknown`, regardless of lifecycle override; prove Retire/Replace alone may consult override and the blocker survives Control restart.
+- [ ] 5.3 Decide Disable/Enable already-desired noop from the fresh eligible snapshot with zero PATCH; map every sent stable 2xx to applied, reviewed pre-mutation 4xx to failed, and timeout/connection loss/response loss/ambiguous native 5xx to `outcome_unknown`; never invent noop, an unproven terminal stage or redispatch.
+- [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** as an independent globally reserved `account.lifecycle_override` command with its own canonical intent, receipt and already-set behavior; leave target execution/verification and same-account blockers unchanged.
 - [ ] 5.5 PostgreSQL 18 race acceptance: Retire-first/dispatch-first, same-account A/B, Control restart with live operation, and override behavior.
 
 ## 6. Product API, replay, UI and observability
 
 - [ ] 6.1 Implement the five frozen mutation POST routes, operation GET and lifecycle-override POST with exact no-store schemas/statuses and bounded stable errors.
-- [ ] 6.2 Implement separate immutable account terminal receipts: exact replay only for stable terminal classification; `outcome_unknown` returns current projection with 202 and zero redispatch.
+- [ ] 6.2 Implement separate immutable account terminal receipts for mutation and override command IDs: exact replay only for stable terminal classification; `outcome_unknown` returns current projection with 202 and zero redispatch; Phase 7 v1 has no extra intermediate failure state.
 - [ ] 6.3 Add super-admin UI for single-account operations and high-risk lifecycle override without native physical evidence or arbitrary filename input.
 - [ ] 6.4 Add bounded audit actions, Secret-safe logs and low-cardinality metrics; prove Management Key, credential bytes, native paths/responses and account identifiers do not leak.
 
@@ -53,4 +54,4 @@
 
 ## Planning gate
 
-Native-First Corrective Round 1 has P0=0, P1=0 candidate, P2=0 candidate. Planning reconciliation is complete. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. Implementation is **NOT STARTED** and this task list does not authorize implementation.
+Native-First Corrective Round 2 incorporates the consolidated P0=0, P1=9, P2=3 findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
