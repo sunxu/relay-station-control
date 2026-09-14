@@ -38,7 +38,9 @@ Before remote mutation, a short transaction MUST lock the Node first, verify act
 
 ### Requirement: Remote mutation SHALL remain fenced until quiescence is proven
 
-A dispatched account operation MUST persist bounded `dispatch_deadline`, `remote_mutation_deadline` and conservative `quiescence_deadline`. Client timeout or dispatch deadline expiry MUST NOT by itself prove remote stop. The selected Node Contract v1 MUST guarantee synchronous bounded mutation, no background credential mutation after handler quiescence and no irreversible mutation start after its server-side budget. Node Retire/Replace MUST reject `account_operation_in_progress` while a same-Node dispatched operation lacks proven quiescence. If the selected artifact cannot prove bounded quiescence, time expiry MUST NOT automatically release the fence.
+A dispatched account operation MUST persist a durable UUID `dispatch_token` plus bounded `dispatch_deadline`, `remote_mutation_deadline` and conservative `quiescence_deadline`. Control MUST send that exact lowercase UUID as Node `dispatch_token_v1`. Client timeout or any deadline expiry MUST NOT by itself prove remote stop. The selected Node Contract v1 MUST guarantee synchronous bounded mutation, no background credential mutation after handler quiescence, no irreversible mutation start after its server-side budget, and durable same-token recovery fencing. Node Retire/Replace MUST reject `account_operation_in_progress` while a same-Node dispatched operation lacks proven quiescence.
+
+After response loss, Control MUST perform an authenticated resolve using the same UUID as `fence_dispatch_token_v1`. Quiescence is proven only if Node successfully acquires its shared mutation gate, durably persists that token fence, and completes sanitized target/postcondition read-back; a late mutation carrying the token is then rejected before target lookup or mutation. A timeout, unavailable Node, invalid contract response, or elapsed `quiescence_deadline` leaves the lifecycle fence active. The other permitted proofs are a terminal mutation response with `quiescent=true` or proven termination/restart of the exact Node process instance.
 
 #### Scenario: Control times out while Node handler continues
 - **WHEN** the HTTP client times out but Node-side bounded mutation may still be running
@@ -47,6 +49,10 @@ A dispatched account operation MUST persist bounded `dispatch_deadline`, `remote
 #### Scenario: Restart before remote quiescence
 - **WHEN** Control crashes after dispatch and restarts before quiescence proof
 - **THEN** the durable fence is restored and Node lifecycle mutation remains blocked
+
+#### Scenario: Recovery resolve overtakes a late mutation request
+- **WHEN** a fenced resolve reaches Node gate admission before the earlier-dispatched HTTP mutation carrying the same token
+- **THEN** Node durably fences the token, completes recovery read-back, and rejects the late mutation with zero credential mutation
 
 ### Requirement: Remote execution and verification SHALL use orthogonal durable states
 

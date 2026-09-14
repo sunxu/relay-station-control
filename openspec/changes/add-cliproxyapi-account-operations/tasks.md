@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Require `add-global-admin-command-registry` readiness/implementation before Change B apply; record exact dependency commit/migration/floor.
 - [ ] 1.2 Re-check current CLIProxyAPI upstream, pin exact upstream baseline, identify selective ports, implement/review external Node Account Management Contract v1 in the Node repo under its own workflow, and pin final fork commit/image digest.
-- [ ] 1.3 Prove Node v1 bounded synchronous mutation/quiescence, precondition, strict upload allowlist, persistence error propagation, atomic replacement, postcondition proof and sanitized errors before Control remote mutation is enabled.
+- [ ] 1.3 Prove Node v1 bounded synchronous mutation/quiescence, durable `dispatch_token_v1` admission fences, same-token fenced recovery resolve, precondition, strict upload allowlist, persistence error propagation, atomic replacement, postcondition proof and sanitized errors before Control remote mutation is enabled.
 
 ## 2. Control durable operation foundation
 
@@ -20,7 +20,7 @@
 
 - [ ] 4.1 Implement short Node-first dispatch authorization: lifecycle -> monitoring -> capability/policy -> same-target live fence -> operation row; atomically `prepared -> dispatched` with DB-time deadlines.
 - [ ] 4.2 Add Node Retire/Replace check for dispatched-unquiesced account operations; no lock across HTTP.
-- [ ] 4.3 Implement restart/reconciler logic that can prove outcome/quiescence/read-back but never blindly redispatch dispatched destructive operations.
+- [ ] 4.3 Implement restart/reconciler logic that sends the durable operation `dispatch_token` as Node `fence_dispatch_token_v1`, proves quiescence only after successful durable fencing plus shared-gate read-back, and never blindly redispatches dispatched destructive operations; deadline expiry alone keeps the lifecycle fence active.
 - [ ] 4.4 PostgreSQL 18 race acceptance: monitoring Disable-first/dispatch-first, Retire/Replace vs live handler, Control crash/restart before quiescence, same-target concurrent commands.
 
 ## 5. Operations and Secret ingress

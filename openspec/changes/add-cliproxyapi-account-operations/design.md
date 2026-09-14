@@ -118,7 +118,7 @@ Control conservative quiescence bound: authorization DB time + 25s
 verification deadline: 10 minutes after execution becomes verification-eligible
 ```
 
-Control computes DB-time deadlines from the authorization transaction. Node receives/enforces the relative 15s mutation budget using its own local timer. Irreversible mutation MUST NOT begin after the Node budget. No background mutation may continue after handler quiescence.
+Control computes DB-time deadlines from the authorization transaction. Node receives/enforces the relative 15s mutation budget using its own local timer. Irreversible mutation MUST NOT begin after the Node budget. No background mutation may continue after handler quiescence. The 25s value is an accepted operational bound, not independent proof that an unobserved remote handler stopped.
 
 These constants require independent readiness review and Node contract acceptance before apply; changing them later requires the same spec/review discipline.
 
@@ -129,10 +129,10 @@ These constants require independent readiness review and Node contract acceptanc
 Fence release requires one of:
 
 1. terminal Node handler response plus pinned synchronous contract proving completion/abort;
-2. recovery/read-back proving mutation can no longer begin/continue;
-3. selected Node artifact has passed bounded-quiescence acceptance and DB time is later than the conservative `quiescence_deadline`.
+2. a successful authenticated recovery resolve that acquires the Node shared mutation gate, durably fences the exact dispatch token, and then reads back target/postcondition evidence;
+3. proven termination/restart of the exact Node process instance.
 
-If the Node artifact cannot prove bounded synchronous quiescence, time expiry alone MUST NOT release the fence. Crash/restart restores the durable fence. After lifecycle commit, no previously dispatched operation may begin/continue irreversible mutation on the old Node; operations never retarget replacement identity.
+Client timeout, `dispatch_deadline`, `remote_mutation_deadline`, `quiescence_deadline`, or 25s elapsed alone MUST NOT release the fence. Every dispatch reuses the operation row's durable `dispatch_token` as the Node wire `dispatch_token_v1`; response-loss recovery sends the same UUID as `fence_dispatch_token_v1`. The Node persists a no-GC durable token fence before read-back, so an earlier request that has not yet reached Node gate admission is rejected if it arrives later. Crash/restart restores the Control-side lifecycle fence. After lifecycle commit, no previously dispatched operation may begin/continue irreversible mutation on the old Node; operations never retarget replacement identity.
 
 ### 9. Node Account Management Contract v1 (external prerequisite)
 
@@ -147,6 +147,7 @@ The pinned Node artifact MUST expose generic management semantics for:
 - crash-safe same-filesystem replacement;
 - secret-safe durable/read-back write postcondition;
 - synchronous <=15s mutation budget, no background mutation and bounded quiescence;
+- canonical lowercase UUID `dispatch_token_v1` on every mutation and same-token durable fenced resolve for response-loss recovery;
 - stable sanitized error classes.
 
 Control planning does not invent an OpenSpec tree in the Node repo. Before implementation, re-check upstream, pin exact upstream baseline, selectively port relevant upstream changes, add required hardening, build/pin fork commit and image digest. Do not wholesale rebase solely for Phase 7.
@@ -186,7 +187,7 @@ The exact Node wire/storage representation is external-contract-owned, but readi
 
 ### 13. Operation execution and recovery
 
-Remote HTTP is synchronous in the initiating request and bounded by the Node contract; no generic background dispatcher is introduced. A Phase 7-specific reconciler MAY inspect nonterminal/outcome-unknown rows, but MUST NOT blindly redispatch a `dispatched` operation. It can only prove quiescence/outcome via read-back, advance verification, or mark timeout/inconclusive.
+Remote HTTP is synchronous in the initiating request and bounded by the Node contract; no generic background dispatcher is introduced. Control sends the row's durable `dispatch_token` as `dispatch_token_v1`. A Phase 7-specific reconciler MAY inspect nonterminal/outcome-unknown rows, but MUST NOT blindly redispatch a `dispatched` operation. After response loss it uses the same token in a fenced resolve; only successful durable fencing plus shared-gate read-back proves quiescence and permits outcome recovery. A failed/timeout/unavailable resolve leaves the lifecycle fence active. The reconciler may otherwise advance verification or mark timeout/inconclusive without claiming quiescence.
 
 Crash before dispatch commit: remains prepared, zero remote mutation, same command may continue. Crash/timeout after dispatched: outcome unknown until proof; lifecycle fence survives restart. Remove never deletes a new target that appeared after the original precondition.
 
