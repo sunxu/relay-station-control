@@ -11,17 +11,17 @@
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
 - Final independent architecture re-review: P0=0, P1=0, P2=3 non-blocking documentation/finalization findings / PASS; three finalization findings resolved and persisted as P0=0, P1=0, P2=0 / PASS.
-- Planning reconciliation: Gate 1 finalization complete; Gate 2 Corrective Round 2 is incorporated and awaits independent re-review.
-- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 Corrective Round 2 is `READY FOR INDEPENDENT RE-REVIEW`.
+- Planning reconciliation: Gate 1 and Gate 2 finalization complete; Gate 2 metadata findings are resolved.
+- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 is `CLOSED / PASS`.
 - ADR status: `ACCEPTED`.
-- Detailed Requirements: `FREEZE CANDIDATE`.
-- OpenSpec Change B: `READY CANDIDATE`.
+- Detailed Requirements: `FROZEN`.
+- OpenSpec Change B: `READY`.
 - Planning / specification readiness: `READY FOR INDEPENDENT RE-REVIEW`.
 - Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
 - Implementation: `NOT STARTED`.
 
-This document does not claim Detailed Requirements FROZEN, final Implementation Readiness PASS or implementation authorization. Gate 1 architecture acceptance does not authorize Stage 7B implementation.
+This document records Gate 2 PASS and does not claim final Implementation Readiness PASS or implementation authorization. Gate 2 does not authorize Stage 7B implementation; Gate 3 is next.
 
 ## Historical dependency record
 
@@ -100,17 +100,21 @@ The following matrix is the deterministic planning acceptance set for independen
 - Serialization and overrides: same-account A/B race; PostgreSQL invariant; Retire-first/dispatch-first; lifecycle override and same-account override missing-target, invalid-state, already-set, success, exact replay and different-command race; cross-type override race; each override waives only its own blocker; old unknown request may complete after same-account override.
 - Observation, secrecy and receipts: normal Inventory independent observation; no Phase 7 verification workflow/state/scheduler/reconciler; Secret scans; no raw native response, credential or Management Key exposure; error-only and error-plus-operation response classes; immutable receipt exact replay; override transaction rollback before commit and commit/response-loss replay.
 
-## Gate 2 candidate status
+## Gate 2 final status
 
 ```text
 Architecture Review = PASS
 ADR = ACCEPTED
 Gate 1 = CLOSED / PASS
-Detailed Requirements = FREEZE CANDIDATE
-OpenSpec Change B = READY CANDIDATE
-Previous independent Gate 2 re-review: P0=0 / P1=2 / P2=2 / CHANGES REQUIRED
-Round 2 resolutions: INCORPORATED
-Planning / specification readiness = READY FOR INDEPENDENT RE-REVIEW
+Detailed Requirements = FROZEN
+OpenSpec Change B = READY
+Independent Gate 2 final re-review: P0=0 / P1=0 / P2=2 non-blocking / PASS
+Final Gate 2 findings: P0=0 / P1=0 / P2=0
+Detailed Requirements = FROZEN
+OpenSpec Change B = READY
+Planning / specification readiness = PASS
+Gate 2 = CLOSED / PASS
+Gate 3 = NEXT
 Runtime artifact identity = NOT YET FROZEN
 Node alignment = NOT STARTED
 Node revert = NOT RUN

@@ -405,15 +405,15 @@ This historical candidate did not declare Architecture Review PASS, Detailed Req
 
 ### Gate 2 Corrective Round 2 status
 
-Previous independent Gate 2 re-review: `P0=0 / P1=2 / P2=2 / CHANGES REQUIRED`；Round 2 resolutions: `INCORPORATED`。Gate 1 remains `CLOSED / PASS`; Detailed Requirements are `FREEZE CANDIDATE`; OpenSpec Change B is `READY CANDIDATE`; Gate 2 and planning/specification readiness are `READY FOR INDEPENDENT RE-REVIEW`。Runtime artifact identity remains `NOT YET FROZEN`; implementation is not authorized.
+Independent Gate 2 final re-review: `P0=0 / P1=0 / P2=2 non-blocking / PASS`；final Gate 2 findings `P0=0 / P1=0 / P2=0`。Gate 1 remains `CLOSED / PASS`; Detailed Requirements are `FROZEN`; OpenSpec Change B is `READY`; planning/specification readiness is `PASS`; Gate 2 is `CLOSED / PASS`; Gate 3 is `NEXT`。Runtime artifact identity remains `NOT YET FROZEN`; implementation is not authorized.
 
 ```text
 Architecture Review = PASS
 ADR = ACCEPTED
 Gate 1 = CLOSED / PASS
-Gate 2 = READY FOR INDEPENDENT RE-REVIEW
-Detailed Requirements = FREEZE CANDIDATE
-OpenSpec Change B = READY CANDIDATE
+Gate 2 = CLOSED / PASS
+Detailed Requirements = FROZEN
+OpenSpec Change B = READY
 Runtime artifact identity = NOT YET FROZEN
 Final Implementation Readiness = NOT READY
 Node revert = NOT RUN
