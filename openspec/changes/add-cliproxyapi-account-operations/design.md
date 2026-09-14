@@ -54,9 +54,9 @@ Control MUST NOT call `DELETE all=true`, multi-name/body delete, multipart nativ
 
 ### 2. Runtime artifact gate and two-stage snapshot classification
 
-`GET /v0/management/auth-files` is untrusted management input. Before parsing or interpreting its body, the adapter MUST require the response to contain exactly one `X-CPA-VERSION` and exactly one `X-CPA-COMMIT`. Each value is bounded to 96 ASCII bytes; version syntax is `v` followed by decimal dot-separated components with no whitespace, and commit syntax is exactly 40 lowercase hexadecimal characters. Missing, duplicate, malformed, unknown or mismatched values return `unsupported_node_version` with zero mutation.
+`GET /v0/management/auth-files` is untrusted management input. Before parsing or interpreting its body, the adapter MUST require exactly one bounded `X-CPA-VERSION` and exactly one bounded `X-CPA-COMMIT`. Each value MUST match the independently frozen final runtime artifact header byte-for-byte; no `v` prefix normalization, short-SHA expansion or source-tag inference is permitted. Missing, duplicate, malformed, unknown or mismatched values return `unsupported_node_version` with zero mutation.
 
-The approved runtime version is exactly `v7.3.2`. The semantic upstream source baseline is `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`, but that value is the expected runtime commit only for a stock upstream artifact built from that exact commit. If an ordinary reviewed fork commit becomes the final artifact, release evidence MUST pin that exact artifact source commit and prove its relevant baseline is upstream v7.3.2; Control then enforces the pinned fork commit. Configuration or database expectation MUST NOT substitute for absent response headers. The final runtime artifact commit is not yet frozen, so Stage 7B is not implementation-ready.
+The semantic upstream source baseline is release `v7.3.2` at `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`; it is distinct from runtime artifact identity. Before Stage 7B implementation readiness, release evidence MUST build the final reviewed artifact, observe and record its exact version/commit headers and image digest, and freeze all three values. A stock artifact may use the upstream commit; a fork artifact may emit a short build commit. Configuration or database expectation MUST NOT substitute for absent response headers. Runtime artifact identity is currently **NOT YET FROZEN**, so Stage 7B is not implementation-ready.
 
 After the header gate, snapshot handling has two stages:
 
@@ -66,7 +66,9 @@ raw native entry
 -> safe target projection
 ```
 
-The v7.3.2 adapter accepts a physical mutation target only from a runtime-manager-backed snapshot entry with exact `source="file"`, `runtime_only=false`, auth_index of 1..256 UTF-8 bytes with no control character, validated safe basename, and valid provider/email. If both provider and type are present they MUST normalize identically. `runtime_only=true`, `source="memory"`, missing source/runtime evidence, missing auth_index and otherwise incomplete entries are never physical mutation targets. The disk-fallback response has no manager-backed source/runtime/auth_index evidence; if the response is wholly fallback-shaped, or an empty response cannot prove manager-backed mode, the adapter returns `node_management_unavailable` and performs zero mutation. It MUST NOT infer safe absence for Upload New from such a response.
+The adapter first performs transient classification and then safe projection. A `mutation_eligible_targets` entry must be runtime-manager-backed with exact `source="file"`, `runtime_only=false`, auth_index of 1..256 UTF-8 bytes with no control character, validated safe basename, and valid provider/email. If both provider and type are present they MUST normalize identically. Memory/runtime-only/incomplete entries are never physical mutation targets. A wholly disk-fallback or manager-unproven snapshot returns `node_management_unavailable` for target-existing operations and performs zero mutation.
+
+Upload New uses a separate transient `occupancy_evidence` set. It conservatively includes any usable entry that proves the requested identity or generated basename is occupied, including memory, runtime-only, or incomplete-for-mutation entries. A malformed/degraded record that prevents safe occupancy classification fails closed. A clean, structurally valid, version-valid empty `files=[]` response may establish absence for Upload New only; it cannot resolve an existing target.
 
 Only after classification does the adapter produce:
 
@@ -91,7 +93,7 @@ target = (node_instance_id, account_key)
 
 Disable, Enable, Remove and Replace Existing MUST obtain a fresh native snapshot immediately before dispatch and match normalized provider plus normalized email. Zero matches returns `account_target_not_found`; more than one returns `account_target_ambiguous`; exactly one yields ephemeral `name/auth_index`. Control MUST NOT choose first/latest, infer a filename, or use Inventory alone as physical target truth. Native name/auth_index MUST NOT be persisted or exposed as business identity.
 
-Upload New also obtains the same fresh version-valid, non-degraded snapshot. It requires both the expected provider+normalized-email identity to be absent and the generated basename to be unoccupied by every current physical file-backed entry. Existing identity returns `account_target_exists`; occupied basename for another identity returns `account_filename_conflict`; both are 409 with zero native POST. This remains a best-effort admission observation, not atomic create-if-absent.
+Upload New also obtains a fresh version-valid snapshot. It requires both the expected provider+normalized-email identity and the generated basename to be absent from `occupancy_evidence`; existing identity returns `account_target_exists`, and another identity occupying the basename returns `account_filename_conflict`, both with zero native POST. This remains a best-effort admission observation, not atomic create-if-absent.
 
 ### 4. Native mutation semantics and accepted races
 
@@ -234,7 +236,7 @@ The receipt relation supports both account mutation commands and independent lif
 
 ```text
 command_id uuid PRIMARY KEY FK admin_command_registry(command_id)
-target_operation_command_id uuid NOT NULL FK account_admin_operations(command_id)
+target_operation_command_id uuid NULL FK account_admin_operations(command_id)
 actor_admin_id uuid NOT NULL FK control_admin_users(admin_id) ON UPDATE RESTRICT ON DELETE RESTRICT
 command_domain text NOT NULL CHECK = 'account_admin'
 command_kind text NOT NULL
@@ -247,7 +249,9 @@ response_body bytea NOT NULL
 committed_at timestamptz NOT NULL
 ```
 
-Registry actor/domain/kind/encoding/hash/key-version integrity is enforced by the same composite identity relationship as Stage 7A. For a mutation receipt, `command_id=target_operation_command_id`; for an override receipt they differ. Runtime roles receive no unrestricted INSERT/UPDATE/DELETE/TRUNCATE.
+Registry actor/domain/kind/encoding/hash/key-version integrity is enforced by the same composite identity relationship as Stage 7A. For a mutation receipt, `command_id=target_operation_command_id`; for a successful override they differ. A terminal override failure after actor-first reservation may have a null target FK when the requested operation does not exist; the canonical override intent still contains that UUID and binds exact replay. Runtime roles receive no unrestricted INSERT/UPDATE/DELETE/TRUNCATE.
+
+Lifecycle override ordering is authentication/session/super-admin/CSRF, global actor-first reservation and canonical intent validation, then target lookup/state validation. A missing target returns terminal `404 operation_not_found` with its own immutable override receipt and exact replay. A target that is not `dispatched` or unresolved `outcome_unknown` returns the reviewed terminal conflict with its own receipt. A later override after one is recorded returns `409 lifecycle_override_already_set`, records its own receipt and changes no existing override fields.
 
 #### Canonical account intent v1
 
@@ -361,13 +365,14 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Corrective Round 2
-Previous consolidated review = P0 0 / P1 9 / P2 3 / CHANGES REQUIRED
+Native-First Corrective Round 3
+Previous independent re-review = P0 0 / P1 5 / P2 0 / CHANGES REQUIRED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate
 Architecture status = READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW
 ADR = PROPOSED
+Runtime artifact identity = NOT YET FROZEN
 Node revert = NOT RUN
 Stage 7B implementation = NOT STARTED
 ```

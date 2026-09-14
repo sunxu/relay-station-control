@@ -3,16 +3,17 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Corrective Round 2.
+- Architecture direction: Native-First Corrective Round 3.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
-- Previous consolidated independent review: P0=0, P1=9, P2=3 / CHANGES REQUIRED.
-- All Round 2 P1/P2 resolutions: incorporated.
+- Previous independent re-review: P0=0, P1=5, P2=0 / CHANGES REQUIRED.
+- All Round 3 P1 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
 - ADR status: `PROPOSED`.
+- Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
 - Implementation: `NOT STARTED`.
 
@@ -20,7 +21,7 @@ This document does not claim Architecture Review PASS, Detailed Requirements FRO
 
 ## Historical dependency record
 
-The Node Account Management Contract v1, its implementation at Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`, contract reviews and corrective amendments remain valid historical evidence of an implemented and reviewed design. Native-First Corrective Round 2 marks that design a **HISTORICAL / SUPERSEDED CANDIDATE**. It is not the current Change B implementation dependency and not the current deployment baseline. No Node revert is part of this planning change.
+The Node Account Management Contract v1, its implementation at Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`, contract reviews and corrective amendments remain valid historical evidence of an implemented and reviewed design. Native-First Corrective Round 3 continues to mark that design a **HISTORICAL / SUPERSEDED CANDIDATE**. It is not the current Change B implementation dependency and not the current deployment baseline. No Node revert is part of this planning change.
 
 ## Reviewed native source evidence
 
@@ -37,6 +38,8 @@ Pinned v7.3.2 source inspection confirms the current planning subset:
 - `CanonicalCredentialMetadataKey()` maps the reviewed legacy aliases used by the complete runtime-control denylist.
 
 ## Native-First corrective resolutions incorporated
+
+Round 3 additionally freezes exact runtime-artifact header comparison without tag/commit formatting inference; operation-specific empty-snapshot admission for Upload New; separate mutation-eligibility and occupancy-evidence sets; and nullable target linkage for actor-first terminal lifecycle-override failures with exact replay.
 
 1. **Native API boundary:** exact four-route allowlist; no arbitrary management passthrough, all/multi delete, fields/download/refresh/OAuth or browser-visible Management Key.
 2. **Safe snapshot:** provider/type, normalized email, validated basename, bounded auth_index and disabled only; raw response/path/token-adjacent/runtime/unknown fields are discarded.
@@ -77,4 +80,4 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST CORRECTIVE ROUND 2 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST CORRECTIVE ROUND 3 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW / IMPLEMENTATION NOT STARTED`.

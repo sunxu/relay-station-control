@@ -13,8 +13,8 @@
 ## 3. Native CLIProxyAPI adapter
 
 - [ ] 3.1 Implement the fixed v7.3.2 native allowlist only: auth-files GET, exact status PATCH, single-name DELETE and raw-JSON POST; reject all-delete, multi-delete, native multipart, fields/download/refresh/OAuth and arbitrary passthrough.
-- [ ] 3.2 Require exact-once valid `X-CPA-VERSION=v7.3.2` and independently pinned runtime `X-CPA-COMMIT` before snapshot interpretation; mismatch returns `unsupported_node_version` with zero mutation.
-- [ ] 3.3 Classify manager-backed `source=file`, non-runtime-only entries transiently before safe projection; reject memory/incomplete/disk-fallback and manager-unproven empty snapshots, then discard classification/path/token/runtime/unknown fields.
+- [ ] 3.2 Require exact-once bounded runtime headers whose values match independently frozen final artifact metadata; do not infer `v` prefixes, short-SHA expansion or expected values from the upstream source tag; mismatch returns `unsupported_node_version` with zero mutation.
+- [ ] 3.3 Classify transient `mutation_eligible_targets` separately from broader `occupancy_evidence`; permit only clean version-valid empty snapshots to establish Upload New absence, reject degraded/fallback evidence, then discard classification/path/token/runtime/unknown fields.
 - [ ] 3.4 Resolve Disable/Enable/Remove/Replace from a fresh exactly-one provider+normalized-email match; return stable missing/ambiguous errors and keep name/auth_index ephemeral.
 - [ ] 3.5 Keep Management Key server-side only and use a fixed HTTP-only bounded client with no redirect, proxy, retry or raw native error exposure.
 
@@ -54,4 +54,4 @@
 
 ## Planning gate
 
-Native-First Corrective Round 2 incorporates the consolidated P0=0, P1=9, P2=3 findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
+Native-First Corrective Round 3 incorporates the previous P0=0, P1=5, P2=0 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
