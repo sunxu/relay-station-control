@@ -3,12 +3,12 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Corrective Round 3.
+- Architecture direction: Native-First Corrective Round 4.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
-- Previous independent re-review: P0=0, P1=5, P2=0 / CHANGES REQUIRED.
-- All Round 3 P1 resolutions: incorporated.
+- Previous independent re-review: P0=0, P1=2, P2=1 / CHANGES REQUIRED.
+- All Round 4 P1/P2 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
@@ -39,7 +39,9 @@ Pinned v7.3.2 source inspection confirms the current planning subset:
 
 ## Native-First corrective resolutions incorporated
 
-Round 3 additionally freezes exact runtime-artifact header comparison without tag/commit formatting inference; operation-specific empty-snapshot admission for Upload New; separate mutation-eligibility and occupancy-evidence sets; and nullable target linkage for actor-first terminal lifecycle-override failures with exact replay.
+Round 4 additionally reconciles the effective Ops architecture body and freezes the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping to terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
+
+It also freezes the source-reviewed native upload exception: `POST /v0/management/auth-files` HTTP 503 from `authManager == nil` before body read/write is terminal `failed/node_management_unavailable` with a receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
 1. **Native API boundary:** exact four-route allowlist; no arbitrary management passthrough, all/multi delete, fields/download/refresh/OAuth or browser-visible Management Key.
 2. **Safe snapshot:** provider/type, normalized email, validated basename, bounded auth_index and disabled only; raw response/path/token-adjacent/runtime/unknown fields are discarded.

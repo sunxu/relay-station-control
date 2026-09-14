@@ -30,6 +30,7 @@
 - [ ] 5.1 In a short Node-first transaction require active lifecycle, current monitoring eligibility, Inventory-read capability, provider policy and durable same-account availability; transition `prepared -> dispatched`, then perform native HTTP outside the transaction.
 - [ ] 5.2 Block new destructive dispatch for the same account while an operation is `dispatched` or unresolved `outcome_unknown`, regardless of lifecycle override; prove Retire/Replace alone may consult override and the blocker survives Control restart.
 - [ ] 5.3 Decide Disable/Enable already-desired noop from the fresh eligible snapshot with zero PATCH; map every sent stable 2xx to applied, reviewed pre-mutation 4xx to failed, and timeout/connection loss/response loss/ambiguous native 5xx to `outcome_unknown`; never invent noop, an unproven terminal stage or redispatch.
+- [ ] 5.3a Map only the reviewed v7.3.2 upload POST HTTP 503-before-body-read/write (`authManager == nil`) to terminal `failed/node_management_unavailable` with receipt; keep all other unreviewed 503/5xx outcomes unknown.
 - [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** as an independent globally reserved `account.lifecycle_override` command with its own canonical intent, receipt and already-set behavior; leave target execution/verification and same-account blockers unchanged.
 - [ ] 5.5 PostgreSQL 18 race acceptance: Retire-first/dispatch-first, same-account A/B, Control restart with live operation, and override behavior.
 
@@ -54,4 +55,4 @@
 
 ## Planning gate
 
-Native-First Corrective Round 3 incorporates the previous P0=0, P1=5, P2=0 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
+Native-First Corrective Round 4 incorporates the previous P0=0, P1=2, P2=1 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.

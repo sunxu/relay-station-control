@@ -253,6 +253,8 @@ Registry actor/domain/kind/encoding/hash/key-version integrity is enforced by th
 
 Lifecycle override ordering is authentication/session/super-admin/CSRF, global actor-first reservation and canonical intent validation, then target lookup/state validation. A missing target returns terminal `404 operation_not_found` with its own immutable override receipt and exact replay. A target that is not `dispatched` or unresolved `outcome_unknown` returns the reviewed terminal conflict with its own receipt. A later override after one is recorded returns `409 lifecycle_override_already_set`, records its own receipt and changes no existing override fields.
 
+The pinned v7.3.2 adapter has one explicit pre-mutation native exception: `POST /v0/management/auth-files` returning HTTP 503 when the reviewed route reaches `authManager == nil` before reading or writing the credential body maps to `failed` with `node_management_unavailable`, creates the normal terminal receipt, and sends no credential mutation. This mapping is based on reviewed route/artifact/status, never raw error text, and does not generalize to other native 503 responses. Any unreviewed 5xx remains `outcome_unknown`.
+
 #### Canonical account intent v1
 
 All account commands use `command_domain="account_admin"`, `intent_encoding_version=1` and these exact command kinds:
@@ -365,8 +367,8 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Corrective Round 3
-Previous independent re-review = P0 0 / P1 5 / P2 0 / CHANGES REQUIRED
+Native-First Corrective Round 4
+Previous independent re-review = P0 0 / P1 2 / P2 1 / CHANGES REQUIRED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate

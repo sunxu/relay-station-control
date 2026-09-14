@@ -106,6 +106,8 @@ Every mutation kind follows this rule. A `dispatched` or `outcome_unknown` opera
 
 `execution_state` MUST be `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `verification_state` MUST be `not_started|pending|verified|timeout|inconclusive`. Inventory or read-back MUST NOT retroactively manufacture exact execution proof.
 
+The pinned v7.3.2 `POST /v0/management/auth-files` route has a reviewed pre-mutation exception: HTTP 503 caused by `authManager == nil` before credential-body read/write MUST map to terminal `failed` with `node_management_unavailable`, create the normal terminal receipt and perform zero credential mutation. This route/status/artifact rule MUST NOT be generalized to other native 503 responses; unreviewed 5xx remains `outcome_unknown`.
+
 #### Scenario: Unknown execution later converges in Inventory
 - **WHEN** Inventory observes the desired business state after an ambiguous native response
 - **THEN** verification may record convergence while execution remains `outcome_unknown`
