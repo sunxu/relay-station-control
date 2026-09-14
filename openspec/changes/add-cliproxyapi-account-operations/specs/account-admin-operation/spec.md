@@ -1,163 +1,135 @@
 ## ADDED Requirements
 
-### Requirement: Account operations SHALL remain explicit, single-account and data-plane isolated
+### Requirement: Account operations SHALL remain explicit and data-plane isolated
 
-Control SHALL expose only explicit Antigravity Disable, Enable, Remove, Upload New and Replace Existing administrator actions plus a protected operation-status read. Every mutation MUST require active authenticated `super_admin`, same-origin/CSRF and global `command_id`; browser MUST NOT receive Node Management Key or raw credential. Phase 7 MUST NOT add batch/all mutation, OAuth/Re-auth, automatic repair/move/remove, Credential Vault, Gateway Account/Group mutation, scheduler ownership or AI request data-plane participation.
+Control SHALL expose only single-account Antigravity Disable, Enable, Remove, Upload New and Replace Existing, protected operation read, and Override Unknown Operation Lifecycle Block. Mutation and override MUST require active authenticated `super_admin`, same-origin and CSRF; override additionally requires typed high-risk confirmation. Browser MUST NOT receive Node Management Key, raw credential, native basename/auth_index or raw native response. Phase 7 MUST NOT add batch/all mutation, OAuth/Re-auth, automatic repair/move/remove, Gateway mutation, scheduler ownership or data-plane participation.
 
-#### Scenario: Unsupported batch or repair action
-- **WHEN** a client requests multiple accounts, `all=true`, OAuth/repair/move or arbitrary Node management behavior
-- **THEN** Control rejects the request before remote mutation and creates no Phase 7 operation
+#### Scenario: Unsupported batch or passthrough action
+- **WHEN** a client requests multiple accounts, native all-delete, arbitrary management passthrough, OAuth, repair or move
+- **THEN** Control rejects before remote mutation and creates no accepted account operation
 
 ### Requirement: Account command identity SHALL use the global registry and actor-first ordering
 
-After authentication/session/super_admin/CSRF, account mutations MUST acquire the shared global command serialization and perform actor-first registry lookup before target resolution, upload Secret parsing/fingerprinting or Node management calls. A cross-actor or cross-domain/kind reuse MUST return `command_conflict` with zero remote mutation. New accepted account commands atomically reserve the global ID and create one `account_admin_operations` row.
+After authentication/session/super_admin/CSRF, mutations MUST acquire shared global command serialization and perform actor-first registry lookup before target lookup, upload Secret parsing/fingerprinting or Node calls. Cross-actor/domain/kind/intent reuse MUST return `command_conflict` with zero remote mutation. Upload equality MUST use the separate Phase 7 keyed fingerprint and MUST NOT alter asset K1.
 
-#### Scenario: Existing asset command ID reused for upload
-- **WHEN** an upload request uses a UUID reserved by an existing Gateway/Node/Monitoring command
-- **THEN** `command_conflict` is returned before file Secret validation and no Node call occurs
+#### Scenario: Asset command ID is reused for upload
+- **WHEN** an upload uses a UUID reserved by Gateway, Node or Monitoring command
+- **THEN** `command_conflict` occurs before credential parsing and no native request is sent
 
-### Requirement: Account operations SHALL resolve exactly one current physical target
+### Requirement: Control SHALL call only the reviewed native CLIProxyAPI subset
 
-Disable/Enable/Remove/Replace MUST resolve `(node_instance_id, canonical account_key)` against a current Node management snapshot and require exactly one normalized provider/email match. Zero matches MUST return `account_target_not_found`; multiple matches MUST return `account_target_ambiguous`. Control MUST NOT infer a target from filename conventions, first/latest record or stale Inventory alone. Mutation MUST include the opaque physical-target precondition returned by the Node management contract; mismatch returns `account_target_changed` with zero mutation.
+Against CLIProxyAPI v7.3.2 at `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`, Control MUST use only `GET /v0/management/auth-files`, `PATCH /v0/management/auth-files/status` with exact `name/auth_index/disabled`, single-name query `DELETE /v0/management/auth-files?name=...`, and raw-JSON `POST /v0/management/auth-files?name=...`. Management transport MUST remain HTTP-only, fixed-target, bounded, no redirect/proxy/fallback/retry and sanitized.
 
-#### Scenario: Duplicate account files on one Node
-- **WHEN** two current physical records normalize to the same account_key
-- **THEN** Control fails closed as ambiguous and does not choose either record
+Control MUST NOT use `DELETE all=true`, multi-name/body delete, multipart native upload, auth-files fields/download/refresh, OAuth routes or generic passthrough. Management Key MUST remain server-side only and absent from durable/observable surfaces.
 
-### Requirement: Account dispatch SHALL require lifecycle and monitoring eligibility
+#### Scenario: Adapter is asked to delete all files
+- **WHEN** any Control path attempts native `DELETE all=true` or multiple names
+- **THEN** the adapter rejects locally and sends zero native request
 
-Before remote mutation, Control MUST first perform fresh authenticated `GET /v0/management/account-contract/v1` discovery and require `contract=node-account-management`, `version=v1`, provider `antigravity`, capabilities `management_account_inventory_read` and `management_account_mutation_v1`, and exact constants `max_credential_bytes=262144`, `max_request_read_duration_ms=5000`, `max_mutation_duration_ms=15000`, `max_quiescence_duration_ms=25000`, `min_post_commit_quiescence_reserve_ms=10000`. A missing capability, unsupported store, version/constant mismatch, invalid response or unavailable discovery MUST return `unsupported_node_contract` and send zero resolve/mutation request. Artifact metadata MUST NOT substitute for discovery.
+### Requirement: Native snapshot SHALL be projected immediately to safe target evidence
 
-After successful discovery, a short transaction MUST lock the Node first, verify active lifecycle, then lock/read current monitoring according to the existing Node-first graph and require a current non-cancelled activation, both required persisted Node capabilities and matching active Provider policy. It MUST then reject a same-target live operation, lock the prepared account operation, persist dispatch/quiescence metadata and atomically transition `prepared -> dispatched`. No DB lock is held across HTTP. Runtime discovery and DB authorization are independent mandatory gates.
+Raw `GET /v0/management/auth-files` input MUST be bounded and immediately projected to provider/type, normalized email, validated basename, bounded auth_index and disabled only. Full path, status message, ID/token-like fields, raw metadata, quota/cooldown/request counters, headers/proxy/note/routing fields, unknown fields and raw objects MUST be discarded and MUST NOT enter PostgreSQL, receipts, audit, logs, traces, metrics or browser/API output.
 
-#### Scenario: Active Node monitoring is disabled
-- **WHEN** Node lifecycle is active but no current eligible monitoring activation exists
-- **THEN** Control returns `node_monitoring_ineligible`, keeps zero live dispatch fence and sends zero remote request
+#### Scenario: Snapshot contains path and token-adjacent metadata
+- **WHEN** native snapshot includes a full path, id_token, status_message, quota, headers and unknown fields
+- **THEN** target resolution sees only the safe projection and no discarded value reaches any Control durable or public surface
 
-#### Scenario: Monitoring Disable wins the Node lock
-- **WHEN** administrator Disable commits before account dispatch authorization obtains the Node lock
-- **THEN** account dispatch re-reads monitoring ineligible and sends zero remote request
+### Requirement: Account operations SHALL resolve exactly one fresh native target
 
-#### Scenario: Runtime contract differs from persisted capability
-- **WHEN** the Node row advertises mutation capability but fresh authenticated discovery omits it or returns any mismatched v1 constant
-- **THEN** Control returns `unsupported_node_contract`, sends zero target resolve/mutation request and does not treat commit headers as authorization
+Disable, Enable, Remove and Replace Existing MUST read a fresh safe snapshot immediately before dispatch and match canonical provider plus normalized email for `(node_instance_id,account_key)`. Zero matches returns `account_target_not_found`; more than one returns `account_target_ambiguous`; one match yields ephemeral name/auth_index. Control MUST NOT choose first/latest, infer a filename or use Inventory alone as physical target truth. Name/auth_index MUST NOT become durable/public business identity.
 
-### Requirement: Remote mutation SHALL remain fenced until quiescence is proven
+#### Scenario: Duplicate native auth files normalize to one account
+- **WHEN** two safe snapshot entries match the requested provider and normalized email
+- **THEN** Control returns `account_target_ambiguous` and sends zero mutation
 
-A dispatched account operation MUST persist a durable UUID `dispatch_token` plus bounded `dispatch_deadline`, `remote_mutation_deadline` and conservative `quiescence_deadline`. Control MUST send that exact lowercase UUID as Node `dispatch_token_v1`. Client timeout or any deadline expiry MUST NOT by itself prove remote stop. The selected Node Contract v1 MUST guarantee synchronous bounded mutation, no background credential mutation after handler quiescence, no irreversible mutation start after its server-side budget, and durable same-token recovery fencing. Node Retire/Replace MUST reject `account_operation_in_progress` while a same-Node dispatched operation lacks proven quiescence.
+### Requirement: Upload SHALL preserve CLIProxyAPI credential schema ownership and Control runtime boundaries
 
-After response loss, Control MUST perform an authenticated resolve using the same UUID as `fence_dispatch_token_v1`. Quiescence is proven only if Node successfully acquires its shared mutation gate, durably persists that token fence, and completes sanitized target/postcondition read-back; a late mutation carrying the token is then rejected before target lookup or mutation. A timeout, unavailable Node, invalid contract response, or elapsed `quiescence_deadline` leaves the lifecycle fence active. The other permitted proofs are a terminal mutation response with `quiescent=true` or proven termination/restart of the exact Node process instance.
+Control MUST accept one top-level Antigravity JSON credential of at most 1048576 bytes, require `type=antigravity`, require email and match its normalized value to the intended account identity. CLIProxyAPI remains credential schema truth; new provider credential fields may pass through.
 
-#### Scenario: Control times out while Node handler continues
-- **WHEN** the HTTP client times out but Node-side bounded mutation may still be running
-- **THEN** operation becomes/remains outcome-unknown, Retire/Replace remains blocked, and no automatic redispatch occurs
+Control MUST reject, without silent stripping, pinned-v7.3.2 runtime/routing/management fields: `disabled,weight,priority,headers,request_retry,request-retry,excluded_models,excluded-models,proxy_url,note,websockets,prefix,models,disable_cooling,fingerprint_profile`. The public multipart aggregate is at most 1073152 bytes with one request part at most 8192 bytes, one credential part at most 1048576 bytes and at most 16384 bytes of framing.
 
-#### Scenario: Restart before remote quiescence
-- **WHEN** Control crashes after dispatch and restarts before quiescence proof
-- **THEN** the durable fence is restored and Node lifecycle mutation remains blocked
+#### Scenario: Upload includes a provider extension and runtime controls
+- **WHEN** credential contains a new provider field and also `proxy_url`
+- **THEN** Control rejects `upload_invalid` because of the runtime field and does not silently strip or send the body
 
-#### Scenario: Recovery resolve overtakes a late mutation request
-- **WHEN** a fenced resolve reaches Node gate admission before the earlier-dispatched HTTP mutation carrying the same token
-- **THEN** Node durably fences the token, completes recovery read-back, and rejects the late mutation with zero credential mutation
+### Requirement: Create and Replace SHALL use bounded native basenames
 
-### Requirement: Remote execution and verification SHALL use orthogonal durable states
+Upload New MUST generate `antigravity-<normalized_email>.json`, measure UTF-8 bytes, enforce `MAX_NATIVE_BASENAME_BYTES=255` and `MAX_CREATE_EMAIL_BYTES=238`, and prohibit truncation/hash fallback/browser-selected path. Replace Existing MUST inherit the exact fresh native basename after validating non-empty basename-only form, no separator/traversal/control character and at most 255 bytes.
 
-`execution_state` MUST be one of `prepared|dispatched|remote_applied|remote_noop|remote_partial|outcome_unknown|failed`; `verification_state` MUST be `not_started|pending|verified|timeout|inconclusive`. Successful dispatch authorization MUST transition directly `prepared -> dispatched`; there is no hidden durable `dispatch_authorized` state. No third duplicate durable overall-state truth may be persisted.
+#### Scenario: Create email exceeds physical filename admission
+- **WHEN** normalized email is 239 UTF-8 bytes or generated basename exceeds 255 bytes
+- **THEN** Control returns `invalid_request` with zero native request
 
-#### Scenario: Mutation succeeds but Inventory never proves convergence
-- **WHEN** remote execution is confirmed but accepted Inventory evidence does not arrive before the verification deadline
-- **THEN** execution remains `remote_applied` while verification becomes `timeout`
+### Requirement: Create and Replace SHALL accept native last-writer-wins
+
+Upload New MUST require a fresh absent snapshot and then issue native POST as best-effort create. It has no atomic create-if-absent guarantee; a concurrent writer may create after snapshot and native POST may overwrite it. Replace Existing MUST resolve exactly one entry and POST to its basename as best-effort replace; a native credential refresh may occur between snapshot and POST and may be overwritten. Phase 7 v1 explicitly accepts both races and MUST NOT claim CAS, ETag, revision, incarnation or postcondition proof.
+
+#### Scenario: Native refresh races Replace
+- **WHEN** credential refresh commits after Control snapshot but before administrator POST
+- **THEN** native last-writer-wins may overwrite the refresh and Control does not claim lost-update prevention
+
+### Requirement: Dispatch SHALL use durable same-account serialization and Node-first eligibility
+
+Before native mutation, one short PostgreSQL transaction MUST lock Node first, require active lifecycle, lock/read current non-cancelled monitoring under the existing graph, require `management_account_inventory_read` and matching active Provider policy, acquire/check durable serialization for `(node_instance_id,account_key)`, reject any other `dispatched` or unresolved `outcome_unknown` operation without valid override, lock the prepared operation, persist dispatch start and transition `prepared -> dispatched`. It then commits before native HTTP. In-memory-only mutex is insufficient and no DB lock may cross HTTP.
+
+#### Scenario: Same-account command races another dispatch
+- **WHEN** command A is dispatched or outcome-unknown and command B targets the same Node/account without override
+- **THEN** command B returns `account_operation_in_progress` and sends zero native mutation
+
+### Requirement: Native outcomes SHALL be classified conservatively without automatic redispatch
+
+Known successful terminal 2xx MUST map to normal terminal applied/noop result. Only adapter-reviewed, provably pre-mutation 4xx may map to `failed`. Timeout, connection loss, response loss and ambiguous native 5xx after request may have arrived MUST map to `outcome_unknown`. Control MUST NOT parse raw native strings to infer commit stage and the v7.3.2 adapter MUST NOT manufacture `remote_partial` from native 500.
+
+Every mutation kind follows this rule. A `dispatched` or `outcome_unknown` operation MUST NOT be automatically redispatched after retry, reconciliation or restart. Same-command POST replay returns current projection with 202 and zero remote mutation.
+
+#### Scenario: Native returns ambiguous 500
+- **WHEN** native POST returns 500 after the request may have reached auth-file mutation
+- **THEN** Control stores `outcome_unknown`, creates no terminal receipt, exposes no raw error and never automatically redispatches
+
+### Requirement: Execution and verification SHALL remain orthogonal
+
+`execution_state` MUST be `prepared|dispatched|remote_applied|remote_noop|remote_partial|outcome_unknown|failed`; `verification_state` MUST be `not_started|pending|verified|timeout|inconclusive`. Native-First v7.3.2 does not produce `remote_partial` from ambiguous 5xx, but the enum remains reserved for future machine-stable protocols. Inventory or read-back MUST NOT retroactively manufacture exact execution proof.
+
+#### Scenario: Unknown execution later converges in Inventory
+- **WHEN** Inventory observes the desired business state after an ambiguous native response
+- **THEN** verification may record convergence while execution remains `outcome_unknown`
 
 ### Requirement: Terminal account receipts SHALL preserve exact original POST replay
 
-Change B MUST create a separate immutable `account_admin_command_receipts` relation keyed and integrity-bound to `admin_command_registry`; it MUST NOT add account commands to `asset_admin_command_receipts`. Receipt rows MUST preserve actor, `account_admin` domain, kind, intent encoding/hash/key version, HTTP status, `application/json` content type, exact canonical response bytes and DB commit time. Runtime roles MUST have no unrestricted INSERT/UPDATE/DELETE/TRUNCATE privilege, and controlled insertion MUST reject a missing/divergent registry reservation or nonterminal operation.
+Change B MUST use separate immutable `account_admin_command_receipts`, integrity-bound to the global registry and terminal operation; asset receipts remain asset-only. Stable `remote_applied|remote_noop|failed` terminalization, terminal audit and receipt insertion MUST be atomic. `prepared|dispatched|outcome_unknown` MUST have no receipt. `remote_partial` is eligible only under future machine-stable evidence and MUST NOT be created from v7.3.2 ambiguous errors.
 
-Only `remote_applied`, `remote_noop`, `remote_partial` and `failed` are receipt-eligible. Transition to one of those states, terminal audit and receipt insertion MUST commit atomically before the response is sent. `prepared`, `dispatched` and `outcome_unknown` MUST NOT have a terminal receipt. A deterministic failure after operation acceptance but before remote dispatch becomes terminal `failed` with its exact mapped response; a failure before request acceptance/global reservation creates neither operation nor receipt. `remote_partial` is terminal and persists its exact `502` response.
+Exact same actor/domain/kind/intent terminal replay MUST return stored status and canonical body. Verification and lifecycle override updates MUST NOT rewrite the original receipt. Runtime roles have no unrestricted receipt DML.
 
-Exact same actor/domain/kind/intent terminal replay MUST return the stored HTTP status and response bytes. Mutable recovery or verification updates MUST NOT rewrite the receipt; current verification is available only from the operation GET projection.
+#### Scenario: Outcome unknown is replayed
+- **WHEN** a same-command POST repeats while execution is `outcome_unknown`
+- **THEN** Control returns current projection with 202, creates no receipt and sends zero native mutation
 
-#### Scenario: Response is lost with unknown outcome
-- **WHEN** the remote response is lost and recovery has not established a terminal execution result
-- **THEN** execution remains `outcome_unknown`, no terminal receipt exists, and same-command POST replay returns `202` current projection with zero redispatch
+### Requirement: Manual lifecycle override SHALL waive only the lifecycle block
 
-#### Scenario: Remote partial terminalization
-- **WHEN** Node proves a physical commit followed by a bounded runtime or marker partial failure
-- **THEN** Control atomically records `remote_partial`, terminal audit and immutable `502 remote_partial` receipt, then exact replay returns those persisted bytes
+Control MUST expose **Override Unknown Operation Lifecycle Block** for a `dispatched` or unresolved `outcome_unknown` operation. It persists all of `lifecycle_override_at/by/reason`, with reason `process_restarted|node_stopped|risk_accepted`; free-form detail is audit-only. The action MUST NOT change execution/verification state, create success/failure evidence, alter receipt eligibility or authorize redispatch.
 
-#### Scenario: Failure before remote dispatch after acceptance
-- **WHEN** a command and operation were accepted but a deterministic dispatch prerequisite fails before any Node mutation request
-- **THEN** Control records terminal `failed` and its exact mapped receipt atomically, with zero remote mutation
+`risk_accepted` explicitly waives the strict guarantee that the earlier request cannot mutate the old Node after lifecycle proceeds. Every override requires super_admin, active session, same-origin/CSRF, exact typed confirmation and distinct high-risk audit.
 
-### Requirement: Account operation HTTP surfaces SHALL have a frozen exact contract
+#### Scenario: Administrator accepts unresolved remote risk
+- **WHEN** a super_admin submits exact confirmation with reason `risk_accepted`
+- **THEN** lifecycle may ignore that operation blocker while execution remains unknown and the old mutation is never redispatched
 
-The routes MUST be exactly `POST /api/account-operations/disable`, `POST /api/account-operations/enable`, `POST /api/account-operations/remove`, `POST /api/account-operations/upload-new`, `POST /api/account-operations/replace-existing` and `GET /api/account-operations/{command_id}`.
+### Requirement: Account verification SHALL use only normal Inventory convergence
 
-JSON bodies MUST be at most 8192 bytes. Disable and Enable bodies MUST contain exactly lowercase UUID `command_id`, UUID `node_instance_id` and canonical `account_key` of at most 385 UTF-8 bytes. Remove MUST additionally contain exact `confirmation="REMOVE"`. Upload New and Replace Existing MUST use multipart of at most 270336 bytes with exactly one `request` part (`application/json`, at most 8192 bytes) and one `credential` part (at most 262144 bytes); request contains exactly `command_id`, `node_instance_id`, `account_key`, and credential identity MUST match. Unknown fields and parts are invalid.
+After execution is verification-eligible, Control MAY request the existing scheduler only. Disable requires same account_key disabled=true; Enable requires disabled=false; Remove requires absence from fresh complete eligible provider-complete evidence; Upload New requires identity present; Replace Existing requires identity still present. Inventory MUST NOT be treated as exact credential-byte, CAS or remote-quiescence proof. Stale/incomplete/disk-fallback/duplicate evidence cannot verify.
 
-The public operation projection MUST contain exactly `command_id`, `node_instance_id`, `account_key`, `operation_kind`, `execution_state`, `verification_state`, nullable `result`, nullable `error_code`, `created_at` and `updated_at`. `operation_kind` MUST be `disable|enable|remove|upload_new|replace_existing`; `result` MUST be null or `applied|noop|partial|failed`; timestamps MUST be UTC RFC3339. `prepared|dispatched` use null result/error, `remote_applied` uses `applied`, `remote_noop` uses `noop`, `remote_partial` uses `partial/remote_partial`, `outcome_unknown` uses null/`remote_outcome_unknown`, and `failed` uses `failed/<fixed error>`. The projection MUST exclude Management Key, dispatch token, target precondition, postcondition proof, raw Node response, filename/path and credential. Terminal success returns `200 {"operation":...}`; nonterminal acceptance/replay returns `202 {"operation":...}`; terminal partial returns `502` with sanitized error and operation; GET returns `200` current projection or `404 operation_not_found`. Every response MUST use `Cache-Control: no-store`.
+#### Scenario: Replace identity remains present after response loss
+- **WHEN** fresh Inventory still contains the account after an ambiguous Replace response
+- **THEN** business convergence may be observed but execution remains `outcome_unknown`
 
-The stable status mapping MUST be: `400 invalid_request`; `401 unauthenticated`; `403 forbidden`; `404 node_not_found|account_target_not_found|operation_not_found`; `409 command_conflict|node_retired|node_monitoring_ineligible|unsupported_node_contract|unsupported_provider|account_target_ambiguous|account_target_changed|account_operation_in_progress`; `413 upload_too_large`; `422 upload_invalid|identity_mismatch`; `502 remote_partial|remote_failed`; `503 node_management_unavailable|service_unavailable`. `remote_outcome_unknown` MUST be represented as a `202` projection. Error text is bounded and sanitized.
+### Requirement: Public API, audit and metrics SHALL remain bounded
 
-#### Scenario: Same command is still nonterminal
-- **WHEN** the same actor and intent repeats a POST whose operation is `prepared`, `dispatched` or `outcome_unknown`
-- **THEN** Control returns `202` with the current public projection, sends no new remote request and creates no terminal receipt
+Product routes MUST be exactly `POST /api/account-operations/disable`, `/enable`, `/remove`, `/upload-new`, `/replace-existing`, `GET /api/account-operations/{command_id}` and `POST /api/account-operations/{command_id}/lifecycle-override`. Mutation bodies, multipart parts and lifecycle override fields MUST be the closed schemas in design; unknown fields/parts are invalid. Responses MUST be no-store and expose only the bounded operation projection defined in design, never native physical evidence or Secrets.
 
-#### Scenario: Exact terminal replay after verification changes
-- **WHEN** a terminal command is replayed after its mutable verification state changed
-- **THEN** POST returns the original receipt status/body exactly and GET returns the newer verification projection
+Terminal success MUST return 200 with `{"operation":...}`; accepted nonterminal and same-command nonterminal replay MUST return 202 with `{"operation":...}` and zero redispatch; GET MUST return 200 current projection; exact terminal replay MUST return the persisted original status/body. Stable errors MUST follow the frozen mapping in design: 400 malformed/upload/identity, 401 authentication, 403 authorization/CSRF, 404 Node/target/operation missing, 409 lifecycle/monitoring/provider/ambiguous/in-progress/command conflicts, 413 upload size and 503 management/service unavailable. An ambiguous native outcome returns the 202 projection with `outcome_unknown`, not a fabricated terminal error.
 
-### Requirement: Disable and Enable SHALL confirm durable Node state before remote success
+Audit MUST record actor/request/command/operation/Node/provider/protected account identity and override risk without credential/raw native body/path. Metrics MUST use low-cardinality operation/provider/result/error/execution/verification labels and never email/account_key/command/node/path.
 
-Disable/Enable remote success MUST require native mutation success, reliable persistence-error propagation and sanitized management read-back matching the desired `disabled` value. Already desired state is `remote_noop`. Enabled MUST NOT be interpreted as provider health or Control schedulability.
-
-#### Scenario: Runtime update succeeds but persistence fails
-- **WHEN** Node cannot durably persist the requested status
-- **THEN** Control MUST NOT classify the operation as `remote_applied`; it returns/persists a bounded partial/failure outcome
-
-### Requirement: Remove SHALL remain destructive and response-loss safe
-
-Remove MUST represent physical credential-file deletion with no Control trash/vault. Partial disk/runtime cleanup MUST be `remote_partial`. Requests that already obtained credential MAY finish under native behavior. Response-loss recovery MUST NOT delete a new target that appears after the original target/precondition, and no dispatched operation may retarget a replacement Node.
-
-#### Scenario: New target appears after lost Remove response
-- **WHEN** the old precondition target is gone and a new record for the same account_key exists
-- **THEN** the original command does not issue another delete against the new target and remains conservatively recovered/inconclusive
-
-### Requirement: Upload SHALL be bounded, strict and Secret-safe
-
-Upload New/Replace MUST accept exactly one Antigravity JSON file of at most 262144 bytes. Client fields MUST be exactly the approved credential allowlist (`type,access_token,refresh_token,expires_in,timestamp,expired,email,project_id`); unknown and runtime-control metadata MUST be rejected. Create MUST use server canonical filename and refuse existing target; Replace MUST inherit the uniquely resolved target and enforce precondition. Control MUST keep bytes only in bounded memory and MUST NOT persist/log/audit/trace/metric/return credential content.
-
-#### Scenario: Upload contains disabled or unknown field
-- **WHEN** repaired JSON includes `disabled`, `weight`, headers/retry/scheduler metadata or any unapproved field
-- **THEN** Control/Node rejects `upload_invalid` before credential mutation; it does not silently strip or pass through the field
-
-### Requirement: Upload intent SHALL use a separate Phase 7 keyed fingerprint contract
-
-Upload command equality MUST use a versioned HMAC fingerprint under a dedicated 32-byte `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE` with domain `relay-station/account-operation-upload-intent/v1`. The existing asset K1 file/domain/semantics MUST remain unchanged. Missing/unsafe/symlink/wrong-length Phase 7 key when upload fingerprinting is required MUST fail closed without automatic generation.
-
-#### Scenario: Existing asset K1 is available but Phase 7 key is missing
-- **WHEN** a new upload command requires Secret fingerprinting and only the asset K1 exists
-- **THEN** Control returns `service_unavailable`; it MUST NOT fall back to the asset K1
-
-### Requirement: Create and Replace SHALL require Secret-safe remote postcondition proof
-
-Node Contract v1 MUST expose a bounded non-secret write/postcondition proof that can be read after response loss and proves that this dispatch committed the intended physical target. Control MAY send/store a non-secret write token and its own keyed upload-intent fingerprint; Node MUST NOT require the Control fingerprint key. Inventory account presence alone MUST NOT prove credential replacement. Upload/Replace verification is `verified` only when the remote proof matches this dispatch and normal accepted Inventory shows exactly one expected account_key.
-
-#### Scenario: Inventory sees account but remote write proof is absent
-- **WHEN** a fresh complete snapshot contains the expected account_key but Control cannot prove this Create/Replace dispatch committed
-- **THEN** verification is not `verified`; it remains outcome-unknown/inconclusive according to execution evidence
-
-### Requirement: Account verification SHALL use only the normal Inventory pipeline
-
-After execution becomes verification-eligible, Control MAY wake/request the existing scheduler but MUST NOT create off-grid/duplicate/special Phase 7 runs, bypass start grace/lease/fencing/policy pinning or patch current Inventory directly. Verification deadline is ten minutes. Disable/Enable require desired state in fresh complete eligible Provider evidence; Remove requires absence only from fresh complete eligible provider-complete evidence; Create/Replace require both remote proof and exactly-one expected identity. Incomplete/stale/disk-fallback/duplicate evidence cannot prove success.
-
-#### Scenario: Current fixed slot already exists
-- **WHEN** Phase 7 requests a verification opportunity while the current `(Node,scheduled_at)` run already exists in any state
-- **THEN** scheduler creates no second run; verification uses that normal run if eligible or waits for the next normal aligned slot
-
-### Requirement: Account operation audit, metrics and error surfaces SHALL be bounded
-
-Audit MUST record actor/request/command/operation/Node/provider/protected business identity, sanitized outcome and verification state without credential, Management Key, raw Node body or full filesystem path. Remove uses a distinct high-risk action. Metrics MUST use only low-cardinality operation/provider/result/error/execution/verification classes and MUST NOT label email/account_key/file/path/command/node UUID. API errors MUST use a fixed sanitized taxonomy and never relay raw Node strings.
-
-#### Scenario: Node returns raw internal error
-- **WHEN** Node management fails with a path/token-bearing internal error
-- **THEN** Control maps it to the approved bounded error class, does not expose/store the raw body and records only sanitized evidence
+#### Scenario: Native error contains filesystem path or token
+- **WHEN** CLIProxyAPI returns a path/token-bearing error
+- **THEN** Control maps it to a stable code and stores/exposes none of the raw content

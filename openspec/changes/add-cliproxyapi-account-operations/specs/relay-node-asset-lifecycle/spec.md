@@ -1,25 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: Node Retire and Replace SHALL wait for proven account-operation remote quiescence
+### Requirement: Node Retire and Replace SHALL honor durable account-operation blockers
 
-Retire/Replace MUST, after acquiring the existing Node-first lifecycle lock, inspect same-Node Phase 7 account operations. If any operation is `dispatched` and remote mutation may still begin/continue, lifecycle mutation MUST return `account_operation_in_progress` with zero retirement/replacement. Client timeout, `dispatch_deadline`, `remote_mutation_deadline`, `quiescence_deadline`, or elapsed operational bounds alone MUST NOT release the fence. Release requires a terminal Node response with `quiescent=true`, a successful shared-gate recovery resolve that durably fences the operation's exact `dispatch_token` as Node `fence_dispatch_token_v1` before read-back, or proven termination/restart of the exact Node process instance. No DB lock is held across HTTP.
+Retire/Replace MUST acquire the existing Node lifecycle row first and then inspect same-Node account operations using the shared Node-first lock order. Any `dispatched` or unresolved `outcome_unknown` operation MUST return `account_operation_in_progress` with zero lifecycle mutation unless that exact operation has a valid durable lifecycle override. No database lock may be held across native HTTP.
 
-#### Scenario: Retire races a still-running Node handler
-- **WHEN** Control-side request timed out but the Node handler may still mutate credential state
-- **THEN** Retire is blocked until remote quiescence is proven; it cannot retire first and allow the credential mutation to land afterward
+A lifecycle override MUST persist `lifecycle_override_at`, `lifecycle_override_by` and reason `process_restarted|node_stopped|risk_accepted`. It releases only the lifecycle block: it MUST NOT change execution or verification state, manufacture success/failure evidence, create receipt eligibility or authorize redispatch. `risk_accepted` explicitly records that the administrator waives the strict guarantee that a previously dispatched request can never mutate the old Node after lifecycle proceeds.
 
-#### Scenario: Control restarts with dispatched operation
-- **WHEN** Control restarts before remote quiescence proof
-- **THEN** lifecycle reads the durable account-operation fence and remains blocked; once lifecycle eventually commits, the old operation can never redispatch or target the replacement Node
+#### Scenario: Account dispatch commits first
+- **WHEN** an account operation commits `prepared -> dispatched` before Retire or Replace locks the Node
+- **THEN** lifecycle observes the durable blocker and rejects unless a valid override exists
 
-#### Scenario: Quiescence deadline expires without Node proof
-- **WHEN** the conservative `quiescence_deadline` passes but no terminal response, successful durable token-fencing resolve, or proven process restart exists
-- **THEN** Retire/Replace remains blocked because elapsed time alone cannot prove the remote mutation stopped
+#### Scenario: Retire commits first
+- **WHEN** Retire locks and commits the Node before account dispatch authorization
+- **THEN** later dispatch sees the terminal lifecycle and sends zero native request
 
-### Requirement: Node mutation capability SHALL be explicitly declared and runtime-verified
+#### Scenario: Control restarts with unresolved operation
+- **WHEN** Control restarts while an operation is `dispatched` or `outcome_unknown`
+- **THEN** the durable blocker remains effective without relying on an in-memory mutex
 
-Change B MUST add `management_account_mutation_v1` to the approved CLIProxyAPI Driver contract capability set without changing the existing immutable per-Node capability ownership rule. A Node may dispatch account mutation only when its durable capability declaration contains both `management_account_inventory_read` and `management_account_mutation_v1` and fresh authenticated runtime discovery confirms the exact frozen v1 contract. Migration MUST NOT silently grant the new capability to existing Node identities; an existing Node that lacks it requires the normal explicit lifecycle path, including Replace where immutable capability ownership requires a new identity.
-
-#### Scenario: Existing Node lacks mutation capability
-- **WHEN** an active legacy Node has Inventory-read capability but no durable `management_account_mutation_v1` declaration
-- **THEN** Control returns `unsupported_node_contract` with zero remote mutation and does not infer support from image or commit metadata
+#### Scenario: Risk is explicitly accepted
+- **WHEN** a super_admin submits the typed high-risk confirmation and `risk_accepted` override
+- **THEN** lifecycle may proceed while the operation remains unresolved and no automatic redispatch occurs

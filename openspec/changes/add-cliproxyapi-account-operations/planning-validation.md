@@ -1,67 +1,66 @@
-# Phase 7 Change B Planning Validation — CLIProxyAPI Account Operations
+# Phase 7 Change B Planning Validation — Native-First CLIProxyAPI Account Operations
 
-## Status
+## Current status
 
-- Ops requirements baseline: `594a349435dbb6c2d4265be79fb913015b1b05c5` — Detailed Requirements FROZEN / Architecture Review PASS / P0-P1-P2 0-0-0.
-- Stage 7A dependency: `SATISFIED` — archived migration `37`, compatibility class/floor `3 / 3`.
-- Stage 7N dependency: `SATISFIED` — accepted Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`.
-- Planning: `COMPLETE`.
-- Dependency readiness: `SATISFIED candidate`.
-- Independent readiness review: `RE-REVIEW REQUIRED`.
-- Implementation readiness: `READY FOR INDEPENDENT RE-REVIEW`.
+- Change: `add-cliproxyapi-account-operations`.
+- Architecture direction: Native-First Corrective Round 1.
+- CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
+- Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
+- Relay-specific Node mutation protocol: zero current dependency.
+- Planning reconciliation: complete.
+- Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
+- Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
 - Implementation: `NOT STARTED`.
 
-## Frozen planning decisions carried forward
+This document does not claim Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or implementation authorization.
 
-- canonical target `(node_instance_id,account_key)` + fresh exactly-one resolution;
-- opaque physical-target precondition;
-- strict Antigravity allowlist, single file, 256 KiB;
-- explicit Upload New / Replace Existing;
-- separate Phase 7 keyed-fingerprint key, asset K1 unchanged;
-- minimal mutable `account_admin_operations` + global command registry + separate immutable `account_admin_command_receipts` exact terminal replay;
-- execution/verification orthogonal states and direct `prepared -> dispatched` transition;
-- bounded synchronous Node mutation plus durable same-token fenced resolve; client timeout/deadline alone is not proof;
-- fresh authenticated Node v1 contract discovery plus active/current-monitoring/both-capabilities/provider-policy required at dispatch with Node-first lock order;
-- existing fixed-slot Inventory scheduler wake/request only;
-- Create/Replace require Node postcondition proof plus Inventory business convergence;
-- selective Node upstream port, pinned artifact, HTTP-only management.
+## Historical dependency record
 
-## External prerequisite — Node Account Management Contract v1
+The Node Account Management Contract v1, its implementation at Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`, contract reviews and corrective amendments remain valid historical evidence of an implemented and reviewed design. Native-First Corrective Round 1 marks that design a **HISTORICAL / SUPERSEDED CANDIDATE**. It is not the current Change B implementation dependency and not the current deployment baseline. No Node revert is part of this planning change.
 
-The dependency is satisfied by independently accepted Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`. Before every mutation Control still MUST perform fresh authenticated discovery and verify the exact v1 contract, provider, both capabilities and frozen constants; the pinned artifact is evidence, not runtime authorization.
+## Reviewed native source evidence
 
-## Planned acceptance highlights
+Pinned v7.3.2 source inspection confirms the current planning subset:
 
-1. Global command collisions/actor-first behavior inherited from Change A.
-2. Target missing/duplicate/precondition-change fail closed.
-3. Monitoring disabled/future-only and capability/policy ineligible -> zero dispatch.
-4. Control timeout while Node handler still executes -> lifecycle remains blocked; crash/restart restores fence.
-5. Retire/Replace succeeds only after terminal `quiescent=true`, successful durable same-token fenced resolve, or proven exact-process termination/restart; deadline expiry alone never releases the fence and no mutation may later land on old Node.
-6. Secret bytes absent from Control DB/receipt/audit/log/trace/metric/temp disk/response.
-7. Upload allowlist/size/single-file/create-vs-replace and Phase 7 key fail-closed.
-8. Response-loss postcondition recovery; Inventory identity alone never proves replacement.
-9. Fixed-slot Inventory wake semantics and conservative verification.
-10. Signed compatibility/rollback and pinned Node artifact mismatch fail closed.
+- `GET /v0/management/auth-files` returns a broad native projection that Control must treat as untrusted and immediately reduce.
+- `PATCH /v0/management/auth-files/status` accepts exact `name`, `auth_index` and `disabled` JSON fields.
+- `DELETE /v0/management/auth-files` exposes single, multi and all-delete forms; Control permits only one URL-encoded exact basename in the `name` query.
+- `POST /v0/management/auth-files?name=...` accepts a raw JSON auth object and may overwrite; Control does not use native multipart upload.
+- Native fields/operations for fields, download, refresh and OAuth are outside the Change B adapter allowlist.
+- Native responses do not provide a machine-stable physical-commit marker, compare-and-swap revision or remote execution proof.
 
-## Validation execution note
+## Native-First corrective resolutions incorporated
 
-The artifact set follows the repository's spec-driven planning shape. Corrective planning validation uses the repository OpenSpec CLI and records its actual strict result before commit. No product code, migration, OpenAPI generated output, Node/Gateway code or implementation apply workflow is changed by this planning correction.
+1. **Native API boundary:** exact four-route allowlist; no arbitrary management passthrough, all/multi delete, fields/download/refresh/OAuth or browser-visible Management Key.
+2. **Safe snapshot:** provider/type, normalized email, validated basename, bounded auth_index and disabled only; raw response/path/token-adjacent/runtime/unknown fields are discarded.
+3. **Target resolution:** every target-existing mutation uses a fresh exactly-one provider+normalized-email match; Inventory and filename convention cannot select the target.
+4. **Write semantics:** Upload New is best-effort create and Replace Existing is best-effort replace under native last-writer-wins. Concurrent create/refresh lost-update risk is explicit and accepted; no Relay CAS is claimed.
+5. **Credential ingress:** CLIProxyAPI owns schema truth. Control enforces top-level object/type/email, 1 MiB ingress, filename bounds and a reviewed runtime-control denylist without silently stripping fields.
+6. **Outcome mapping:** known 2xx is terminal; reviewed provably pre-mutation 4xx may fail; timeout, connection/response loss and ambiguous native 5xx become `outcome_unknown`. There is no automatic mutation redispatch or inferred partial stage.
+7. **Durable serialization/lifecycle:** PostgreSQL serializes same-account operations and retains dispatched/unresolved blockers across restart; Node lifecycle follows the same Node-first lock order. High-risk override releases only the lifecycle block.
+8. **Verification/replay:** Inventory proves only business convergence. Stable terminal POST truth uses a separate immutable account receipt; `outcome_unknown` has no receipt and same-command replay returns current projection with zero redispatch.
+
+## Readiness acceptance still required
+
+Independent architecture re-review must verify:
+
+- the exact native subset and safe projection match pinned v7.3.2 source;
+- all previous custom Node protocol dependencies are historical or removed from current normative text;
+- durable same-account serialization and lifecycle blocker matrices are complete;
+- best-effort create/replace races and conservative unknown outcomes are accepted explicitly;
+- public API, terminal receipt, lifecycle override, Inventory verification, audit and Secret boundaries are internally consistent;
+- no current planning statement promotes Phase 7 or authorizes Stage 7B implementation.
+
+## Validation record
+
+The following values are updated from actual commands before local commit:
 
 ```text
-Corrective Amendment 1 planning reconciliation:
 openspec validate add-cliproxyapi-account-operations --strict = PASS
 openspec validate --all --strict = 30 passed / 0 failed
 git diff --check = PASS
-Stage 7B implementation = NOT STARTED
+scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
+push = NOT RUN
 ```
 
-## Readiness findings
-
-- B-P1-1 terminal receipt/replay contract: `RESOLUTION INCORPORATED`.
-- B-P1-2 Node mutation capability/runtime discovery gate: `RESOLUTION INCORPORATED`.
-- B-P1-3 exact Control product API contract: `RESOLUTION INCORPORATED`.
-- Planning P0 blockers: 0 candidate.
-- Planning P1 blockers: 0 candidate.
-- Stage 7A and Stage 7N dependencies: `SATISFIED candidate`.
-
-Disposition: `PLANNING COMPLETE / READY FOR INDEPENDENT RE-REVIEW / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST CORRECTIVE ROUND 1 / READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW / IMPLEMENTATION NOT STARTED`.

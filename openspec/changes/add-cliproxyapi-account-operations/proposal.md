@@ -1,48 +1,51 @@
 ## Why
 
-Phase 7 frozen requirements/Architecture Review at `sunxu/relay-station-ops@594a349435dbb6c2d4265be79fb913015b1b05c5` approve explicit CLIProxyAPI account Disable/Enable/Remove and repaired Antigravity auth-file Create/Replace. Native CLIProxyAPI management endpoints exist, but they operate physical auth records and lack Control global command identity, durable response-loss recovery, lifecycle/quiescence fencing and normal-Inventory verification semantics.
+Phase 7 requires explicit Antigravity account Disable, Enable, Remove, Upload New and Replace Existing while keeping Control outside the request data plane and CLIProxyAPI authoritative for credential/runtime semantics. The previous Stage 7N Relay-specific Node mutation protocol was implemented and reviewed, but the current Native-First architecture candidate supersedes it as a Stage 7B dependency to avoid a parallel Node protocol and maintenance surface.
 
-This change plans the Control account-operation product surface after the global command registry prerequisite, while preserving CLIProxyAPI credential/runtime truth and data-plane isolation.
+This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`. Phase 7 Relay-specific Node mutation protocol count is zero.
 
 ## What Changes
 
-- Add a minimal `account_admin_operations` durable execution/recovery projection with orthogonal `execution_state` and `verification_state`; it is not a generic workflow engine.
-- Provide explicit single-account Disable, Enable, Remove, Upload New and Replace Existing administrator operations for Antigravity.
-- Resolve `(node_instance_id, account_key)` to exactly one current physical target at operation time and require a generic opaque Node-side precondition.
-- Depend on the accepted external `Node Account Management Contract v1` at revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`: persistence errors, serialized mutation, strict 256 KiB single-file Antigravity allowlist, explicit create/replace, atomic replacement, secret-safe postcondition proof, bounded synchronous mutation, fresh authenticated capability discovery, Control `dispatch_token` reuse as Node `dispatch_token_v1`, durable same-token fenced recovery resolve, and stable sanitized errors.
-- Use the Change A global command registry/actor-first namespace; use a separate Phase 7 upload-intent fingerprint key rather than expanding Phase 6 asset K1 semantics.
-- Add bounded dispatch/quiescence fences that block Node Retire/Replace until remote mutation can no longer begin/continue; require active monitoring/capability/provider-policy eligibility before dispatch.
-- Wake/request only the existing fixed-slot Inventory scheduler, then verify business convergence from accepted normal Inventory evidence. No off-grid/special Phase 7 poll is created.
-- Add protected API/UI, audit/metrics, recovery, compatibility and runtime acceptance planning.
+- Add minimal durable `account_admin_operations` execution/recovery truth with orthogonal verification state and durable same-`(node_instance_id,account_key)` serialization.
+- Expose explicit single-account Control APIs for Disable, Enable, Remove, Upload New, Replace Existing and operation read; add a separate high-risk lifecycle-block override.
+- Restrict the Node adapter to native `GET /auth-files`, `PATCH /auth-files/status`, single-name `DELETE /auth-files`, and raw-JSON `POST /auth-files?name=`. No arbitrary management passthrough.
+- Convert every raw native auth snapshot immediately to `provider/type`, normalized email, basename, auth_index and disabled; discard all other native fields.
+- Use fresh exactly-one provider/email target resolution. `name` and `auth_index` remain ephemeral native request evidence, not durable/public identity.
+- Accept upstream native last-writer-wins: Upload New is best-effort create; Replace Existing is best-effort replace. No CAS, target incarnation or Node postcondition proof.
+- Bound Control credential ingress to 1 MiB, validate minimal Antigravity identity, and reject pinned-v7.3.2 runtime/routing/management metadata without taking ownership of provider credential schema.
+- Preserve global command actor-first identity, immutable terminal replay, no automatic redispatch after ambiguous outcome, Node-first lifecycle locking, normal Inventory convergence, audit and Secret boundaries.
+- Treat timeout, connection/response loss and ambiguous native 5xx as `outcome_unknown`; block lifecycle until explicit high-risk override or stable terminal classification.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `account-admin-operation`: Phase 7 command/API state machine, target resolution, remote mutation/recovery, Secret handling, verification, audit/metrics and UI behavior.
+- `account-admin-operation`: Control command/API state, native safe adapter, durable serialization, conservative outcome recovery, manual lifecycle override, verification, audit, metrics and UI behavior.
 
 ### Modified Capabilities
 
-- `asset-admin-command`: Phase 7 uses the global registry from archived Change A, keeps existing asset K1 unchanged, and uses a separate immutable account-command terminal receipt contract without expanding the asset-only receipt relation.
-- `relay-node-asset-lifecycle`: Retire/Replace must reject while a dispatched account operation lacks proven remote quiescence.
-- `account-inventory-poll-run`: account operations may only wake/request the existing UTC fixed-slot scheduler; dispatch also requires current monitoring/capability/policy eligibility.
-- `account-inventory-snapshot`: Inventory verifies only business convergence and cannot by itself prove uploaded credential bytes.
+- `asset-admin-command`: account commands use the archived global registry and a separate immutable account receipt without changing asset K1 or asset receipts.
+- `relay-node-asset-lifecycle`: Node Retire/Replace inspects durable dispatched/outcome-unknown account-operation blockers and may proceed only after the reviewed explicit override.
+- `account-inventory-poll-run`: verification only requests the existing fixed-slot scheduler and dispatch retains current monitoring/Inventory capability/provider-policy gates.
+- `account-inventory-snapshot`: Inventory proves business convergence only, never exact credential bytes, CAS or remote quiescence.
 
 ## Dependencies
 
-1. Ops frozen baseline `594a349435dbb6c2d4265be79fb913015b1b05c5`.
+1. Ops Native-First Corrective Round 1 candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
-3. Accepted Node Account Management Contract v1 artifact: revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`.
+3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
+
+Historical Stage 7N final revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4` remain preserved evidence only: `HISTORICAL / SUPERSEDED CANDIDATE / NOT CURRENT IMPLEMENTATION DEPENDENCY / NOT CURRENT DEPLOYMENT BASELINE`.
 
 ## Impact
 
-Implementation is expected to add additive Control schema/state, OpenAPI routes/generated clients, a bounded Node driver adapter, admin UI, audit/metrics and acceptance harnesses. It does not modify Gateway. Node product hardening is an external prerequisite and is not implemented by this Control planning change.
+Future implementation is expected to add additive Control schema/state, OpenAPI routes/generated clients, a bounded native CLIProxyAPI adapter, admin UI, audit/metrics and acceptance harnesses. It does not modify Gateway or define Node product changes. A separate transition gate governs any future ordinary revert/alignment of historical Stage 7N code; this planning task runs no revert.
 
 ## Non-Goals
 
-No OAuth/Re-auth, automatic repair/move/remove, Credential Vault, generic Workflow Engine, Provider Repair Framework, batch/all operation, Gateway Account/Group mutation, new Inventory subsystem, special off-grid polling, CLIProxyAPI scheduler replacement, internal HTTPS/TLS or data-plane participation.
+No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/remove, Credential Vault, workflow engine, provider framework, batch/all operation, Gateway mutation, new Inventory subsystem, off-grid polling, internal HTTPS/TLS, scheduler replacement or data-plane participation.
 
 ## Planning status
 
-Planning = COMPLETE. Stage 7A and Stage 7N dependencies = SATISFIED candidate. B-P1-1 terminal receipt, B-P1-2 Node mutation capability gate and B-P1-3 exact product API resolutions are incorporated. Implementation readiness = READY FOR INDEPENDENT RE-REVIEW. Implementation = NOT STARTED.
+Native-First Corrective Round 1: P0 = 0, P1 = 0 candidate, P2 = 0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`. Detailed Requirements are not newly declared frozen, implementation readiness is not declared ready, and Stage 7B implementation is `NOT STARTED`.
