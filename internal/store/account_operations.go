@@ -17,6 +17,7 @@ import (
 )
 
 const accountCommandDomain = "account_admin"
+const accountUploadIntentHMACDomain = "relay-station/account-operation-upload-intent/v1"
 
 type AccountOperationKind string
 
@@ -174,10 +175,7 @@ func (r *AccountOperationRepository) Accept(ctx context.Context, command Account
 		}
 		return operation, err
 	}
-	if _, err = tx.Exec(ctx, `SELECT command_id FROM control_reserve_admin_command_v1($1::uuid,$2::uuid,'account_admin'::text,$3::text,1::smallint,$4::bytea,$5::smallint)`, command.CommandID, command.ActorAdminID, accountCommandKind(command.OperationKind), command.CanonicalIntentHash, nullableInt2(command.SecretFingerprintVersion)); err != nil {
-		return AccountAdminOperation{}, err
-	}
-	operation, err := insertAccountOperation(ctx, tx, command)
+	operation, err := callAcceptAccountOperation(ctx, tx, command)
 	if err != nil {
 		return AccountAdminOperation{}, err
 	}
@@ -185,6 +183,22 @@ func (r *AccountOperationRepository) Accept(ctx context.Context, command Account
 		return AccountAdminOperation{}, err
 	}
 	return operation, nil
+}
+
+// AcceptWithIntentKey composes the frozen pre-acceptance secret boundary with
+// acceptance. A key failure returns before opening a database transaction.
+func (r *AccountOperationRepository) AcceptWithIntentKey(ctx context.Context, keyPath string, command AccountOperationAcceptance, canonicalIntent []byte) (AccountAdminOperation, error) {
+	key, err := LoadAccountOperationIntentKey(keyPath)
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(accountUploadIntentHMACDomain))
+	_, _ = mac.Write(canonicalIntent)
+	version := int16(1)
+	command.SecretFingerprintVersion = &version
+	command.UploadIntentFingerprint = mac.Sum(nil)
+	return r.Accept(ctx, command)
 }
 
 func lookupAccountCommandReservation(ctx context.Context, tx pgx.Tx, id uuid.UUID) (adminCommandReservation, bool, error) {
@@ -212,14 +226,14 @@ func scanAccountOperation(row rowScanner) (AccountAdminOperation, error) {
 	return v, err
 }
 
-func insertAccountOperation(ctx context.Context, tx pgx.Tx, c AccountOperationAcceptance) (AccountAdminOperation, error) {
-	return scanAccountOperation(tx.QueryRow(ctx, `INSERT INTO account_admin_operations(command_id,node_instance_id,account_key,operation_kind,execution_state,upload_fingerprint_key_version,upload_intent_fingerprint) VALUES($1,$2,$3,$4,'prepared',$5,$6) RETURNING command_id,node_instance_id,account_key,operation_kind,execution_state,dispatch_started_at,remote_result_code,upload_fingerprint_key_version,upload_intent_fingerprint,lifecycle_override_at,lifecycle_override_by,lifecycle_override_reason,same_account_override_at,same_account_override_by,same_account_override_reason,created_at,updated_at`, c.CommandID, c.NodeInstanceID, c.AccountKey, c.OperationKind, c.SecretFingerprintVersion, c.UploadIntentFingerprint))
+func callAcceptAccountOperation(ctx context.Context, tx pgx.Tx, c AccountOperationAcceptance) (AccountAdminOperation, error) {
+	return scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_accept_account_admin_operation_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)`, c.CommandID, c.ActorAdminID, accountCommandKind(c.OperationKind), c.CanonicalIntentHash, nullableInt2(c.SecretFingerprintVersion), c.NodeInstanceID, c.AccountKey, c.OperationKind, c.UploadIntentFingerprint))
 }
 
 // TransitionAccountOperation applies the frozen explicit transition matrix.
 // The operation row lock is held only for the database transition.
 func (r *AccountOperationRepository) TransitionAccountOperation(ctx context.Context, id uuid.UUID, from, to AccountOperationState, resultCode *string) (AccountAdminOperation, error) {
-	if !allowedAccountTransition(from, to) {
+	if from == AccountPrepared || !allowedAccountTransition(from, to) {
 		return AccountAdminOperation{}, ErrAccountOperationState
 	}
 	tx, err := r.pool.Begin(ctx)
@@ -239,12 +253,7 @@ func (r *AccountOperationRepository) TransitionAccountOperation(ctx context.Cont
 	if current != from {
 		return AccountAdminOperation{}, ErrAccountOperationState
 	}
-	var dispatch *time.Time
-	if to == AccountDispatched {
-		now := time.Now().UTC()
-		dispatch = &now
-	}
-	if _, err = tx.Exec(ctx, `UPDATE account_admin_operations SET execution_state=$2,dispatch_started_at=COALESCE(dispatch_started_at,$3),remote_result_code=$4,updated_at=clock_timestamp() WHERE command_id=$1`, id, to, dispatch, resultCode); err != nil {
+	if _, err = scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_transition_account_admin_operation_v1($1,$2,$3,$4)`, id, from, to, resultCode)); err != nil {
 		return AccountAdminOperation{}, err
 	}
 	op, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
@@ -280,34 +289,36 @@ func (r *AccountOperationRepository) TerminalizePreDispatchFailure(ctx context.C
 	if err = lockAdminCommand(ctx, tx, id); err != nil {
 		return err
 	}
-	var actor uuid.UUID
-	var kind string
-	var hash []byte
-	var keyVersion *int16
-	if err = tx.QueryRow(ctx, `SELECT r.actor_admin_id,r.command_kind,r.canonical_intent_hash,r.secret_fingerprint_key_version FROM admin_command_registry r JOIN account_admin_operations o ON o.command_id=r.command_id WHERE o.command_id=$1`, id).Scan(&actor, &kind, &hash, &keyVersion); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrAccountOperationNotFound
-		}
-		return err
-	}
-	var state string
-	if err = tx.QueryRow(ctx, `SELECT execution_state FROM account_admin_operations WHERE command_id=$1 FOR UPDATE`, id).Scan(&state); err != nil {
-		return err
-	}
-	if state != string(AccountPrepared) {
-		return ErrAccountOperationState
-	}
-	if _, err = tx.Exec(ctx, `UPDATE account_admin_operations SET execution_state='failed',remote_result_code=$2,updated_at=clock_timestamp() WHERE command_id=$1`, id, failure.Code); err != nil {
-		return err
-	}
-	details := []byte(fmt.Sprintf(`{"command_id":%q,"error_code":%q}`, id.String(), failure.Code))
-	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(audit_id,category,action,result,actor_admin_id,request_id,details) VALUES($1,'account_admin','account.operation_failed','failure',$2,$3,$4::jsonb)`, uuid.New(), actor, requestID, details); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(ctx, `INSERT INTO account_admin_command_receipts(command_id,target_operation_command_id,actor_admin_id,command_domain,command_kind,intent_encoding_version,canonical_intent_hash,secret_fingerprint_key_version,http_status,content_type,response_body) VALUES($1,$1,$2,'account_admin',$3,1,$4,$5,$6,'application/json',$7)`, id, actor, kind, hash, keyVersion, failure.HTTPStatus, body); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,$2,$3,$4,$5)`, id, failure.Code, failure.HTTPStatus, body, requestID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// AdmitAccountDispatch atomically classifies the same-account blocker and the
+// prepared -> dispatched transition. The caller may send native HTTP only
+// after this method commits.
+func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, id, nodeID uuid.UUID, accountKey string, blockerBody []byte, blockerStatus int, requestID string) (bool, AccountAdminOperation, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, id); err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	var admitted bool
+	if err = tx.QueryRow(ctx, `SELECT control_admit_account_dispatch_v1($1,$2,$3,$4,$5,$6)`, id, nodeID, accountKey, blockerBody, blockerStatus, requestID).Scan(&admitted); err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	op, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
+	if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	return admitted, op, nil
 }
 
 func (r *AccountOperationRepository) SameAccountBlocked(ctx context.Context, nodeID uuid.UUID, accountKey string, except uuid.UUID) (bool, error) {
@@ -323,13 +334,12 @@ func (r *AccountOperationRepository) SameAccountBlocked(ctx context.Context, nod
 	return false, err
 }
 
-// LockSameAccountBlocker is the transaction-scoped admission primitive used
-// immediately before the prepared -> dispatched transition.  Callers must
-// keep the transaction only through the durable transition; it must never
-// span native network I/O.
+// LockSameAccountBlocker is retained as a narrow blocker inspection helper;
+// atomic dispatch admission and row locking are owned by the controlled SQL
+// function. No caller may hold a database transaction across native I/O.
 func LockSameAccountBlocker(ctx context.Context, tx pgx.Tx, nodeID uuid.UUID, accountKey string, except uuid.UUID) error {
 	var blocker uuid.UUID
-	err := tx.QueryRow(ctx, `SELECT command_id FROM account_admin_operations WHERE node_instance_id=$1 AND account_key=$2 AND command_id<>$3 AND execution_state IN ('dispatched','outcome_unknown') AND same_account_override_at IS NULL ORDER BY command_id FOR UPDATE LIMIT 1`, nodeID, accountKey, except).Scan(&blocker)
+	err := tx.QueryRow(ctx, `SELECT command_id FROM account_admin_operations WHERE node_instance_id=$1 AND account_key=$2 AND command_id<>$3 AND execution_state IN ('dispatched','outcome_unknown') AND same_account_override_at IS NULL ORDER BY command_id LIMIT 1`, nodeID, accountKey, except).Scan(&blocker)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -346,6 +356,39 @@ func (r *AccountOperationRepository) Receipt(ctx context.Context, commandID uuid
 		return AccountCommandReceipt{}, ErrAccountOperationNotFound
 	}
 	return receipt, err
+}
+
+// ReplayTerminal performs the exact terminal-command lookup used before any
+// fresh admission checks. It validates the global reservation identity and
+// returns only the immutable stored response.
+func (r *AccountOperationRepository) ReplayTerminal(ctx context.Context, command AccountOperationAcceptance) (AccountCommandReceipt, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AccountCommandReceipt{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, command.CommandID); err != nil {
+		return AccountCommandReceipt{}, err
+	}
+	reservation, exists, err := lookupAccountCommandReservation(ctx, tx, command.CommandID)
+	if err != nil {
+		return AccountCommandReceipt{}, err
+	}
+	if !exists || !reservation.matches(command.ActorAdminID, accountCommandKind(command.OperationKind), command.CanonicalIntentHash, command.SecretFingerprintVersion) {
+		return AccountCommandReceipt{}, ErrCommandConflict
+	}
+	var receipt AccountCommandReceipt
+	err = tx.QueryRow(ctx, `SELECT command_id,target_operation_command_id,actor_admin_id,command_kind,intent_encoding_version,canonical_intent_hash,secret_fingerprint_key_version,http_status,content_type,response_body,committed_at FROM account_admin_command_receipts WHERE command_id=$1`, command.CommandID).Scan(&receipt.CommandID, &receipt.TargetOperationCommandID, &receipt.ActorAdminID, &receipt.CommandKind, &receipt.IntentEncodingVersion, &receipt.CanonicalIntentHash, &receipt.SecretFingerprintVersion, &receipt.HTTPStatus, &receipt.ContentType, &receipt.ResponseBody, &receipt.CommittedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AccountCommandReceipt{}, ErrAccountOperationState
+	}
+	if err != nil {
+		return AccountCommandReceipt{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return AccountCommandReceipt{}, err
+	}
+	return receipt, nil
 }
 
 func LoadAccountOperationIntentKey(path string) ([]byte, error) {
