@@ -55,4 +55,4 @@
 
 ## Planning gate
 
-Architecture Review = **PASS**; ADR = **ACCEPTED**; Gate 1 = **CLOSED / PASS**. Gate 2 is **NEXT**: Detailed Requirements remain **REVISION CANDIDATE**, OpenSpec planning readiness is **NOT YET CLOSED**, and this task list does not authorize implementation. Runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, Stage 7B implementation is **NOT STARTED**, and task implementation checkboxes remain incomplete.
+Architecture Review = **PASS**; ADR = **ACCEPTED**; Gate 1 = **CLOSED / PASS**. Gate 2 is **READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW**: Detailed Requirements are **FREEZE CANDIDATE**, OpenSpec Change B is **READY CANDIDATE**, and planning/specification readiness is not yet PASS. Runtime artifact identity is **NOT YET FROZEN**, Node alignment is **NOT STARTED**, Node revert is **NOT RUN**, Final Implementation Readiness is **NOT READY**, Stage 7B implementation is **NOT STARTED**, and task implementation checkboxes remain incomplete.

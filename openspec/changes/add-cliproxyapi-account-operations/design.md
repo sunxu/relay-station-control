@@ -382,4 +382,19 @@ Node revert = NOT RUN
 Stage 7B implementation = NOT STARTED
 ```
 
-This historical candidate did not declare Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or Stage 7B authorization. Current Gate 1 finalization is recorded above and does not authorize implementation.
+This historical candidate did not declare Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or Stage 7B authorization. Current Gate 1 finalization and Gate 2 planning candidate are recorded above and do not authorize implementation.
+
+## Current Gate 2 candidate
+
+```text
+Architecture Review = PASS
+ADR = ACCEPTED
+Gate 1 = CLOSED / PASS
+Gate 2 = READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW
+Detailed Requirements = FREEZE CANDIDATE
+OpenSpec Change B = READY CANDIDATE
+Runtime artifact identity = NOT YET FROZEN
+Final Implementation Readiness = NOT READY
+Node revert = NOT RUN
+Stage 7B implementation = NOT STARTED
+```

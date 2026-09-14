@@ -12,8 +12,11 @@
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
 - Final independent architecture re-review: P0=0, P1=0, P2=3 non-blocking documentation/finalization findings / PASS; three finalization findings resolved and persisted as P0=0, P1=0, P2=0 / PASS.
 - Planning reconciliation: Gate 1 finalization complete.
-- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 is `NEXT`.
+- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 is `READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW`.
 - ADR status: `ACCEPTED`.
+- Detailed Requirements: `FREEZE CANDIDATE`.
+- OpenSpec Change B: `READY CANDIDATE`.
+- Planning / specification readiness: `READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW`.
 - Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
 - Implementation: `NOT STARTED`.
@@ -83,4 +86,31 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 NEXT / DETAILED REQUIREMENTS REVISION CANDIDATE / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 READY FOR INDEPENDENT REQUIREMENTS-OPENSPEC REVIEW / DETAILED REQUIREMENTS FREEZE CANDIDATE / OPENSPEC READY CANDIDATE / IMPLEMENTATION NOT STARTED`.
+
+## Gate 2 acceptance matrix
+
+The following matrix is the deterministic planning acceptance set for independent Gate 2 review. It is a requirements and testability contract only; it does not authorize implementation.
+
+- Global command boundary: Stage 7A cross-domain conflict/replay; all seven canonical command intents; upload HMAC golden vectors; wrong-key replay.
+- Native compatibility and boundary: fresh runtime header exact match, missing/duplicate/mismatch handling; the four-route native allowlist; safe snapshot projection; file-backed mutation eligibility; memory/runtime-only exclusion; disk-fallback and malformed/degraded evidence; clean empty Upload New.
+- Admission and targeting: identity and basename collisions; UTF-8 238-byte create-email acceptance and 239-byte rejection; exactly-one existing-target resolution; safe basename validation.
+- Outcomes and recovery: Disable/Enable pre-dispatch noop; sent stable 2xx; reviewed Upload POST 503; ambiguous 5xx; timeout, connection loss and response loss; prepared crash and exact resume; upload credential re-supply and wrong-credential conflict; concurrent prepared retry; dispatched/outcome_unknown restart; zero automatic redispatch.
+- Serialization and overrides: same-account A/B race; PostgreSQL invariant; Retire-first/dispatch-first; lifecycle override and same-account override missing-target, invalid-state, already-set, success, exact replay and different-command race; cross-type override race; each override waives only its own blocker; old unknown request may complete after same-account override.
+- Observation, secrecy and receipts: normal Inventory independent observation; no Phase 7 verification workflow/state/scheduler/reconciler; Secret scans; no raw native response, credential or Management Key exposure; error-only and error-plus-operation response classes; immutable receipt exact replay; override transaction rollback before commit and commit/response-loss replay.
+
+## Gate 2 candidate status
+
+```text
+Architecture Review = PASS
+ADR = ACCEPTED
+Gate 1 = CLOSED / PASS
+Detailed Requirements = FREEZE CANDIDATE
+OpenSpec Change B = READY CANDIDATE
+Planning / specification readiness = READY FOR INDEPENDENT REQUIREMENTS / OPENSPEC READINESS REVIEW
+Runtime artifact identity = NOT YET FROZEN
+Node alignment = NOT STARTED
+Node revert = NOT RUN
+Final Implementation Readiness = NOT READY
+Stage 7B implementation = NOT STARTED
+```
