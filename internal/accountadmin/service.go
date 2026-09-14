@@ -154,9 +154,6 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		return operation, err
 	}
 	outcome, dispatchErr := mutation.Dispatch(ctx)
-	if dispatchErr != nil && outcome.Kind != cliproxyapi.NativeOutcomeUnknown {
-		return store.AccountAdminOperation{}, dispatchErr
-	}
 	switch outcome.Kind {
 	case cliproxyapi.NativeOutcomeApplied:
 		return s.operations.TerminalizeApplied(ctx, operation.CommandID, command.RequestID)
@@ -169,6 +166,9 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		}
 		return s.operations.TerminalizeDispatchedFailure(ctx, operation.CommandID, failure, command.RequestID)
 	default:
+		if dispatchErr != nil {
+			return store.AccountAdminOperation{}, dispatchErr
+		}
 		return store.AccountAdminOperation{}, errors.New("account admin: unknown native outcome")
 	}
 }
