@@ -8,6 +8,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountAdminCommandReceipt struct {
+	CommandID                   pgtype.UUID        `json:"command_id"`
+	TargetOperationCommandID    pgtype.UUID        `json:"target_operation_command_id"`
+	ActorAdminID                pgtype.UUID        `json:"actor_admin_id"`
+	CommandDomain               string             `json:"command_domain"`
+	CommandKind                 string             `json:"command_kind"`
+	IntentEncodingVersion       int16              `json:"intent_encoding_version"`
+	CanonicalIntentHash         []byte             `json:"canonical_intent_hash"`
+	SecretFingerprintKeyVersion pgtype.Int2        `json:"secret_fingerprint_key_version"`
+	HttpStatus                  int16              `json:"http_status"`
+	ContentType                 string             `json:"content_type"`
+	ResponseBody                []byte             `json:"response_body"`
+	CommittedAt                 pgtype.Timestamptz `json:"committed_at"`
+}
+
+type AccountAdminOperation struct {
+	CommandID                   pgtype.UUID        `json:"command_id"`
+	NodeInstanceID              pgtype.UUID        `json:"node_instance_id"`
+	AccountKey                  string             `json:"account_key"`
+	OperationKind               string             `json:"operation_kind"`
+	ExecutionState              string             `json:"execution_state"`
+	DispatchStartedAt           pgtype.Timestamptz `json:"dispatch_started_at"`
+	RemoteResultCode            pgtype.Text        `json:"remote_result_code"`
+	UploadFingerprintKeyVersion pgtype.Int2        `json:"upload_fingerprint_key_version"`
+	UploadIntentFingerprint     []byte             `json:"upload_intent_fingerprint"`
+	LifecycleOverrideAt         pgtype.Timestamptz `json:"lifecycle_override_at"`
+	LifecycleOverrideBy         pgtype.UUID        `json:"lifecycle_override_by"`
+	LifecycleOverrideReason     pgtype.Text        `json:"lifecycle_override_reason"`
+	SameAccountOverrideAt       pgtype.Timestamptz `json:"same_account_override_at"`
+	SameAccountOverrideBy       pgtype.UUID        `json:"same_account_override_by"`
+	SameAccountOverrideReason   pgtype.Text        `json:"same_account_override_reason"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AccountAvailabilityCheckpoint struct {
 	NodeID                    pgtype.UUID        `json:"node_id"`
 	AccountKey                string             `json:"account_key"`

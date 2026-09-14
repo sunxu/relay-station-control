@@ -1,0 +1,80 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"os"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	accountadmin "github.com/sunxu/relay-station-control/internal/accountadmin"
+	controlnodes "github.com/sunxu/relay-station-control/internal/drivers"
+	controlcliproxy "github.com/sunxu/relay-station-control/internal/drivers/cliproxyapi"
+	assetstore "github.com/sunxu/relay-station-control/internal/store"
+)
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func newAccountOperationService(pool *pgxpool.Pool, management controlnodes.ValidatedManagementConfig, secrets controlnodes.SecretResolver, policies interface {
+	CurrentProviderPolicy(context.Context, string, string) (*assetstore.ProviderInventoryPolicy, error)
+}) (*accountadmin.Service, *assetstore.AccountOperationRepository, error) {
+	repo, err := assetstore.NewAccountOperationRepository(pool)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolver := productionAccountNodeResolverWithPolicy{pool: pool, management: management, secrets: secrets, policies: policies}
+	service, err := accountadmin.NewServiceWithIntentKeyPath(repo, resolver, os.Getenv("CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE"))
+	return service, repo, err
+}
+
+type productionAccountNodeResolverWithPolicy struct {
+	pool       *pgxpool.Pool
+	management controlnodes.ValidatedManagementConfig
+	secrets    controlnodes.SecretResolver
+	policies   interface {
+		CurrentProviderPolicy(context.Context, string, string) (*assetstore.ProviderInventoryPolicy, error)
+	}
+}
+
+func (r productionAccountNodeResolverWithPolicy) Resolve(ctx context.Context, nodeID uuid.UUID, provider string) (accountadmin.NodeState, error) {
+	if r.pool == nil || r.policies == nil || r.secrets == nil {
+		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
+	}
+	var lifecycle, nodeType, contract, endpoint, secretRef string
+	var capabilities []string
+	var monitoring bool
+	err := r.pool.QueryRow(ctx, `SELECT lifecycle_status,node_type,driver_contract_version,management_endpoint,COALESCE(reader_secret_ref,''),capabilities,EXISTS (SELECT 1 FROM relay_node_inventory_monitoring_activations m WHERE m.instance_id=relay_node_assets.instance_id AND m.effective_from<=clock_timestamp() AND (m.effective_to IS NULL OR m.effective_to>clock_timestamp()) AND m.cancelled_at IS NULL) FROM public.relay_node_assets WHERE instance_id=$1`, nodeID).Scan(&lifecycle, &nodeType, &contract, &endpoint, &secretRef, &capabilities, &monitoring)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
+	}
+	if err != nil {
+		return accountadmin.NodeState{}, err
+	}
+	policy, err := r.policies.CurrentProviderPolicy(ctx, nodeType, contract)
+	if err != nil {
+		return accountadmin.NodeState{}, err
+	}
+	providerActive := policy != nil && contains(policy.ActiveProviders, provider) && !contains(policy.OutOfScopeProviders, provider)
+	secret, err := r.secrets.Resolve(ctx, controlnodes.NewSecretReference(secretRef))
+	if err != nil {
+		return accountadmin.NodeState{}, err
+	}
+	defer secret.Destroy()
+	var adapter *controlcliproxy.NativeAdapter
+	err = secret.Use(func(key string) error {
+		adapter, err = controlcliproxy.NewNativeAdapter(endpoint, r.management, key)
+		return err
+	})
+	if err != nil {
+		return accountadmin.NodeState{}, err
+	}
+	return accountadmin.NodeState{Adapter: adapter, LifecycleActive: lifecycle == "active", MonitoringEligible: monitoring, InventoryReadAllowed: contains(capabilities, "management_account_inventory_read"), ProviderPolicyActive: providerActive}, nil
+}

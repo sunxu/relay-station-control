@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/google/uuid"
+	accountadmin "github.com/sunxu/relay-station-control/internal/accountadmin"
 	authn "github.com/sunxu/relay-station-control/internal/auth"
 	controlpoll "github.com/sunxu/relay-station-control/internal/inventorypoll"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
@@ -51,10 +53,15 @@ type Server struct {
 	accountQualityIncidents interface {
 		ListAccountQualityIncidents(context.Context, assetstore.AccountQualityIncidentQuery) (assetstore.AccountQualityIncidentPage, error)
 	}
-	nodeProbeRegistry   NodeProbeRegistry
-	nodeProbeAuthorizer NodeProbeAuthorizer
-	nodeProbeAuditor    NodeProbeAuditWriter
-	nodeMonitoring      NodeMonitoringOperator
+	nodeProbeRegistry      NodeProbeRegistry
+	nodeProbeAuthorizer    NodeProbeAuthorizer
+	nodeProbeAuditor       NodeProbeAuditWriter
+	nodeMonitoring         NodeMonitoringOperator
+	accountOperations      *accountadmin.Service
+	accountOperationReader interface {
+		Operation(context.Context, uuid.UUID) (assetstore.AccountAdminOperation, error)
+		Receipt(context.Context, uuid.UUID) (assetstore.AccountCommandReceipt, error)
+	}
 }
 
 type requestIDContextKey struct{}
@@ -194,6 +201,19 @@ func (s *Server) SetNodeProbeAuditWriter(writer NodeProbeAuditWriter) {
 // from the current asset state by the HTTP layer.
 func (s *Server) SetNodeMonitoringOperator(operator NodeMonitoringOperator) {
 	s.nodeMonitoring = operator
+}
+
+// SetAccountOperationService wires the internal account command composition
+// for the API layer without exposing its persistence or Node dependencies.
+func (s *Server) SetAccountOperationService(service *accountadmin.Service, reader interface {
+	Operation(context.Context, uuid.UUID) (assetstore.AccountAdminOperation, error)
+	Receipt(context.Context, uuid.UUID) (assetstore.AccountCommandReceipt, error)
+}) error {
+	if service == nil || reader == nil {
+		return errors.New("api: account operation service unavailable")
+	}
+	s.accountOperations, s.accountOperationReader = service, reader
+	return nil
 }
 
 // SetCrossNodeDuplicateOwnershipOccurrenceReader wires the Phase 5 read-only

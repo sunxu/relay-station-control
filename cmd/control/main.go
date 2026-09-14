@@ -393,6 +393,15 @@ func main() {
 		logger.Error("asset API initialization failed", "component", "assets")
 		os.Exit(1)
 	}
+	accountOperationService, accountOperationRepository, err := newAccountOperationService(pool, nodeDrivers.management, nodeDrivers.secrets, assetRepository)
+	if err != nil {
+		logger.Error("account operation initialization failed", "component", "account_operations")
+		os.Exit(1)
+	}
+	if err := apiServer.SetAccountOperationService(accountOperationService, accountOperationRepository); err != nil {
+		logger.Error("account operation API wiring failed", "component", "account_operations")
+		os.Exit(1)
+	}
 	apiServer.SetRelayBindingRepository(relayBindingRepository)
 	if err := apiServer.SetGatewayLifecycleManager(gatewayLifecycleRepository); err != nil {
 		logger.Error("gateway lifecycle API initialization failed", "component", "assets")

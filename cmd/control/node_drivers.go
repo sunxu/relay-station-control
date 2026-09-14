@@ -15,6 +15,8 @@ type nodeDriverRuntime struct {
 	usageSource *controlcliproxy.Driver
 	registry    *controlnodes.Registry
 	metrics     *controlcliproxy.DriverMetrics
+	management  controlnodes.ValidatedManagementConfig
+	secrets     controlnodes.SecretResolver
 }
 
 // loadNodeDriverRuntime constructs only the fixed registry and its immutable
@@ -141,5 +143,6 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 	if err != nil {
 		return nodeDriverRuntime{}, errors.New("node driver registry is invalid")
 	}
-	return nodeDriverRuntime{enabled: true, registry: registry, metrics: metrics, usageSource: driver}, nil
+	validatedManagement, _ := management.Validate()
+	return nodeDriverRuntime{enabled: true, registry: registry, metrics: metrics, usageSource: driver, management: validatedManagement, secrets: secretResolver}, nil
 }

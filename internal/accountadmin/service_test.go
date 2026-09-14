@@ -82,6 +82,12 @@ func (s *fakeOperationStore) TerminalizeApplied(context.Context, uuid.UUID, stri
 	s.operation.ExecutionState, s.terminal = store.AccountRemoteApplied, true
 	return s.operation, nil
 }
+func (s *fakeOperationStore) ApplyLifecycleOverride(context.Context, store.AccountOperationOverride) error {
+	return nil
+}
+func (s *fakeOperationStore) ApplySameAccountOverride(context.Context, store.AccountOperationOverride) error {
+	return nil
+}
 
 func TestExecuteAdmitsBeforeOneNativeMutation(t *testing.T) {
 	var methods []string

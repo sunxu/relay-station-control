@@ -49,6 +49,8 @@ type operationStore interface {
 	TransitionAccountOperation(context.Context, uuid.UUID, store.AccountOperationState, store.AccountOperationState) (store.AccountAdminOperation, error)
 	TerminalizeDispatchedFailure(context.Context, uuid.UUID, store.AccountFailure, string) (store.AccountAdminOperation, error)
 	TerminalizeApplied(context.Context, uuid.UUID, string) (store.AccountAdminOperation, error)
+	ApplyLifecycleOverride(context.Context, store.AccountOperationOverride) error
+	ApplySameAccountOverride(context.Context, store.AccountOperationOverride) error
 }
 
 type Command struct {
@@ -63,16 +65,72 @@ type Command struct {
 	RequestID       string
 }
 
+type OverrideCommand struct {
+	CommandID, ActorAdminID, TargetOperation uuid.UUID
+	Reason, Detail, Confirmation, RequestID  string
+}
+
 type Service struct {
-	operations operationStore
-	nodes      NodeResolver
+	operations     operationStore
+	nodes          NodeResolver
+	intentKeyPath  string
+	intentKeyBound bool
 }
 
 func NewService(operations operationStore, nodes NodeResolver) (*Service, error) {
+	return newService(operations, nodes, "", false)
+}
+
+// NewServiceWithIntentKeyPath binds the deployment-controlled upload intent
+// key path. Production composition uses this constructor so request data
+// cannot select a different key file; the empty-path constructor remains for
+// focused domain tests and callers that provide a validated test path.
+func NewServiceWithIntentKeyPath(operations operationStore, nodes NodeResolver, intentKeyPath string) (*Service, error) {
+	return newService(operations, nodes, intentKeyPath, true)
+}
+
+func newService(operations operationStore, nodes NodeResolver, intentKeyPath string, intentKeyBound bool) (*Service, error) {
 	if operations == nil || nodes == nil {
 		return nil, errors.New("account admin: missing dependency")
 	}
-	return &Service{operations: operations, nodes: nodes}, nil
+	return &Service{operations: operations, nodes: nodes, intentKeyPath: intentKeyPath, intentKeyBound: intentKeyBound}, nil
+}
+
+func (s *Service) LifecycleOverride(ctx context.Context, command OverrideCommand) (store.AccountAdminOperation, error) {
+	return s.applyOverride(ctx, command, store.AccountLifecycleOverride, "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK", true)
+}
+
+func (s *Service) SameAccountOverride(ctx context.Context, command OverrideCommand) (store.AccountAdminOperation, error) {
+	return s.applyOverride(ctx, command, store.AccountSameAccountOverride, "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK", false)
+}
+
+func (s *Service) applyOverride(ctx context.Context, command OverrideCommand, kind store.AccountOperationKind, confirmation string, lifecycle bool) (store.AccountAdminOperation, error) {
+	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil || command.TargetOperation == uuid.Nil || command.Reason == "" || command.Confirmation != confirmation || len(command.Detail) > 512 || (command.Reason != "process_restarted" && command.Reason != "node_stopped" && command.Reason != "risk_accepted") {
+		return store.AccountAdminOperation{}, ErrInvalidCommand
+	}
+	intent, err := CanonicalOverrideIntentV1(kind, command.TargetOperation, command.Reason, command.Detail)
+	if err != nil {
+		return store.AccountAdminOperation{}, err
+	}
+	acceptance := store.AccountOperationAcceptance{CommandID: command.CommandID, ActorAdminID: command.ActorAdminID, OperationKind: kind, NodeInstanceID: command.TargetOperation, AccountKey: command.Reason, CanonicalIntentHash: hashIntent(intent)}
+	if receipt, replayErr := s.operations.ReplayTerminal(ctx, acceptance); replayErr == nil {
+		if receipt.TargetOperationCommandID == nil {
+			return store.AccountAdminOperation{}, nil
+		}
+		return s.operations.Operation(ctx, *receipt.TargetOperationCommandID)
+	} else if !errors.Is(replayErr, store.ErrCommandConflict) && !errors.Is(replayErr, store.ErrAccountOperationState) {
+		return store.AccountAdminOperation{}, replayErr
+	}
+	override := store.AccountOperationOverride{CommandID: command.CommandID, ActorAdminID: command.ActorAdminID, TargetOperation: command.TargetOperation, Reason: command.Reason, Detail: command.Detail, CanonicalHash: acceptance.CanonicalIntentHash, RequestID: command.RequestID}
+	if lifecycle {
+		err = s.operations.ApplyLifecycleOverride(ctx, override)
+	} else {
+		err = s.operations.ApplySameAccountOverride(ctx, override)
+	}
+	if err != nil {
+		return store.AccountAdminOperation{}, err
+	}
+	return s.operations.Operation(ctx, command.TargetOperation)
 }
 
 // Execute performs one synchronous account command. A terminal receipt is
@@ -87,7 +145,11 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		AccountKey: command.AccountKey, CanonicalIntentHash: hashIntent(command.CanonicalIntent),
 	}
 	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
-		version, fingerprint, err := store.AccountUploadIntentFingerprint(command.IntentKeyPath, command.Credential)
+		intentKeyPath := command.IntentKeyPath
+		if s.intentKeyBound {
+			intentKeyPath = s.intentKeyPath
+		}
+		version, fingerprint, err := store.AccountUploadIntentFingerprint(intentKeyPath, command.Credential)
 		if err != nil {
 			return store.AccountAdminOperation{}, err
 		}
@@ -112,7 +174,11 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	}
 	var operation store.AccountAdminOperation
 	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
-		operation, err = s.operations.AcceptWithIntentKey(ctx, command.IntentKeyPath, acceptance, command.Credential)
+		intentKeyPath := command.IntentKeyPath
+		if s.intentKeyBound {
+			intentKeyPath = s.intentKeyPath
+		}
+		operation, err = s.operations.AcceptWithIntentKey(ctx, intentKeyPath, acceptance, command.Credential)
 	} else {
 		operation, err = s.operations.Accept(ctx, acceptance)
 	}
@@ -299,6 +365,21 @@ func hashIntent(intent []byte) []byte {
 // fingerprint in the canonical bytes before passing them to Execute.
 func CanonicalIntentV1(kind store.AccountOperationKind, nodeID uuid.UUID, accountKey string) ([]byte, error) {
 	return canonicalNonUploadIntent(Command{Kind: kind, NodeInstanceID: nodeID, AccountKey: accountKey})
+}
+
+func CanonicalOverrideIntentV1(kind store.AccountOperationKind, target uuid.UUID, reason, detail string) ([]byte, error) {
+	if kind != store.AccountLifecycleOverride && kind != store.AccountSameAccountOverride {
+		return nil, ErrInvalidCommand
+	}
+	confirmation := "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK"
+	if kind == store.AccountSameAccountOverride {
+		confirmation = "OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK"
+	}
+	var value any
+	if detail != "" {
+		value = detail
+	}
+	return json.Marshal([]any{"account-intent-v1", "account." + string(kind), target.String(), reason, confirmation, value})
 }
 
 func (c Command) String() string { return fmt.Sprintf("account command %s", c.CommandID) }

@@ -22,11 +22,13 @@ const accountUploadIntentHMACDomain = "relay-station/account-operation-upload-in
 type AccountOperationKind string
 
 const (
-	AccountDisable         AccountOperationKind = "disable"
-	AccountEnable          AccountOperationKind = "enable"
-	AccountRemove          AccountOperationKind = "remove"
-	AccountUploadNew       AccountOperationKind = "upload_new"
-	AccountReplaceExisting AccountOperationKind = "replace_existing"
+	AccountDisable             AccountOperationKind = "disable"
+	AccountEnable              AccountOperationKind = "enable"
+	AccountRemove              AccountOperationKind = "remove"
+	AccountUploadNew           AccountOperationKind = "upload_new"
+	AccountReplaceExisting     AccountOperationKind = "replace_existing"
+	AccountLifecycleOverride   AccountOperationKind = "lifecycle_override"
+	AccountSameAccountOverride AccountOperationKind = "same_account_override"
 )
 
 type AccountOperationState string
@@ -75,12 +77,15 @@ func NewAccountFailure(code string, phase AccountFailurePhase) (AccountFailure, 
 }
 
 var (
-	ErrInvalidAccountOperation     = errors.New("store: invalid account operation")
-	ErrAccountOperationNotFound    = errors.New("store: account operation not found")
-	ErrAccountOperationState       = errors.New("store: invalid account operation state")
-	ErrAccountOperationBlocked     = errors.New("store: account operation in progress")
-	ErrAccountIntentKeyUnavailable = errors.New("store: account operation intent key unavailable")
-	ErrAccountReceiptAlreadyExists = errors.New("store: account command receipt already exists")
+	ErrInvalidAccountOperation        = errors.New("store: invalid account operation")
+	ErrAccountOperationNotFound       = errors.New("store: account operation not found")
+	ErrAccountOperationState          = errors.New("store: invalid account operation state")
+	ErrAccountOperationBlocked        = errors.New("store: account operation in progress")
+	ErrAccountIntentKeyUnavailable    = errors.New("store: account operation intent key unavailable")
+	ErrAccountReceiptAlreadyExists    = errors.New("store: account command receipt already exists")
+	ErrAccountOperationNotOverridable = errors.New("store: account operation not overridable")
+	ErrLifecycleOverrideAlreadySet    = errors.New("store: lifecycle override already set")
+	ErrSameAccountOverrideAlreadySet  = errors.New("store: same-account override already set")
 )
 
 type AccountAdminOperation struct {
@@ -461,6 +466,46 @@ func (r *AccountOperationRepository) ReplayTerminal(ctx context.Context, command
 		return AccountCommandReceipt{}, err
 	}
 	return receipt, nil
+}
+
+type AccountOperationOverride struct {
+	CommandID       uuid.UUID
+	ActorAdminID    uuid.UUID
+	TargetOperation uuid.UUID
+	Reason          string
+	Detail          string
+	CanonicalHash   []byte
+	RequestID       string
+}
+
+func (r *AccountOperationRepository) ApplyLifecycleOverride(ctx context.Context, command AccountOperationOverride) error {
+	return r.applyOverride(ctx, "control_apply_lifecycle_override_v1", command)
+}
+
+func (r *AccountOperationRepository) ApplySameAccountOverride(ctx context.Context, command AccountOperationOverride) error {
+	return r.applyOverride(ctx, "control_apply_same_account_override_v1", command)
+}
+
+func (r *AccountOperationRepository) applyOverride(ctx context.Context, function string, command AccountOperationOverride) error {
+	var result string
+	err := r.pool.QueryRow(ctx, `SELECT public.`+function+`($1,$2,$3,$4,$5,$6,$7)`, command.CommandID, command.ActorAdminID, command.TargetOperation, command.Reason, command.Detail, command.CanonicalHash, command.RequestID).Scan(&result)
+	if err != nil {
+		return err
+	}
+	switch result {
+	case "ok":
+		return nil
+	case "operation_not_found":
+		return ErrAccountOperationNotFound
+	case "account_operation_not_overridable":
+		return ErrAccountOperationNotOverridable
+	case "lifecycle_override_already_set":
+		return ErrLifecycleOverrideAlreadySet
+	case "same_account_override_already_set":
+		return ErrSameAccountOverrideAlreadySet
+	default:
+		return ErrInvalidAccountOperation
+	}
 }
 
 func LoadAccountOperationIntentKey(path string) ([]byte, error) {
