@@ -190,18 +190,27 @@ func (r *AccountOperationRepository) Accept(ctx context.Context, command Account
 // The upload fingerprint is over the exact credential bytes; canonical intent
 // remains the separately hashed command identity supplied by the caller.
 func (r *AccountOperationRepository) AcceptWithIntentKey(ctx context.Context, keyPath string, command AccountOperationAcceptance, credential []byte) (AccountAdminOperation, error) {
-	key, err := LoadAccountOperationIntentKey(keyPath)
+	version, fingerprint, err := AccountUploadIntentFingerprint(keyPath, credential)
 	if err != nil {
 		return AccountAdminOperation{}, err
+	}
+	command.SecretFingerprintVersion = &version
+	command.UploadIntentFingerprint = fingerprint
+	return r.Accept(ctx, command)
+}
+
+// AccountUploadIntentFingerprint loads the guarded upload key and fingerprints
+// the exact admitted credential bytes before any database transaction begins.
+func AccountUploadIntentFingerprint(path string, credential []byte) (int16, []byte, error) {
+	key, err := LoadAccountOperationIntentKey(path)
+	if err != nil {
+		return 0, nil, err
 	}
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(accountUploadIntentHMACDomain))
 	_, _ = mac.Write([]byte{0})
 	_, _ = mac.Write(credential)
-	version := int16(1)
-	command.SecretFingerprintVersion = &version
-	command.UploadIntentFingerprint = mac.Sum(nil)
-	return r.Accept(ctx, command)
+	return 1, mac.Sum(nil), nil
 }
 
 func lookupAccountCommandReservation(ctx context.Context, tx pgx.Tx, id uuid.UUID) (adminCommandReservation, bool, error) {
@@ -246,15 +255,6 @@ func (r *AccountOperationRepository) TransitionAccountOperation(ctx context.Cont
 	defer tx.Rollback(ctx)
 	if err = lockAdminCommand(ctx, tx, id); err != nil {
 		return AccountAdminOperation{}, err
-	}
-	var current AccountOperationState
-	if err = tx.QueryRow(ctx, `SELECT execution_state FROM account_admin_operations WHERE command_id=$1 FOR UPDATE`, id).Scan(&current); errors.Is(err, pgx.ErrNoRows) {
-		return AccountAdminOperation{}, ErrAccountOperationNotFound
-	} else if err != nil {
-		return AccountAdminOperation{}, err
-	}
-	if current != from {
-		return AccountAdminOperation{}, ErrAccountOperationState
 	}
 	if _, err = scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_transition_account_admin_operation_v1($1,$2,$3)`, id, from, to)); err != nil {
 		return AccountAdminOperation{}, err
@@ -343,6 +343,27 @@ func (r *AccountOperationRepository) TerminalizeNoop(ctx context.Context, id uui
 	return op, nil
 }
 
+// AdmitAccountNoop atomically applies same-account admission and the
+// command-specific no-op terminal result before returning to the caller.
+func (r *AccountOperationRepository) AdmitAccountNoop(ctx context.Context, id, nodeID uuid.UUID, accountKey, requestID string) (bool, AccountAdminOperation, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, id); err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	op, err := scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_admit_account_noop_v1($1,$2,$3,$4)`, id, nodeID, accountKey, requestID))
+	if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	return op.ExecutionState == AccountRemoteNoop, op, nil
+}
+
 func (r *AccountOperationRepository) TerminalizeDispatchedFailure(ctx context.Context, id uuid.UUID, failure AccountFailure, requestID string) (AccountAdminOperation, error) {
 	if failure.Phase != AccountDispatchedPhase || failure.Code != "node_management_unavailable" {
 		return AccountAdminOperation{}, ErrInvalidAccountOperation
@@ -356,6 +377,25 @@ func (r *AccountOperationRepository) TerminalizeDispatchedFailure(ctx context.Co
 		return AccountAdminOperation{}, err
 	}
 	op, err := scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_terminalize_dispatched_account_operation_failure_v1($1,$2,$3)`, id, failure.Code, requestID))
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	return op, nil
+}
+
+func (r *AccountOperationRepository) TerminalizeApplied(ctx context.Context, id uuid.UUID, requestID string) (AccountAdminOperation, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, id); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	op, err := scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_terminalize_account_operation_applied_v1($1,$2)`, id, requestID))
 	if err != nil {
 		return AccountAdminOperation{}, err
 	}

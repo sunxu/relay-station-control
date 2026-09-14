@@ -6,7 +6,6 @@ package accountadmin
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -45,10 +44,11 @@ type operationStore interface {
 	Accept(context.Context, store.AccountOperationAcceptance) (store.AccountAdminOperation, error)
 	AcceptWithIntentKey(context.Context, string, store.AccountOperationAcceptance, []byte) (store.AccountAdminOperation, error)
 	TerminalizePreDispatchFailure(context.Context, uuid.UUID, store.AccountFailure, string) error
-	TerminalizeNoop(context.Context, uuid.UUID, string) (store.AccountAdminOperation, error)
+	AdmitAccountNoop(context.Context, uuid.UUID, uuid.UUID, string, string) (bool, store.AccountAdminOperation, error)
 	AdmitAccountDispatch(context.Context, uuid.UUID, uuid.UUID, string, string) (bool, store.AccountAdminOperation, error)
 	TransitionAccountOperation(context.Context, uuid.UUID, store.AccountOperationState, store.AccountOperationState) (store.AccountAdminOperation, error)
 	TerminalizeDispatchedFailure(context.Context, uuid.UUID, store.AccountFailure, string) (store.AccountAdminOperation, error)
+	TerminalizeApplied(context.Context, uuid.UUID, string) (store.AccountAdminOperation, error)
 }
 
 type Command struct {
@@ -86,6 +86,14 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		OperationKind: command.Kind, NodeInstanceID: command.NodeInstanceID,
 		AccountKey: command.AccountKey, CanonicalIntentHash: hashIntent(command.CanonicalIntent),
 	}
+	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
+		version, fingerprint, err := store.AccountUploadIntentFingerprint(command.IntentKeyPath, command.Credential)
+		if err != nil {
+			return store.AccountAdminOperation{}, err
+		}
+		acceptance.SecretFingerprintVersion = &version
+		acceptance.UploadIntentFingerprint = fingerprint
+	}
 	if receipt, err := s.operations.ReplayTerminal(ctx, acceptance); err == nil {
 		if receipt.TargetOperationCommandID == nil {
 			return store.AccountAdminOperation{}, nil
@@ -94,7 +102,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	} else if !errors.Is(err, store.ErrCommandConflict) && !errors.Is(err, store.ErrAccountOperationState) {
 		return store.AccountAdminOperation{}, err
 	}
-	if err := validateCanonicalIntent(command); err != nil {
+	if err := validateCanonicalIntent(command, acceptance.UploadIntentFingerprint); err != nil {
 		return store.AccountAdminOperation{}, err
 	}
 	provider, _, _ := strings.Cut(command.AccountKey, ":")
@@ -104,7 +112,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	}
 	var operation store.AccountAdminOperation
 	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
-		operation, err = s.operations.AcceptWithIntentKey(ctx, command.IntentKeyPath, acceptance, command.CanonicalIntent)
+		operation, err = s.operations.AcceptWithIntentKey(ctx, command.IntentKeyPath, acceptance, command.Credential)
 	} else {
 		operation, err = s.operations.Accept(ctx, acceptance)
 	}
@@ -138,7 +146,8 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		return fail(nativeFailureCode(prepareErr))
 	}
 	if mutation.Noop() {
-		return s.operations.TerminalizeNoop(ctx, operation.CommandID, command.RequestID)
+		_, operation, err = s.operations.AdmitAccountNoop(ctx, operation.CommandID, command.NodeInstanceID, command.AccountKey, command.RequestID)
+		return operation, err
 	}
 	admitted, operation, err := s.operations.AdmitAccountDispatch(ctx, operation.CommandID, command.NodeInstanceID, command.AccountKey, command.RequestID)
 	if err != nil || !admitted {
@@ -150,7 +159,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	}
 	switch outcome.Kind {
 	case cliproxyapi.NativeOutcomeApplied:
-		return s.operations.TransitionAccountOperation(ctx, operation.CommandID, store.AccountDispatched, store.AccountRemoteApplied)
+		return s.operations.TerminalizeApplied(ctx, operation.CommandID, command.RequestID)
 	case cliproxyapi.NativeOutcomeUnknown:
 		return s.operations.TransitionAccountOperation(ctx, operation.CommandID, store.AccountDispatched, store.AccountOutcomeUnknown)
 	case cliproxyapi.NativeOutcomeFailed:
@@ -185,19 +194,11 @@ func validateCommand(command Command) error {
 	return nil
 }
 
-func validateCanonicalIntent(command Command) error {
+func validateCanonicalIntent(command Command, uploadFingerprint []byte) error {
 	var expected []byte
 	var err error
 	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
-		key, keyErr := store.LoadAccountOperationIntentKey(command.IntentKeyPath)
-		if keyErr != nil {
-			return keyErr
-		}
-		mac := hmac.New(sha256.New, key)
-		_, _ = mac.Write([]byte("relay-station/account-operation-upload-intent/v1"))
-		_, _ = mac.Write([]byte{0})
-		_, _ = mac.Write(command.Credential)
-		fingerprint := hex.EncodeToString(mac.Sum(nil))
+		fingerprint := hex.EncodeToString(uploadFingerprint)
 		expected, err = json.Marshal([]any{"account-intent-v1", "account." + string(command.Kind), command.NodeInstanceID.String(), command.AccountKey, 1, fingerprint})
 	} else {
 		expected, err = canonicalNonUploadIntent(command)

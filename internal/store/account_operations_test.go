@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/hmac"
 	"errors"
 	"os"
 	"path/filepath"
@@ -69,5 +70,27 @@ func TestLoadAccountOperationIntentKeyRejectsUnsafeInputs(t *testing.T) {
 	}
 	if _, err := LoadAccountOperationIntentKey(path); !errors.Is(err, ErrAccountIntentKeyUnavailable) {
 		t.Fatalf("missing key error = %v", err)
+	}
+}
+
+func TestAccountUploadIntentFingerprintUsesExactCredentialBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "intent.key")
+	if err := os.WriteFile(path, []byte("01234567890123456789012345678901"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	versionA, fingerprintA, err := AccountUploadIntentFingerprint(path, []byte(`{"type":"antigravity","email":"a@example.invalid"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionB, fingerprintB, err := AccountUploadIntentFingerprint(path, []byte(`{"email":"a@example.invalid","type":"antigravity"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionA2, fingerprintA2, err := AccountUploadIntentFingerprint(path, []byte(`{"type":"antigravity","email":"a@example.invalid"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if versionA != 1 || versionB != 1 || versionA2 != 1 || !hmac.Equal(fingerprintA, fingerprintA2) || hmac.Equal(fingerprintA, fingerprintB) {
+		t.Fatalf("fingerprints did not bind exact bytes: versions=%d/%d/%d equal=%v/%v", versionA, versionB, versionA2, hmac.Equal(fingerprintA, fingerprintA2), hmac.Equal(fingerprintA, fingerprintB))
 	}
 }

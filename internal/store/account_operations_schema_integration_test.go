@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -16,8 +20,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sunxu/relay-station-control/internal/accountadmin"
+	"github.com/sunxu/relay-station-control/internal/drivers"
+	"github.com/sunxu/relay-station-control/internal/drivers/cliproxyapi"
 	store "github.com/sunxu/relay-station-control/internal/store"
 )
+
+type integrationNodeResolver struct{ state accountadmin.NodeState }
+
+func (r integrationNodeResolver) Resolve(context.Context, uuid.UUID, string) (accountadmin.NodeState, error) {
+	return r.state, nil
+}
 
 func TestAccountOperationsPersistencePG18(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -38,7 +51,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "41"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "44"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,6 +173,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	runAdmissionRace(t, ctx, p, r, admin, node, "antigravity:race@example.invalid")
 	runAdmissionRace(t, ctx, p, r, admin, node, "antigravity:race-two@example.invalid")
 	runIndependentAdmissionRace(t, ctx, r, admin, node)
+	runAccountCommandOrchestration(t, ctx, r, admin, node)
 
 	keyPath := filepath.Join(t.TempDir(), "missing.key")
 	keyCommand := store.AccountOperationAcceptance{CommandID: uuid.New(), ActorAdminID: admin, OperationKind: store.AccountUploadNew, NodeInstanceID: node, AccountKey: "antigravity:key@example.invalid", CanonicalIntentHash: hash[:]}
@@ -194,6 +208,137 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 		if registryCount != 0 || operationCount != 0 || receiptCount != 0 {
 			t.Fatalf("failed key %s persisted state=%d/%d/%d", commandID, registryCount, operationCount, receiptCount)
 		}
+	}
+}
+
+func runAccountCommandOrchestration(t *testing.T, ctx context.Context, r *store.AccountOperationRepository, admin, node uuid.UUID) {
+	t.Helper()
+	var gets, mutations int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		if req.Method == http.MethodGet {
+			gets++
+			_, _ = io.WriteString(w, `{"files":[`+
+				`{"name":"disable.json","provider":"antigravity","email":"disable@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false},`+
+				`{"name":"enable.json","provider":"antigravity","email":"enable@example.invalid","source":"file","runtime_only":false,"auth_index":"2","disabled":true},`+
+				`{"name":"remove.json","provider":"antigravity","email":"remove@example.invalid","source":"file","runtime_only":false,"auth_index":"3","disabled":false},`+
+				`{"name":"replace.json","provider":"antigravity","email":"replace@example.invalid","source":"file","runtime_only":false,"auth_index":"4","disabled":false},`+
+				`{"name":"blocked.json","provider":"antigravity","email":"blocked@example.invalid","source":"file","runtime_only":false,"auth_index":"5","disabled":false}`+
+				`]}`)
+			return
+		}
+		mutations++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	config, err := (drivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := cliproxyapi.NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := accountadmin.NewService(r, integrationNodeResolver{state: accountadmin.NodeState{Adapter: adapter, LifecycleActive: true, MonitoringEligible: true, InventoryReadAllowed: true, ProviderPolicyActive: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := []struct {
+		kind  store.AccountOperationKind
+		email string
+	}{
+		{store.AccountDisable, "disable@example.invalid"},
+		{store.AccountEnable, "enable@example.invalid"},
+		{store.AccountRemove, "remove@example.invalid"},
+		{store.AccountReplaceExisting, "replace@example.invalid"},
+	}
+	var replaceCommand accountadmin.Command
+	for _, item := range commands {
+		id := uuid.New()
+		accountKey := "antigravity:" + item.email
+		var intent []byte
+		if item.kind == store.AccountReplaceExisting {
+			keyPath := filepath.Join(t.TempDir(), "intent.key")
+			if err := os.WriteFile(keyPath, []byte("01234567890123456789012345678901"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			version, fingerprint, fingerprintErr := store.AccountUploadIntentFingerprint(keyPath, []byte(`{"type":"antigravity","email":"`+item.email+`"}`))
+			if fingerprintErr != nil || version != 1 {
+				t.Fatalf("fingerprint = %d/%x/%v", version, fingerprint, fingerprintErr)
+			}
+			intent, err = json.Marshal([]any{"account-intent-v1", "account.replace_existing", node.String(), accountKey, 1, hex.EncodeToString(fingerprint)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			replaceCommand = accountadmin.Command{CommandID: id, ActorAdminID: admin, NodeInstanceID: node, AccountKey: accountKey, Kind: item.kind, CanonicalIntent: intent, IntentKeyPath: keyPath, Credential: []byte(`{"type":"antigravity","email":"` + item.email + `"}`), RequestID: "orchestration"}
+			_, err = service.Execute(ctx, replaceCommand)
+		} else {
+			intent, err = accountadmin.CanonicalIntentV1(item.kind, node, accountKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = service.Execute(ctx, accountadmin.Command{CommandID: id, ActorAdminID: admin, NodeInstanceID: node, AccountKey: accountKey, Kind: item.kind, CanonicalIntent: intent, RequestID: "orchestration"})
+		}
+		if err != nil {
+			t.Fatalf("%s orchestration: %v", item.kind, err)
+		}
+	}
+	if gets != 4 || mutations != 4 {
+		t.Fatalf("orchestration requests gets=%d mutations=%d, want gets=4 mutations=4", gets, mutations)
+	}
+	getsBeforeReplay, mutationsBeforeReplay := gets, mutations
+	if _, err := service.Execute(ctx, replaceCommand); err != nil {
+		t.Fatalf("replace exact replay: %v", err)
+	}
+	if gets != getsBeforeReplay || mutations != mutationsBeforeReplay {
+		t.Fatalf("replace replay performed native work: gets=%d/%d mutations=%d/%d", gets, getsBeforeReplay, mutations, mutationsBeforeReplay)
+	}
+	uploadID := uuid.New()
+	uploadKeyPath := filepath.Join(t.TempDir(), "intent.key")
+	if err := os.WriteFile(uploadKeyPath, []byte("01234567890123456789012345678901"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	uploadCredential := []byte(`{"type":"antigravity","email":"upload@example.invalid"}`)
+	_, uploadFingerprint, err := store.AccountUploadIntentFingerprint(uploadKeyPath, uploadCredential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadAccountKey := "antigravity:upload@example.invalid"
+	uploadIntent, err := json.Marshal([]any{"account-intent-v1", "account.upload_new", node.String(), uploadAccountKey, 1, hex.EncodeToString(uploadFingerprint)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadCommand := accountadmin.Command{CommandID: uploadID, ActorAdminID: admin, NodeInstanceID: node, AccountKey: uploadAccountKey, Kind: store.AccountUploadNew, CanonicalIntent: uploadIntent, IntentKeyPath: uploadKeyPath, Credential: uploadCredential, RequestID: "orchestration-upload"}
+	if _, err := service.Execute(ctx, uploadCommand); err != nil {
+		t.Fatalf("upload orchestration: %v", err)
+	}
+	getsBeforeReplay, mutationsBeforeReplay = gets, mutations
+	if _, err := service.Execute(ctx, uploadCommand); err != nil {
+		t.Fatalf("upload exact replay: %v", err)
+	}
+	if gets != getsBeforeReplay || mutations != mutationsBeforeReplay {
+		t.Fatalf("upload replay performed native work: gets=%d/%d mutations=%d/%d", gets, getsBeforeReplay, mutations, mutationsBeforeReplay)
+	}
+	blockerID := uuid.New()
+	blockerHash := sha256.Sum256([]byte(blockerID.String()))
+	if _, err := r.Accept(ctx, store.AccountOperationAcceptance{CommandID: blockerID, ActorAdminID: admin, OperationKind: store.AccountDisable, NodeInstanceID: node, AccountKey: "antigravity:blocked@example.invalid", CanonicalIntentHash: blockerHash[:]}); err != nil {
+		t.Fatal(err)
+	}
+	if admitted, _, err := r.AdmitAccountDispatch(ctx, blockerID, node, "antigravity:blocked@example.invalid", "orchestration-blocker"); err != nil || !admitted {
+		t.Fatalf("blocker admission = %v/%v", admitted, err)
+	}
+	blockedID := uuid.New()
+	blockedIntent, err := accountadmin.CanonicalIntentV1(store.AccountEnable, node, "antigravity:blocked@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedResult, err := service.Execute(ctx, accountadmin.Command{CommandID: blockedID, ActorAdminID: admin, NodeInstanceID: node, AccountKey: "antigravity:blocked@example.invalid", Kind: store.AccountEnable, CanonicalIntent: blockedIntent, RequestID: "orchestration-blocked-noop"})
+	if err != nil || blockedResult.ExecutionState != store.AccountFailed || blockedResult.RemoteResultCode == nil || *blockedResult.RemoteResultCode != "account_operation_in_progress" {
+		t.Fatalf("blocked noop result = %#v, %v", blockedResult, err)
+	}
+	if mutations != 5 {
+		t.Fatalf("blocked noop sent native mutation: %d", mutations)
 	}
 }
 

@@ -55,11 +55,11 @@ func (s *fakeOperationStore) TerminalizePreDispatchFailure(_ context.Context, _ 
 	s.operation.ExecutionState, s.operation.RemoteResultCode, s.terminal = store.AccountFailed, &f.Code, true
 	return nil
 }
-func (s *fakeOperationStore) TerminalizeNoop(context.Context, uuid.UUID, string) (store.AccountAdminOperation, error) {
+func (s *fakeOperationStore) AdmitAccountNoop(context.Context, uuid.UUID, uuid.UUID, string, string) (bool, store.AccountAdminOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.operation.ExecutionState, s.terminal = store.AccountRemoteNoop, true
-	return s.operation, nil
+	return true, s.operation, nil
 }
 func (s *fakeOperationStore) AdmitAccountDispatch(context.Context, uuid.UUID, uuid.UUID, string, string) (bool, store.AccountAdminOperation, error) {
 	s.mu.Lock()
@@ -74,6 +74,12 @@ func (s *fakeOperationStore) TransitionAccountOperation(_ context.Context, _ uui
 	return s.operation, nil
 }
 func (s *fakeOperationStore) TerminalizeDispatchedFailure(context.Context, uuid.UUID, store.AccountFailure, string) (store.AccountAdminOperation, error) {
+	return s.operation, nil
+}
+func (s *fakeOperationStore) TerminalizeApplied(context.Context, uuid.UUID, string) (store.AccountAdminOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.operation.ExecutionState, s.terminal = store.AccountRemoteApplied, true
 	return s.operation, nil
 }
 
