@@ -7,7 +7,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 ## What Changes
 
 - Add minimal durable `account_admin_operations` execution/recovery truth with durable same-`(node_instance_id,account_key)` serialization.
-- Expose explicit single-account Control APIs for Disable, Enable, Remove, Upload New, Replace Existing and operation read; add a separate high-risk lifecycle-block override.
+- Expose explicit single-account Control APIs for Disable, Enable, Remove, Upload New, Replace Existing and operation read; add separate high-risk lifecycle-block and same-account-block overrides.
 - Restrict the Node adapter to native `GET /auth-files`, `PATCH /auth-files/status`, single-name `DELETE /auth-files`, and raw-JSON `POST /auth-files?name=`. No arbitrary management passthrough.
 - Gate every fresh snapshot on exact `X-CPA-VERSION` and pinned `X-CPA-COMMIT`, classify manager-backed file eligibility using transient source/runtime evidence, then project to the minimal safe target fields.
 - Use fresh exactly-one provider/email target resolution. `name` and `auth_index` remain ephemeral native request evidence, not durable/public identity.
@@ -34,7 +34,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## Dependencies
 
-1. Ops Native-First Crash Recovery Corrective Round 9 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First Crash Recovery Corrective Round 10 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -51,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Crash Recovery Corrective Round 9 follows the fixed review baseline (Ops `b568196979afd034ddb1846be75920b94f2f750c`, Control `0c89f387bdfbefd463f7c49c6a4d521201fc619a`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous tentative final review recorded P0=0, P1=0, P2=2 / PASS candidate; new crash-recovery findings are P0=0, P1=2, P2=0 / CHANGES REQUIRED. Round 9 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `RE-REVIEW REQUIRED`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
+Native-First Crash Recovery Corrective Round 10 follows the fixed review baseline (Ops `0e44ed8bd8f9462179e6e342acabbc607b829327`, Control `1e6dab5f7875bccf81981a52b12559100e9df0b5`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent crash-recovery re-review recorded P0=0, P1=2, P2=2 / CHANGES REQUIRED. Round 10 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.

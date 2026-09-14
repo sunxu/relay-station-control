@@ -230,9 +230,9 @@ After auth/session/super_admin/CSRF, Control acquires the shared UUID-derived ad
 
 Change B adds immutable `account_admin_command_receipts`, separate from asset-only receipts. For account mutations, `remote_applied`, `remote_noop` and `failed` are receipt-eligible; `prepared`, `dispatched` and `outcome_unknown` are not. Phase 7 v1 has no additional intermediate failure state. If no stable evidence exists, state is `outcome_unknown` and there is no receipt.
 
-A failure before global acceptance creates no operation/receipt. A stable terminal transition, terminal audit and receipt insertion commit atomically before response. Exact same actor/domain/kind/intent terminal replay returns stored HTTP status and canonical response bytes. Inventory observations and lifecycle override changes MUST NOT rewrite that immutable original POST response.
+A failure before global acceptance creates no operation/receipt. A stable terminal transition, terminal audit and receipt insertion commit atomically before response. Exact same actor/domain/kind/intent terminal replay returns stored HTTP status and canonical response bytes. Inventory observations and either lifecycle or same-account override changes MUST NOT rewrite that immutable original POST response.
 
-The receipt relation supports both account mutation commands and independent lifecycle-override commands:
+The receipt relation supports account mutation commands and both independent `account.lifecycle_override` and `account.same_account_override` commands:
 
 ```text
 command_id uuid PRIMARY KEY FK admin_command_registry(command_id)
@@ -252,6 +252,8 @@ committed_at timestamptz NOT NULL
 Registry actor/domain/kind/encoding/hash/key-version integrity is enforced by the same composite identity relationship as Stage 7A. For a mutation receipt, `command_id=target_operation_command_id`; for a successful override they differ. A terminal override failure after actor-first reservation may have a null target FK when the requested operation does not exist; the canonical override intent still contains that UUID and binds exact replay. Runtime roles receive no unrestricted INSERT/UPDATE/DELETE/TRUNCATE.
 
 Lifecycle override ordering is authentication/session/super-admin/CSRF, global actor-first reservation and canonical intent validation, then target lookup/state validation. A missing target returns terminal `404 operation_not_found` with its own immutable override receipt and exact replay. A target that is not `dispatched` or unresolved `outcome_unknown` returns the reviewed terminal conflict with its own receipt. A later override after one is recorded returns `409 lifecycle_override_already_set`, records its own receipt and changes no existing override fields.
+
+Same-account override uses the same actor-first ordering and receipt relation. A missing target returns terminal `404 operation_not_found` with its own override-command receipt and exact replay; a target outside `dispatched` or unresolved `outcome_unknown` returns the reviewed terminal conflict with its own receipt; the first valid override returns `200` and records its fields atomically; a later different command returns `409 same_account_override_already_set` with its own receipt and changes no existing fields. Neither override reuses the original account-mutation receipt.
 
 The pinned v7.3.2 adapter has one explicit pre-mutation native exception: `POST /v0/management/auth-files` returning HTTP 503 when the reviewed route reaches `authManager == nil` before reading or writing the credential body maps to `failed` with `node_management_unavailable`, creates the normal terminal receipt, and sends no credential mutation. This mapping is based on reviewed route/artifact/status, never raw error text, and does not generalize to other native 503 responses. Any unreviewed 5xx remains `outcome_unknown`.
 
@@ -345,7 +347,7 @@ Normal Inventory is an independent business-observation surface. It continues on
 
 Control keeps credential bytes in bounded memory only and stores only the versioned keyed upload-intent fingerprint under `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE`; asset K1 is unchanged. Credential, Management Key, raw native body, full path and ephemeral target evidence never enter DB, receipt, response, audit, logs, traces or metrics.
 
-Audit records actor/request/command/operation/Node/provider/protected business identity, sanitized outcome and high-risk lifecycle override. Metrics use low-cardinality operation/provider/result/error/execution classes and never email/account_key/command/node/path.
+Audit records actor/request/command/operation/Node/provider/protected business identity, sanitized outcome and each high-risk override action, distinguishing lifecycle and same-account override. Metrics use low-cardinality operation/provider/result/error/execution classes and never email/account_key/command/node/path.
 
 Stable Control errors include `invalid_request`, `node_not_found`, `node_retired`, `node_management_unavailable`, `node_monitoring_ineligible`, `unsupported_provider`, `account_target_not_found`, `account_target_ambiguous`, `account_operation_in_progress`, `command_conflict`, `upload_too_large`, `upload_invalid`, `identity_mismatch`, `remote_outcome_unknown` and `service_unavailable`. Raw native messages are never relayed.
 
@@ -364,13 +366,13 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Crash Recovery Corrective Round 9
-Previous tentative final review = P0 0 / P1 0 / P2 2 / PASS candidate
-New crash-recovery findings = P0 0 / P1 2 / P2 0 / CHANGES REQUIRED
+Native-First Crash Recovery Corrective Round 10
+Previous independent crash-recovery re-review = P0 0 / P1 2 / P2 2 / CHANGES REQUIRED
+Round 10 resolutions = INCORPORATED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate
-Architecture status = RE-REVIEW REQUIRED
+Architecture status = READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW
 Gate 1 = NOT CLOSED
 ADR = PROPOSED
 Runtime artifact identity = NOT YET FROZEN

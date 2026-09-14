@@ -2,7 +2,7 @@
 
 ### Requirement: Account operations SHALL remain explicit and data-plane isolated
 
-Control SHALL expose only single-account Antigravity Disable, Enable, Remove, Upload New and Replace Existing, protected operation read, and Override Unknown Operation Lifecycle Block. Mutation and override MUST require active authenticated `super_admin`, same-origin and CSRF; override additionally requires typed high-risk confirmation. Browser MUST NOT receive Node Management Key, raw credential, native basename/auth_index or raw native response. Phase 7 MUST NOT add batch/all mutation, OAuth/Re-auth, automatic repair/move/remove, Gateway mutation, scheduler ownership or data-plane participation.
+Control SHALL expose only single-account Antigravity Disable, Enable, Remove, Upload New and Replace Existing, protected operation read, Override Unknown Operation Lifecycle Block, and Override Unknown Operation Same-Account Block. Mutation and override MUST require active authenticated `super_admin`, same-origin and CSRF; each override additionally requires its route-specific typed high-risk confirmation. Browser MUST NOT receive Node Management Key, raw credential, native basename/auth_index or raw native response. Phase 7 MUST NOT add batch/all mutation, OAuth/Re-auth, automatic repair/move/remove, Gateway mutation, scheduler ownership or data-plane participation.
 
 #### Scenario: Unsupported batch or passthrough action
 - **WHEN** a client requests multiple accounts, native all-delete, arbitrary management passthrough, OAuth, repair or move
@@ -12,7 +12,7 @@ Control SHALL expose only single-account Antigravity Disable, Enable, Remove, Up
 
 After authentication/session/super_admin/CSRF, mutations MUST acquire shared global command serialization and perform actor-first registry lookup before target lookup, upload Secret parsing/fingerprinting or Node calls. Cross-actor/domain/kind/intent reuse MUST return `command_conflict` with zero remote mutation. Upload equality MUST use the separate Phase 7 keyed fingerprint and MUST NOT alter asset K1.
 
-Account commands MUST use domain `account_admin`, encoding version 1 and exact kinds `account.disable|account.enable|account.remove|account.upload_new|account.replace_existing|account.lifecycle_override`. Canonical intent MUST use the exact fixed-order compact UTF-8 JSON arrays, UUID/account/confirmation/detail encoding and absent-detail null rule in design. Upload arrays contain only key version 1 plus lowercase HMAC fingerprint, never raw credential. The key file, HMAC domain/input and wrong-key replay behavior MUST follow the exact frozen design; missing or unsafe key fails closed without asset K1 fallback.
+Account commands MUST use domain `account_admin`, encoding version 1 and exactly these seven kinds: `account.disable|account.enable|account.remove|account.upload_new|account.replace_existing|account.lifecycle_override|account.same_account_override`. Canonical intent MUST use the exact fixed-order compact UTF-8 JSON arrays, UUID/account/confirmation/detail encoding and absent-detail null rule in design. Upload arrays contain only key version 1 plus lowercase HMAC fingerprint, never raw credential. The key file, HMAC domain/input and wrong-key replay behavior MUST follow the exact frozen design; missing or unsafe key fails closed without asset K1 fallback.
 
 #### Scenario: Asset command ID is reused for upload
 - **WHEN** an upload uses a UUID reserved by Gateway, Node or Monitoring command
@@ -78,7 +78,7 @@ Upload New MUST require one fresh version-valid non-degraded snapshot to prove b
 
 ### Requirement: Dispatch SHALL use durable same-account serialization and Node-first eligibility
 
-Before native mutation, one short PostgreSQL transaction MUST lock Node first, require active lifecycle, lock/read current non-cancelled monitoring under the existing graph, require `management_account_inventory_read` and matching active Provider policy, acquire/check durable serialization for `(node_instance_id,account_key)`, reject any other `dispatched` or unresolved `outcome_unknown` operation regardless of lifecycle override, lock the prepared operation, persist dispatch start and transition `prepared -> dispatched`. It then commits before native HTTP. In-memory-only mutex is insufficient and no DB lock may cross HTTP.
+Before native mutation, one short PostgreSQL transaction MUST lock Node first, require active lifecycle, lock/read current non-cancelled monitoring under the existing graph, require `management_account_inventory_read` and matching active Provider policy, acquire/check durable serialization for `(node_instance_id,account_key)`, and reject another same-account operation when `execution_state IN ('dispatched','outcome_unknown') AND same_account_override_at IS NULL`. `lifecycle_override_at` has no effect on this predicate; `same_account_override_at` is the only override field that may waive it. The transaction MUST lock the prepared operation, persist dispatch start and transition `prepared -> dispatched`; prepared resume MUST rerun this check with fresh durable state. It then commits before native HTTP. In-memory-only mutex is insufficient and no DB lock may cross HTTP.
 
 #### Scenario: Same-account command races another dispatch
 - **WHEN** command A is dispatched or outcome-unknown and command B targets the same Node/account, including after a lifecycle override
@@ -122,7 +122,7 @@ The pinned v7.3.2 `POST /v0/management/auth-files` route has a reviewed pre-muta
 
 ### Requirement: Terminal account receipts SHALL preserve exact original POST replay
 
-Change B MUST use separate immutable `account_admin_command_receipts`, integrity-bound to the global registry and target operation; asset receipts remain asset-only. Stable `remote_applied|remote_noop|failed` mutation terminalization, terminal audit and receipt insertion MUST be atomic. `prepared|dispatched|outcome_unknown` MUST have no receipt. The receipt schema MUST also support independent `account.lifecycle_override` command IDs whose target operation ID differs from the receipt command ID or is null for a terminal target-not-found failure after actor-first reservation.
+Change B MUST use separate immutable `account_admin_command_receipts`, integrity-bound to the global registry and target operation; asset receipts remain asset-only. Stable `remote_applied|remote_noop|failed` mutation terminalization, terminal audit and receipt insertion MUST be atomic. `prepared|dispatched|outcome_unknown` MUST have no receipt. The receipt schema MUST also support independent `account.lifecycle_override` and `account.same_account_override` command IDs whose target operation ID differs from the receipt command ID or is null for a terminal target-not-found failure after actor-first reservation.
 
 Exact same actor/domain/kind/intent terminal replay MUST return stored status and canonical body. Inventory observations and lifecycle override updates MUST NOT rewrite the original receipt. Runtime roles have no unrestricted receipt DML.
 
@@ -165,6 +165,14 @@ After a same-account override, the old request may already have committed or may
 #### Scenario: Same-account override releases only the account blocker
 - **WHEN** a dispatched or unresolved outcome_unknown operation receives a valid same-account override
 - **THEN** a later same-account mutation may pass durable serialization, while the old execution remains unchanged and Node Retire/Replace remains blocked without its separate lifecycle override
+
+#### Scenario: Same-account override target is missing
+- **WHEN** an actor-first accepted same-account override targets a nonexistent operation
+- **THEN** Control returns terminal `404 operation_not_found`, records an immutable receipt for the override command with a null target-operation foreign key, and performs zero target mutation; exact replay returns the same response
+
+#### Scenario: Same-account override is already set
+- **WHEN** a different same-account override command targets an operation whose same-account override fields are already set
+- **THEN** Control returns terminal `409 same_account_override_already_set`, records that command's own receipt, and changes none of the first override fields
 
 ### Requirement: Public API, audit and metrics SHALL remain bounded
 
