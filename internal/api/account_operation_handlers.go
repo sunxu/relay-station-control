@@ -347,6 +347,8 @@ func accountErrorCode(err error) string {
 	switch {
 	case errors.Is(err, accountadmin.ErrInvalidCommand):
 		return "invalid_request"
+	case errors.Is(err, accountadmin.ErrUnsupportedProvider):
+		return "unsupported_provider"
 	case errors.Is(err, accountadmin.ErrNodeNotFound):
 		return "node_not_found"
 	case errors.Is(err, assetstore.ErrAccountOperationNotFound):

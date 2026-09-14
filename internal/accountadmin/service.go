@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	ErrInvalidCommand = errors.New("account admin: invalid command")
-	ErrNodeNotFound   = errors.New("account admin: node not found")
+	ErrInvalidCommand      = errors.New("account admin: invalid command")
+	ErrUnsupportedProvider = errors.New("account admin: unsupported provider")
+	ErrNodeNotFound        = errors.New("account admin: node not found")
 )
 
 // NodeState is the small, read-only result needed by this composition. The
@@ -270,8 +271,11 @@ func validateCommand(command Command) error {
 		return ErrInvalidCommand
 	}
 	provider, email, ok := strings.Cut(strings.ToLower(strings.TrimSpace(command.AccountKey)), ":")
-	if !ok || provider != "antigravity" || strings.TrimSpace(email) == "" || command.AccountKey != provider+":"+email {
+	if !ok || strings.TrimSpace(email) == "" || command.AccountKey != provider+":"+email {
 		return ErrInvalidCommand
+	}
+	if provider != "antigravity" {
+		return ErrUnsupportedProvider
 	}
 	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
 		if err := validateCredential(command.Credential, email); err != nil {

@@ -162,3 +162,14 @@ func TestExecuteTerminalizesFreshTargetFailure(t *testing.T) {
 		t.Fatalf("terminal=%v admitted=%v", ops.terminal, ops.admitted)
 	}
 }
+
+func TestValidateCommandClassifiesRequestedProvider(t *testing.T) {
+	command := Command{
+		CommandID: uuid.New(), ActorAdminID: uuid.New(), NodeInstanceID: uuid.New(),
+		AccountKey: "openai:user@example.invalid", Kind: store.AccountDisable,
+		CanonicalIntent: []byte("intent"),
+	}
+	if err := validateCommand(command); !errors.Is(err, ErrUnsupportedProvider) {
+		t.Fatalf("validateCommand error=%v, want ErrUnsupportedProvider", err)
+	}
+}
