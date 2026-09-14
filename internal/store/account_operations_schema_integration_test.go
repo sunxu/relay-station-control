@@ -38,7 +38,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "40"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "41"); err != nil {
 		t.Fatal(err)
 	}
 

@@ -187,14 +187,17 @@ func (r *AccountOperationRepository) Accept(ctx context.Context, command Account
 
 // AcceptWithIntentKey composes the frozen pre-acceptance secret boundary with
 // acceptance. A key failure returns before opening a database transaction.
-func (r *AccountOperationRepository) AcceptWithIntentKey(ctx context.Context, keyPath string, command AccountOperationAcceptance, canonicalIntent []byte) (AccountAdminOperation, error) {
+// The upload fingerprint is over the exact credential bytes; canonical intent
+// remains the separately hashed command identity supplied by the caller.
+func (r *AccountOperationRepository) AcceptWithIntentKey(ctx context.Context, keyPath string, command AccountOperationAcceptance, credential []byte) (AccountAdminOperation, error) {
 	key, err := LoadAccountOperationIntentKey(keyPath)
 	if err != nil {
 		return AccountAdminOperation{}, err
 	}
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(accountUploadIntentHMACDomain))
-	_, _ = mac.Write(canonicalIntent)
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write(credential)
 	version := int16(1)
 	command.SecretFingerprintVersion = &version
 	command.UploadIntentFingerprint = mac.Sum(nil)
@@ -321,6 +324,47 @@ func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, i
 	return admitted, op, nil
 }
 
+func (r *AccountOperationRepository) TerminalizeNoop(ctx context.Context, id uuid.UUID, requestID string) (AccountAdminOperation, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, id); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	op, err := scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_terminalize_account_operation_noop_v1($1,$2)`, id, requestID))
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	return op, nil
+}
+
+func (r *AccountOperationRepository) TerminalizeDispatchedFailure(ctx context.Context, id uuid.UUID, failure AccountFailure, requestID string) (AccountAdminOperation, error) {
+	if failure.Phase != AccountDispatchedPhase || failure.Code != "node_management_unavailable" {
+		return AccountAdminOperation{}, ErrInvalidAccountOperation
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, id); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	op, err := scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_terminalize_dispatched_account_operation_failure_v1($1,$2,$3)`, id, failure.Code, requestID))
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	return op, nil
+}
+
 func (r *AccountOperationRepository) SameAccountBlocked(ctx context.Context, nodeID uuid.UUID, accountKey string, except uuid.UUID) (bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -356,6 +400,13 @@ func (r *AccountOperationRepository) Receipt(ctx context.Context, commandID uuid
 		return AccountCommandReceipt{}, ErrAccountOperationNotFound
 	}
 	return receipt, err
+}
+
+func (r *AccountOperationRepository) Operation(ctx context.Context, commandID uuid.UUID) (AccountAdminOperation, error) {
+	if commandID == uuid.Nil {
+		return AccountAdminOperation{}, ErrInvalidAccountOperation
+	}
+	return scanAccountOperation(r.pool.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, commandID))
 }
 
 // ReplayTerminal performs the exact terminal-command lookup used before any
