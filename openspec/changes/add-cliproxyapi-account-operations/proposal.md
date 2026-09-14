@@ -29,7 +29,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 - `asset-admin-command`: account commands use the archived global registry and a separate immutable account receipt without changing asset K1 or asset receipts.
 - `relay-node-asset-lifecycle`: Node Retire/Replace inspects durable dispatched/outcome-unknown account-operation blockers and may proceed only after the reviewed explicit override.
-- `account-inventory-poll-run`: verification only requests the existing fixed-slot scheduler and dispatch retains current monitoring/Inventory capability/provider-policy gates.
+- `account-inventory-poll-run`: normal Inventory remains an independent business-observation surface; account execution does not request, schedule or reconcile a Phase 7 verification run.
 - `account-inventory-snapshot`: Inventory proves business convergence only, never exact credential bytes, CAS or remote quiescence.
 
 ## Dependencies

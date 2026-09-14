@@ -1,12 +1,16 @@
 ## ADDED Requirements
 
-### Requirement: Phase 7 verification SHALL only request existing fixed-slot Inventory scheduling
+### Requirement: Account operations SHALL NOT own Inventory verification workflow
 
-Account operations MAY wake/request the existing Inventory scheduler after execution becomes verification-eligible. The scheduler MUST retain PostgreSQL UTC 300-second aligned `scheduled_at`, uniqueness `(instance_id,scheduled_at)`, existing start grace, lease/fencing, Provider policy pinning and lifecycle/monitoring fences. If the current aligned slot is not materialized and remains inside normal start grace, the existing scheduler MAY create it; otherwise verification waits for the next normal aligned slot. Existing slot in any state MUST NOT be duplicated. Phase 7 MUST NOT create off-grid runs, special parsers/finalize paths or direct current-Inventory patches.
+Normal Inventory SHALL continue on its existing independent cadence. Account operations MUST NOT create a Phase 7 verification state, wake or schedule a special Inventory run, create a durable verification job, or write Inventory observations back into `account_admin_operations`. Inventory observations are separate business evidence and MUST NOT terminalize or rewrite account execution truth.
 
-#### Scenario: Wake inside an existing slot
-- **WHEN** an operation requests verification and the current Node+slot run already exists
-- **THEN** no second run is created and normal run/future-slot behavior remains authoritative
+#### Scenario: Inventory converges after an ambiguous native outcome
+- **WHEN** normal Inventory later observes the requested account state after an operation is `outcome_unknown`
+- **THEN** the observation remains separate and the operation remains `outcome_unknown` without redispatch or durable verification mutation
+
+#### Scenario: Account dispatch does not create an off-grid run
+- **WHEN** an account operation is prepared or dispatched
+- **THEN** no Phase 7-specific Inventory run or scheduler request is created
 
 ### Requirement: Account mutation dispatch SHALL require current Inventory monitoring eligibility
 

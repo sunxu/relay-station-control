@@ -41,11 +41,11 @@
 - [ ] 6.3 Add super-admin UI for single-account operations and high-risk lifecycle override without native physical evidence or arbitrary filename input.
 - [ ] 6.4 Add bounded audit actions, Secret-safe logs and low-cardinality metrics; prove Management Key, credential bytes, native paths/responses and account identifiers do not leak.
 
-## 7. Inventory verification
+## 7. Inventory boundary
 
-- [ ] 7.1 Integrate existing scheduler wake/request only; prove no off-grid or duplicate run and preserve grace, lease, fencing and policy behavior.
-- [ ] 7.2 Update independent verification state from accepted normal Inventory business convergence only; never use Inventory as execution, credential-byte, CAS or quiescence proof.
-- [ ] 7.3 Test conservative Disable/Enable/Remove/Upload New/Replace Existing verification against stale, incomplete, disk-fallback and duplicate evidence.
+- [ ] 7.1 Keep normal Inventory on its existing independent cadence; do not add Phase 7 verification state, scheduler wake, special run, reconciler, durable job, lease or worker.
+- [ ] 7.2 Expose operation execution truth separately from Inventory observation and prove Inventory cannot terminalize, rewrite or resolve an account operation.
+- [ ] 7.3 Test that later Inventory convergence leaves `remote_applied`, `remote_noop`, `failed` and `outcome_unknown` execution states unchanged.
 
 ## 8. Compatibility, regression and evidence
 

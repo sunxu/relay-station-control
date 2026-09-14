@@ -86,7 +86,7 @@ Before native mutation, one short PostgreSQL transaction MUST lock Node first, r
 
 ### Requirement: Disable and Enable no-op SHALL be decided before native dispatch
 
-After command acceptance, runtime gate, fresh exactly-one resolution and dispatch eligibility, Disable with safe snapshot disabled=true or Enable with disabled=false MUST send zero PATCH and terminalize `remote_noop` with normal audit, terminal receipt, exact replay and verification eligibility. If desired state differs, Control transitions to dispatched and sends PATCH exactly once; stable 2xx is `remote_applied` and MUST NOT be reclassified as noop from read-back.
+After command acceptance, runtime gate, fresh exactly-one resolution and dispatch eligibility, Disable with safe snapshot disabled=true or Enable with disabled=false MUST send zero PATCH and terminalize `remote_noop` with normal audit and exact terminal replay. If desired state differs, Control transitions to dispatched and sends PATCH exactly once; stable 2xx is `remote_applied` and MUST NOT be reclassified as noop from read-back.
 
 #### Scenario: Disable is already satisfied
 - **WHEN** the eligible fresh target projection has disabled=true
@@ -102,15 +102,15 @@ Every mutation kind follows this rule. A `dispatched` or `outcome_unknown` opera
 - **WHEN** native POST returns 500 after the request may have reached auth-file mutation
 - **THEN** Control stores `outcome_unknown`, creates no terminal receipt, exposes no raw error and never automatically redispatches
 
-### Requirement: Execution and verification SHALL remain orthogonal
+### Requirement: Account execution truth SHALL remain independent of Inventory observation
 
-`execution_state` MUST be `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `verification_state` MUST be `not_started|pending|verified|timeout|inconclusive`. Inventory or read-back MUST NOT retroactively manufacture exact execution proof.
+`execution_state` MUST be `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`. Phase 7 MUST NOT add durable verification state or a verification workflow. Inventory or read-back MUST NOT retroactively manufacture exact execution proof or change `execution_state`.
 
 The pinned v7.3.2 `POST /v0/management/auth-files` route has a reviewed pre-mutation exception: HTTP 503 caused by `authManager == nil` before credential-body read/write MUST map to terminal `failed` with `node_management_unavailable`, create the normal terminal receipt and perform zero credential mutation. This route/status/artifact rule MUST NOT be generalized to other native 503 responses; unreviewed 5xx remains `outcome_unknown`.
 
 #### Scenario: Unknown execution later converges in Inventory
 - **WHEN** Inventory observes the desired business state after an ambiguous native response
-- **THEN** verification may record convergence while execution remains `outcome_unknown`
+- **THEN** the separate observation surface may show convergence while execution remains `outcome_unknown` and no account operation state is written
 
 ### Requirement: Terminal account receipts SHALL preserve exact original POST replay
 
@@ -137,14 +137,6 @@ The first valid override mutation, audit and its own terminal receipt commit ato
 #### Scenario: New mutation follows lifecycle override
 - **WHEN** another account mutation targets the same Node/account while the overridden operation remains dispatched or outcome-unknown
 - **THEN** durable same-account serialization still returns `account_operation_in_progress` with zero native request
-
-### Requirement: Account verification SHALL use only normal Inventory convergence
-
-After execution is verification-eligible, Control MAY request the existing scheduler only. Disable requires same account_key disabled=true; Enable requires disabled=false; Remove requires absence from fresh complete eligible provider-complete evidence; Upload New requires identity present; Replace Existing requires identity still present. Inventory MUST NOT be treated as exact credential-byte, CAS or remote-quiescence proof. Stale/incomplete/disk-fallback/duplicate evidence cannot verify.
-
-#### Scenario: Replace identity remains present after response loss
-- **WHEN** fresh Inventory still contains the account after an ambiguous Replace response
-- **THEN** business convergence may be observed but execution remains `outcome_unknown`
 
 ### Requirement: Public API, audit and metrics SHALL remain bounded
 

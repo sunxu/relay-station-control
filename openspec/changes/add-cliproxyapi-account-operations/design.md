@@ -177,7 +177,7 @@ Disable/Enable JSON bodies contain exactly lowercase UUID `command_id`, UUID `no
 
 Unknown JSON fields, duplicate multipart parts, a missing part, any extra part and malformed UUID/account identity are `400 invalid_request`. The credential part is sent to CLIProxyAPI as the exact validated JSON bytes; browser input never supplies native basename, auth_index, Management Key or final path.
 
-POST mutation routes require active authenticated `super_admin`, same-origin and CSRF. GET is authenticated/read-only. Override has the same checks plus typed high-risk confirmation. Every response, including errors, is `Cache-Control: no-store`. Public operation projection contains exactly `command_id,node_instance_id,account_key,operation_kind,execution_state,verification_state,result,error_code,lifecycle_overridden,lifecycle_override_reason,created_at,updated_at`; it excludes native name/auth_index, Management Key, upload fingerprint, raw response and credential. `result` is exactly null or `applied|noop|failed`: prepared/dispatched/outcome-unknown use null, remote-applied uses applied, remote-noop uses noop, and failed uses failed with a stable error_code.
+POST mutation routes require active authenticated `super_admin`, same-origin and CSRF. GET is authenticated/read-only. Override has the same checks plus typed high-risk confirmation. Every response, including errors, is `Cache-Control: no-store`. Public operation projection contains exactly `command_id,node_instance_id,account_key,operation_kind,execution_state,result,error_code,lifecycle_overridden,lifecycle_override_reason,created_at,updated_at`; it excludes native name/auth_index, Management Key, upload fingerprint, raw response and credential. `result` is exactly null or `applied|noop|failed`: prepared/dispatched/outcome-unknown use null, remote-applied uses applied, remote-noop uses noop, and failed uses failed with a stable error_code.
 
 Terminal success returns exactly `200 {"operation":<projection>}`. `prepared|dispatched|outcome_unknown` returns exactly `202 {"operation":<projection>}`. A terminal mapped failure returns `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"},"operation":<projection>}` at the mapped status. GET returns `200 {"operation":<current-projection>}` or `404 operation_not_found`. Same-command nonterminal replay returns the same current-projection shape with 202 and zero redispatch. Exact terminal replay returns the original persisted status and canonical body bytes. Override success returns `200 {"operation":<current-projection>}` and does not change execution or verification state.
 
@@ -195,7 +195,7 @@ The public status mapping is frozen as follows:
 503 node_management_unavailable | unsupported_node_version | service_unavailable
 ```
 
-An accepted request whose native outcome is ambiguous is not returned as an error envelope: it returns the 202 operation projection with `execution_state=outcome_unknown`, `result=null` and `error_code=remote_outcome_unknown`. Verification fields in every operation projection are current mutable truth and remain independent of the immutable terminal POST receipt.
+An accepted request whose native outcome is ambiguous is not returned as an error envelope: it returns the 202 operation projection with `execution_state=outcome_unknown`, `result=null` and `error_code=remote_outcome_unknown`. Normal Inventory is a separate business-observation surface and never changes this execution projection or the immutable terminal POST receipt.
 
 ### 7. Durable operation schema
 
@@ -207,14 +207,10 @@ node_instance_id uuid NOT NULL FK relay_node_assets(instance_id)
 account_key text NOT NULL
 operation_kind text CHECK IN ('disable','enable','remove','upload_new','replace_existing')
 execution_state text CHECK IN ('prepared','dispatched','remote_applied','remote_noop','outcome_unknown','failed')
-verification_state text CHECK IN ('not_started','pending','verified','timeout','inconclusive')
 dispatch_started_at timestamptz NULL
 remote_result_code text NULL
 upload_fingerprint_key_version smallint NULL
 upload_intent_fingerprint bytea NULL CHECK length=32
-verification_started_at timestamptz NULL
-verification_deadline timestamptz NULL
-verified_at timestamptz NULL
 lifecycle_override_at timestamptz NULL
 lifecycle_override_by uuid NULL FK control_admin_users(admin_id) ON UPDATE RESTRICT ON DELETE RESTRICT
 lifecycle_override_reason text NULL CHECK IN ('process_restarted','node_stopped','risk_accepted')
@@ -222,7 +218,7 @@ created_at timestamptz NOT NULL
 updated_at timestamptz NOT NULL
 ```
 
-The three override fields are all-null or all-non-null. Free-form override detail is audit-only. The current design has no `target_precondition`, `dispatch_token`, `remote_mutation_deadline`, `quiescence_deadline`, `remote_quiesced_at`, `write_token` or `postcondition_proof`. No native filename/path/auth_index/raw body/Management Key/credential is stored. Runtime roles receive no unrestricted DML; controlled functions enforce state shape and monotonic transitions.
+The three override fields are all-null or all-non-null. Free-form override detail is audit-only. The current design has no `target_precondition`, `dispatch_token`, `remote_mutation_deadline`, `quiescence_deadline`, `remote_quiesced_at`, `write_token` or `postcondition_proof`. No native filename/path/auth_index/raw body/Management Key/credential is stored. Runtime roles receive no unrestricted DML; controlled functions enforce state shape and monotonic transitions. There is no Phase 7 verification state, scheduler, reconciler, lease, worker or durable verification workflow.
 
 ### 8. Global command and terminal receipt
 
@@ -308,7 +304,7 @@ No DB lock crosses native HTTP. Same-target races, Control restart and lifecycle
 
 ### 10. Disable/Enable no-op and conservative native outcome mapping
 
-After global command acceptance, runtime artifact gate, fresh mutation-eligible exactly-one resolution and durable dispatch eligibility, Control evaluates the safe snapshot `disabled` value before sending PATCH. Disable with `disabled=true`, or Enable with `disabled=false`, sends zero native PATCH and terminalizes as `remote_noop`; audit, immutable terminal receipt, exact replay and normal verification eligibility still apply. When desired state differs, Control commits `prepared -> dispatched` and sends PATCH exactly once; stable native 2xx is always `remote_applied` and MUST NOT be reclassified as noop by later read-back.
+After global command acceptance, runtime artifact gate, fresh mutation-eligible exactly-one resolution and durable dispatch eligibility, Control evaluates the safe snapshot `disabled` value before sending PATCH. Disable with `disabled=true`, or Enable with `disabled=false`, sends zero native PATCH and terminalizes as `remote_noop`; audit, immutable terminal receipt and exact replay apply. When desired state differs, Control commits `prepared -> dispatched` and sends PATCH exactly once; stable native 2xx is always `remote_applied` and MUST NOT be reclassified as noop by later read-back.
 
 ```text
 pre-dispatch desired state already satisfied -> remote_noop, zero PATCH
@@ -326,31 +322,23 @@ Retire/Replace locks the same Node first, then inspects same-Node account operat
 
 The action name is **Override Unknown Operation Lifecycle Block**. The path UUID identifies the target account operation; the body `command_id` is a new independent administrator command. After authentication/session/super_admin/CSRF, Control acquires the shared global command advisory serialization, performs actor-first registry lookup/reservation, and validates the canonical `account.lifecycle_override` intent before locking and changing the target operation. Cross-actor/domain/kind/intent reuse is `command_conflict`. Exact replay returns the override command's immutable terminal receipt with zero second mutation; it never reuses or overwrites the target account mutation receipt.
 
-The first valid override sets only `lifecycle_override_at/by/reason`; it does not change execution state, verification or redispatch authority. `outcome_unknown` remains unknown. Reasons are `process_restarted|node_stopped|risk_accepted`. `risk_accepted` explicitly waives the guarantee that a previously dispatched request can never mutate the old Node after lifecycle proceeds. All reasons require super_admin, active session, same-origin/CSRF, typed confirmation and distinct high-risk audit; operator detail is audit-only. Override mutation, audit and its separate receipt commit atomically.
+The first valid override sets only `lifecycle_override_at/by/reason`; it does not change execution state or redispatch authority. `outcome_unknown` remains unknown. Reasons are `process_restarted|node_stopped|risk_accepted`. `risk_accepted` explicitly waives the guarantee that a previously dispatched request can never mutate the old Node after lifecycle proceeds. All reasons require super_admin, active session, same-origin/CSRF, typed confirmation and distinct high-risk audit; operator detail is audit-only. Override mutation, audit and its separate receipt commit atomically.
 
 A later different override command after those fields are set returns stable `409 lifecycle_override_already_set`, changes no override value and atomically records that command's terminal receipt for exact replay. An override is consulted only by Node Retire/Replace. A `dispatched` or unresolved `outcome_unknown` row continues to block every new same-account Disable, Enable, Remove, Upload New and Replace Existing regardless of override fields. Lifecycle override is neither operation resolution nor same-account serialization override.
 
 Node-first lock order is mandatory for dispatch and lifecycle. Acceptance covers Retire-first vs dispatch, dispatch-first vs Retire, same-account A vs B and Control restart with a live operation.
 
-### 12. Verification
+### 12. Independent Inventory observation
 
-`execution_state` and `verification_state` remain independent. After execution is verification-eligible, Control only wakes/requests the existing UTC 300-second fixed-slot scheduler. It never creates off-grid/special runs or patches current Inventory.
-
-- Disable: same account_key with `disabled=true`.
-- Enable: same account_key with `disabled=false`.
-- Remove: absence from fresh complete eligible provider-complete evidence.
-- Upload New: expected account identity appears.
-- Replace Existing: expected account identity remains present.
-
-Inventory proves business convergence only. It cannot prove credential bytes, CAS, native request quiescence or that an old HTTP request can no longer execute. Verification deadline remains ten minutes; stale/incomplete/disk-fallback/duplicate evidence cannot prove success.
+Normal Inventory is an independent business-observation surface. It continues on its existing cadence and may show convergence for Disable, Enable, Remove, Upload New or Replace Existing, but it never changes `execution_state`, creates a Phase 7 run, writes account operation state, proves credential bytes/CAS/quiescence, or terminalizes an operation. An `outcome_unknown` operation remains `outcome_unknown` whether or not Inventory later observes the desired state.
 
 ### 13. Secret, audit, metrics and errors
 
 Control keeps credential bytes in bounded memory only and stores only the versioned keyed upload-intent fingerprint under `CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE`; asset K1 is unchanged. Credential, Management Key, raw native body, full path and ephemeral target evidence never enter DB, receipt, response, audit, logs, traces or metrics.
 
-Audit records actor/request/command/operation/Node/provider/protected business identity, sanitized outcome/verification and high-risk lifecycle override. Metrics use low-cardinality operation/provider/result/error/execution/verification classes and never email/account_key/command/node/path.
+Audit records actor/request/command/operation/Node/provider/protected business identity, sanitized outcome and high-risk lifecycle override. Metrics use low-cardinality operation/provider/result/error/execution classes and never email/account_key/command/node/path.
 
-Stable Control errors include `invalid_request`, `node_not_found`, `node_retired`, `node_management_unavailable`, `node_monitoring_ineligible`, `unsupported_provider`, `account_target_not_found`, `account_target_ambiguous`, `account_operation_in_progress`, `command_conflict`, `upload_too_large`, `upload_invalid`, `identity_mismatch`, `remote_outcome_unknown`, verification errors and `service_unavailable`. Raw native messages are never relayed.
+Stable Control errors include `invalid_request`, `node_not_found`, `node_retired`, `node_management_unavailable`, `node_monitoring_ineligible`, `unsupported_provider`, `account_target_not_found`, `account_target_ambiguous`, `account_operation_in_progress`, `command_conflict`, `upload_too_large`, `upload_invalid`, `identity_mismatch`, `remote_outcome_unknown` and `service_unavailable`. Raw native messages are never relayed.
 
 ### 14. Compatibility, supersession and rollout
 
