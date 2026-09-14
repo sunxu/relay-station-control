@@ -13,17 +13,17 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 - Use fresh exactly-one provider/email target resolution. `name` and `auth_index` remain ephemeral native request evidence, not durable/public identity.
 - Accept upstream native last-writer-wins: Upload New is best-effort create; Replace Existing is best-effort replace. No CAS, target incarnation or Node postcondition proof.
 - Bound Control credential ingress to 1 MiB, validate minimal Antigravity identity, canonicalize metadata aliases, and reject the complete reviewed v7.3.2 runtime/routing/management denylist without taking ownership of provider credential schema.
-- Preserve global command actor-first identity, immutable terminal replay, no automatic redispatch after ambiguous outcome, Node-first lifecycle locking, normal Inventory convergence, audit and Secret boundaries.
+- Preserve global command actor-first identity, immutable terminal replay, no automatic redispatch after ambiguous outcome, Node-first lifecycle locking, normal Inventory independent business observation, audit and Secret boundaries.
 - Treat timeout, connection/response loss and ambiguous native 5xx as `outcome_unknown`; block lifecycle until explicit high-risk override or stable terminal classification.
 - Decide Disable/Enable noop from the fresh pre-dispatch snapshot and send zero PATCH; any sent successful PATCH is applied.
-- Give lifecycle override its own global command identity and receipt while keeping it unable to unblock same-account mutation serialization; add a separate one-time same-account risk override with its own command identity and receipt.
+- Give the lifecycle override and same-account override separate global command identities and immutable receipts while keeping their blocker scopes orthogonal; both are manual high-risk override actions, not a workflow.
 - Preserve exact account canonical intent v1 and upload HMAC equality without restoring any Node-side proof/fencing protocol.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `account-admin-operation`: Control command/API state, native safe adapter, durable serialization, conservative outcome recovery, manual lifecycle override, audit, metrics and UI behavior.
+- `account-admin-operation`: Control command/API state, native safe adapter, durable serialization, conservative outcome recovery, manual high-risk lifecycle and same-account overrides, audit, metrics and UI behavior.
 
 ### Modified Capabilities
 
@@ -34,7 +34,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## Dependencies
 
-1. Ops Native-First Crash Recovery Corrective Round 11 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First Crash Recovery Corrective Round 12 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -51,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Crash Recovery Corrective Round 11 follows the fixed review baseline (Ops `9c8622d7daac1dc837312b6869bb2335b8d833cf`, Control `9b59e85c148925dd2f3e0bb4fb02d7c1c4b3463a`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent crash-recovery re-review recorded P0=0, P1=1, P2=2 / CHANGES REQUIRED. Round 11 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
+Native-First Crash Recovery Corrective Round 12 follows the fixed review baseline (Ops `ba9547818b7d48de370b3e6f9a2d92bd612a920e`, Control `7b5b1bc7bb29f176d6f6fa7e0067828a183040cf`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent crash-recovery re-review recorded P0=0, P1=2, P2=1 / CHANGES REQUIRED. Round 12 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.

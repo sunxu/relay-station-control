@@ -3,15 +3,15 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Crash Recovery Corrective Round 11.
+- Architecture direction: Native-First Crash Recovery Corrective Round 12.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
 - Native-First Simplification: no Phase 7 verification state/workflow, scheduler, reconciler, durable job, lease or worker; normal Inventory remains independent business observation.
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
-- Previous independent crash-recovery re-review: P0=0, P1=1, P2=2 / CHANGES REQUIRED.
-- Round 11 resolutions: incorporated.
+- Previous independent crash-recovery re-review: P0=0, P1=2, P2=1 / CHANGES REQUIRED.
+- Round 12 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`.
@@ -52,14 +52,14 @@ It also freezes the source-reviewed native upload exception: `POST /v0/managemen
 4. **Write semantics:** Upload New is best-effort create and Replace Existing is best-effort replace under native last-writer-wins. Concurrent create/refresh lost-update risk is explicit and accepted; no Relay CAS is claimed.
 5. **Credential ingress:** CLIProxyAPI owns schema truth. Control enforces top-level object/type/email, 1 MiB ingress, filename bounds and a reviewed runtime-control denylist without silently stripping fields.
 6. **Outcome mapping:** known 2xx is terminal; stable reviewed pre-mutation status/context may fail; timeout, connection/response loss and ambiguous native 5xx become `outcome_unknown`. There is no automatic mutation redispatch or inferred execution stage.
-7. **Durable serialization/lifecycle:** PostgreSQL serializes same-account operations and retains dispatched/unresolved blockers across restart; Node lifecycle follows the same Node-first lock order. Lifecycle override releases only the lifecycle block; the separate same-account override releases only the same-account blocker, with both using one-time fields, global command identity, exact replay and one-transaction reservation/terminalization atomicity.
+7. **Durable serialization/lifecycle:** PostgreSQL serializes same-account operations and retains dispatched/unresolved blockers across restart; Node lifecycle follows the same Node-first lock order. Lifecycle override releases only the lifecycle block; the separate same-account override releases only the same-account blocker, with both using one-time fields, global command identity, exact replay and one-transaction reservation/terminalization atomicity. Existing ineligible override targets use `account_operation_not_overridable`; missing targets use error-only `operation_not_found` receipts.
 8. **Observation/replay:** Inventory is independent business observation only. Stable terminal POST truth uses a separate immutable account receipt; a `prepared` same-command POST resumes the same operation, while `outcome_unknown` has no receipt and replay returns current projection with zero redispatch.
 9. **Physical target eligibility:** source/runtime/auth-index are classified transiently before projection; memory/runtime-only/incomplete/disk-fallback evidence is ineligible for existing-target mutation, while a clean version-valid structurally valid empty snapshot permits Upload New absence evidence and returns `account_target_not_found` for existing-target operations.
 10. **Runtime identity:** exact-once bounded version/commit headers must match the independently pinned runtime artifact before snapshot interpretation; upstream source baseline and runtime artifact commit are distinct concepts.
 11. **Noop and override:** Disable/Enable noop is decided before PATCH; lifecycle and same-account overrides each have their own global command/receipt, remain orthogonal, and only the same-account override may waive the same-account blocker.
 12. **Exact command equality:** all seven command kinds, including `account.lifecycle_override` and `account.same_account_override`, have fixed canonical JSON arrays; upload uses the separate 32-byte key/HMAC contract with deterministic wrong-key replay.
 13. **Create collision:** Upload New requires both identity absence and generated basename absence, while preserving the accepted concurrent last-writer-wins race.
-14. **Schema cleanup:** Phase 7 v1 uses only the six frozen execution states and the administrator FK is `control_admin_users(admin_id)` with restrictive updates/deletes.
+14. **Schema cleanup:** Phase 7 v1 uses only the six frozen execution states and the administrator FK is `control_admin_users(admin_id)` with restrictive updates/deletes. Stable override errors include `account_operation_not_overridable`, `lifecycle_override_already_set` and `same_account_override_already_set`.
 
 ## Readiness acceptance still required
 
@@ -85,4 +85,4 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST CRASH RECOVERY CORRECTIVE ROUND 11 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW / GATE 1 NOT CLOSED / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST CRASH RECOVERY CORRECTIVE ROUND 12 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW / GATE 1 NOT CLOSED / IMPLEMENTATION NOT STARTED`.
