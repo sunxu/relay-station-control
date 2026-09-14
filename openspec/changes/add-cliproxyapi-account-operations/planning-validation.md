@@ -3,18 +3,19 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Simplification Corrective Round 8.
+- Architecture direction: Native-First Crash Recovery Corrective Round 9.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
 - Native-First Simplification: no Phase 7 verification state/workflow, scheduler, reconciler, durable job, lease or worker; normal Inventory remains independent business observation.
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
-- Previous independent re-review: P0=0, P1=1, P2=1 / CHANGES REQUIRED.
-- All Round 8 P1/P2 resolutions: incorporated.
+- Previous tentative final review: P0=0, P1=0, P2=2 / PASS candidate.
+- New crash-recovery findings: P0=0, P1=2, P2=0 / CHANGES REQUIRED.
+- All Round 9 P1 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
-- Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
+- Architecture status: `RE-REVIEW REQUIRED`; Gate 1 is `NOT CLOSED`.
 - ADR status: `PROPOSED`.
 - Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
@@ -42,7 +43,7 @@ Pinned v7.3.2 source inspection confirms the current planning subset:
 
 ## Native-First corrective resolutions incorporated
 
-Round 7 additionally keeps Phase 7 verification-owned state/workflow removed and normal Inventory independent; stable reviewed pre-mutation status/context, including the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping, remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
+Round 9 adds request-driven resume for an accepted `prepared` operation and a separate one-time same-account risk override for `dispatched`/`outcome_unknown`; neither introduces a worker, scheduler, reconciler, lease or automatic redispatch. Normal Inventory remains independent; the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
 It also freezes the source-reviewed native upload exception: `POST /v0/management/auth-files` HTTP 503 from `authManager == nil` before body read/write is terminal `failed/node_management_unavailable` with a receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
@@ -52,8 +53,8 @@ It also freezes the source-reviewed native upload exception: `POST /v0/managemen
 4. **Write semantics:** Upload New is best-effort create and Replace Existing is best-effort replace under native last-writer-wins. Concurrent create/refresh lost-update risk is explicit and accepted; no Relay CAS is claimed.
 5. **Credential ingress:** CLIProxyAPI owns schema truth. Control enforces top-level object/type/email, 1 MiB ingress, filename bounds and a reviewed runtime-control denylist without silently stripping fields.
 6. **Outcome mapping:** known 2xx is terminal; stable reviewed pre-mutation status/context may fail; timeout, connection/response loss and ambiguous native 5xx become `outcome_unknown`. There is no automatic mutation redispatch or inferred execution stage.
-7. **Durable serialization/lifecycle:** PostgreSQL serializes same-account operations and retains dispatched/unresolved blockers across restart; Node lifecycle follows the same Node-first lock order. High-risk override releases only the lifecycle block.
-8. **Observation/replay:** Inventory is independent business observation only. Stable terminal POST truth uses a separate immutable account receipt; `outcome_unknown` has no receipt and same-command replay returns current projection with zero redispatch.
+7. **Durable serialization/lifecycle:** PostgreSQL serializes same-account operations and retains dispatched/unresolved blockers across restart; Node lifecycle follows the same Node-first lock order. Lifecycle override releases only the lifecycle block; the separate same-account override releases only the same-account blocker, with both using one-time fields and global command identity.
+8. **Observation/replay:** Inventory is independent business observation only. Stable terminal POST truth uses a separate immutable account receipt; a `prepared` same-command POST resumes the same operation, while `outcome_unknown` has no receipt and replay returns current projection with zero redispatch.
 9. **Physical target eligibility:** source/runtime/auth-index are classified transiently before projection; memory/runtime-only/incomplete/disk-fallback evidence is ineligible for existing-target mutation, while a clean version-valid structurally valid empty snapshot permits Upload New absence evidence and returns `account_target_not_found` for existing-target operations.
 10. **Runtime identity:** exact-once bounded version/commit headers must match the independently pinned runtime artifact before snapshot interpretation; upstream source baseline and runtime artifact commit are distinct concepts.
 11. **Noop and override:** Disable/Enable noop is decided before PATCH; lifecycle override has its own global command/receipt and never unblocks another account mutation.
@@ -85,4 +86,4 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST SIMPLIFICATION CORRECTIVE ROUND 6 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST CRASH RECOVERY CORRECTIVE ROUND 9 / P0=0 P1=0-candidate P2=0-candidate / RE-REVIEW REQUIRED / GATE 1 NOT CLOSED / IMPLEMENTATION NOT STARTED`.

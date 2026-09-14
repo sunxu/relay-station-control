@@ -27,17 +27,17 @@
 
 ## 5. Dispatch, outcome and lifecycle serialization
 
-- [ ] 5.1 In a short Node-first transaction require active lifecycle, current monitoring eligibility, Inventory-read capability, provider policy and durable same-account availability; transition `prepared -> dispatched`, then perform native HTTP outside the transaction.
+- [ ] 5.1 In a short Node-first transaction require active lifecycle, current monitoring eligibility, Inventory-read capability, provider policy and durable same-account availability; exact same-command POST may resume `prepared` using fresh evidence, and then transition `prepared -> dispatched`, before native HTTP outside the transaction.
 - [ ] 5.2 Block new destructive dispatch for the same account while an operation is `dispatched` or unresolved `outcome_unknown`, regardless of lifecycle override; prove Retire/Replace alone may consult override and the blocker survives Control restart.
 - [ ] 5.3 Decide Disable/Enable already-desired noop from the fresh eligible snapshot with zero PATCH; map every sent stable 2xx to applied, stable reviewed pre-mutation status/context to failed, and timeout/connection loss/response loss/ambiguous native 5xx to `outcome_unknown`; never invent noop, an unproven terminal stage or redispatch.
 - [ ] 5.3a Map only the reviewed v7.3.2 upload POST HTTP 503-before-body-read/write (`authManager == nil`) to terminal `failed/node_management_unavailable` with receipt; keep all other unreviewed 503/5xx outcomes unknown.
-- [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** as an independent globally reserved `account.lifecycle_override` command with its own canonical intent, receipt and already-set behavior; leave target execution and same-account blockers unchanged.
-- [ ] 5.5 PostgreSQL 18 race acceptance: Retire-first/dispatch-first, same-account A/B, Control restart with live operation, and override behavior.
+- [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** as an independent globally reserved `account.lifecycle_override` command with its own canonical intent, receipt and already-set behavior; add separate **Override Unknown Operation Same-Account Block** as `account.same_account_override`, without changing execution state or authorizing redispatch.
+- [ ] 5.5 PostgreSQL 18 race acceptance: Retire-first/dispatch-first, same-account A/B, Control restart with live operation, prepared exact-command resume, concurrent prepared retries, same-account override release, and orthogonal lifecycle/same-account overrides.
 
 ## 6. Product API, replay, UI and observability
 
 - [ ] 6.1 Implement the five frozen mutation POST routes, operation GET and lifecycle-override POST with exact no-store schemas/statuses and bounded stable errors.
-- [ ] 6.2 Implement separate immutable account terminal receipts for mutation and override command IDs: exact replay only for stable terminal classification; `outcome_unknown` returns current projection with 202 and zero redispatch; Phase 7 v1 has no extra intermediate failure state.
+- [ ] 6.2 Implement separate immutable account terminal receipts for mutation and override command IDs: exact replay only for stable terminal classification; `prepared` same-command POST resumes the same operation, while `dispatched`/`outcome_unknown` return current projection with 202 and zero redispatch; Phase 7 v1 has no extra intermediate failure state.
 - [ ] 6.3 Add super-admin UI for single-account operations and high-risk lifecycle override without native physical evidence or arbitrary filename input.
 - [ ] 6.4 Add bounded audit actions, Secret-safe logs and low-cardinality metrics; prove Management Key, credential bytes, native paths/responses and account identifiers do not leak.
 
@@ -55,4 +55,4 @@
 
 ## Planning gate
 
-Native-First Simplification Corrective Round 8 incorporates the previous P0=0, P1=1, P2=1 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
+Native-First Crash Recovery Corrective Round 9 incorporates the previous tentative P0=0, P1=0, P2=2 PASS candidate and new P0=0, P1=2, P2=0 CHANGES REQUIRED findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **RE-REVIEW REQUIRED**, Gate 1 is **NOT CLOSED**, ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.

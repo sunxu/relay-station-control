@@ -104,7 +104,7 @@ After command acceptance, runtime gate, fresh exactly-one resolution and dispatc
 
 Known successful terminal 2xx after a mutation request MUST map to `remote_applied`. Stable reviewed pre-mutation status/context may map to `failed`. Timeout, connection loss, response loss and ambiguous native 5xx after request may have arrived MUST map to `outcome_unknown`. Control MUST NOT parse raw native strings to infer commit stage.
 
-Every mutation kind follows this rule. A `dispatched` or `outcome_unknown` operation MUST NOT be automatically redispatched after retry, reconciliation or restart. Same-command POST replay returns current projection with 202 and zero remote mutation.
+Every mutation kind follows this rule. An exact same-command POST for `prepared` MUST resume the same operation with fresh evidence; this is not redispatch because no remote request has occurred. A `dispatched` or `outcome_unknown` operation MUST NOT be automatically redispatched after retry, reconciliation or restart. Same-command replay for those states returns the current projection with 202 and zero remote mutation. GET is read-only and never resumes `prepared`.
 
 #### Scenario: Native returns ambiguous 500
 - **WHEN** native POST returns 500 after the request may have reached auth-file mutation
@@ -130,6 +130,14 @@ Exact same actor/domain/kind/intent terminal replay MUST return stored status an
 - **WHEN** a same-command POST repeats while execution is `outcome_unknown`
 - **THEN** Control returns current projection with 202, creates no receipt and sends zero native mutation
 
+#### Scenario: Prepared command resumes after Control crash
+- **WHEN** an exact same-command POST repeats while execution is `prepared`
+- **THEN** Control resumes the same operation with fresh evidence and may perform its first dispatch, without creating a new operation or command identity
+
+#### Scenario: Concurrent prepared retries are serialized
+- **WHEN** two exact same-command POST retries race while execution is `prepared`
+- **THEN** at most one `prepared -> dispatched` transition and one native request occur
+
 ### Requirement: Manual lifecycle override SHALL waive only the lifecycle block
 
 Control MUST expose **Override Unknown Operation Lifecycle Block** for a `dispatched` or unresolved `outcome_unknown` operation. The path UUID identifies that target operation and the request body contains a new independent command UUID. The override command MUST use global actor-first reservation with domain `account_admin`, kind `account.lifecycle_override`, encoding v1 and the exact canonical intent defined in design before changing the target operation. It persists all of `lifecycle_override_at/by/reason`, with reason `process_restarted|node_stopped|risk_accepted`; free-form detail is audit-only. The action MUST NOT change execution state, authorize redispatch or unblock any same-account operation.
@@ -146,11 +154,23 @@ The first valid override mutation, audit and its own terminal receipt commit ato
 - **WHEN** another account mutation targets the same Node/account while the overridden operation remains dispatched or outcome-unknown
 - **THEN** durable same-account serialization still returns `account_operation_in_progress` with zero native request
 
+### Requirement: Same-account override SHALL release only the durable account blocker
+
+Control MUST expose **Override Unknown Operation Same-Account Block** at `POST /api/account-operations/{operation_command_id}/same-account-override`. The path identifies the target operation and the body carries a new independent command UUID, one of `process_restarted|node_stopped|risk_accepted`, exact confirmation `OVERRIDE UNKNOWN OPERATION SAME-ACCOUNT BLOCK` and optional bounded audit-only detail. It requires the global actor-first reservation, canonical `account.same_account_override` intent, super_admin, active session, same-origin/CSRF, typed confirmation and distinct high-risk audit.
+
+The target MUST be `dispatched` or unresolved `outcome_unknown`; `prepared`, `remote_applied`, `remote_noop` and `failed` are ineligible. The first valid override atomically persists all of `same_account_override_at/by/reason` on the original operation with its own immutable receipt. A later different command returns `409 same_account_override_already_set` with its own receipt and changes no existing fields. The override does not change execution state, resolve outcome, authorize redispatch or affect Node lifecycle blocking. A lifecycle override does not release this blocker.
+
+After a same-account override, the old request may already have committed or may still complete, so a later mutation may race and native last-writer-wins is an explicitly accepted administrator risk. Inventory cannot resolve the old operation.
+
+#### Scenario: Same-account override releases only the account blocker
+- **WHEN** a dispatched or unresolved outcome_unknown operation receives a valid same-account override
+- **THEN** a later same-account mutation may pass durable serialization, while the old execution remains unchanged and Node Retire/Replace remains blocked without its separate lifecycle override
+
 ### Requirement: Public API, audit and metrics SHALL remain bounded
 
-Product routes MUST be exactly `POST /api/account-operations/disable`, `/enable`, `/remove`, `/upload-new`, `/replace-existing`, `GET /api/account-operations/{command_id}` and `POST /api/account-operations/{operation_command_id}/lifecycle-override`. Mutation bodies, multipart parts and lifecycle override fields MUST be the closed schemas in design; the override body includes its own independent `command_id`. Unknown fields/parts are invalid. Responses MUST be no-store and expose only the bounded operation projection defined in design, never native physical evidence or Secrets.
+Product routes MUST be exactly `POST /api/account-operations/disable`, `/enable`, `/remove`, `/upload-new`, `/replace-existing`, `GET /api/account-operations/{command_id}`, `POST /api/account-operations/{operation_command_id}/lifecycle-override` and `POST /api/account-operations/{operation_command_id}/same-account-override`. Mutation bodies, multipart parts and override fields MUST be the closed schemas in design; each override body includes its own independent `command_id`. Unknown fields/parts are invalid. Responses MUST be no-store and expose only the bounded operation projection defined in design, never native physical evidence or Secrets.
 
-Terminal success MUST return 200 with `{"operation":...}`; accepted nonterminal and same-command nonterminal replay MUST return 202 with `{"operation":...}` and zero redispatch; GET MUST return 200 current projection; exact terminal replay MUST return the persisted original status/body. Stable errors MUST follow the frozen mapping in design: 400 malformed/upload/identity, 401 authentication, 403 authorization/CSRF, 404 Node/target/operation missing, 409 lifecycle/monitoring/provider/target-exists/filename/ambiguous/in-progress/override-set/command conflicts, 413 upload size and 503 management/version/service unavailable. An ambiguous native outcome returns the 202 projection with `outcome_unknown`, not a fabricated terminal error.
+Terminal success MUST return 200 with `{"operation":...}`; accepted nonterminal MUST return 202 with `{"operation":...}`; a `prepared` same-command POST may resume the same operation, while `dispatched`/`outcome_unknown` replay has zero redispatch. GET MUST return 200 current projection; exact terminal replay MUST return the persisted original status/body. Stable errors MUST follow the frozen mapping in design: 400 malformed/upload/identity, 401 authentication, 403 authorization/CSRF, 404 Node/target/operation missing, 409 lifecycle/monitoring/provider/target-exists/filename/ambiguous/in-progress/lifecycle-override-already-set/same-account-override-already-set/command conflicts, 413 upload size and 503 management/version/service unavailable. An ambiguous native outcome returns the 202 projection with `outcome_unknown`, not a fabricated terminal error.
 
 Audit MUST record actor/request/command/operation/Node/provider/protected account identity and override risk without credential/raw native body/path. Metrics MUST use low-cardinality operation/provider/result/error/execution labels and never email/account_key/command/node/path.
 
