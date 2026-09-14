@@ -3,12 +3,12 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Corrective Round 4.
+- Architecture direction: Native-First Corrective Round 5.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
-- Previous independent re-review: P0=0, P1=2, P2=1 / CHANGES REQUIRED.
-- All Round 4 P1/P2 resolutions: incorporated.
+- Previous independent re-review: P0=0, P1=1, P2=1 / CHANGES REQUIRED.
+- All Round 5 P1/P2 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
@@ -39,7 +39,7 @@ Pinned v7.3.2 source inspection confirms the current planning subset:
 
 ## Native-First corrective resolutions incorporated
 
-Round 4 additionally reconciles the effective Ops architecture body and freezes the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping to terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
+Round 5 additionally reconciles the effective Ops architecture body and separates runtime HTTP header identity from image-digest deployment evidence; the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
 It also freezes the source-reviewed native upload exception: `POST /v0/management/auth-files` HTTP 503 from `authManager == nil` before body read/write is terminal `failed/node_management_unavailable` with a receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 

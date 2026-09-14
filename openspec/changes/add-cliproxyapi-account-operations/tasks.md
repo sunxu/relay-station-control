@@ -55,4 +55,4 @@
 
 ## Planning gate
 
-Native-First Corrective Round 4 incorporates the previous P0=0, P1=2, P2=1 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
+Native-First Corrective Round 5 incorporates the previous P0=0, P1=1, P2=1 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
