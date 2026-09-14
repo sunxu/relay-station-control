@@ -32,7 +32,7 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "46"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "47"); err != nil {
 		t.Fatal(err)
 	}
 	p, err := runtimePool(ctx, databaseURL)
@@ -59,6 +59,18 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 	}
 	if _, err := service.LifecycleOverride(ctx, command); err != nil {
 		t.Fatal(err)
+	}
+	intent, err := accountadmin.CanonicalOverrideIntentV1(store.AccountLifecycleOverride, operation.CommandID, command.Reason, command.Detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantHash := sha256.Sum256(intent)
+	var storedHash []byte
+	if err := p.QueryRow(ctx, `SELECT canonical_intent_hash FROM admin_command_registry WHERE command_id=$1`, command.CommandID).Scan(&storedHash); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(storedHash, wantHash[:]) {
+		t.Fatalf("derived override hash=%x, want %x", storedHash, wantHash)
 	}
 	firstReceipt, err := repo.Receipt(ctx, command.CommandID)
 	if err != nil {
@@ -142,6 +154,10 @@ func TestAccountOperationOverridesPG18(t *testing.T) {
 
 	if _, err := p.Exec(ctx, `UPDATE public.account_admin_operations SET lifecycle_override_reason='risk_accepted' WHERE command_id=$1`, operation.CommandID); err == nil {
 		t.Fatal("runtime direct override update unexpectedly succeeded")
+	}
+	// Migration 46's permissive seven-argument runtime signature is gone.
+	if _, err := p.Exec(ctx, `SELECT public.control_apply_lifecycle_override_v1($1,$2,$3,$4,$5,$6,$7)`, uuid.New(), admin, operation.CommandID, "risk_accepted", "", make([]byte, 32), "legacy"); err == nil {
+		t.Fatal("legacy override signature unexpectedly remained callable")
 	}
 }
 

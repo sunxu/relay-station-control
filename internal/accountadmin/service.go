@@ -121,7 +121,7 @@ func (s *Service) applyOverride(ctx context.Context, command OverrideCommand, ki
 	} else if !errors.Is(replayErr, store.ErrCommandConflict) && !errors.Is(replayErr, store.ErrAccountOperationState) {
 		return store.AccountAdminOperation{}, replayErr
 	}
-	override := store.AccountOperationOverride{CommandID: command.CommandID, ActorAdminID: command.ActorAdminID, TargetOperation: command.TargetOperation, Reason: command.Reason, Detail: command.Detail, CanonicalHash: acceptance.CanonicalIntentHash, RequestID: command.RequestID}
+	override := store.AccountOperationOverride{CommandID: command.CommandID, ActorAdminID: command.ActorAdminID, TargetOperation: command.TargetOperation, Reason: command.Reason, Detail: command.Detail, RequestID: command.RequestID}
 	if lifecycle {
 		err = s.operations.ApplyLifecycleOverride(ctx, override)
 	} else {
@@ -379,7 +379,13 @@ func CanonicalOverrideIntentV1(kind store.AccountOperationKind, target uuid.UUID
 	if detail != "" {
 		value = detail
 	}
-	return json.Marshal([]any{"account-intent-v1", "account." + string(kind), target.String(), reason, confirmation, value})
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode([]any{"account-intent-v1", "account." + string(kind), target.String(), reason, confirmation, value}); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(encoded.Bytes(), []byte{'\n'}), nil
 }
 
 func (c Command) String() string { return fmt.Sprintf("account command %s", c.CommandID) }

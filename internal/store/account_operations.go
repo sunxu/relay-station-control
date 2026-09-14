@@ -474,7 +474,6 @@ type AccountOperationOverride struct {
 	TargetOperation uuid.UUID
 	Reason          string
 	Detail          string
-	CanonicalHash   []byte
 	RequestID       string
 }
 
@@ -488,7 +487,7 @@ func (r *AccountOperationRepository) ApplySameAccountOverride(ctx context.Contex
 
 func (r *AccountOperationRepository) applyOverride(ctx context.Context, function string, command AccountOperationOverride) error {
 	var result string
-	err := r.pool.QueryRow(ctx, `SELECT public.`+function+`($1,$2,$3,$4,$5,$6,$7)`, command.CommandID, command.ActorAdminID, command.TargetOperation, command.Reason, command.Detail, command.CanonicalHash, command.RequestID).Scan(&result)
+	err := r.pool.QueryRow(ctx, `SELECT public.`+function+`($1,$2,$3,$4,$5,$6)`, command.CommandID, command.ActorAdminID, command.TargetOperation, command.Reason, command.Detail, command.RequestID).Scan(&result)
 	if err != nil {
 		return err
 	}
