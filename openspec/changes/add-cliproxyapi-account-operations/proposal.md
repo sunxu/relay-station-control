@@ -34,7 +34,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## Dependencies
 
-1. Ops Native-First Crash Recovery Corrective Round 10 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First Crash Recovery Corrective Round 11 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -51,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Crash Recovery Corrective Round 10 follows the fixed review baseline (Ops `0e44ed8bd8f9462179e6e342acabbc607b829327`, Control `1e6dab5f7875bccf81981a52b12559100e9df0b5`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent crash-recovery re-review recorded P0=0, P1=2, P2=2 / CHANGES REQUIRED. Round 10 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
+Native-First Crash Recovery Corrective Round 11 follows the fixed review baseline (Ops `9c8622d7daac1dc837312b6869bb2335b8d833cf`, Control `9b59e85c148925dd2f3e0bb4fb02d7c1c4b3463a`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent crash-recovery re-review recorded P0=0, P1=1, P2=2 / CHANGES REQUIRED. Round 11 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.

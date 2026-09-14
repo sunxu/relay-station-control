@@ -251,6 +251,8 @@ committed_at timestamptz NOT NULL
 
 Registry actor/domain/kind/encoding/hash/key-version integrity is enforced by the same composite identity relationship as Stage 7A. For a mutation receipt, `command_id=target_operation_command_id`; for a successful override they differ. A terminal override failure after actor-first reservation may have a null target FK when the requested operation does not exist; the canonical override intent still contains that UUID and binds exact replay. Runtime roles receive no unrestricted INSERT/UPDATE/DELETE/TRUNCATE.
 
+Both override kinds use one PostgreSQL transaction from the transaction-scoped command advisory lock through registry lookup/reservation, target row lookup/lock and state validation, override field update or terminal failure, high-risk audit where applicable, and immutable receipt insertion. The registry reservation MUST NOT commit independently. Any crash before commit rolls back the reservation, target-field change, audit mutation and receipt; a committed transaction followed by response loss is recovered by exact receipt replay. No network I/O occurs in this transaction.
+
 Lifecycle override ordering is authentication/session/super-admin/CSRF, global actor-first reservation and canonical intent validation, then target lookup/state validation. A missing target returns terminal `404 operation_not_found` with its own immutable override receipt and exact replay. A target that is not `dispatched` or unresolved `outcome_unknown` returns the reviewed terminal conflict with its own receipt. A later override after one is recorded returns `409 lifecycle_override_already_set`, records its own receipt and changes no existing override fields.
 
 Same-account override uses the same actor-first ordering and receipt relation. A missing target returns terminal `404 operation_not_found` with its own override-command receipt and exact replay; a target outside `dispatched` or unresolved `outcome_unknown` returns the reviewed terminal conflict with its own receipt; the first valid override returns `200` and records its fields atomically; a later different command returns `409 same_account_override_already_set` with its own receipt and changes no existing fields. Neither override reuses the original account-mutation receipt.
@@ -366,9 +368,9 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Crash Recovery Corrective Round 10
-Previous independent crash-recovery re-review = P0 0 / P1 2 / P2 2 / CHANGES REQUIRED
-Round 10 resolutions = INCORPORATED
+Native-First Crash Recovery Corrective Round 11
+Previous independent crash-recovery re-review = P0 0 / P1 1 / P2 2 / CHANGES REQUIRED
+Round 11 resolutions = INCORPORATED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate
