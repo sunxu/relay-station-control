@@ -16,7 +16,7 @@
 - ADR status: `ACCEPTED`.
 - Detailed Requirements: `FROZEN`.
 - OpenSpec Change B: `READY`.
-- Planning / specification readiness: `READY FOR INDEPENDENT RE-REVIEW`.
+- Planning / specification readiness: `PASS`.
 - Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
 - Implementation: `NOT STARTED`.
