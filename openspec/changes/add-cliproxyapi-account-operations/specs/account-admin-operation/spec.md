@@ -18,6 +18,30 @@ Account commands MUST use domain `account_admin`, encoding version 1 and exactly
 - **WHEN** an upload uses a UUID reserved by Gateway, Node or Monitoring command
 - **THEN** `command_conflict` occurs before credential parsing and no native request is sent
 
+### Requirement: Account command acceptance SHALL be atomic and pre-dispatch
+
+An account mutation is accepted only after one atomic PostgreSQL transaction commits both the Stage 7A registry reservation and an `account_admin_operations` row in `prepared`. Before that commit, authentication/session/super-admin/CSRF, actor-first conflict priority, closed request/canonical identity validation, upload bounds/schema/denylist/HMAC validation and required Node existence lookup MUST complete. No native HTTP may occur before acceptance. Pre-acceptance errors produce no new registry reservation, operation row, receipt or native mutation and return error-only; an actor-first conflict never discloses a target operation.
+
+`prepared` means accepted, zero previous remote dispatch and no committed deterministic terminal result. It is not a queue or waiting state. Only the exact same-command mutation POST may resume the same operation with fresh checks; GET never resumes it. Upload resume requires the exact credential bytes and upload HMAC; a different fingerprint is `command_conflict` with zero native request.
+
+After acceptance, a deterministic failure before remote dispatch MUST atomically transition `prepared -> failed`, persist terminal audit and the immutable receipt, and return error plus operation. The state remains failed on replay; later external changes require a new command ID. The required deterministic failures are `node_retired`, `node_monitoring_ineligible`, `unsupported_node_version`, `node_management_unavailable`, `account_target_not_found`, `account_target_ambiguous`, `account_target_exists`, `account_filename_conflict` and `account_operation_in_progress`, with null `dispatch_started_at` and zero native mutation. The reviewed post-dispatch Upload POST 503 exception remains a separate `failed/node_management_unavailable` mapping.
+
+#### Scenario: Accepted command is blocked by a same-account operation
+- **WHEN** command B is already `prepared` and fresh dispatch checks find command A `dispatched` or `outcome_unknown` with no same-account override
+- **THEN** B commits `prepared -> failed` with `account_operation_in_progress`, a terminal receipt and zero native mutation; exact replay returns the same response and B never revives after A changes
+
+#### Scenario: Accepted command sees a deterministic pre-dispatch failure
+- **WHEN** fresh runtime, Node, target or occupancy checks fail before native dispatch
+- **THEN** the operation commits `prepared -> failed` with the stable error, null `dispatch_started_at`, an error-plus-operation response and an immutable receipt
+
+#### Scenario: Prepared operation resumes after crash
+- **WHEN** acceptance committed `prepared` but no deterministic terminalization or dispatch transition committed before Control crashed
+- **THEN** an exact same-command mutation POST resumes the same row, reruns all fresh checks, and may produce `remote_noop`, `failed` or the first `prepared -> dispatched` transition
+
+#### Scenario: Deterministic failure response is lost
+- **WHEN** `prepared -> failed` and its receipt commit succeed but the HTTP response is lost
+- **THEN** exact same-command replay returns the persisted status/body with zero re-evaluation and zero native mutation
+
 ### Requirement: Control SHALL call only the reviewed native CLIProxyAPI subset
 
 Against CLIProxyAPI v7.3.2 at `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`, Control MUST use only `GET /v0/management/auth-files`, `PATCH /v0/management/auth-files/status` with exact `name/auth_index/disabled`, single-name query `DELETE /v0/management/auth-files?name=...`, and raw-JSON `POST /v0/management/auth-files?name=...`. Management transport MUST remain HTTP-only, fixed-target, bounded, no redirect/proxy/fallback/retry and sanitized.

@@ -398,3 +398,31 @@ Final Implementation Readiness = NOT READY
 Node revert = NOT RUN
 Stage 7B implementation = NOT STARTED
 ```
+
+## Acceptance boundary and pre-dispatch terminality
+
+An account mutation is **accepted** only when one atomic PostgreSQL transaction has committed both the Stage 7A `admin_command_registry` reservation and an `account_admin_operations` row with `execution_state=prepared`. Before that commit, a new command has no accepted operation, terminal account receipt or native mutation. Authentication/session/super-admin/CSRF, shared command serialization, actor-first conflict priority, closed request and canonical identity validation, upload bounds/schema/denylist/HMAC validation, and the required Node existence lookup precede that acceptance commit. Native management HTTP is never sent before acceptance.
+
+For a new command ID, pre-acceptance authentication, authorization, CSRF, request, upload, identity, unsupported-provider, Node-not-found or actor/domain/kind/intent conflict errors create no registry reservation, operation row or receipt and return an error-only body. Actor-first lookup of an existing command remains first and preserves Stage 7A conflict priority; a conflict never discloses a target operation.
+
+`prepared` means an accepted command for which zero remote mutation dispatch has occurred and no deterministic terminal result has yet committed. It is not a queue, retry state, scheduler state or waiting state. Only an exact same-command mutation POST may resume it; GET never resumes it. A prepared upload resume must re-supply the exact credential bytes and matching upload HMAC. A different fingerprint is `command_conflict` with zero native request.
+
+After acceptance, every deterministic failure discovered before remote dispatch MUST atomically transition `prepared -> failed`, record the stable error, terminal audit and immutable receipt, then return the error plus the current operation projection. This includes `node_retired`, `node_monitoring_ineligible`, `unsupported_node_version`, `node_management_unavailable`, `account_target_not_found`, `account_target_ambiguous`, `account_target_exists`, `account_filename_conflict` and `account_operation_in_progress`. `dispatch_started_at` remains null and native mutation is zero. The committed receipt makes the same-command retry an exact replay with no re-evaluation; a new command ID is required after conditions change. The reviewed Upload POST 503/authManager-nil exception is a separate post-`prepared -> dispatched` terminal mapping, and is also `failed/node_management_unavailable` with a receipt and zero credential mutation.
+
+### Account mutation response and receipt matrix
+
+| Phase | Condition | New reservation | Operation row | State/result | dispatch_started_at | HTTP/body | Receipt | Same-command retry | New command after condition changes |
+|---|---|---|---|---|---|---|---|---|---|
+| Pre-acceptance | auth/authorization/CSRF, invalid request/upload/identity, unsupported provider or Node not found | no | no | none | none | mapped error-only | no | normal re-evaluation | no |
+| Pre-acceptance | actor/domain/kind/intent conflict | no new reservation | no disclosure | existing command unchanged | unchanged | `409 command_conflict`, error-only | existing command rules | exact prior command behavior | yes |
+| Accepted pre-dispatch | deterministic Node, monitoring, runtime, target, occupancy or same-account blocker failure | yes, committed with operation | yes | `failed` / stable error | null | mapped error + operation, normally `409` or `503` | yes | exact persisted receipt | yes |
+| Accepted pre-dispatch | Disable/Enable desired state already satisfied | yes | yes | `remote_noop` / noop | null | `200` operation-only | yes | exact persisted receipt | no |
+| Dispatched | stable native 2xx after request sent | yes | yes | `remote_applied` / applied | non-null | `200` operation-only | yes | exact persisted receipt | no |
+| Dispatched | reviewed Upload POST 503 at authManager-nil before body read/write | yes | yes | `failed` / `node_management_unavailable` | non-null | `503` error + operation | yes | exact persisted receipt | no |
+| Dispatched | timeout, connection/response loss or ambiguous/unreviewed 5xx | yes | yes | `outcome_unknown` | non-null | `202` operation-only | no | current projection, zero redispatch | explicit same-account override may be required |
+| Override | target missing after actor-first reservation | yes | target absent | no target mutation | n/a | `404` error-only | override receipt | exact persisted receipt | no |
+| Override | existing target not overridable | yes | yes | target unchanged | n/a | `409` error + operation | override receipt | exact persisted receipt | no |
+| Override | eligible target already has route-specific override | yes | yes | target unchanged | n/a | `409` error + operation | override receipt | exact persisted receipt | no |
+| Override | first valid override | yes | yes | execution state unchanged | n/a | `200` operation-only | override receipt | exact persisted receipt | no |
+
+The only allowed mutation transitions are `prepared -> dispatched`, `prepared -> remote_noop`, `prepared -> failed`, `dispatched -> remote_applied`, reviewed/proven `dispatched -> failed`, and `dispatched -> outcome_unknown`. `remote_applied`, `remote_noop` and `failed` are terminal. `outcome_unknown` is never automatically terminalized. Receipt eligibility is exactly: `prepared` no, `dispatched` no, `outcome_unknown` no, `remote_applied` yes, `remote_noop` yes and `failed` yes.
