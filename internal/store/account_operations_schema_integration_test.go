@@ -38,7 +38,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "39"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "40"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,7 +83,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	if _, err := p.Exec(ctx, `INSERT INTO account_admin_command_receipts(command_id,actor_admin_id,command_kind,intent_encoding_version,canonical_intent_hash,http_status,response_body) VALUES($1,$2,'account.disable',1,decode(repeat('00',32),'hex'),200,'{}')`, uuid.New(), admin); err == nil {
 		t.Fatal("runtime receipt INSERT unexpectedly succeeded")
 	}
-	if err := r.TerminalizePreDispatchFailure(ctx, firstID, mustFailure(t, "account_target_not_found"), []byte(`{"error":{"code":"account_target_not_found"}}`), "schema-proof"); err != nil {
+	if err := r.TerminalizePreDispatchFailure(ctx, firstID, mustFailure(t, "account_target_not_found"), "schema-proof"); err != nil {
 		t.Fatal(err)
 	}
 	receipt, err := r.Receipt(ctx, firstID)
@@ -116,7 +116,22 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	if savedBody["error"] == nil {
 		t.Fatal("receipt did not preserve response body")
 	}
-	if _, err := r.TransitionAccountOperation(ctx, firstID, store.AccountPrepared, store.AccountDispatched, nil); !errors.Is(err, store.ErrAccountOperationState) {
+	operationBody, ok := savedBody["operation"].(map[string]any)
+	if !ok || operationBody["execution_state"] != "failed" || operationBody["error_code"] != "account_target_not_found" {
+		t.Fatalf("derived terminal operation body = %#v", savedBody["operation"])
+	}
+	var forgedID = uuid.New()
+	forgedHash := sha256.Sum256([]byte("forged"))
+	if _, err := r.Accept(ctx, store.AccountOperationAcceptance{CommandID: forgedID, ActorAdminID: admin, OperationKind: store.AccountDisable, NodeInstanceID: node, AccountKey: "antigravity:forged@example.invalid", CanonicalIntentHash: forgedHash[:]}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,'made_up_error','forged')`, forgedID); err == nil {
+		t.Fatal("forged failure code unexpectedly accepted")
+	}
+	if _, err := p.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,'node_retired','forged')`, forgedID); err != nil {
+		t.Fatalf("valid derived failure rejected: %v", err)
+	}
+	if _, err := r.TransitionAccountOperation(ctx, firstID, store.AccountPrepared, store.AccountDispatched); !errors.Is(err, store.ErrAccountOperationState) {
 		t.Fatalf("terminal transition = %v", err)
 	}
 
@@ -125,7 +140,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	if _, err := r.Accept(ctx, store.AccountOperationAcceptance{CommandID: secondID, ActorAdminID: admin, OperationKind: store.AccountEnable, NodeInstanceID: node, AccountKey: "antigravity:other@example.invalid", CanonicalIntentHash: secondHash[:]}); err != nil {
 		t.Fatal(err)
 	}
-	admitted, _, err := r.AdmitAccountDispatch(ctx, secondID, node, "antigravity:other@example.invalid", []byte(`{"error":{"code":"account_operation_in_progress"}}`), 409, "schema-proof")
+	admitted, _, err := r.AdmitAccountDispatch(ctx, secondID, node, "antigravity:other@example.invalid", "schema-proof")
 	if err != nil || !admitted {
 		t.Fatal(err)
 	}
@@ -161,19 +176,24 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	if err := os.Symlink(invalidPaths[1], invalidPaths[2]); err != nil {
 		t.Fatal(err)
 	}
+	invalidCommands := make([]uuid.UUID, 0, len(invalidPaths))
 	for _, invalidPath := range invalidPaths {
 		command := keyCommand
 		command.CommandID = uuid.New()
+		invalidCommands = append(invalidCommands, command.CommandID)
 		if _, err := r.AcceptWithIntentKey(ctx, invalidPath, command, []byte("synthetic-intent")); !errors.Is(err, store.ErrAccountIntentKeyUnavailable) {
 			t.Fatalf("invalid intent key %s error = %v", filepath.Base(invalidPath), err)
 		}
 	}
-	var registryCount, operationCount, receiptCount int
-	if err := p.QueryRow(ctx, `SELECT count(*) FILTER (WHERE command_id=$1), (SELECT count(*) FROM account_admin_operations WHERE command_id=$1), (SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1) FROM admin_command_registry`, keyCommand.CommandID).Scan(&registryCount, &operationCount, &receiptCount); err != nil {
-		t.Fatal(err)
-	}
-	if registryCount != 0 || operationCount != 0 || receiptCount != 0 {
-		t.Fatalf("failed key persisted state=%d/%d/%d", registryCount, operationCount, receiptCount)
+	invalidCommands = append(invalidCommands, keyCommand.CommandID)
+	for _, commandID := range invalidCommands {
+		var registryCount, operationCount, receiptCount int
+		if err := p.QueryRow(ctx, `SELECT (SELECT count(*) FROM admin_command_registry WHERE command_id=$1), (SELECT count(*) FROM account_admin_operations WHERE command_id=$1), (SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1)`, commandID).Scan(&registryCount, &operationCount, &receiptCount); err != nil {
+			t.Fatal(err)
+		}
+		if registryCount != 0 || operationCount != 0 || receiptCount != 0 {
+			t.Fatalf("failed key %s persisted state=%d/%d/%d", commandID, registryCount, operationCount, receiptCount)
+		}
 	}
 }
 
@@ -198,7 +218,7 @@ func runAdmissionRace(t *testing.T, ctx context.Context, p *pgxpool.Pool, r *sto
 		go func(id uuid.UUID) {
 			defer wg.Done()
 			<-start
-			admitted, _, err := r.AdmitAccountDispatch(ctx, id, node, accountKey, []byte(`{"error":{"code":"account_operation_in_progress"}}`), 409, "race")
+			admitted, _, err := r.AdmitAccountDispatch(ctx, id, node, accountKey, "race")
 			results <- result{admitted, err}
 		}(id)
 	}
@@ -232,6 +252,15 @@ func runAdmissionRace(t *testing.T, ctx context.Context, p *pgxpool.Pool, r *sto
 	if failed != 1 || receipts != 1 || audits != 1 {
 		t.Fatalf("race loser evidence failed/receipts/audits=%d/%d/%d", failed, receipts, audits)
 	}
+	var loserCode string
+	var loserStatus int
+	var loserBody []byte
+	if err := p.QueryRow(ctx, `SELECT o.remote_result_code,r.http_status,r.response_body FROM account_admin_operations o JOIN account_admin_command_receipts r ON r.target_operation_command_id=o.command_id WHERE o.account_key=$1 AND o.execution_state='failed'`, accountKey).Scan(&loserCode, &loserStatus, &loserBody); err != nil {
+		t.Fatal(err)
+	}
+	if loserCode != "account_operation_in_progress" || loserStatus != 409 || !bytes.Contains(loserBody, []byte(`"account_operation_in_progress"`)) {
+		t.Fatalf("derived blocker receipt = code=%s status=%d body=%s", loserCode, loserStatus, loserBody)
+	}
 }
 
 func runIndependentAdmissionRace(t *testing.T, ctx context.Context, r *store.AccountOperationRepository, admin, node uuid.UUID) {
@@ -252,7 +281,7 @@ func runIndependentAdmissionRace(t *testing.T, ctx context.Context, r *store.Acc
 		go func(i int, id uuid.UUID) {
 			defer wg.Done()
 			<-start
-			admitted, _, err := r.AdmitAccountDispatch(ctx, id, node, keys[i], nil, 0, "independent")
+			admitted, _, err := r.AdmitAccountDispatch(ctx, id, node, keys[i], "independent")
 			if err == nil && !admitted {
 				err = errors.New("independent account was blocked")
 			}

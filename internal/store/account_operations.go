@@ -232,7 +232,7 @@ func callAcceptAccountOperation(ctx context.Context, tx pgx.Tx, c AccountOperati
 
 // TransitionAccountOperation applies the frozen explicit transition matrix.
 // The operation row lock is held only for the database transition.
-func (r *AccountOperationRepository) TransitionAccountOperation(ctx context.Context, id uuid.UUID, from, to AccountOperationState, resultCode *string) (AccountAdminOperation, error) {
+func (r *AccountOperationRepository) TransitionAccountOperation(ctx context.Context, id uuid.UUID, from, to AccountOperationState) (AccountAdminOperation, error) {
 	if from == AccountPrepared || !allowedAccountTransition(from, to) {
 		return AccountAdminOperation{}, ErrAccountOperationState
 	}
@@ -253,7 +253,7 @@ func (r *AccountOperationRepository) TransitionAccountOperation(ctx context.Cont
 	if current != from {
 		return AccountAdminOperation{}, ErrAccountOperationState
 	}
-	if _, err = scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_transition_account_admin_operation_v1($1,$2,$3,$4)`, id, from, to, resultCode)); err != nil {
+	if _, err = scanAccountOperation(tx.QueryRow(ctx, `SELECT * FROM control_transition_account_admin_operation_v1($1,$2,$3)`, id, from, to)); err != nil {
 		return AccountAdminOperation{}, err
 	}
 	op, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
@@ -277,8 +277,8 @@ func allowedAccountTransition(from, to AccountOperationState) bool {
 	}
 }
 
-func (r *AccountOperationRepository) TerminalizePreDispatchFailure(ctx context.Context, id uuid.UUID, failure AccountFailure, body []byte, requestID string) error {
-	if failure.Phase != AccountPreDispatchPostAccept || failure.Code == "" || len(body) == 0 {
+func (r *AccountOperationRepository) TerminalizePreDispatchFailure(ctx context.Context, id uuid.UUID, failure AccountFailure, requestID string) error {
+	if failure.Phase != AccountPreDispatchPostAccept || failure.Code == "" {
 		return ErrInvalidAccountOperation
 	}
 	tx, err := r.pool.Begin(ctx)
@@ -289,7 +289,7 @@ func (r *AccountOperationRepository) TerminalizePreDispatchFailure(ctx context.C
 	if err = lockAdminCommand(ctx, tx, id); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,$2,$3,$4,$5)`, id, failure.Code, failure.HTTPStatus, body, requestID); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,$2,$3)`, id, failure.Code, requestID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -298,7 +298,7 @@ func (r *AccountOperationRepository) TerminalizePreDispatchFailure(ctx context.C
 // AdmitAccountDispatch atomically classifies the same-account blocker and the
 // prepared -> dispatched transition. The caller may send native HTTP only
 // after this method commits.
-func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, id, nodeID uuid.UUID, accountKey string, blockerBody []byte, blockerStatus int, requestID string) (bool, AccountAdminOperation, error) {
+func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, id, nodeID uuid.UUID, accountKey, requestID string) (bool, AccountAdminOperation, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return false, AccountAdminOperation{}, err
@@ -308,7 +308,7 @@ func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, i
 		return false, AccountAdminOperation{}, err
 	}
 	var admitted bool
-	if err = tx.QueryRow(ctx, `SELECT control_admit_account_dispatch_v1($1,$2,$3,$4,$5,$6)`, id, nodeID, accountKey, blockerBody, blockerStatus, requestID).Scan(&admitted); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT control_admit_account_dispatch_v1($1,$2,$3,$4)`, id, nodeID, accountKey, requestID).Scan(&admitted); err != nil {
 		return false, AccountAdminOperation{}, err
 	}
 	op, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
