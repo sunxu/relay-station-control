@@ -94,7 +94,7 @@ func NewServiceWithIntentKeyPath(operations operationStore, nodes NodeResolver, 
 // API caller. Upload fingerprints are calculated inside the service boundary;
 // the credential is never returned or persisted by this helper.
 func (s *Service) CanonicalIntentForCommand(command Command) ([]byte, error) {
-	if err := validateCommand(command); err != nil {
+	if err := validateCommandRequest(command); err != nil {
 		return nil, err
 	}
 	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
@@ -262,7 +262,14 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 }
 
 func validateCommand(command Command) error {
-	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil || command.NodeInstanceID == uuid.Nil || len(command.CanonicalIntent) == 0 || strings.TrimSpace(command.AccountKey) == "" {
+	if len(command.CanonicalIntent) == 0 {
+		return ErrInvalidCommand
+	}
+	return validateCommandRequest(command)
+}
+
+func validateCommandRequest(command Command) error {
+	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil || command.NodeInstanceID == uuid.Nil || strings.TrimSpace(command.AccountKey) == "" {
 		return ErrInvalidCommand
 	}
 	switch command.Kind {

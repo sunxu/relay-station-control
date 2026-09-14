@@ -61,7 +61,7 @@ func (s *Server) executeAccountJSON(w http.ResponseWriter, r *http.Request, csrf
 	}
 	command.CanonicalIntent = intent
 	operation, err := s.accountOperations.Execute(r.Context(), command)
-	if err == nil && s.writeStoredAccountReceipt(r, w, command.CommandID, session.ID) {
+	if err == nil && s.writeStoredAccountReceipt(r, w, command.CommandID, session.AdminID) {
 		return
 	}
 	s.writeAccountOperationResult(w, r, operation, err)
@@ -105,7 +105,7 @@ func (s *Server) executeAccountUpload(w http.ResponseWriter, r *http.Request, cs
 	}
 	command.CanonicalIntent = intent
 	operation, err := s.accountOperations.Execute(r.Context(), command)
-	if err == nil && s.writeStoredAccountReceipt(r, w, command.CommandID, session.ID) {
+	if err == nil && s.writeStoredAccountReceipt(r, w, command.CommandID, session.AdminID) {
 		return
 	}
 	s.writeAccountOperationResult(w, r, operation, err)
@@ -165,7 +165,7 @@ func (s *Server) executeAccountOverride(w http.ResponseWriter, r *http.Request, 
 	} else {
 		op, err = s.accountOperations.SameAccountOverride(r.Context(), command)
 	}
-	if err == nil && s.writeStoredAccountReceipt(r, w, commandID, session.ID) {
+	if err == nil && s.writeStoredAccountReceipt(r, w, commandID, session.AdminID) {
 		return
 	}
 	s.writeAccountOperationResult(w, r, op, err)
