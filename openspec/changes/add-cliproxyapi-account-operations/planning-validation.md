@@ -22,7 +22,7 @@
 - Node revert: `COMPLETE`.
 - Final Implementation Readiness: `PASS`.
 - Gate 3: `CLOSED / PASS`; Gate 4: `IN PROGRESS`.
-- Stage 7B Round 1 Persistence + Domain Core: `IMPLEMENTED CANDIDATE`; native adapter, API, UI and E2E remain `NOT STARTED`.
+- Stage 7B Round 1 Persistence + Domain Core: `CLOSED / PASS`; Round 2 Native Adapter + Runtime Artifact Guard: `IMPLEMENTED CANDIDATE`; Round 3 command orchestration, API, UI and E2E remain `NOT STARTED`.
 
 ## Gate 3 finalization status
 
@@ -30,9 +30,9 @@
 - Node alignment and historical Stage7N revert: `COMPLETE`.
 - Native acceptance: `PASS`; artifact provenance: `CONFIRMED`.
 - Runtime artifact identity: `FROZEN` — source `2be99911510c3168199015aad915b8457fc82111`, `X-CPA-VERSION=7.3.2`, `X-CPA-COMMIT=2be99911510c3168199015aad915b8457fc82111`, image `sha256:886804e0569c619433d3603772c162ff193ce57da6cb95e6250178966d3c7b3d`.
-- Final Implementation Readiness: `PASS`; Gate 4: `IN PROGRESS`; Stage 7B implementation: `IN PROGRESS`.
+- Final Implementation Readiness: `PASS`; Gate 4: `IN PROGRESS`; Stage 7B implementation: `IN PROGRESS`; Round 2 is an `IMPLEMENTED CANDIDATE` and Gate 4 final review is `NOT READY`.
 
-This document records Gate 2 PASS, Gate 3 finalization and the start of Gate 4 Round 1 persistence/domain implementation. Final Implementation Readiness is PASS; the Round 1 candidate is implemented, while native adapter, API, UI and E2E work remain for later Gate 4 rounds.
+This document records Gate 2 PASS, Gate 3 finalization, the completed Round 1 persistence/domain candidate and the current Round 2 native adapter/runtime guard candidate. Final Implementation Readiness is PASS; command orchestration, API, UI and E2E work remain for later Gate 4 rounds.
 
 ## Historical dependency record
 
@@ -97,7 +97,7 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 CLOSED / GATE 3 CLOSED / FINAL IMPLEMENTATION READINESS PASS / GATE 4 NEXT / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 CLOSED / GATE 3 CLOSED / FINAL IMPLEMENTATION READINESS PASS / GATE 4 IN PROGRESS / ROUND 2 IMPLEMENTED CANDIDATE / GATE 4 FINAL REVIEW NOT READY`.
 
 ## Gate 2 acceptance matrix
 
@@ -130,8 +130,11 @@ Node alignment = COMPLETE
 Node revert = COMPLETE
 Runtime artifact identity = FROZEN
 Final Implementation Readiness = PASS
-Gate 4 = NEXT
-Stage 7B implementation = NOT STARTED
+Gate 4 = IN PROGRESS
+Round 1 = CLOSED / PASS
+Round 2 Native Adapter + Runtime Artifact Guard = IMPLEMENTED CANDIDATE
+Round 3 Command Orchestration = NOT STARTED
+Gate 4 Final Review = NOT READY
 ```
 
 ## Phase-aware error acceptance matrix
