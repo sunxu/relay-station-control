@@ -17,15 +17,26 @@
 - Detailed Requirements: `FROZEN`.
 - OpenSpec Change B: `READY`.
 - Planning / specification readiness: `PASS`.
-- Runtime artifact identity: `NOT YET FROZEN`.
-- Node revert: `NOT RUN`.
+- Runtime artifact identity: `FROZEN`.
+- Node alignment: `COMPLETE`.
+- Node revert: `COMPLETE`.
+- Final Implementation Readiness: `PASS`.
+- Gate 3: `CLOSED / PASS`; Gate 4: `NEXT`.
 - Implementation: `NOT STARTED`.
 
-This document records Gate 2 PASS and does not claim final Implementation Readiness PASS or implementation authorization. Gate 2 does not authorize Stage 7B implementation; Gate 3 is next.
+## Gate 3 finalization status
+
+- Gate 3: `CLOSED / PASS`.
+- Node alignment and historical Stage7N revert: `COMPLETE`.
+- Native acceptance: `PASS`; artifact provenance: `CONFIRMED`.
+- Runtime artifact identity: `FROZEN` — source `2be99911510c3168199015aad915b8457fc82111`, `X-CPA-VERSION=7.3.2`, `X-CPA-COMMIT=2be99911510c3168199015aad915b8457fc82111`, image `sha256:886804e0569c619433d3603772c162ff193ce57da6cb95e6250178966d3c7b3d`.
+- Final Implementation Readiness: `PASS`; Gate 4: `NEXT`; Stage 7B implementation: `NOT STARTED`.
+
+This document records Gate 2 PASS and the subsequent Gate 3 finalization. Final Implementation Readiness is PASS; Gate 4 is next and Stage 7B implementation remains unauthorized and not started.
 
 ## Historical dependency record
 
-The Node Account Management Contract v1, its implementation at Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`, contract reviews and corrective amendments remain valid historical evidence of an implemented and reviewed design. Native-First Corrective Round 3 continues to mark that design a **HISTORICAL / SUPERSEDED CANDIDATE**. It is not the current Change B implementation dependency and not the current deployment baseline. No Node revert is part of this planning change.
+The Node Account Management Contract v1, its implementation at Node revision `72c435b1b1b85b341a734e3860081c7782d9cbd2`, image `sha256:c5d2cc476c5c99cff994528920151c3ecee0f37832ba82943b8b54ab7d9610c4`, contract reviews and corrective amendments remain valid historical evidence of an implemented and reviewed design. Native-First Corrective Round 3 continues to mark that design a **HISTORICAL / SUPERSEDED CANDIDATE**. It is not the current Change B implementation dependency and not the current deployment baseline. The Node alignment/revert is recorded in the Ops Gate 3 evidence; this OpenSpec change contains no Node source change.
 
 ## Reviewed native source evidence
 
@@ -86,7 +97,7 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 READY FOR INDEPENDENT REQUIREMENTS-OPENSPEC REVIEW / DETAILED REQUIREMENTS FREEZE CANDIDATE / OPENSPEC READY CANDIDATE / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 CLOSED / GATE 3 CLOSED / FINAL IMPLEMENTATION READINESS PASS / GATE 4 NEXT / IMPLEMENTATION NOT STARTED`.
 
 ## Gate 2 acceptance matrix
 
@@ -100,7 +111,7 @@ The following matrix is the deterministic planning acceptance set for independen
 - Serialization and overrides: same-account A/B race; PostgreSQL invariant; Retire-first/dispatch-first; lifecycle override and same-account override missing-target, invalid-state, already-set, success, exact replay and different-command race; cross-type override race; each override waives only its own blocker; old unknown request may complete after same-account override.
 - Observation, secrecy and receipts: normal Inventory independent observation; no Phase 7 verification workflow/state/scheduler/reconciler; Secret scans; no raw native response, credential or Management Key exposure; error-only and error-plus-operation response classes; immutable receipt exact replay; override transaction rollback before commit and commit/response-loss replay.
 
-## Gate 2 final status
+## Gate 3 final status
 
 ```text
 Architecture Review = PASS
@@ -114,11 +125,12 @@ Detailed Requirements = FROZEN
 OpenSpec Change B = READY
 Planning / specification readiness = PASS
 Gate 2 = CLOSED / PASS
-Gate 3 = NEXT
-Runtime artifact identity = NOT YET FROZEN
-Node alignment = NOT STARTED
-Node revert = NOT RUN
-Final Implementation Readiness = NOT READY
+Gate 3 = CLOSED / PASS
+Node alignment = COMPLETE
+Node revert = COMPLETE
+Runtime artifact identity = FROZEN
+Final Implementation Readiness = PASS
+Gate 4 = NEXT
 Stage 7B implementation = NOT STARTED
 ```
 

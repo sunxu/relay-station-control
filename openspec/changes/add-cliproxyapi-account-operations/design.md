@@ -56,7 +56,7 @@ Control MUST NOT call `DELETE all=true`, multi-name/body delete, multipart nativ
 
 `GET /v0/management/auth-files` is untrusted management input. Before parsing or interpreting its body, the adapter MUST require exactly one bounded `X-CPA-VERSION` and exactly one bounded `X-CPA-COMMIT`. Each value MUST match the independently frozen final runtime artifact header byte-for-byte; no `v` prefix normalization, short-SHA expansion or source-tag inference is permitted. Missing, duplicate, malformed, unknown or mismatched values return `unsupported_node_version` with zero mutation.
 
-The semantic upstream source baseline is release `v7.3.2` at `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`; it is distinct from runtime artifact identity. Before Stage 7B implementation readiness, release evidence MUST build the final reviewed artifact, observe and record its exact version/commit headers and image digest, and freeze all three values. A stock artifact may use the upstream commit; a fork artifact may emit a short build commit. Configuration or database expectation MUST NOT substitute for absent response headers. Runtime artifact identity is currently **NOT YET FROZEN**, so Stage 7B is not implementation-ready.
+The semantic upstream source baseline is release `v7.3.2` at `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`; it is distinct from runtime artifact identity. Gate 3 froze the reviewed artifact source commit `2be99911510c3168199015aad915b8457fc82111`, exact headers `X-CPA-VERSION=7.3.2` and `X-CPA-COMMIT=2be99911510c3168199015aad915b8457fc82111`, and image digest `sha256:886804e0569c619433d3603772c162ff193ce57da6cb95e6250178966d3c7b3d`. Configuration or database expectation MUST NOT substitute for absent response headers. Runtime artifact identity is **FROZEN**; Gate 3 is closed and Gate 4 is next.
 
 After the header gate, snapshot handling has two stages:
 
@@ -399,13 +399,13 @@ Node revert = NOT RUN
 Stage 7B implementation = NOT STARTED
 ```
 
-This historical candidate did not declare Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or Stage 7B authorization. Current Gate 1 finalization and Gate 2 planning candidate are recorded above and do not authorize implementation.
+This historical candidate did not declare Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or Stage 7B authorization. Current Gate 1, Gate 2 and Gate 3 finalization are recorded above; Gate 4 remains the next implementation gate and does not authorize implementation before its entry criteria.
 
-## Current Gate 2 candidate
+## Current Gate 2 and Gate 3 status
 
-### Gate 2 Corrective Round 2 status
+### Gate 2 final and Gate 3 finalization status
 
-Independent Gate 2 final re-review: `P0=0 / P1=0 / P2=2 non-blocking / PASS`；final Gate 2 findings `P0=0 / P1=0 / P2=0`。Gate 1 remains `CLOSED / PASS`; Detailed Requirements are `FROZEN`; OpenSpec Change B is `READY`; planning/specification readiness is `PASS`; Gate 2 is `CLOSED / PASS`; Gate 3 is `NEXT`。Runtime artifact identity remains `NOT YET FROZEN`; implementation is not authorized.
+Independent Gate 2 final re-review: `P0=0 / P1=0 / P2=2 non-blocking / PASS`; final Gate 2 findings `P0=0 / P1=0 / P2=0`. Gate 1 and Gate 2 are `CLOSED / PASS`; Detailed Requirements are `FROZEN`; OpenSpec Change B is `READY`; planning/specification readiness is `PASS`. Gate 3 is `CLOSED / PASS` after Node alignment, native acceptance and artifact pin; runtime artifact identity is `FROZEN`; Final Implementation Readiness is `PASS`; Gate 4 is next and implementation remains unauthorized.
 
 ```text
 Architecture Review = PASS
@@ -414,9 +414,11 @@ Gate 1 = CLOSED / PASS
 Gate 2 = CLOSED / PASS
 Detailed Requirements = FROZEN
 OpenSpec Change B = READY
-Runtime artifact identity = NOT YET FROZEN
-Final Implementation Readiness = NOT READY
-Node revert = NOT RUN
+Runtime artifact identity = FROZEN
+Final Implementation Readiness = PASS
+Node alignment = COMPLETE
+Node revert = COMPLETE
+Gate 4 = NEXT
 Stage 7B implementation = NOT STARTED
 ```
 
