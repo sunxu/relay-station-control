@@ -3,15 +3,15 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Simplification Corrective Round 7.
+- Architecture direction: Native-First Simplification Corrective Round 8.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
 - Native-First Simplification: no Phase 7 verification state/workflow, scheduler, reconciler, durable job, lease or worker; normal Inventory remains independent business observation.
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
-- Previous independent re-review: P0=0, P1=1, P2=2 / CHANGES REQUIRED.
-- All Round 7 P1/P2 resolutions: incorporated.
+- Previous independent re-review: P0=0, P1=1, P2=1 / CHANGES REQUIRED.
+- All Round 8 P1/P2 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.

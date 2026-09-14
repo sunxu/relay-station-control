@@ -226,7 +226,7 @@ After auth/session/super_admin/CSRF, Control acquires the shared UUID-derived ad
 
 Change B adds immutable `account_admin_command_receipts`, separate from asset-only receipts. For account mutations, `remote_applied`, `remote_noop` and `failed` are receipt-eligible; `prepared`, `dispatched` and `outcome_unknown` are not. Phase 7 v1 has no additional intermediate failure state. If no stable evidence exists, state is `outcome_unknown` and there is no receipt.
 
-A failure before global acceptance creates no operation/receipt. A stable terminal transition, terminal audit and receipt insertion commit atomically before response. Exact same actor/domain/kind/intent terminal replay returns stored HTTP status and canonical response bytes. Verification and lifecycle override changes MUST NOT rewrite that immutable original POST response.
+A failure before global acceptance creates no operation/receipt. A stable terminal transition, terminal audit and receipt insertion commit atomically before response. Exact same actor/domain/kind/intent terminal replay returns stored HTTP status and canonical response bytes. Inventory observations and lifecycle override changes MUST NOT rewrite that immutable original POST response.
 
 The receipt relation supports both account mutation commands and independent lifecycle-override commands:
 
@@ -309,7 +309,7 @@ After global command acceptance, runtime artifact gate, fresh mutation-eligible 
 ```text
 pre-dispatch desired state already satisfied -> remote_noop, zero PATCH
 known successful terminal native 2xx after PATCH/POST/DELETE -> remote_applied
-provably pre-mutation mapped native 4xx -> failed
+stable reviewed pre-mutation status/context -> failed
 timeout / connection loss / response loss -> outcome_unknown
 ambiguous native 5xx after request may have arrived -> outcome_unknown
 ```
@@ -355,8 +355,8 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Simplification Corrective Round 7
-Previous independent re-review = P0 0 / P1 1 / P2 2 / CHANGES REQUIRED
+Native-First Simplification Corrective Round 8
+Previous independent re-review = P0 0 / P1 1 / P2 1 / CHANGES REQUIRED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate

@@ -34,7 +34,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## Dependencies
 
-1. Ops Native-First Simplification Corrective Round 7 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First Simplification Corrective Round 8 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -51,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Simplification Corrective Round 7 follows the fixed review baseline (Ops `ddd1e65d0fc4029dc8e4983fdbe66d38c1e5139c`, Control `b22e211eb2d4654c1f43290e0a02c9eed92089bb`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent re-review recorded P0=0, P1=1, P2=2 / CHANGES REQUIRED. Round 7 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
+Native-First Simplification Corrective Round 8 follows the fixed review baseline (Ops `83c74d4d3c7e8962e81eb9d2a856eec1a93fa1e`, Control `5f9f0cd5c09fa86cd435266c061444b9f87615ff`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent re-review recorded P0=0, P1=1, P2=1 / CHANGES REQUIRED. Round 8 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
