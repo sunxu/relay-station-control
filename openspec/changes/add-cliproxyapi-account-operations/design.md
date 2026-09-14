@@ -180,7 +180,7 @@ Unknown JSON fields, duplicate multipart parts, a missing part, any extra part a
 
 POST mutation routes require active authenticated `super_admin`, same-origin and CSRF. GET is authenticated/read-only. Both overrides have the same checks plus typed high-risk confirmation. Every response, including errors, is `Cache-Control: no-store`. Public operation projection contains exactly `command_id,node_instance_id,account_key,operation_kind,execution_state,result,error_code,lifecycle_overridden,lifecycle_override_reason,same_account_overridden,same_account_override_reason,created_at,updated_at`; it excludes native name/auth_index, Management Key, upload fingerprint, raw response and credential. `result` is exactly null or `applied|noop|failed`: prepared/dispatched/outcome-unknown use null, remote-applied uses applied, remote-noop uses noop, and failed uses failed with a stable error_code.
 
-Terminal success returns exactly `200 {"operation":<projection>}`. `prepared|dispatched|outcome_unknown` returns exactly `202 {"operation":<projection>}`. A terminal mapped failure with an existing operation row returns `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"},"operation":<projection>}` at the mapped status. An error before an operation row exists, including authentication/authorization/CSRF failure, malformed request before acceptance, actor-first conflict and either override target missing, returns an error-only body `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"}}`; it never fabricates an operation projection. GET returns `200 {"operation":<current-projection>}` or `404 operation_not_found`; GET never resumes `prepared`. Exact terminal replay returns the original persisted status and canonical body bytes, whether the receipt body is error-only, error-plus-operation, or operation-only. A same-command POST replay resumes the same `prepared` operation using fresh evidence and may perform its first dispatch; replay of `dispatched` or `outcome_unknown` returns the current projection with 202 and zero remote mutation. Either override success returns `200 {"operation":<current-projection>}` and does not change execution state.
+Terminal success returns exactly `200 {"operation":<projection>}`. `prepared|dispatched|outcome_unknown` returns exactly `202 {"operation":<projection>}`. A terminal mapped failure with an existing operation row returns `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"},"operation":<projection>}` at the mapped status. Errors for which no operation projection is available or permitted, including authentication/authorization/CSRF failure, malformed request before acceptance, actor-first command conflict and either override target missing, return an error-only body `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"}}`; it never fabricates an operation projection. GET returns `200 {"operation":<current-projection>}` or `404 operation_not_found`; GET never resumes `prepared`. Exact terminal replay returns the original persisted status and canonical body bytes, whether the receipt body is error-only, error-plus-operation, or operation-only. A same-command POST replay resumes the same `prepared` operation using fresh evidence and may perform its first dispatch; replay of `dispatched` or `outcome_unknown` returns the current projection with 202 and zero remote mutation. Either override success returns `200 {"operation":<current-projection>}` and does not change execution state.
 
 The public status mapping is frozen as follows:
 
@@ -357,29 +357,29 @@ Stable Control errors include `invalid_request`, `node_not_found`, `node_retired
 
 Stage 7A remains satisfied at migration 37 and class/floor 3/3. Native-First implementation compatibility class/floor is assigned only with reviewed Control artifact/schema evidence. Forward schema/receipts remain preserved on rollback.
 
-No Node revert occurs in this planning change. Historical Stage 7N results remain true historical evidence while their protocol is superseded as the current Change B dependency. Any future Node alignment uses ordinary reviewed commits, never history rewrite or force push. The Ops supersession ADR remains PROPOSED until independent Native-First architecture re-review passes.
+No Node revert occurs in this planning change. Historical Stage 7N results remain true historical evidence while their protocol is superseded as the current Change B dependency. Any future Node alignment uses ordinary reviewed commits, never history rewrite or force push. The Ops supersession ADR is ACCEPTED after the independent Native-First architecture re-review passed.
 
 ## Acceptance Strategy
 
-Future acceptance MUST cover exact native route allowlisting; exact-once runtime identity headers including duplicate/mismatch; manager/file versus memory/runtime-only/disk-fallback/empty classification; snapshot Secret/raw-field rejection; 1 MiB boundaries; complete alias denylist pass/reject vectors; shared Create/Replace safe-basename and 238/239-byte boundaries; identity and basename collision admission; best-effort create/replace and accepted lost-update races; pre-PATCH noop versus sent-PATCH applied; ambiguous 5xx/timeouts to outcome_unknown; zero automatic redispatch; exact canonical intent/HMAC golden vectors and wrong-key replay; prepared crash/resume and concurrent retry serialization; same-account override eligibility/replay/ordering-risk and orthogonality with lifecycle override; PostgreSQL same-account serialization; Node-first lifecycle races/restart; first/later override semantics and high-risk audit; Inventory convergence; Secret scans; pinned v7.3.2 adapter/runtime-artifact tests; API/UI; and compatibility rollback.
+Future acceptance MUST cover exact native route allowlisting; exact-once runtime identity headers including duplicate/mismatch; manager/file versus memory/runtime-only/disk-fallback/empty classification; snapshot Secret/raw-field rejection; 1 MiB boundaries; complete alias denylist pass/reject vectors; shared Create/Replace safe-basename and 238/239-byte boundaries; identity and basename collision admission; best-effort create/replace and accepted lost-update races; pre-PATCH noop versus sent-PATCH applied; ambiguous 5xx/timeouts to outcome_unknown; zero automatic redispatch; exact canonical intent/HMAC golden vectors and wrong-key replay; prepared crash/resume and concurrent retry serialization; same-account override eligibility/replay/ordering-risk and orthogonality with lifecycle override; PostgreSQL same-account serialization; Node-first lifecycle races/restart; first/later override semantics and high-risk audit; normal Inventory independent business observation; Secret scans; pinned v7.3.2 adapter/runtime-artifact tests; API/UI; and compatibility rollback.
 
 ## Planning history and current gate
 
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Crash Recovery Corrective Round 11
+Historical Native-First Crash Recovery Corrective Round 11
 Previous independent crash-recovery re-review = P0 0 / P1 1 / P2 2 / CHANGES REQUIRED
 Round 11 resolutions = INCORPORATED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate
 Architecture status = READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW
-Gate 1 = NOT CLOSED
-ADR = PROPOSED
+Gate 1 = NOT CLOSED（历史候选状态）
+ADR = PROPOSED（历史候选状态）
 Runtime artifact identity = NOT YET FROZEN
 Node revert = NOT RUN
 Stage 7B implementation = NOT STARTED
 ```
 
-This candidate does not declare Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or Stage 7B authorization.
+This historical candidate did not declare Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or Stage 7B authorization. Current Gate 1 finalization is recorded above and does not authorize implementation.

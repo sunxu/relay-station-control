@@ -34,7 +34,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## Dependencies
 
-1. Ops Native-First Crash Recovery Corrective Round 12 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First architecture PASS and Gate 1 finalization in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -51,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Crash Recovery Corrective Round 12 follows the fixed review baseline (Ops `ba9547818b7d48de370b3e6f9a2d92bd612a920e`, Control `7b5b1bc7bb29f176d6f6fa7e0067828a183040cf`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent crash-recovery re-review recorded P0=0, P1=2, P2=1 / CHANGES REQUIRED. Round 12 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
+Architecture Gate 1 finalization follows the reviewed baseline (Ops `53e01255b71641eac6501dade9bf554f8dbb02e5`, Control `5d48e52b8e5dfe01b2f09cf44561a3ce97e069bb`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The final independent architecture re-review recorded P0=0, P1=0, P2=3 non-blocking documentation/finalization findings / PASS; those three findings are resolved in the final persisted architecture, P0=0, P1=0, P2=0 / PASS. Architecture Review = `PASS`, ADR = `ACCEPTED`, and Gate 1 = `CLOSED / PASS`. Gate 2 is `NEXT`: Detailed Requirements are `REVISION CANDIDATE` and OpenSpec planning readiness is `NOT YET CLOSED`; runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`. This planning change does not authorize implementation.

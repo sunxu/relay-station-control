@@ -45,7 +45,7 @@
 
 - [ ] 7.1 Keep normal Inventory on its existing independent cadence; do not add Phase 7 verification state, scheduler wake, special run, reconciler, durable job, lease or worker.
 - [ ] 7.2 Expose operation execution truth separately from Inventory observation and prove Inventory cannot terminalize, rewrite or resolve an account operation.
-- [ ] 7.3 Test that later Inventory convergence leaves `remote_applied`, `remote_noop`, `failed` and `outcome_unknown` execution states unchanged.
+- [ ] 7.3 Test that later normal Inventory independent business observation leaves `remote_applied`, `remote_noop`, `failed` and `outcome_unknown` execution states unchanged.
 
 ## 8. Compatibility, regression and evidence
 
@@ -55,4 +55,4 @@
 
 ## Planning gate
 
-Native-First Crash Recovery Corrective Round 11 records the previous independent re-review as P0=0, P1=1, P2=2 / CHANGES REQUIRED. Round 11 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW**, Gate 1 is **NOT CLOSED**, ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
+Architecture Review = **PASS**; ADR = **ACCEPTED**; Gate 1 = **CLOSED / PASS**. Gate 2 is **NEXT**: Detailed Requirements remain **REVISION CANDIDATE**, OpenSpec planning readiness is **NOT YET CLOSED**, and this task list does not authorize implementation. Runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, Stage 7B implementation is **NOT STARTED**, and task implementation checkboxes remain incomplete.

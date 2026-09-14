@@ -3,24 +3,22 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Crash Recovery Corrective Round 12.
+- Architecture direction: Native-First; Architecture Review PASS; Gate 1 CLOSED / PASS.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
 - Native-First Simplification: no Phase 7 verification state/workflow, scheduler, reconciler, durable job, lease or worker; normal Inventory remains independent business observation.
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
-- Previous independent crash-recovery re-review: P0=0, P1=2, P2=1 / CHANGES REQUIRED.
-- Round 12 resolutions: incorporated.
-- Planning reconciliation: complete revision candidate.
-- Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
-- Architecture status: `READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW`; Gate 1 is `NOT CLOSED`.
-- ADR status: `PROPOSED`.
+- Final independent architecture re-review: P0=0, P1=0, P2=3 non-blocking documentation/finalization findings / PASS; three finalization findings resolved and persisted as P0=0, P1=0, P2=0 / PASS.
+- Planning reconciliation: Gate 1 finalization complete.
+- Architecture status: `PASS`; Gate 1 is `CLOSED / PASS`; Gate 2 is `NEXT`.
+- ADR status: `ACCEPTED`.
 - Runtime artifact identity: `NOT YET FROZEN`.
 - Node revert: `NOT RUN`.
 - Implementation: `NOT STARTED`.
 
-This document does not claim Architecture Review PASS, Detailed Requirements FROZEN, implementation readiness READY or implementation authorization.
+This document does not claim Detailed Requirements FROZEN, final Implementation Readiness PASS or implementation authorization. Gate 1 architecture acceptance does not authorize Stage 7B implementation.
 
 ## Historical dependency record
 
@@ -85,4 +83,4 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST CRASH RECOVERY CORRECTIVE ROUND 12 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT CRASH-RECOVERY RE-REVIEW / GATE 1 NOT CLOSED / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST ARCHITECTURE REVIEW PASS / GATE 1 CLOSED / GATE 2 NEXT / DETAILED REQUIREMENTS REVISION CANDIDATE / IMPLEMENTATION NOT STARTED`.
