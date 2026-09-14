@@ -6,7 +6,7 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ## What Changes
 
-- Add minimal durable `account_admin_operations` execution/recovery truth with orthogonal verification state and durable same-`(node_instance_id,account_key)` serialization.
+- Add minimal durable `account_admin_operations` execution/recovery truth with durable same-`(node_instance_id,account_key)` serialization.
 - Expose explicit single-account Control APIs for Disable, Enable, Remove, Upload New, Replace Existing and operation read; add a separate high-risk lifecycle-block override.
 - Restrict the Node adapter to native `GET /auth-files`, `PATCH /auth-files/status`, single-name `DELETE /auth-files`, and raw-JSON `POST /auth-files?name=`. No arbitrary management passthrough.
 - Gate every fresh snapshot on exact `X-CPA-VERSION` and pinned `X-CPA-COMMIT`, classify manager-backed file eligibility using transient source/runtime evidence, then project to the minimal safe target fields.
@@ -23,18 +23,18 @@ This change now plans a bounded adapter over upstream CLIProxyAPI `v7.3.2` at ex
 
 ### New Capabilities
 
-- `account-admin-operation`: Control command/API state, native safe adapter, durable serialization, conservative outcome recovery, manual lifecycle override, verification, audit, metrics and UI behavior.
+- `account-admin-operation`: Control command/API state, native safe adapter, durable serialization, conservative outcome recovery, manual lifecycle override, audit, metrics and UI behavior.
 
 ### Modified Capabilities
 
 - `asset-admin-command`: account commands use the archived global registry and a separate immutable account receipt without changing asset K1 or asset receipts.
 - `relay-node-asset-lifecycle`: Node Retire/Replace inspects durable dispatched/outcome-unknown account-operation blockers and may proceed only after the reviewed explicit override.
 - `account-inventory-poll-run`: normal Inventory remains an independent business-observation surface; account execution does not request, schedule or reconcile a Phase 7 verification run.
-- `account-inventory-snapshot`: Inventory proves business convergence only, never exact credential bytes, CAS or remote quiescence.
+- `account-inventory-snapshot`: Inventory remains an independent business observation surface and never changes account execution truth.
 
 ## Dependencies
 
-1. Ops Native-First Corrective Round 3 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
+1. Ops Native-First Simplification Corrective Round 6 revision candidate and transition plan in `../ops/docs/phase-5-7/`.
 2. Archived `add-global-admin-command-registry`: migration `37`, compatibility class/floor `3 / 3`.
 3. CLIProxyAPI upstream release `v7.3.2`, exact tag commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 4. Existing Phase 6 Node lifecycle/monitoring, account Inventory and HTTP-only management contracts.
@@ -51,4 +51,4 @@ No Relay-specific Node account protocol, OAuth/Re-auth, automatic repair/move/re
 
 ## Planning status
 
-Native-First Corrective Round 5 follows the fixed review baseline (Ops `cd227892648fe4bc5d7cc8fb3bd39ed2bba03ff2`, Control `cdaf8d872d6946df5dda0e7731cc711bd72a4d3c`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent re-review recorded P0=0, P1=1, P2=1 / CHANGES REQUIRED. Round 5 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.
+Native-First Simplification Corrective Round 6 follows the fixed review baseline (Ops `dbb5a8ff77952f1e7486a8adcb1e64112670fce3`, Control `298c2f518776f7a3bd47f81ee6b3f6819ccd39dd`, Node `72c435b1b1b85b341a734e3860081c7782d9cbd2`, Gateway `b2512a314`). The previous independent re-review recorded P0=0, P1=4, P2=3 / CHANGES REQUIRED. Round 6 resolutions are incorporated as P0=0, P1=0 candidate, P2=0 candidate. Architecture status = `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`; ADR remains `PROPOSED`, runtime artifact identity is `NOT YET FROZEN`, Node revert is `NOT RUN`, and Stage 7B implementation is `NOT STARTED`.

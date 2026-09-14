@@ -1,6 +1,6 @@
 ## Context
 
-Phase 7 is the first Relay Station phase that invokes remote credential-side mutation. The current architecture candidate uses upstream CLIProxyAPI native management behavior rather than the historical Stage 7N Relay-specific protocol. Control owns command/replay, authorization, ingress protection, durable serialization, conservative outcome state, lifecycle blocking/override and Inventory verification. CLIProxyAPI owns credential schema, auth-file persistence, runtime synchronization, refresh, Provider/Account selection, retry and cooldown.
+Phase 7 is the first Relay Station phase that invokes remote credential-side mutation. The current architecture candidate uses upstream CLIProxyAPI native management behavior rather than the historical Stage 7N Relay-specific protocol. Control owns command/replay, authorization, ingress protection, durable serialization, conservative execution state and lifecycle blocking/override. Normal Inventory remains an independent business observation surface. CLIProxyAPI owns credential schema, auth-file persistence, runtime synchronization, refresh, Provider/Account selection, retry and cooldown.
 
 Native baseline:
 
@@ -24,7 +24,7 @@ Historical Stage 7N revision `72c435b1b1b85b341a734e3860081c7782d9cbd2` and imag
 - durable same-account Control serialization and Node-first lifecycle locking;
 - conservative `outcome_unknown` with no automatic mutation redispatch;
 - explicit audited lifecycle-block override;
-- normal Inventory business convergence only.
+- normal Inventory independent business observation only.
 
 ### Non-Goals
 
@@ -66,7 +66,7 @@ raw native entry
 -> safe target projection
 ```
 
-The adapter first performs transient classification and then safe projection. A `mutation_eligible_targets` entry must be runtime-manager-backed with exact `source="file"`, `runtime_only=false`, auth_index of 1..256 UTF-8 bytes with no control character, validated safe basename, and valid provider/email. If both provider and type are present they MUST normalize identically. Memory/runtime-only/incomplete entries are never physical mutation targets. A wholly disk-fallback or manager-unproven snapshot returns `node_management_unavailable` for target-existing operations and performs zero mutation.
+The adapter first performs transient classification and then safe projection. A `mutation_eligible_targets` entry must be runtime-manager-backed with exact `source="file"`, `runtime_only=false`, auth_index of 1..256 UTF-8 bytes with no control character, validated safe basename, and valid provider/email. If both provider and type are present they MUST normalize identically. Memory/runtime-only/incomplete entries are never physical mutation targets. A disk-fallback, malformed or otherwise degraded non-empty snapshot returns `node_management_unavailable` and performs zero mutation. A clean version-valid structurally valid empty `files=[]` snapshot may establish absence for Upload New only; existing-target operations return `account_target_not_found`.
 
 Upload New uses a separate transient `occupancy_evidence` set. It conservatively includes any usable entry that proves the requested identity or generated basename is occupied, including memory, runtime-only, or incomplete-for-mutation entries. A malformed/degraded record that prevents safe occupancy classification fails closed. A clean, structurally valid, version-valid empty `files=[]` response may establish absence for Upload New only; it cannot resolve an existing target.
 
@@ -179,7 +179,7 @@ Unknown JSON fields, duplicate multipart parts, a missing part, any extra part a
 
 POST mutation routes require active authenticated `super_admin`, same-origin and CSRF. GET is authenticated/read-only. Override has the same checks plus typed high-risk confirmation. Every response, including errors, is `Cache-Control: no-store`. Public operation projection contains exactly `command_id,node_instance_id,account_key,operation_kind,execution_state,result,error_code,lifecycle_overridden,lifecycle_override_reason,created_at,updated_at`; it excludes native name/auth_index, Management Key, upload fingerprint, raw response and credential. `result` is exactly null or `applied|noop|failed`: prepared/dispatched/outcome-unknown use null, remote-applied uses applied, remote-noop uses noop, and failed uses failed with a stable error_code.
 
-Terminal success returns exactly `200 {"operation":<projection>}`. `prepared|dispatched|outcome_unknown` returns exactly `202 {"operation":<projection>}`. A terminal mapped failure returns `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"},"operation":<projection>}` at the mapped status. GET returns `200 {"operation":<current-projection>}` or `404 operation_not_found`. Same-command nonterminal replay returns the same current-projection shape with 202 and zero redispatch. Exact terminal replay returns the original persisted status and canonical body bytes. Override success returns `200 {"operation":<current-projection>}` and does not change execution or verification state.
+Terminal success returns exactly `200 {"operation":<projection>}`. `prepared|dispatched|outcome_unknown` returns exactly `202 {"operation":<projection>}`. A terminal mapped failure returns `{"error":{"code":"<stable-code>","message":"<bounded-sanitized-message>"},"operation":<projection>}` at the mapped status. GET returns `200 {"operation":<current-projection>}` or `404 operation_not_found`. Same-command nonterminal replay returns the same current-projection shape with 202 and zero redispatch. Exact terminal replay returns the original persisted status and canonical body bytes. Override success returns `200 {"operation":<current-projection>}` and does not change execution state.
 
 The public status mapping is frozen as follows:
 
@@ -355,8 +355,8 @@ Future acceptance MUST cover exact native route allowlisting; exact-once runtime
 Historical Stage 7N contract/design/implementation reviews, corrective amendments and artifacts are preserved in Ops. They are not current Stage 7B dependencies and are not the current deployment baseline.
 
 ```text
-Native-First Corrective Round 5
-Previous independent re-review = P0 0 / P1 1 / P2 1 / CHANGES REQUIRED
+Native-First Simplification Corrective Round 6
+Previous independent re-review = P0 0 / P1 4 / P2 3 / CHANGES REQUIRED
 P0 = 0
 P1 = 0 candidate
 P2 = 0 candidate

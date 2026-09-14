@@ -70,7 +70,7 @@ Upload New MUST generate `antigravity-<normalized_email>.json`, measure UTF-8 by
 
 ### Requirement: Create and Replace SHALL accept native last-writer-wins
 
-Upload New MUST require one fresh version-valid non-degraded snapshot to prove both expected identity absent and generated basename unoccupied by every file-backed entry. Existing identity is `409 account_target_exists`; another identity occupying the basename is `409 account_filename_conflict`; both send zero POST. It then issues native POST as best-effort create. There is no atomic create-if-absent guarantee: a concurrent writer may create after snapshot and native POST may overwrite it. Replace Existing MUST resolve exactly one entry and POST to its basename as best-effort replace; a native credential refresh may occur between snapshot and POST and may be overwritten. Phase 7 v1 explicitly accepts both races and MUST NOT claim CAS, ETag, revision, incarnation or postcondition proof.
+Upload New MUST require one fresh version-valid non-degraded snapshot to prove both expected identity absent and generated basename unoccupied by all usable `occupancy_evidence`. Existing identity is `409 account_target_exists`; another identity occupying the basename is `409 account_filename_conflict`; both send zero POST. It then issues native POST as best-effort create. There is no atomic create-if-absent guarantee: a concurrent writer may create after snapshot and native POST may overwrite it. Replace Existing MUST resolve exactly one entry and POST to its basename as best-effort replace; a native credential refresh may occur between snapshot and POST and may be overwritten. Phase 7 v1 explicitly accepts both races and MUST NOT claim CAS, ETag, revision, incarnation or postcondition proof.
 
 #### Scenario: Native refresh races Replace
 - **WHEN** credential refresh commits after Control snapshot but before administrator POST
@@ -116,7 +116,7 @@ The pinned v7.3.2 `POST /v0/management/auth-files` route has a reviewed pre-muta
 
 Change B MUST use separate immutable `account_admin_command_receipts`, integrity-bound to the global registry and target operation; asset receipts remain asset-only. Stable `remote_applied|remote_noop|failed` mutation terminalization, terminal audit and receipt insertion MUST be atomic. `prepared|dispatched|outcome_unknown` MUST have no receipt. The receipt schema MUST also support independent `account.lifecycle_override` command IDs whose target operation ID differs from the receipt command ID or is null for a terminal target-not-found failure after actor-first reservation.
 
-Exact same actor/domain/kind/intent terminal replay MUST return stored status and canonical body. Verification and lifecycle override updates MUST NOT rewrite the original receipt. Runtime roles have no unrestricted receipt DML.
+Exact same actor/domain/kind/intent terminal replay MUST return stored status and canonical body. Inventory observations and lifecycle override updates MUST NOT rewrite the original receipt. Runtime roles have no unrestricted receipt DML.
 
 #### Scenario: Outcome unknown is replayed
 - **WHEN** a same-command POST repeats while execution is `outcome_unknown`
@@ -124,7 +124,7 @@ Exact same actor/domain/kind/intent terminal replay MUST return stored status an
 
 ### Requirement: Manual lifecycle override SHALL waive only the lifecycle block
 
-Control MUST expose **Override Unknown Operation Lifecycle Block** for a `dispatched` or unresolved `outcome_unknown` operation. The path UUID identifies that target operation and the request body contains a new independent command UUID. The override command MUST use global actor-first reservation with domain `account_admin`, kind `account.lifecycle_override`, encoding v1 and the exact canonical intent defined in design before changing the target operation. It persists all of `lifecycle_override_at/by/reason`, with reason `process_restarted|node_stopped|risk_accepted`; free-form detail is audit-only. The action MUST NOT change execution/verification state, authorize redispatch or unblock any same-account operation.
+Control MUST expose **Override Unknown Operation Lifecycle Block** for a `dispatched` or unresolved `outcome_unknown` operation. The path UUID identifies that target operation and the request body contains a new independent command UUID. The override command MUST use global actor-first reservation with domain `account_admin`, kind `account.lifecycle_override`, encoding v1 and the exact canonical intent defined in design before changing the target operation. It persists all of `lifecycle_override_at/by/reason`, with reason `process_restarted|node_stopped|risk_accepted`; free-form detail is audit-only. The action MUST NOT change execution state, authorize redispatch or unblock any same-account operation.
 
 `risk_accepted` explicitly waives the strict guarantee that the earlier request cannot mutate the old Node after lifecycle proceeds. Every override requires super_admin, active session, same-origin/CSRF, exact typed confirmation and distinct high-risk audit.
 
@@ -144,7 +144,7 @@ Product routes MUST be exactly `POST /api/account-operations/disable`, `/enable`
 
 Terminal success MUST return 200 with `{"operation":...}`; accepted nonterminal and same-command nonterminal replay MUST return 202 with `{"operation":...}` and zero redispatch; GET MUST return 200 current projection; exact terminal replay MUST return the persisted original status/body. Stable errors MUST follow the frozen mapping in design: 400 malformed/upload/identity, 401 authentication, 403 authorization/CSRF, 404 Node/target/operation missing, 409 lifecycle/monitoring/provider/target-exists/filename/ambiguous/in-progress/override-set/command conflicts, 413 upload size and 503 management/version/service unavailable. An ambiguous native outcome returns the 202 projection with `outcome_unknown`, not a fabricated terminal error.
 
-Audit MUST record actor/request/command/operation/Node/provider/protected account identity and override risk without credential/raw native body/path. Metrics MUST use low-cardinality operation/provider/result/error/execution/verification labels and never email/account_key/command/node/path.
+Audit MUST record actor/request/command/operation/Node/provider/protected account identity and override risk without credential/raw native body/path. Metrics MUST use low-cardinality operation/provider/result/error/execution labels and never email/account_key/command/node/path.
 
 #### Scenario: Native error contains filesystem path or token
 - **WHEN** CLIProxyAPI returns a path/token-bearing error

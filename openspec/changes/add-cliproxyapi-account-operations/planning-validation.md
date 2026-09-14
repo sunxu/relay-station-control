@@ -3,15 +3,15 @@
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.
-- Architecture direction: Native-First Corrective Round 5.
+- Architecture direction: Native-First Simplification Corrective Round 6.
 - CLIProxyAPI baseline: upstream release v7.3.2, exact commit `7fa443dc8bf8ca2f1ffd81c2472deb31b097b697`.
 - Stage 7A dependency: satisfied; migration 37 and compatibility class/floor 3/3.
 - Relay-specific Node mutation protocol: zero current dependency.
 - Native-First Simplification: no Phase 7 verification state/workflow, scheduler, reconciler, durable job, lease or worker; normal Inventory remains independent business observation.
 - Phase 7 v1 execution states: `prepared|dispatched|remote_applied|remote_noop|outcome_unknown|failed`; `remote_partial` is not part of the current state set.
 - Same-account serialization: PostgreSQL durable truth only; lifecycle override retains Stage 7A command identity/replay without creating a separate workflow.
-- Previous independent re-review: P0=0, P1=1, P2=1 / CHANGES REQUIRED.
-- All Round 5 P1/P2 resolutions: incorporated.
+- Previous independent re-review: P0=0, P1=4, P2=3 / CHANGES REQUIRED.
+- All Round 6 P1/P2 resolutions: incorporated.
 - Planning reconciliation: complete revision candidate.
 - Candidate findings: P0=0, P1=0 candidate, P2=0 candidate.
 - Architecture status: `READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW`.
@@ -36,13 +36,13 @@ Pinned v7.3.2 source inspection confirms the current planning subset:
 - `POST /v0/management/auth-files?name=...` accepts a raw JSON auth object and may overwrite; Control does not use native multipart upload.
 - Native fields/operations for fields, download, refresh and OAuth are outside the Change B adapter allowlist.
 - Native responses do not provide a machine-stable physical-commit marker, compare-and-swap revision or remote execution proof.
-- Manager-backed entries carry source/runtime-only/auth-index evidence; disk-fallback entries omit it, and an empty response cannot prove manager-backed mode.
+- Manager-backed entries carry source/runtime-only/auth-index evidence; disk-fallback or malformed/degraded non-empty entries fail closed, while a clean version-valid structurally valid empty response permits Upload New absence evidence only.
 - Management middleware supplies `X-CPA-VERSION` and `X-CPA-COMMIT`; exact reviewed runtime artifact identity remains a mandatory pre-implementation pin.
 - `CanonicalCredentialMetadataKey()` maps the reviewed legacy aliases used by the complete runtime-control denylist.
 
 ## Native-First corrective resolutions incorporated
 
-Round 5 additionally reconciles the effective Ops architecture body and separates runtime HTTP header identity from image-digest deployment evidence; the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
+Round 6 additionally removes Phase 7 verification-owned state/workflow and keeps normal Inventory as independent observation; stable reviewed pre-mutation status/context, including the source-reviewed v7.3.2 upload POST 503-before-body-read/write mapping, remains terminal `failed/node_management_unavailable` with receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
 It also freezes the source-reviewed native upload exception: `POST /v0/management/auth-files` HTTP 503 from `authManager == nil` before body read/write is terminal `failed/node_management_unavailable` with a receipt and zero mutation; other unreviewed 503/5xx responses remain `outcome_unknown`.
 
@@ -51,10 +51,10 @@ It also freezes the source-reviewed native upload exception: `POST /v0/managemen
 3. **Target resolution:** every target-existing mutation uses a fresh exactly-one provider+normalized-email match; Inventory and filename convention cannot select the target.
 4. **Write semantics:** Upload New is best-effort create and Replace Existing is best-effort replace under native last-writer-wins. Concurrent create/refresh lost-update risk is explicit and accepted; no Relay CAS is claimed.
 5. **Credential ingress:** CLIProxyAPI owns schema truth. Control enforces top-level object/type/email, 1 MiB ingress, filename bounds and a reviewed runtime-control denylist without silently stripping fields.
-6. **Outcome mapping:** known 2xx is terminal; reviewed provably pre-mutation 4xx may fail; timeout, connection/response loss and ambiguous native 5xx become `outcome_unknown`. There is no automatic mutation redispatch or inferred execution stage.
+6. **Outcome mapping:** known 2xx is terminal; stable reviewed pre-mutation status/context may fail; timeout, connection/response loss and ambiguous native 5xx become `outcome_unknown`. There is no automatic mutation redispatch or inferred execution stage.
 7. **Durable serialization/lifecycle:** PostgreSQL serializes same-account operations and retains dispatched/unresolved blockers across restart; Node lifecycle follows the same Node-first lock order. High-risk override releases only the lifecycle block.
-8. **Verification/replay:** Inventory proves only business convergence. Stable terminal POST truth uses a separate immutable account receipt; `outcome_unknown` has no receipt and same-command replay returns current projection with zero redispatch.
-9. **Physical target eligibility:** source/runtime/auth-index are classified transiently before projection; memory/runtime-only/incomplete/disk-fallback and manager-unproven empty snapshots fail closed.
+8. **Observation/replay:** Inventory is independent business observation only. Stable terminal POST truth uses a separate immutable account receipt; `outcome_unknown` has no receipt and same-command replay returns current projection with zero redispatch.
+9. **Physical target eligibility:** source/runtime/auth-index are classified transiently before projection; memory/runtime-only/incomplete/disk-fallback evidence is ineligible for existing-target mutation, while a clean version-valid structurally valid empty snapshot permits Upload New absence evidence and returns `account_target_not_found` for existing-target operations.
 10. **Runtime identity:** exact-once bounded version/commit headers must match the independently pinned runtime artifact before snapshot interpretation; upstream source baseline and runtime artifact commit are distinct concepts.
 11. **Noop and override:** Disable/Enable noop is decided before PATCH; lifecycle override has its own global command/receipt and never unblocks another account mutation.
 12. **Exact command equality:** all six command kinds have fixed canonical JSON arrays; upload uses the separate 32-byte key/HMAC contract with deterministic wrong-key replay.
@@ -66,11 +66,11 @@ It also freezes the source-reviewed native upload exception: `POST /v0/managemen
 Independent architecture re-review must verify:
 
 - the exact native subset and safe projection match pinned v7.3.2 source;
-- the final runtime artifact commit to enforce is independently frozen; until then implementation readiness remains not ready;
+- the final runtime artifact commit to enforce is independently frozen before final Implementation Readiness; Gate 2 is planning/specification readiness and does not require that final artifact pin;
 - all previous custom Node protocol dependencies are historical or removed from current normative text;
 - durable same-account serialization and lifecycle blocker matrices are complete;
 - best-effort create/replace races and conservative unknown outcomes are accepted explicitly;
-- public API, terminal receipt, lifecycle override, Inventory verification, audit and Secret boundaries are internally consistent;
+- public API, terminal receipt, lifecycle override, independent Inventory observation, audit and Secret boundaries are internally consistent;
 - no current planning statement promotes Phase 7 or authorizes Stage 7B implementation.
 
 ## Validation record
@@ -85,4 +85,4 @@ scope = PASS — only openspec/changes/add-cliproxyapi-account-operations/**
 push = NOT RUN
 ```
 
-Disposition: `NATIVE-FIRST CORRECTIVE ROUND 3 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW / IMPLEMENTATION NOT STARTED`.
+Disposition: `NATIVE-FIRST SIMPLIFICATION CORRECTIVE ROUND 6 / P0=0 P1=0-candidate P2=0-candidate / READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW / IMPLEMENTATION NOT STARTED`.

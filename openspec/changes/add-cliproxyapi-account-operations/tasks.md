@@ -7,7 +7,7 @@
 ## 2. Control durable operation foundation
 
 - [ ] 2.1 Add an additive migration for `account_admin_operations`, separate immutable `account_admin_command_receipts`, lifecycle-override fields, constraints, ACL, controlled writers, audit allowlists and required indexes; no raw credential, native response or physical target evidence.
-- [ ] 2.2 Add Store state transitions with row locking, restart-visible execution/verification truth and durable same-account serialization for `(node_instance_id,account_key)`.
+- [ ] 2.2 Add Store state transitions with row locking, restart-visible execution truth and durable same-account serialization for `(node_instance_id,account_key)`.
 - [ ] 2.3 Integrate global admin registry actor-first reservation and separate upload fingerprint key while preserving existing asset K1 and canonical asset intents.
 
 ## 3. Native CLIProxyAPI adapter
@@ -31,7 +31,7 @@
 - [ ] 5.2 Block new destructive dispatch for the same account while an operation is `dispatched` or unresolved `outcome_unknown`, regardless of lifecycle override; prove Retire/Replace alone may consult override and the blocker survives Control restart.
 - [ ] 5.3 Decide Disable/Enable already-desired noop from the fresh eligible snapshot with zero PATCH; map every sent stable 2xx to applied, reviewed pre-mutation 4xx to failed, and timeout/connection loss/response loss/ambiguous native 5xx to `outcome_unknown`; never invent noop, an unproven terminal stage or redispatch.
 - [ ] 5.3a Map only the reviewed v7.3.2 upload POST HTTP 503-before-body-read/write (`authManager == nil`) to terminal `failed/node_management_unavailable` with receipt; keep all other unreviewed 503/5xx outcomes unknown.
-- [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** as an independent globally reserved `account.lifecycle_override` command with its own canonical intent, receipt and already-set behavior; leave target execution/verification and same-account blockers unchanged.
+- [ ] 5.4 Implement high-risk **Override Unknown Operation Lifecycle Block** as an independent globally reserved `account.lifecycle_override` command with its own canonical intent, receipt and already-set behavior; leave target execution and same-account blockers unchanged.
 - [ ] 5.5 PostgreSQL 18 race acceptance: Retire-first/dispatch-first, same-account A/B, Control restart with live operation, and override behavior.
 
 ## 6. Product API, replay, UI and observability
@@ -55,4 +55,4 @@
 
 ## Planning gate
 
-Native-First Corrective Round 5 incorporates the previous P0=0, P1=1, P2=1 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.
+Native-First Simplification Corrective Round 6 incorporates the previous P0=0, P1=4, P2=3 re-review findings as P0=0, P1=0 candidate, P2=0 candidate. Architecture status is **READY FOR INDEPENDENT ARCHITECTURE RE-REVIEW**. ADR is **PROPOSED**, runtime artifact identity is **NOT YET FROZEN**, Node revert is **NOT RUN**, and implementation is **NOT STARTED**. This task list does not authorize implementation.

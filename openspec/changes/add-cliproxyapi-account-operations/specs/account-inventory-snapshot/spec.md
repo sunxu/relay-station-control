@@ -1,13 +1,13 @@
 ## ADDED Requirements
 
-### Requirement: Inventory SHALL verify account-operation business convergence without becoming execution proof
+### Requirement: Inventory SHALL remain independent business observation
 
-Phase 7 verification MUST consume only accepted fresh, complete, eligible normal Inventory evidence. Disable requires the same account_key with disabled=true; Enable requires disabled=false; Remove requires account absence only from provider-complete evidence; Upload New requires the expected identity to appear; Replace Existing requires the expected identity to remain present. Inventory MUST NOT be treated as exact credential-byte, compare-and-swap, native execution or remote-quiescence proof. Stale, incomplete, disk-fallback or duplicate evidence MUST NOT fabricate success.
+Normal Inventory SHALL continue independently and MAY observe `disabled=true`, `disabled=false`, account absence or account presence. It MUST NOT write `account_admin_operations`, create verification state, create a Phase 7 run, terminalize an operation, change `outcome_unknown`, or prove which HTTP mutation caused the state. Inventory MUST NOT prove credential bytes, compare-and-swap, native execution or request quiescence. Stale, incomplete, disk-fallback or duplicate evidence MUST NOT fabricate execution success or failure.
 
-#### Scenario: Replace identity remains present after response loss
-- **WHEN** fresh Inventory still contains the expected account after an ambiguous Replace response
-- **THEN** business convergence may be observed but execution remains `outcome_unknown`
+#### Scenario: Unknown execution later converges
+- **WHEN** normal Inventory later observes the expected account state after an ambiguous operation response
+- **THEN** the observation may show convergence, but execution remains `outcome_unknown` and no Phase 7 durable state changes
 
-#### Scenario: Remove sees incomplete Provider evidence
-- **WHEN** the account is absent from incomplete, disk-fallback or stale evidence
-- **THEN** absence does not prove removal and verification remains pending or inconclusive according to its independent deadline
+#### Scenario: Inventory evidence is incomplete
+- **WHEN** the account is absent from incomplete, disk-fallback, stale or duplicate evidence
+- **THEN** the observation is non-authoritative and no account execution state is changed
