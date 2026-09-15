@@ -40,6 +40,7 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [credential, setCredential] = useState<File>();
+  const [credentialInputKey, setCredentialInputKey] = useState(0);
   const [operation, setOperation] = useState<AccountOperationProjection>();
   const [lookupID, setLookupID] = useState("");
   const [error, setError] = useState("");
@@ -65,7 +66,17 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
     }
   };
 
-  const mutate = (kind: AccountMutationKind) => once(() => api.mutate(kind, { commandId: crypto.randomUUID(), nodeInstanceId, accountKey, credential }, csrf));
+  const clearCredential = () => {
+    setCredential(undefined);
+    setCredentialInputKey((value) => value + 1);
+  };
+  const mutate = async (kind: AccountMutationKind) => {
+    try {
+      await once(() => api.mutate(kind, { commandId: crypto.randomUUID(), nodeInstanceId, accountKey, credential }, csrf));
+    } finally {
+      if (kind === "upload_new" || kind === "replace_existing") clearCredential();
+    }
+  };
   const confirmRemove = () => Modal.confirm({ title: "确认移除此账户？", content: "该操作会删除 Node 上对应的单个凭据文件，无法由 Control 自动恢复。", okText: "确认移除", okButtonProps: { danger: true }, onOk: () => mutate("remove") });
   const applyOverride = () => {
     if (!operation) return Promise.resolve();
@@ -80,7 +91,7 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
       {basicStatus === "disabled" && <Button disabled={busy} loading={busy} onClick={() => void mutate("enable")}>Enable</Button>}
       <Button danger disabled={busy} onClick={confirmRemove}>Remove</Button>
     </Space>
-    <Upload beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { setCredential(undefined); return true; }} maxCount={1} accept="application/json,.json">
+    <Upload key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
       <Button disabled={busy}>选择 credential JSON（最大 1 MiB）</Button>
     </Upload>
     <Space wrap>
@@ -101,5 +112,68 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
       <Input.TextArea aria-label="Override detail" value={overrideDetail} maxLength={512} onChange={(event) => setOverrideDetail(event.target.value)} placeholder="可选说明" />
       <Button danger disabled={busy} loading={busy} onClick={() => Modal.confirm({ title: `确认执行 ${overrideKind === "lifecycle" ? "Lifecycle" : "Same-account"} Override？`, content: `目标操作：${operation.command_id}`, okText: "确认 Override", onOk: applyOverride })}>执行 Override</Button>
     </>}
+  </Flex>;
+}
+
+export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthorized }: { api: AccountOperationsApi; csrf: string; nodeInstanceId: string; onUnauthorized?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [email, setEmail] = useState("");
+  const [credential, setCredential] = useState<File>();
+  const [credentialInputKey, setCredentialInputKey] = useState(0);
+  const [operation, setOperation] = useState<AccountOperationProjection>();
+  const [error, setError] = useState("");
+
+  const clearCredential = () => {
+    setCredential(undefined);
+    setCredentialInputKey((value) => value + 1);
+  };
+  const close = () => {
+    if (busyRef.current) return;
+    clearCredential();
+    setEmail("");
+    setError("");
+    setOpen(false);
+  };
+  const submit = async () => {
+    if (busyRef.current || !credential || !email.trim()) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const next = await api.mutate("upload_new", {
+        commandId: crypto.randomUUID(),
+        nodeInstanceId,
+        accountKey: `antigravity:${email.trim().toLowerCase()}`,
+        credential,
+      }, csrf);
+      setOperation(next);
+      setEmail("");
+      setOpen(false);
+    } catch (cause) {
+      if (cause instanceof AccountOperationApiError && cause.status === 401) onUnauthorized?.();
+      setError(accountOperationErrorMessage(cause));
+    } finally {
+      clearCredential();
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  return <Flex vertical gap={12} align="flex-start">
+    <Button type="primary" onClick={() => { setError(""); setOpen(true); }}>Upload New Account</Button>
+    {operation && <AccountOperationResult operation={operation} />}
+    <Modal title="Upload New Account" open={open} onCancel={close} onOk={() => void submit()} okText="Upload New" confirmLoading={busy} okButtonProps={{ disabled: busy || !credential || !email.trim() }} cancelButtonProps={{ disabled: busy }} destroyOnHidden>
+      <Flex vertical gap={12}>
+        <Typography.Text type="secondary">无需已有 Inventory 账号。服务端会根据逻辑身份生成并验证远端目标。</Typography.Text>
+        {error && <Alert type="error" showIcon title={error} />}
+        <Input aria-label="Upload New Provider" value="antigravity" disabled />
+        <Input aria-label="Upload New Email" type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="账户邮箱" />
+        <Upload key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "new-account-credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
+          <Button disabled={busy}>选择 credential JSON（最大 1 MiB）</Button>
+        </Upload>
+      </Flex>
+    </Modal>
   </Flex>;
 }

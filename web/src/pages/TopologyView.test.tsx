@@ -7,6 +7,7 @@ import type { AssetApi, NodeAsset } from "../api/asset-types";
 import { AssetApiError } from "../api/asset-types";
 import type { TopologyApi } from "../api/topology-types";
 import { TopologyApiError } from "../api/topology-types";
+import type { AccountOperationsApi } from "../api/account-operations-api";
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
@@ -156,6 +157,17 @@ it("renders account quality metrics and an unknown zero-request row", async () =
   expect(within(unknownRow).getAllByText("—")).toHaveLength(7);
   expect(api.accountQuality).toHaveBeenLastCalledWith(A, "15m", undefined, undefined, undefined, expect.any(AbortSignal), "present");
   expect(within(screen.getByRole("region", { name: "Account Quality" })).queryByRole("button", { name: /bind|disable|delete|quota|inspect/i })).not.toBeInTheDocument();
+});
+
+it("shows Upload New without an existing Inventory account selection", async () => {
+  const asset = makeNode(A, "Node A");
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [asset], nextCursor: null }), node: vi.fn().mockResolvedValue(asset) } as unknown as AssetApi;
+  const api = emptyTopology();
+  const accountOperationsApi = { mutate: vi.fn(), operation: vi.fn(), override: vi.fn() } as unknown as AccountOperationsApi;
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TopologyView api={api} assetApi={assetApi} accountOperationsApi={accountOperationsApi} initialInstanceId={A} csrfToken="csrf-proof" onUnauthorized={vi.fn()} /></QueryClientProvider>);
+  expect(await screen.findByText("没有 Inventory 账号或匹配账号")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Upload New Account" })).toBeInTheDocument();
+  expect(screen.queryByText("账号详情")).not.toBeInTheDocument();
 });
 
 it("filters Account Quality by lifecycle and resets to all", async () => {

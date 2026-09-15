@@ -19,6 +19,7 @@ import type { AccountListFilters } from "../api/account-quality-types";
 import { AccountInventoryCapacity } from "../components/AccountInventoryCapacity";
 import { formatDateTime } from "../time";
 import type { AccountOperationsApi } from "../api/account-operations-api";
+import { UploadNewAccountAction } from "../components/AccountOperationsPanel";
 
 const { Text } = Typography;
 function unauthorized(error: unknown) {
@@ -213,6 +214,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
         </Flex>
       </Card>
       <Card title="账号清单与质量" role="region" aria-label="Account Quality">
+        {accountOperationsApi && csrfToken && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={expireSession} /></Flex>}
         <Flex gap={8} wrap>
           <Input aria-label="Provider 精确筛选" placeholder="Provider（精确）" value={qualityProvider ?? ""} disabled={accountQualityView.isPending} maxLength={64} onChange={(event) => { setQualityProvider(event.target.value || undefined); resetAccountResult(); }} style={{ width: 190 }} />
           <Select allowClear aria-label="质量生命周期" placeholder="全部生命周期" value={qualityLifecycle} disabled={accountQualityView.isPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => { setQualityLifecycle(value); resetAccountResult(); }} style={{ width: 180 }} />
