@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -38,6 +38,9 @@ printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMA
 mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
 DISABLE_EMAIL="phase7-disable-${PROJECT}@example.invalid"
 printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-disable-token"}\n' "$DISABLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-disable.json"
+ENABLE_EMAIL="phase7-enable-${PROJECT}@example.invalid"
+ENABLE_SECRET_MARKER="PHASE7_ENABLE_SECRET_${PROJECT##*-}"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":false}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
 printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
@@ -87,8 +90,9 @@ chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"
 INVENTORY_LIFECYCLE_ENABLED="false"
-[[ "$MODE" == "disable" ]] && INVENTORY_POLL_ENABLED="true"
-[[ "$MODE" == "disable" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" ]] && INVENTORY_POLL_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
+export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
   control:
@@ -151,19 +155,26 @@ INSERT INTO node_drivers(node_type,driver_contract_version,display_name) VALUES 
 INSERT INTO driver_capabilities(node_type,driver_contract_version,capability) VALUES
   ('cliproxyapi','cliproxyapi.auth-files.v1','management_health_read'),
   ('cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read');
-INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by)
-VALUES ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1',ARRAY['antigravity']::text[],ARRAY[]::text[],'acceptance-harness');
+INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by,created_at)
+VALUES ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1',ARRAY['antigravity']::text[],ARRAY[]::text[],'acceptance-harness',
+        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 INSERT INTO provider_inventory_policy_bindings(node_type,driver_contract_version,policy_version_id,bound_by,bound_at)
 VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-000000000047','acceptance-harness',statement_timestamp());
 INSERT INTO provider_inventory_policy_activations(node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at)
-VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-000000000047',statement_timestamp(),'acceptance-harness',statement_timestamp());
+VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-000000000047',
+        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300),
+        'acceptance-harness',
+        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref)
 VALUES ('00000000-0000-4000-8000-000000000047','Acceptance Node','cliproxyapi','cliproxyapi.auth-files.v1','http://node-counter:8318','file://phase7/node-management');
 INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES
   ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_health_read'),
   ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read');
 INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at)
-VALUES ('00000000-0000-4000-8000-000000000047',statement_timestamp(),'deployment_enable','acceptance-harness',statement_timestamp());
+VALUES ('00000000-0000-4000-8000-000000000047',
+        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300),
+        'deployment_enable','acceptance-harness',
+        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 SQL
 compose up -d secret-init node
 wait_node_ready
@@ -292,6 +303,37 @@ if [[ "$MODE" == "disable" ]]; then
   echo "DISABLE_RECEIPT=PASS"
   echo "DISABLE_AUDIT=PASS"
   echo "DISABLE_NATIVE_PATCHES=$native_patch_count"
+  exit 0
+fi
+if [[ "$MODE" == "enable-fixture" ]]; then
+  export ACCEPTANCE_ENABLE_EMAIL="$ENABLE_EMAIL"
+  export ACCEPTANCE_NODE_PORT="$NODE_PORT"
+  export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
+  export ACCEPTANCE_ENABLE_FIXTURE_EVIDENCE_FILE="$RUNTIME_DIR/enable-fixture-evidence.json"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable-fixture.spec.ts
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  [[ "$(psql_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND lifecycle='present' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_inventory_db_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_snapshot_db_mismatch" >&2; exit 1; }
+  scan_enable_fixture_secret() {
+    local value="$1"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/enable-fixture-evidence.json" >/dev/null 2>&1; then
+      echo "enable_fixture_secret_artifact_match" >&2
+      return 1
+    fi
+  }
+  scan_enable_fixture_secret "$ENABLE_SECRET_MARKER"
+  scan_enable_fixture_secret "phase7-disposable-enable-token"
+  scan_enable_fixture_secret "$NODE_MANAGEMENT_PASSWORD"
+  echo "ENABLE_FIXTURE_SECRET_SCAN=PASS"
+  echo "ENABLE_FIXTURE_NODE=PASS"
+  echo "ENABLE_FIXTURE_SNAPSHOT=PASS"
+  echo "ENABLE_FIXTURE_INVENTORY_DB=PASS"
+  echo "ENABLE_FIXTURE_INVENTORY=PASS"
+  echo "ENABLE_FIXTURE_BROWSER=PASS"
+  echo "ENABLE_FIXTURE_READY=PASS"
   exit 0
 fi
 if [[ "${1:-all}" == "all" ]]; then
