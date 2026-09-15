@@ -104,12 +104,18 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     await expect(page.getByText("owner_confirmed", { exact: true })).toBeVisible();
   });
   await test.step("Node pagination, keyboard selection, local failure and recovery", async () => {
-    await page.getByRole("button", { name: "下一页 Node" }).click();
-    const selector = page.getByRole("combobox", { name: "Relay Node" });
-    await selector.focus();
-    await selector.press("ArrowDown");
-    await selector.press("ArrowDown");
-    await selector.press("Enter");
+    await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === "/api/assets/nodes" && url.searchParams.get("cursor") === "nodes-page-2";
+      }),
+      page.getByTestId("node-pagination-next").click(),
+    ]);
+    const selector = page.getByTestId("relay-node-selector");
+    await selector.click();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
     await expect(page.getByText(`Instance ID：${nodes[1]}`)).toBeVisible();
     await expect(page.getByText("读取不可用（unavailable）")).toBeVisible();
     await expect(page.getByText("unbound", { exact: true })).toBeVisible();

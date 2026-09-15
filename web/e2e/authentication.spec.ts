@@ -290,8 +290,8 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await expect.poll(() => browserAssetRequests.length).toBe(6);
   console.log("[e2e] authenticated /assets/ reload rendered Asset Registry");
 
-  await expect(primary.getByText("E2E Gateway")).toBeVisible();
-  await expect(primary.getByText("E2E Node")).toBeVisible();
+  await expect(primary.getByTestId("gateway-management-card").getByRole("cell", { name: "E2E Gateway" })).toBeVisible();
+  await expect(primary.getByTestId("nodes-card").getByRole("cell", { name: "E2E Node" })).toBeVisible();
   await expect(primary.getByText("尚未配置当前 Provider 策略")).toBeVisible();
   await expect.poll(() => browserAssetRequests.length).toBe(6);
   const controlOrigin = new URL(baseURL!).origin;

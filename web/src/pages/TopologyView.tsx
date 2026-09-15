@@ -194,11 +194,11 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     <Card title="Node">
       {nodes.isPending && <Spin />}
       {nodes.error && <ReadError message="Node 清单读取不可用" retry={() => void nodes.refetch()} />}
-      <Select aria-label="Relay Node" placeholder="选择 Relay Node" value={instanceId} onChange={select} options={nodeOptions} style={{ width: "100%", maxWidth: 560 }} />
+      <Select data-testid="relay-node-selector" aria-label="Relay Node" placeholder="选择 Relay Node" value={instanceId} onChange={select} options={nodeOptions} style={{ width: "100%", maxWidth: 560 }} />
       {!nodes.error && nodes.data?.items.length === 0 && <Empty description="当前没有登记 Node" />}
       <Flex justify="end" gap={8} style={{ marginTop: 8 }}>
         <Button disabled={!nodeCursor} onClick={() => setNodeCursor(undefined)}>Node 首页</Button>
-        <Button disabled={!nodes.data?.nextCursor || nodes.isFetching || nodes.isError} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>下一页 Node</Button>
+        <Button data-testid="node-pagination-next" disabled={!nodes.data?.nextCursor || nodes.isFetching || nodes.isError} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>下一页 Node</Button>
       </Flex>
     </Card>
     {inventoryApi && <AccountInventoryCapacity api={inventoryApi} csrfToken={csrfToken} onUnauthorized={expireSession} />}
