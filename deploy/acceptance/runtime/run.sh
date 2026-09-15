@@ -6,6 +6,8 @@ COMPOSE_FILE="$CONTROL_DIR/deploy/acceptance/compose.yaml"
 RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
+MODE="${1:-all}"
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -34,6 +36,8 @@ UPLOAD_EMAIL="phase7-${PROJECT##*-}@example.invalid"
 UPLOAD_SECRET_MARKER="PHASE7_E2E_SECRET_${PROJECT##*-}"
 printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
 mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
+DISABLE_EMAIL="phase7-disable-${PROJECT}@example.invalid"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-disable-token"}\n' "$DISABLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-disable.json"
 printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
@@ -81,13 +85,17 @@ openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=localhost' 
 chmod 400 "$RUNTIME_DIR/bootstrap-secret" "$RUNTIME_DIR/account-operation-intent-key" "$RUNTIME_DIR/node-management-key" "$RUNTIME_DIR/cliproxyapi-secret-map.json" "$RUNTIME_DIR/auth-keyring.json" "$RUNTIME_DIR/admin-password" "$RUNTIME_DIR/second-admin-password" "$RUNTIME_DIR/tls.key"
 chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
+INVENTORY_POLL_ENABLED="false"
+INVENTORY_LIFECYCLE_ENABLED="false"
+[[ "$MODE" == "disable" ]] && INVENTORY_POLL_ENABLED="true"
+[[ "$MODE" == "disable" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
   control:
     environment:
       CONTROL_GATEWAY_DIRECTORY_ENABLED: "false"
-      CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED: "false"
-      CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED: "false"
+      CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED: "${INVENTORY_POLL_ENABLED}"
+      CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED: "${INVENTORY_LIFECYCLE_ENABLED}"
       CONTROL_ACCOUNT_REQUEST_QUALITY_ENABLED: "false"
       CONTROL_CLIPROXYAPI_DRIVER_ENABLED: "true"
       CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED: "false"
@@ -131,9 +139,9 @@ ensure_candidate_image() {
   [[ "$revision" == "$EXPECTED_SHA" ]] || { echo "candidate_image_mismatch" >&2; exit 1; }
   echo "CANDIDATE_IMAGE_REVISION=PASS"
 }
-MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload]" >&2; exit 2; }
 ensure_candidate_image
+EXPECTED_CONTROL_IMAGE_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}')"
+echo "EXPECTED_CONTROL_IMAGE_ID=$EXPECTED_CONTROL_IMAGE_ID"
 compose up -d --wait postgres
 DATABASE_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
 DATABASE_URL="$DATABASE_URL" make --silent migrate-up
@@ -166,6 +174,9 @@ CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate
   CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
   "$ROOT/gate-b-smoke.sh"
 compose up -d control
+RUNNING_CONTROL_IMAGE_ID="$(docker inspect "$CONTROL_CONTAINER" --format '{{.Image}}')"
+[[ "$RUNNING_CONTROL_IMAGE_ID" == "$EXPECTED_CONTROL_IMAGE_ID" ]] || { echo "control_image_provenance_mismatch" >&2; exit 1; }
+echo "RUNNING_CONTROL_IMAGE_ID=$RUNNING_CONTROL_IMAGE_ID"
 wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
 CONTROL_DATABASE_TEST_URL="$DATABASE_URL" \
   CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable" \
@@ -240,6 +251,47 @@ if [[ "$MODE" == "upload" ]]; then
   echo "UPLOAD_NEW_POSTGRES=PASS"
   echo "UPLOAD_NEW_NODE=PASS"
   echo "UPLOAD_NEW_NATIVE_MUTATIONS=$native_post_count"
+  exit 0
+fi
+if [[ "$MODE" == "disable" ]]; then
+  export ACCEPTANCE_DISABLE_EMAIL="$DISABLE_EMAIL"
+  export ACCEPTANCE_DISABLE_EVIDENCE_FILE="$RUNTIME_DIR/disable-evidence.json"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-disable.spec.ts; then
+    compose logs --no-color control node node-counter >&2 || true
+    exit 1
+  fi
+  mkdir -p "$RUNTIME_DIR/logs"
+  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/disable-evidence.json")"
+  [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "disable_evidence_missing_command_id" >&2; exit 1; }
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='disable' AND execution_state='remote_applied'")" == 1 ]] || { echo "disable_operation_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$command_id'")" == 1 ]] || { echo "disable_receipt_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$command_id'")" == 1 ]] || { echo "disable_audit_mismatch" >&2; exit 1; }
+  native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  [[ "$native_patch_count" == 1 ]] || { echo "disable_native_patch_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
+  scan_disable_secret() {
+    local value="$1"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/disable-evidence.json" >/dev/null 2>&1; then
+      echo "disable_secret_artifact_match" >&2
+      return 1
+    fi
+  }
+  scan_disable_secret "$NODE_MANAGEMENT_PASSWORD"
+  scan_disable_secret "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
+  scan_disable_secret "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_disable_secret "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_disable_secret "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_disable_secret "$(cat "$RUNTIME_DIR/second-admin-password")"
+  echo "DISABLE_SECRET_SCAN=PASS"
+  echo "DISABLE_HTTP=PASS"
+  echo "DISABLE_POSTGRES=PASS"
+  echo "DISABLE_RECEIPT=PASS"
+  echo "DISABLE_AUDIT=PASS"
+  echo "DISABLE_NATIVE_PATCHES=$native_patch_count"
   exit 0
 fi
 if [[ "${1:-all}" == "all" ]]; then

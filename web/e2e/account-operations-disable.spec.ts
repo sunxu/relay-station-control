@@ -1,0 +1,39 @@
+import { expect, test, type Page } from "@playwright/test";
+import { writeFileSync } from "node:fs";
+
+const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
+const disableEmail = process.env.ACCEPTANCE_DISABLE_EMAIL;
+const evidenceFile = process.env.ACCEPTANCE_DISABLE_EVIDENCE_FILE;
+if (!storageState || !disableEmail || !evidenceFile) throw new Error("Disable acceptance environment is incomplete");
+test.use({ storageState });
+test.setTimeout(480_000);
+
+async function openAccount(page: Page, accountKey: string) {
+  const detail = page.getByTestId(`account-details-${encodeURIComponent(accountKey)}`);
+  await expect.poll(async () => {
+    if (await detail.count() === 0) await page.getByTestId("account-query").click();
+    return await detail.count();
+  }, { timeout: 390_000, intervals: [1000, 2000, 5000] }).toBeGreaterThan(0);
+  await detail.click();
+  await page.getByTestId("account-operations-tab").click();
+  await expect(page.getByTestId("account-operation-read")).toBeVisible();
+}
+
+test("renders the real Disable operation result", async ({ page }) => {
+  await page.goto("/topology");
+  await expect(page.getByTestId("topology-page")).toBeVisible();
+  const node = page.getByTestId("relay-node-selector");
+  await node.click();
+  await node.press("ArrowDown");
+  await node.press("Enter");
+  await openAccount(page, `antigravity:${disableEmail}`);
+  await expect(page.getByTestId("account-operations-panel")).toBeVisible();
+  const responsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/account-operations/disable");
+  await page.getByTestId("account-disable").click();
+  const response = await responsePromise;
+  const body = await response.json() as { operation?: { command_id?: string; operation_kind?: string; execution_state?: string } };
+  expect(response.status()).toBe(200);
+  expect(body.operation).toMatchObject({ operation_kind: "disable", execution_state: "remote_applied" });
+  await expect(page.getByTestId("account-operations-panel").getByTestId("account-operation-result")).toContainText("已应用");
+  writeFileSync(evidenceFile, JSON.stringify({ command_id: body.operation?.command_id, email: disableEmail }), { mode: 0o600 });
+});

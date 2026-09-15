@@ -89,7 +89,7 @@ export function AccountList({ rows, loading = false, unavailable = false, onSele
     { title: "Requests", dataIndex: "request_count" },
     { title: "P95", dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
     { title: "最近失败", key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at)}</Text></Flex> },
-    ...(onSelectAccount ? [{ title: "详情", key: "details", render: (_: unknown, row: AccountListRow) => <Button type="link" onClick={() => onSelectAccount(row)}>查看详情</Button> }] : []),
+    ...(onSelectAccount ? [{ title: "详情", key: "details", render: (_: unknown, row: AccountListRow) => <Button data-testid={`account-details-${encodeURIComponent(row.account_key)}`} type="link" onClick={() => onSelectAccount(row)}>查看详情</Button> }] : []),
   ];
 
   if (loading) return <Flex justify="center" role="status" aria-label="正在读取账号"><Spin /></Flex>;

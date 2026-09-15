@@ -77,40 +77,40 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
       if (kind === "upload_new" || kind === "replace_existing") clearCredential();
     }
   };
-  const confirmRemove = () => Modal.confirm({ title: "确认移除此账户？", content: "该操作会删除 Node 上对应的单个凭据文件，无法由 Control 自动恢复。", okText: "确认移除", okButtonProps: { danger: true }, onOk: () => mutate("remove") });
+  const confirmRemove = () => Modal.confirm({ title: "确认移除此账户？", content: "该操作会删除 Node 上对应的单个凭据文件，无法由 Control 自动恢复。", okText: "确认移除", okButtonProps: { danger: true, "data-testid": "account-remove-confirm" }, cancelButtonProps: { "data-testid": "account-remove-cancel" }, onOk: () => mutate("remove") });
   const applyOverride = () => {
     if (!operation) return Promise.resolve();
     return once(() => api.override(overrideKind, { commandId: crypto.randomUUID(), targetCommandId: operation.command_id, reason: overrideReason, detail: overrideDetail.trim() || undefined }, csrf));
   };
 
-  return <Flex vertical gap={12}>
+  return <Flex vertical gap={12} data-testid="account-operations-panel">
     <Typography.Text type="secondary">操作只提交逻辑账号身份；物理目标由服务端基于最新 Node 快照选择。</Typography.Text>
     {error && <Alert type="error" showIcon title={error} />}
     <Space wrap>
-      {basicStatus !== "disabled" && <Button disabled={busy} loading={busy} onClick={() => void mutate("disable")}>Disable</Button>}
-      {basicStatus === "disabled" && <Button disabled={busy} loading={busy} onClick={() => void mutate("enable")}>Enable</Button>}
-      <Button danger disabled={busy} onClick={confirmRemove}>Remove</Button>
+      {basicStatus !== "disabled" && <Button data-testid="account-disable" disabled={busy} loading={busy} onClick={() => void mutate("disable")}>Disable</Button>}
+      {basicStatus === "disabled" && <Button data-testid="account-enable" disabled={busy} loading={busy} onClick={() => void mutate("enable")}>Enable</Button>}
+      <Button data-testid="account-remove" danger disabled={busy} onClick={confirmRemove}>Remove</Button>
     </Space>
-    <Upload key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
+    <Upload data-testid="account-existing-credential-file" key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
       <Button disabled={busy}>选择 credential JSON（最大 1 MiB）</Button>
     </Upload>
     <Space wrap>
-      <Button type="primary" disabled={busy || !credential} loading={busy} onClick={() => void mutate("upload_new")}>Upload New</Button>
-      <Button danger disabled={busy || !credential} loading={busy} onClick={() => Modal.confirm({ title: "确认替换现有凭据？", content: "Replace 使用远端原生的尽力而为、后写入覆盖语义。", okText: "确认替换", onOk: () => mutate("replace_existing") })}>Replace Existing</Button>
+      <Button data-testid="account-upload-existing" type="primary" disabled={busy || !credential} loading={busy} onClick={() => void mutate("upload_new")}>Upload New</Button>
+      <Button data-testid="account-replace-existing" danger disabled={busy || !credential} loading={busy} onClick={() => Modal.confirm({ title: "确认替换现有凭据？", content: "Replace 使用远端原生的尽力而为、后写入覆盖语义。", okText: "确认替换", okButtonProps: { "data-testid": "account-replace-confirm" }, cancelButtonProps: { "data-testid": "account-replace-cancel" }, onOk: () => mutate("replace_existing") })}>Replace Existing</Button>
     </Space>
     <Divider />
     <Flex gap={8} wrap>
-      <Input aria-label="Operation command ID" value={lookupID} onChange={(event) => setLookupID(event.target.value)} placeholder="输入 Command ID 查看操作结果" style={{ maxWidth: 390 }} />
-      <Button disabled={busy || !lookupID.trim()} loading={busy} onClick={() => void once(() => api.operation(lookupID.trim()))}>读取操作</Button>
+      <Input data-testid="account-operation-command-id" aria-label="Operation command ID" value={lookupID} onChange={(event) => setLookupID(event.target.value)} placeholder="输入 Command ID 查看操作结果" style={{ maxWidth: 390 }} />
+      <Button data-testid="account-operation-read" disabled={busy || !lookupID.trim()} loading={busy} onClick={() => void once(() => api.operation(lookupID.trim()))}>读取操作</Button>
     </Flex>
     {operation && <AccountOperationResult operation={operation} />}
     {operation?.execution_state === "outcome_unknown" && <>
       <Divider />
       <Typography.Text strong>未知结果 Override</Typography.Text>
-      <Select aria-label="Override 类型" value={overrideKind} onChange={setOverrideKind} options={[{ value: "lifecycle", label: "Lifecycle Override" }, { value: "same_account", label: "Same-account Override" }]} />
-      <Select aria-label="Override reason" value={overrideReason} onChange={setOverrideReason} options={reasons} />
-      <Input.TextArea aria-label="Override detail" value={overrideDetail} maxLength={512} onChange={(event) => setOverrideDetail(event.target.value)} placeholder="可选说明" />
-      <Button danger disabled={busy} loading={busy} onClick={() => Modal.confirm({ title: `确认执行 ${overrideKind === "lifecycle" ? "Lifecycle" : "Same-account"} Override？`, content: `目标操作：${operation.command_id}`, okText: "确认 Override", onOk: applyOverride })}>执行 Override</Button>
+      <Select data-testid="account-override-kind" aria-label="Override 类型" value={overrideKind} onChange={setOverrideKind} options={[{ value: "lifecycle", label: "Lifecycle Override" }, { value: "same_account", label: "Same-account Override" }]} />
+      <Select data-testid="account-override-reason" aria-label="Override reason" value={overrideReason} onChange={setOverrideReason} options={reasons} />
+      <Input.TextArea data-testid="account-override-detail" aria-label="Override detail" value={overrideDetail} maxLength={512} onChange={(event) => setOverrideDetail(event.target.value)} placeholder="可选说明" />
+      <Button data-testid="account-override-submit" danger disabled={busy} loading={busy} onClick={() => Modal.confirm({ title: `确认执行 ${overrideKind === "lifecycle" ? "Lifecycle" : "Same-account"} Override？`, content: `目标操作：${operation.command_id}`, okText: "确认 Override", okButtonProps: { "data-testid": "account-override-confirm" }, cancelButtonProps: { "data-testid": "account-override-cancel" }, onOk: applyOverride })}>执行 Override</Button>
     </>}
   </Flex>;
 }

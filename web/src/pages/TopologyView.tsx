@@ -223,7 +223,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Select aria-label="质量窗口" value={qualityWindow} disabled={accountQualityView.isPending} options={[{ value: "15m", label: "最近 15 分钟" }, { value: "1h", label: "最近 1 小时" }]} onChange={(value) => { setQualityWindow(value); resetAccountResult(); }} />
           <Select allowClear aria-label="质量分类" placeholder="全部质量" value={qualityFilter} disabled={accountQualityView.isPending} options={[{ value: "good", label: "Good" }, { value: "degraded", label: "Degraded" }, { value: "bad", label: "Bad" }, { value: "unknown", label: "Unknown" }]} onChange={(value) => { setQualityFilter(value); resetAccountResult(); }} />
           <Select aria-label="每页账号数" value={qualityPageSize} disabled={accountQualityView.isPending} options={[25, 50, 100].map((value) => ({ value, label: `${value} / 页` }))} onChange={(value) => { setQualityPageSize(value); resetAccountResult(); }} />
-          <Button type="primary" disabled={!instanceId} loading={accountQualityView.isPending} onClick={() => { resetAccountResult(); executeAccountQuery(); }}>查询</Button>
+          <Button data-testid="account-query" type="primary" disabled={!instanceId} loading={accountQualityView.isPending} onClick={() => { resetAccountResult(); executeAccountQuery(); }}>查询</Button>
         </Flex>
 
         {accountQualityView.isPending && <Flex role="status" aria-label="正在读取账号质量" justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
