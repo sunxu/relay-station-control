@@ -18,7 +18,7 @@ import (
 
 const (
 	FrozenRuntimeVersion          = "7.3.2"
-	FrozenRuntimeCommit           = "2be99911510c3168199015aad915b8457fc82111"
+	FrozenRuntimeCommit           = "0b34a22fcaec392d39f710f3a8418595b491607d"
 	nativeMutationBodyLimit int64 = 64 << 10
 	nativeUploadPrefix            = "antigravity-"
 	nativeUploadSuffix            = ".json"

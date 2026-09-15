@@ -29,7 +29,7 @@
 - Gate 3: `CLOSED / PASS`.
 - Node alignment and historical Stage7N revert: `COMPLETE`.
 - Native acceptance: `PASS`; artifact provenance: `CONFIRMED`.
-- Runtime artifact identity: `FROZEN` — source `2be99911510c3168199015aad915b8457fc82111`, `X-CPA-VERSION=7.3.2`, `X-CPA-COMMIT=2be99911510c3168199015aad915b8457fc82111`, image `sha256:886804e0569c619433d3603772c162ff193ce57da6cb95e6250178966d3c7b3d`.
+- Runtime artifact identity: `FROZEN` — source `0b34a22fcaec392d39f710f3a8418595b491607d`, `X-CPA-VERSION=7.3.2`, `X-CPA-COMMIT=0b34a22fcaec392d39f710f3a8418595b491607d`, image `sha256:46a4fa73b80974928978d104bbdf03a0c4f6db0e6ff457df823333e1050b27d8`. The prior Gate 3 tuple (`2be99911510c3168199015aad915b8457fc82111`, image `sha256:886804e0569c619433d3603772c162ff193ce57da6cb95e6250178966d3c7b3d`) is retained as historical evidence and marked superseded.
 - Final Implementation Readiness: `PASS`; Gate 4: `IN PROGRESS`; Stage 7B implementation: `IN PROGRESS`; Round 2 is an `IMPLEMENTED CANDIDATE` and Gate 4 final review is `NOT READY`.
 
 This document records Gate 2 PASS, Gate 3 finalization, the completed Round 1 persistence/domain candidate and the current Round 2 native adapter/runtime guard candidate. Final Implementation Readiness is PASS; command orchestration, API, UI and E2E work remain for later Gate 4 rounds.

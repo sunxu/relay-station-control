@@ -4,9 +4,9 @@ set -euo pipefail
 image="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}"
 node_port="${CONTROL_E2E_NODE_PORT:?set CONTROL_E2E_NODE_PORT}"
 node_password="${CONTROL_E2E_NODE_MANAGEMENT_PASSWORD:?set CONTROL_E2E_NODE_MANAGEMENT_PASSWORD}"
-expected_digest="sha256:886804e0569c619433d3603772c162ff193ce57da6cb95e6250178966d3c7b3d"
+expected_digest="sha256:46a4fa73b80974928978d104bbdf03a0c4f6db0e6ff457df823333e1050b27d8"
 expected_version="7.3.2"
-expected_commit="2be99911510c3168199015aad915b8457fc82111"
+expected_commit="0b34a22fcaec392d39f710f3a8418595b491607d"
 
 actual_digest="$(docker image inspect "$image" --format '{{.Id}}')"
 [[ "$actual_digest" == "$expected_digest" ]] || { echo "pinned_node_digest_mismatch" >&2; exit 1; }

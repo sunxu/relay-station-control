@@ -39,6 +39,34 @@ func TestNativeAdapterRuntimeGuardPreventsMutation(t *testing.T) {
 	}
 }
 
+func TestNativeAdapterRejectsSupersededRuntimeArtifactBeforeMutation(t *testing.T) {
+	const supersededCommit = "2be99911510c3168199015aad915b8457fc82111"
+	var mutations atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("X-CPA-VERSION", FrozenRuntimeVersion)
+			w.Header().Set("X-CPA-COMMIT", supersededCommit)
+			_, _ = io.WriteString(w, `{"files":[]}`)
+			return
+		}
+		mutations.Add(1)
+		http.Error(w, "unexpected mutation", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	config, err := (rootdrivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := adapter.DeleteAuthFile(context.Background(), "antigravity", "a@example.invalid")
+	if err == nil || outcome.FailureCode != NativeFailureUnsupportedNodeVersion || mutations.Load() != 0 {
+		t.Fatalf("outcome=%+v err=%v mutations=%d", outcome, err, mutations.Load())
+	}
+}
+
 func TestNativeAdapterFixedRoutesAndFreshSnapshot(t *testing.T) {
 	var gets, mutations atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
