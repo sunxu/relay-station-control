@@ -310,23 +310,76 @@ if [[ "$MODE" == "enable-fixture" ]]; then
   export ACCEPTANCE_NODE_PORT="$NODE_PORT"
   export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
   export ACCEPTANCE_ENABLE_FIXTURE_EVIDENCE_FILE="$RUNTIME_DIR/enable-fixture-evidence.json"
+  export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
-  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable-fixture.spec.ts
+  mkdir -p "$RUNTIME_DIR/logs"
+  set +e
+  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable-fixture.spec.ts 2>&1 | tee "$RUNTIME_DIR/acceptance-output.log"
+  fixture_test_status="${PIPESTATUS[0]}"
+  set -e
+  [[ "$fixture_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$fixture_test_status"; }
   psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
   [[ "$(psql_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND lifecycle='present' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_inventory_db_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_snapshot_db_mismatch" >&2; exit 1; }
+  compose logs --no-color control > "$RUNTIME_DIR/logs/control.log"
+  compose logs --no-color node > "$RUNTIME_DIR/logs/node.log"
+  compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter.log"
   scan_enable_fixture_secret() {
-    local value="$1"
+    local category="$1" value="$2"
     [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/enable-fixture-evidence.json" >/dev/null 2>&1; then
-      echo "enable_fixture_secret_artifact_match" >&2
+    if rg -l -F -- "$value" \
+      "$RUNTIME_DIR/logs" \
+      "$RUNTIME_DIR/node/logs" \
+      "$RUNTIME_DIR/playwright-output" \
+      "$RUNTIME_DIR/browser-console.log" \
+      "$RUNTIME_DIR/acceptance-output.log" \
+      "$RUNTIME_DIR/enable-fixture-evidence.json" >/dev/null 2>&1; then
+      echo "enable_fixture_secret_artifact_match category=$category location=<redacted>" >&2
       return 1
     fi
   }
-  scan_enable_fixture_secret "$ENABLE_SECRET_MARKER"
-  scan_enable_fixture_secret "phase7-disposable-enable-token"
-  scan_enable_fixture_secret "$NODE_MANAGEMENT_PASSWORD"
+  scan_enable_fixture_secret "credential-marker" "$ENABLE_SECRET_MARKER"
+  scan_enable_fixture_secret "access-token" "phase7-disposable-enable-token"
+  scan_enable_fixture_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
+  scan_enable_fixture_binary_secret() {
+    local category="$1" secret_file="$2"
+    if python3 - "$category" "$secret_file" \
+      "$RUNTIME_DIR/logs" \
+      "$RUNTIME_DIR/node/logs" \
+      "$RUNTIME_DIR/playwright-output" \
+      "$RUNTIME_DIR/browser-console.log" \
+      "$RUNTIME_DIR/acceptance-output.log" \
+      "$RUNTIME_DIR/enable-fixture-evidence.json" <<'PY'
+import pathlib
+import sys
+
+category, secret_file, *targets = sys.argv[1:]
+needle = pathlib.Path(secret_file).read_bytes()
+matches = 0
+for target in targets:
+    path = pathlib.Path(target)
+    paths = path.rglob("*") if path.is_dir() else (path,)
+    for candidate in paths:
+        if candidate.is_file():
+            try:
+                matches += candidate.read_bytes().count(needle)
+            except OSError:
+                pass
+if matches:
+    print(f"enable_fixture_secret_artifact_match category={category} location=<redacted>", file=sys.stderr)
+    raise SystemExit(1)
+PY
+    then
+      return 0
+    fi
+    return 1
+  }
+  scan_enable_fixture_binary_secret "intent-key" "$RUNTIME_DIR/account-operation-intent-key"
+  scan_enable_fixture_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_enable_fixture_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_enable_fixture_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_enable_fixture_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
   echo "ENABLE_FIXTURE_SECRET_SCAN=PASS"
   echo "ENABLE_FIXTURE_NODE=PASS"
   echo "ENABLE_FIXTURE_SNAPSHOT=PASS"
