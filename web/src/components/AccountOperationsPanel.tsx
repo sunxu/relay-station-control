@@ -162,16 +162,16 @@ export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthoriz
   };
 
   return <Flex vertical gap={12} align="flex-start">
-    <Button type="primary" onClick={() => { setError(""); setOpen(true); }}>Upload New Account</Button>
+    <Button data-testid="account-upload-new" type="primary" onClick={() => { setError(""); setOpen(true); }}>Upload New Account</Button>
     {operation && <AccountOperationResult operation={operation} />}
-    <Modal title="Upload New Account" open={open} onCancel={close} onOk={() => void submit()} okText="Upload New" confirmLoading={busy} okButtonProps={{ disabled: busy || !credential || !email.trim() }} cancelButtonProps={{ disabled: busy }} destroyOnHidden>
+    <Modal title="Upload New Account" open={open} onCancel={close} onOk={() => void submit()} okText="Upload New" confirmLoading={busy} okButtonProps={{ "data-testid": "account-upload-new-submit", disabled: busy || !credential || !email.trim() }} cancelButtonProps={{ disabled: busy }} destroyOnHidden>
       <Flex vertical gap={12}>
         <Typography.Text type="secondary">无需已有 Inventory 账号。服务端会根据逻辑身份生成并验证远端目标。</Typography.Text>
         {error && <Alert type="error" showIcon title={error} />}
         <Input aria-label="Upload New Provider" value="antigravity" disabled />
-        <Input aria-label="Upload New Email" type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="账户邮箱" />
-        <Upload key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "new-account-credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
-          <Button disabled={busy}>选择 credential JSON（最大 1 MiB）</Button>
+        <Input data-testid="account-upload-new-email" aria-label="Upload New Email" type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="账户邮箱" />
+        <Upload data-testid="account-upload-new-file" key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError("凭据文件不能超过 1 MiB"); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "new-account-credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
+          <Button data-testid="account-upload-new-file-button" disabled={busy}>选择 credential JSON（最大 1 MiB）</Button>
         </Upload>
       </Flex>
     </Modal>

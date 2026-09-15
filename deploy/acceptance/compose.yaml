@@ -30,7 +30,7 @@ services:
         install -d -o 65532 -g 65532 -m 0500 /run/control-secrets
         install -o 65532 -g 65532 -m 0400 /input/bootstrap-secret /run/control-secrets/bootstrap-secret
         install -o 65532 -g 65532 -m 0400 /input/auth-keyring.json /run/control-secrets/auth-keyring.json
-        install -o 65532 -g 65532 -m 0400 /input/account-operation-intent-key /run/control-secrets/account-operation-intent-key
+        install -o 65532 -g 65532 -m 0600 /input/account-operation-intent-key /run/control-secrets/account-operation-intent-key
         install -o 65532 -g 65532 -m 0400 /input/cliproxyapi-secret-map.json /run/control-secrets/cliproxyapi-secret-map.json
         install -o 65532 -g 65532 -m 0400 /input/node-management-key /run/control-secrets/node-management-key
     read_only: true

@@ -30,7 +30,11 @@ umask 077
 openssl rand -hex 32 > "$RUNTIME_DIR/bootstrap-secret"
 openssl rand -out "$RUNTIME_DIR/account-operation-intent-key" 32
 printf '%s' "$NODE_MANAGEMENT_PASSWORD" > "$RUNTIME_DIR/node-management-key"
+UPLOAD_EMAIL="phase7-${PROJECT##*-}@example.invalid"
+UPLOAD_SECRET_MARKER="PHASE7_E2E_SECRET_${PROJECT##*-}"
+printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
 mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
+printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
 port: 8317
@@ -105,7 +109,7 @@ ensure_candidate_image() {
   echo "CANDIDATE_IMAGE_REVISION=PASS"
 }
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload]" >&2; exit 2; }
 ensure_candidate_image
 compose up -d --wait postgres
 DATABASE_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
@@ -160,6 +164,38 @@ export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
 chmod 600 "$RUNTIME_DIR/storage-state.json"
 echo "AUTH_COMPOSITION_SMOKE=PASS"
+if [[ "$MODE" == "upload" ]]; then
+  export ACCEPTANCE_UPLOAD_CREDENTIAL_FILE="$RUNTIME_DIR/upload-credential.json"
+  export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
+  export ACCEPTANCE_UPLOAD_SECRET_MARKER="$UPLOAD_SECRET_MARKER"
+  export ACCEPTANCE_UPLOAD_EVIDENCE_FILE="$RUNTIME_DIR/upload-evidence.json"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-upload.spec.ts; then
+    compose logs --no-color control node >&2 || true
+    exit 1
+  fi
+  upload_command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/upload-evidence.json")"
+  [[ "$upload_command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "upload_evidence_missing_command_id" >&2; exit 1; }
+  assert_upload_count() {
+    local label="$1" query="$2" got
+    got="$(compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$query" | tr -d '\r\n[:space:]')"
+    [[ "$got" == 1 ]] || { echo "${label}_mismatch:${got:-empty}" >&2; exit 1; }
+  }
+  assert_upload_count registry "SELECT count(*) FROM admin_command_registry WHERE command_id='$upload_command_id' AND command_kind='account.upload_new'"
+  assert_upload_count operation "SELECT count(*) FROM account_admin_operations WHERE command_id='$upload_command_id' AND operation_kind='upload_new' AND account_key='antigravity:$UPLOAD_EMAIL' AND execution_state='remote_applied'"
+  assert_upload_count receipt "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$upload_command_id'"
+  assert_upload_count audit "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$upload_command_id'"
+  node_observation="$RUNTIME_DIR/node-observation.json"
+  curl --noproxy '*' --silent --show-error --fail --header "Authorization: Bearer $NODE_MANAGEMENT_PASSWORD" "http://127.0.0.1:${NODE_PORT}/v0/management/auth-files" -o "$node_observation"
+  grep -Fq "$UPLOAD_EMAIL" "$node_observation" || { echo "node_upload_observation_missing" >&2; exit 1; }
+  rm -f -- "$node_observation"
+  echo "UPLOAD_NEW_BROWSER=PASS"
+  echo "UPLOAD_NEW_CONTROL=PASS"
+  echo "UPLOAD_NEW_POSTGRES=PASS"
+  echo "UPLOAD_NEW_NODE=PASS"
+  echo "UPLOAD_NEW_NATIVE_MUTATIONS=1"
+  exit 0
+fi
 if [[ "${1:-all}" == "all" ]]; then
   export CONTROL_DATABASE_TEST_URL="$DATABASE_URL"
   export CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
