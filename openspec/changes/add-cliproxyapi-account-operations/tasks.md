@@ -39,7 +39,7 @@
 
 - [ ] 6.1 Implement the five frozen mutation POST routes, operation GET, lifecycle-override POST and same-account-override POST with exact no-store schemas/statuses and bounded stable errors.
 - [ ] 6.2 Implement separate immutable account terminal receipts for mutation, `account.lifecycle_override` and `account.same_account_override` command IDs: exact replay only for stable terminal classification; persist exact error-only, error-plus-operation or operation-only bodies as applicable; `prepared` same-command POST resumes the same operation, while `dispatched`/`outcome_unknown` return current projection with 202 and zero redispatch; Phase 7 v1 has no extra intermediate failure state.
-- [ ] 6.3 Add super-admin UI for single-account operations and two separate high-risk actions, Override Unknown Operation Lifecycle Block and Override Unknown Operation Same-Account Block, without native physical evidence or arbitrary filename input.
+- [x] 6.3 Add super-admin UI for single-account operations and two separate high-risk actions, Override Unknown Operation Lifecycle Block and Override Unknown Operation Same-Account Block, without native physical evidence or arbitrary filename input.
 - [ ] 6.4 Add bounded audit actions, Secret-safe logs and low-cardinality metrics; prove Management Key, credential bytes, native paths/responses and account identifiers do not leak.
 
 ## 7. Inventory boundary

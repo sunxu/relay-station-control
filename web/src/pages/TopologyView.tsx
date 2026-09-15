@@ -18,6 +18,7 @@ import { accountInventoryBasicStatuses, accountInventoryLifecycles } from "../ap
 import type { AccountListFilters } from "../api/account-quality-types";
 import { AccountInventoryCapacity } from "../components/AccountInventoryCapacity";
 import { formatDateTime } from "../time";
+import type { AccountOperationsApi } from "../api/account-operations-api";
 
 const { Text } = Typography;
 function unauthorized(error: unknown) {
@@ -59,8 +60,8 @@ function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occ
   </Flex>;
 }
 
-export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, csrfToken = "", onUnauthorized }: {
-  api: TopologyApi; assetApi: AssetApi; inventoryApi?: AccountInventoryApi; initialInstanceId?: string; csrfToken?: string; onUnauthorized: () => void;
+export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi, initialInstanceId, csrfToken = "", onUnauthorized }: {
+  api: TopologyApi; assetApi: AssetApi; inventoryApi?: AccountInventoryApi; accountOperationsApi?: AccountOperationsApi; initialInstanceId?: string; csrfToken?: string; onUnauthorized: () => void;
 }) {
   const cache = useQueryClient();
   const screens = Grid.useBreakpoint();
@@ -231,7 +232,7 @@ export function TopologyView({ api, assetApi, inventoryApi, initialInstanceId, c
           <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={qualityCursorHistory.length === 1 || accountQualityView.isPending} onClick={() => { const previous = qualityCursorHistory.slice(0, -1); const cursor = previous.at(-1); setQualityCursorHistory(previous); setQualityCursor(cursor); executeAccountQuery(cursor); }}>账号上一页</Button><Button disabled={!accountQualityView.data.next_cursor || accountQualityView.isPending} onClick={() => { const next = accountQualityView.data.next_cursor ?? undefined; setQualityCursorHistory((items) => [...items, next]); setQualityCursor(next); executeAccountQuery(next); }}>账号下一页</Button></Flex>
         </>}
       </Card>
-      <AccountDetailsDrawer api={api} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />
+      <AccountDetailsDrawer api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />
       <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={(accountKey) => { setDetailsAccountKey(accountKey); setDetailsRow(accountRows.find((item) => item.account_key === accountKey)); }} onUnauthorized={expireSession} />
       <Card title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
         {providers.isPending && <Spin />}

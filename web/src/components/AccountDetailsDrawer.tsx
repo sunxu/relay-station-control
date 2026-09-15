@@ -6,11 +6,15 @@ import { formatDateTime } from "../time";
 import { useAccountAvailabilityOccurrences } from "../api/account-availability-hooks";
 import type { AccountAvailabilityApi, AccountAvailabilityOccurrence, AccountAvailabilityOccurrenceStatus } from "../api/account-availability-types";
 import { useEffect, useState } from "react";
+import type { AccountOperationsApi } from "../api/account-operations-api";
+import { AccountOperationsPanel } from "./AccountOperationsPanel";
 
 const { Text } = Typography;
 
-export function AccountDetailsDrawer({ api, instanceId, row, accountKey, onClose, onUnauthorized }: {
+export function AccountDetailsDrawer({ api, accountOperationsApi, csrfToken, instanceId, row, accountKey, onClose, onUnauthorized }: {
   api: AccountRequestHistoryApi & AccountAvailabilityApi;
+  accountOperationsApi?: AccountOperationsApi;
+  csrfToken?: string;
   instanceId?: string;
   row?: AccountListRow;
   accountKey?: string;
@@ -20,7 +24,7 @@ export function AccountDetailsDrawer({ api, instanceId, row, accountKey, onClose
   const identity = row?.account_key ?? accountKey;
   return <Drawer title={identity ? `账号详情 · ${row?.email || identity}` : "账号详情"} open={Boolean(identity && instanceId)} onClose={onClose} width={720} destroyOnHidden>
     {identity && instanceId && <>
-      <Tabs items={[{ key: "history", label: "请求历史", children: <AccountRequestHistorySection key={`${instanceId}:${identity}`} api={api} instanceId={instanceId} accountKey={identity} onUnauthorized={onUnauthorized} /> }, { key: "availability", label: "可用性事件", children: <AvailabilityOccurrences key={`${instanceId}:${identity}`} api={api} instanceId={instanceId} accountKey={identity} onUnauthorized={onUnauthorized} /> }, { key: "inventory", label: "采集信息", children: row ? <Descriptions column={2} size="small" bordered>
+      <Tabs items={[{ key: "history", label: "请求历史", children: <AccountRequestHistorySection key={`${instanceId}:${identity}`} api={api} instanceId={instanceId} accountKey={identity} onUnauthorized={onUnauthorized} /> }, { key: "availability", label: "可用性事件", children: <AvailabilityOccurrences key={`${instanceId}:${identity}`} api={api} instanceId={instanceId} accountKey={identity} onUnauthorized={onUnauthorized} /> }, ...(accountOperationsApi && csrfToken ? [{ key: "operations", label: "账户操作", children: <AccountOperationsPanel api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} accountKey={identity} basicStatus={row?.basic_status} onUnauthorized={onUnauthorized} /> }] : []), { key: "inventory", label: "采集信息", children: row ? <Descriptions column={2} size="small" bordered>
         <Descriptions.Item label="Account key"><Text copyable>{row.account_key}</Text></Descriptions.Item>
         <Descriptions.Item label="Provider"><Tag>{row.provider}</Tag></Descriptions.Item>
         <Descriptions.Item label="生命周期">{row.lifecycle}</Descriptions.Item>
