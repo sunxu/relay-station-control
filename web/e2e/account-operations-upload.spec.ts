@@ -6,12 +6,24 @@ const credentialFile = process.env.ACCEPTANCE_UPLOAD_CREDENTIAL_FILE;
 const uploadEmail = process.env.ACCEPTANCE_UPLOAD_EMAIL;
 const secretMarker = process.env.ACCEPTANCE_UPLOAD_SECRET_MARKER;
 const evidenceFile = process.env.ACCEPTANCE_UPLOAD_EVIDENCE_FILE;
+const browserConsoleFile = process.env.ACCEPTANCE_BROWSER_CONSOLE_FILE;
 
-if (!storageState || !credentialFile || !uploadEmail || !secretMarker || !evidenceFile) {
+if (!storageState || !credentialFile || !uploadEmail || !secretMarker || !evidenceFile || !browserConsoleFile) {
   throw new Error("Gate C upload acceptance environment is incomplete");
 }
 
 test.use({ storageState });
+
+const browserConsoleMessages: string[] = [];
+
+test.beforeEach(async ({ page }) => {
+  page.on("console", (message) => browserConsoleMessages.push(`${message.type()}: ${message.text()}`));
+});
+
+test.afterEach(() => {
+  writeFileSync(browserConsoleFile, browserConsoleMessages.join("\n"), { mode: 0o600 });
+  browserConsoleMessages.length = 0;
+});
 
 test("uploads a new account through the real Control and pinned Node", async ({ page }) => {
   const controlRequests: Array<{ method: string; path: string }> = [];

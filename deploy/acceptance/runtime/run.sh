@@ -46,6 +46,29 @@ auth-dir: "/root/.cli-proxy-api"
 logging-to-file: true
 request-log: false
 YAML
+cat > "$RUNTIME_DIR/node-counter.conf" <<'NGINX'
+pid /tmp/nginx.pid;
+events {}
+http {
+  log_format native_counter '$request_method $uri $status';
+  access_log /dev/stdout native_counter;
+  error_log /dev/stderr warn;
+  client_body_temp_path /tmp/client_temp;
+  proxy_temp_path /tmp/proxy_temp;
+  fastcgi_temp_path /tmp/fastcgi_temp;
+  uwsgi_temp_path /tmp/uwsgi_temp;
+  scgi_temp_path /tmp/scgi_temp;
+  server {
+    listen 8318;
+    location / {
+      proxy_pass http://node:8317;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header Authorization $http_authorization;
+    }
+  }
+}
+NGINX
 cat > "$RUNTIME_DIR/cliproxyapi-secret-map.json" <<'JSON'
 {"provider":"file","references":[{"reference":"file://phase7/node-management","path":"/run/control-secrets/node-management-key"}]}
 JSON
@@ -127,7 +150,7 @@ VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-00000
 INSERT INTO provider_inventory_policy_activations(node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at)
 VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-000000000047',statement_timestamp(),'acceptance-harness',statement_timestamp());
 INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref)
-VALUES ('00000000-0000-4000-8000-000000000047','Acceptance Node','cliproxyapi','cliproxyapi.auth-files.v1','http://node:8317','file://phase7/node-management');
+VALUES ('00000000-0000-4000-8000-000000000047','Acceptance Node','cliproxyapi','cliproxyapi.auth-files.v1','http://node-counter:8318','file://phase7/node-management');
 INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES
   ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_health_read'),
   ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read');
@@ -169,9 +192,11 @@ if [[ "$MODE" == "upload" ]]; then
   export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
   export ACCEPTANCE_UPLOAD_SECRET_MARKER="$UPLOAD_SECRET_MARKER"
   export ACCEPTANCE_UPLOAD_EVIDENCE_FILE="$RUNTIME_DIR/upload-evidence.json"
+  export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-upload.spec.ts; then
-    compose logs --no-color control node >&2 || true
+    compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
   upload_command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/upload-evidence.json")"
@@ -185,15 +210,36 @@ if [[ "$MODE" == "upload" ]]; then
   assert_upload_count operation "SELECT count(*) FROM account_admin_operations WHERE command_id='$upload_command_id' AND operation_kind='upload_new' AND account_key='antigravity:$UPLOAD_EMAIL' AND execution_state='remote_applied'"
   assert_upload_count receipt "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$upload_command_id'"
   assert_upload_count audit "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$upload_command_id'"
+  mkdir -p "$RUNTIME_DIR/logs"
+  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  [[ "$native_post_count" == 1 ]] || { echo "native_upload_post_count_mismatch:${native_post_count:-0}" >&2; exit 1; }
   node_observation="$RUNTIME_DIR/node-observation.json"
   curl --noproxy '*' --silent --show-error --fail --header "Authorization: Bearer $NODE_MANAGEMENT_PASSWORD" "http://127.0.0.1:${NODE_PORT}/v0/management/auth-files" -o "$node_observation"
   grep -Fq "$UPLOAD_EMAIL" "$node_observation" || { echo "node_upload_observation_missing" >&2; exit 1; }
   rm -f -- "$node_observation"
+  scan_secret() {
+    local value="$1"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/upload-evidence.json" >/dev/null 2>&1; then
+      echo "secret_artifact_match" >&2
+      return 1
+    fi
+  }
+  scan_secret "$UPLOAD_SECRET_MARKER"
+  scan_secret "$NODE_MANAGEMENT_PASSWORD"
+  scan_secret 'phase7-disposable-seed-token'
+  scan_secret "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
+  scan_secret "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_secret "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_secret "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_secret "$(cat "$RUNTIME_DIR/second-admin-password")"
+  echo "SECRET_ARTIFACT_SCAN=PASS"
   echo "UPLOAD_NEW_BROWSER=PASS"
   echo "UPLOAD_NEW_CONTROL=PASS"
   echo "UPLOAD_NEW_POSTGRES=PASS"
   echo "UPLOAD_NEW_NODE=PASS"
-  echo "UPLOAD_NEW_NATIVE_MUTATIONS=1"
+  echo "UPLOAD_NEW_NATIVE_MUTATIONS=$native_post_count"
   exit 0
 fi
 if [[ "${1:-all}" == "all" ]]; then

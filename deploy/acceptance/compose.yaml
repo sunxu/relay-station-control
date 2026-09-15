@@ -65,6 +65,23 @@ services:
       retries: 30
       start_period: 5s
 
+  node-counter:
+    image: nginx:1.31.0-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7
+    depends_on:
+      node:
+        condition: service_healthy
+    entrypoint: ["nginx"]
+    command: ["-c", "/etc/nginx/counter.conf", "-g", "daemon off;"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=0700,uid=65532,gid=65532
+    volumes:
+      - ${CONTROL_E2E_RUNTIME_DIR:?set CONTROL_E2E_RUNTIME_DIR}/node-counter.conf:/etc/nginx/counter.conf:ro
+
   tls-init:
     image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
     command:
@@ -111,6 +128,8 @@ services:
         condition: service_completed_successfully
       node:
         condition: service_healthy
+      node-counter:
+        condition: service_started
     ports:
       - 127.0.0.1:${CONTROL_E2E_PORT:-18080}:8080
     volumes:
