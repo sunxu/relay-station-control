@@ -9,30 +9,49 @@ PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
+NODE_PORT="${ACCEPTANCE_NODE_PORT:-$((19317 + $$ % 500))}"
 EXPECTED_SHA="${EXPECTED_SHA:-$(git -C "$CONTROL_DIR" rev-parse HEAD)}"
 SHORT_SHA="${EXPECTED_SHA:0:12}"
 IMAGE="${ACCEPTANCE_IMAGE:-relay-station/control:acceptance-${SHORT_SHA}}"
 CONTROL_CONTAINER="${PROJECT}-control-1"
+NODE_MANAGEMENT_PASSWORD="$(openssl rand -hex 32)"
 COMPOSE=(docker compose -p "$PROJECT" -f "$COMPOSE_FILE")
 [[ -n "$RUNTIME_DIR" && "$RUNTIME_DIR" == /* && "$RUNTIME_DIR" != "$CONTROL_DIR"/* ]] || { echo "ACCEPTANCE_RUNTIME_DIR must be repo-external" >&2; exit 2; }
 [[ -z "${DINGTALK_WEBHOOK_URL:-}" && -z "${DINGTALK_SIGNING_SECRET:-}" ]] || { echo "real DingTalk configuration must be absent" >&2; exit 2; }
 mkdir -p "$RUNTIME_DIR"; chmod 700 "$RUNTIME_DIR"
 cleanup() {
   "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-  CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" \
+  CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf -- "$RUNTIME_DIR"
 }
 trap cleanup EXIT
 umask 077
 openssl rand -hex 32 > "$RUNTIME_DIR/bootstrap-secret"
+openssl rand -out "$RUNTIME_DIR/account-operation-intent-key" 32
+printf '%s' "$NODE_MANAGEMENT_PASSWORD" > "$RUNTIME_DIR/node-management-key"
+mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
+cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
+host: "0.0.0.0"
+port: 8317
+remote-management:
+  allow-remote: true
+  secret-key: "$NODE_MANAGEMENT_PASSWORD"
+  disable-control-panel: true
+auth-dir: "/root/.cli-proxy-api"
+logging-to-file: true
+request-log: false
+YAML
+cat > "$RUNTIME_DIR/cliproxyapi-secret-map.json" <<'JSON'
+{"provider":"file","references":[{"reference":"file://phase7/node-management","path":"/run/control-secrets/node-management-key"}]}
+JSON
 key="$(openssl rand -base64 32 | tr -d '\r\n=')"
 printf '{"format_version":1,"environment":"production","current":1,"keys":[{"version":1,"key":"%s"}]}\n' "$key" > "$RUNTIME_DIR/auth-keyring.json"
 unset key
 openssl rand -base64 36 | tr -d '\r\n' > "$RUNTIME_DIR/admin-password"
 openssl rand -base64 36 | tr -d '\r\n' > "$RUNTIME_DIR/second-admin-password"
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost' -addext 'basicConstraints=critical,CA:FALSE' -addext 'keyUsage=critical,digitalSignature,keyEncipherment' -addext 'extendedKeyUsage=serverAuth' -keyout "$RUNTIME_DIR/tls.key" -out "$RUNTIME_DIR/tls.crt" >/dev/null 2>&1
-chmod 400 "$RUNTIME_DIR/bootstrap-secret" "$RUNTIME_DIR/auth-keyring.json" "$RUNTIME_DIR/admin-password" "$RUNTIME_DIR/second-admin-password" "$RUNTIME_DIR/tls.key"
+chmod 400 "$RUNTIME_DIR/bootstrap-secret" "$RUNTIME_DIR/account-operation-intent-key" "$RUNTIME_DIR/node-management-key" "$RUNTIME_DIR/cliproxyapi-secret-map.json" "$RUNTIME_DIR/auth-keyring.json" "$RUNTIME_DIR/admin-password" "$RUNTIME_DIR/second-admin-password" "$RUNTIME_DIR/tls.key"
 chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 cat > "$OVERRIDE_FILE" <<'YAML'
@@ -43,7 +62,7 @@ services:
       CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED: "false"
       CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED: "false"
       CONTROL_ACCOUNT_REQUEST_QUALITY_ENABLED: "false"
-      CONTROL_CLIPROXYAPI_DRIVER_ENABLED: "false"
+      CONTROL_CLIPROXYAPI_DRIVER_ENABLED: "true"
       CONTROL_ACCOUNT_INVENTORY_HISTORY_ENABLED: "false"
       CONTROL_JOB_WORKER_CONCURRENCY: "1"
       CONTROL_JOB_RECONCILER_CONCURRENCY: "1"
@@ -53,8 +72,23 @@ services:
       CONTROL_JOB_SHUTDOWN_GRACE: "3s"
 YAML
 COMPOSE+=( -f "$OVERRIDE_FILE" )
-compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" "${COMPOSE[@]}" "$@"; }
+compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" "${COMPOSE[@]}" "$@"; }
 wait_http() { local url="$1"; for _ in $(seq 1 60); do curl --noproxy '*' -ksSf --max-time 2 "$url" >/dev/null && return 0; sleep 1; done; return 1; }
+wait_node_ready() {
+  local node_container="${PROJECT}-node-1" state health
+  for _ in $(seq 1 90); do
+    state="$(docker inspect "$node_container" --format '{{.State.Status}}' 2>/dev/null || true)"
+    health="$(docker inspect "$node_container" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)"
+    [[ "$health" == "healthy" ]] && return 0
+    if [[ "$state" == "exited" || "$state" == "dead" ]]; then
+      compose logs --no-color node >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+  compose logs --no-color node >&2 || true
+  return 1
+}
 image_revision() { docker image inspect "$1" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true; }
 ensure_candidate_image() {
   local revision
@@ -76,10 +110,41 @@ ensure_candidate_image
 compose up -d --wait postgres
 DATABASE_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
 DATABASE_URL="$DATABASE_URL" make --silent migrate-up
-compose exec -T postgres psql --set ON_ERROR_STOP=1 --username relay_control_migrator --dbname relay_station_control --command "INSERT INTO environments(environment_id,name,environment_type) VALUES ('development','Acceptance harness','production') ON CONFLICT (singleton_id) DO NOTHING" >/dev/null
-compose up -d secret-init
+compose exec -T postgres psql --set ON_ERROR_STOP=1 --username relay_control_migrator --dbname relay_station_control <<SQL
+INSERT INTO environments(environment_id,name,environment_type) VALUES ('development','Acceptance harness','production') ON CONFLICT (singleton_id) DO NOTHING;
+INSERT INTO node_drivers(node_type,driver_contract_version,display_name) VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','Acceptance Node');
+INSERT INTO driver_capabilities(node_type,driver_contract_version,capability) VALUES
+  ('cliproxyapi','cliproxyapi.auth-files.v1','management_health_read'),
+  ('cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read');
+INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by)
+VALUES ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1',ARRAY['antigravity']::text[],ARRAY[]::text[],'acceptance-harness');
+INSERT INTO provider_inventory_policy_bindings(node_type,driver_contract_version,policy_version_id,bound_by,bound_at)
+VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-000000000047','acceptance-harness',statement_timestamp());
+INSERT INTO provider_inventory_policy_activations(node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at)
+VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-000000000047',statement_timestamp(),'acceptance-harness',statement_timestamp());
+INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref)
+VALUES ('00000000-0000-4000-8000-000000000047','Acceptance Node','cliproxyapi','cliproxyapi.auth-files.v1','http://node:8317','file://phase7/node-management');
+INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES
+  ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_health_read'),
+  ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read');
+INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at)
+VALUES ('00000000-0000-4000-8000-000000000047',statement_timestamp(),'deployment_enable','acceptance-harness',statement_timestamp());
+SQL
+compose up -d secret-init node
+wait_node_ready
+secret_status="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.Status}}' 2>/dev/null || true)"
+secret_exit="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
+[[ "$secret_status" == "exited" && "$secret_exit" == "0" ]] || { echo "secret_init_failed" >&2; exit 1; }
+CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}" \
+  CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
+  "$ROOT/gate-b-smoke.sh"
 compose up -d control
 wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
+CONTROL_DATABASE_TEST_URL="$DATABASE_URL" \
+  CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable" \
+  env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET \
+  go test ./cmd/control -run '^TestProductionAccountNodeResolverUsesMigratedCapabilitySchema$' -count=1 -v
+echo "NODE_RESOLVER_SMOKE=PASS"
 if [[ "$MODE" == "startup" ]]; then
   sleep 3
   wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
