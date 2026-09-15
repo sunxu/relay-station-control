@@ -191,7 +191,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	}
 	provider, _, _ := strings.Cut(command.AccountKey, ":")
 	node, err := s.nodes.Resolve(ctx, command.NodeInstanceID, provider)
-	if err != nil || node.Adapter == nil {
+	if err != nil {
 		return store.AccountAdminOperation{}, ErrNodeNotFound
 	}
 	var operation store.AccountAdminOperation
@@ -228,6 +228,9 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	}
 	if !node.ProviderPolicyActive {
 		return fail("unsupported_provider")
+	}
+	if node.Adapter == nil {
+		return fail("node_management_unavailable")
 	}
 	mutation, prepareErr := prepareMutation(node.Adapter, ctx, command)
 	if prepareErr != nil {

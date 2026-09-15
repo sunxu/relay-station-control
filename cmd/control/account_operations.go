@@ -49,20 +49,49 @@ func (r productionAccountNodeResolverWithPolicy) Resolve(ctx context.Context, no
 		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
 	}
 	var lifecycle, nodeType, contract, endpoint, secretRef string
-	var capabilities []string
-	var monitoring bool
-	err := r.pool.QueryRow(ctx, `SELECT lifecycle_status,node_type,driver_contract_version,management_endpoint,COALESCE(reader_secret_ref,''),capabilities,EXISTS (SELECT 1 FROM relay_node_inventory_monitoring_activations m WHERE m.instance_id=relay_node_assets.instance_id AND m.effective_from<=clock_timestamp() AND (m.effective_to IS NULL OR m.effective_to>clock_timestamp()) AND m.cancelled_at IS NULL) FROM public.relay_node_assets WHERE instance_id=$1`, nodeID).Scan(&lifecycle, &nodeType, &contract, &endpoint, &secretRef, &capabilities, &monitoring)
+	var inventoryReadAllowed, monitoring bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT lifecycle_status,node_type,driver_contract_version,management_endpoint,
+			EXISTS (
+				SELECT 1 FROM public.node_capabilities c
+				WHERE c.instance_id=relay_node_assets.instance_id
+				  AND c.node_type=relay_node_assets.node_type
+				  AND c.driver_contract_version=relay_node_assets.driver_contract_version
+				  AND c.capability='management_account_inventory_read'
+			),
+			EXISTS (
+				SELECT 1 FROM relay_node_inventory_monitoring_activations m
+				WHERE m.instance_id=relay_node_assets.instance_id
+				  AND m.effective_from<=clock_timestamp()
+				  AND (m.effective_to IS NULL OR m.effective_to>clock_timestamp())
+				  AND m.cancelled_at IS NULL
+			)
+		FROM public.relay_node_assets WHERE instance_id=$1`, nodeID).
+		Scan(&lifecycle, &nodeType, &contract, &endpoint, &inventoryReadAllowed, &monitoring)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
 	}
 	if err != nil {
 		return accountadmin.NodeState{}, err
 	}
+	state := accountadmin.NodeState{LifecycleActive: lifecycle == "active", MonitoringEligible: monitoring, InventoryReadAllowed: inventoryReadAllowed}
+	if !state.LifecycleActive || !state.MonitoringEligible || !state.InventoryReadAllowed {
+		return state, nil
+	}
 	policy, err := r.policies.CurrentProviderPolicy(ctx, nodeType, contract)
 	if err != nil {
 		return accountadmin.NodeState{}, err
 	}
 	providerActive := policy != nil && contains(policy.ActiveProviders, provider) && !contains(policy.OutOfScopeProviders, provider)
+	state.ProviderPolicyActive = providerActive
+	if !providerActive {
+		return state, nil
+	}
+	if err = r.pool.QueryRow(ctx, `SELECT COALESCE(reader_secret_ref,'') FROM public.control_query_account_request_quality_targets_v1() WHERE instance_id=$1`, nodeID).Scan(&secretRef); errors.Is(err, pgx.ErrNoRows) {
+		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
+	} else if err != nil {
+		return accountadmin.NodeState{}, err
+	}
 	secret, err := r.secrets.Resolve(ctx, controlnodes.NewSecretReference(secretRef))
 	if err != nil {
 		return accountadmin.NodeState{}, err
@@ -76,5 +105,6 @@ func (r productionAccountNodeResolverWithPolicy) Resolve(ctx context.Context, no
 	if err != nil {
 		return accountadmin.NodeState{}, err
 	}
-	return accountadmin.NodeState{Adapter: adapter, LifecycleActive: lifecycle == "active", MonitoringEligible: monitoring, InventoryReadAllowed: contains(capabilities, "management_account_inventory_read"), ProviderPolicyActive: providerActive}, nil
+	state.Adapter = adapter
+	return state, nil
 }
