@@ -33,6 +33,114 @@ make test build
 
 数据库或状态机变更还需运行对应的 `deploy/acceptance/` 验收。使用 README 中的隔离开发数据库和受限 runtime role；产品进程不得持有 migration owner 凭据。
 
+## Playwright E2E Locator Policy
+
+This policy applies to all current and future phases.
+
+### Interaction locators
+
+All Playwright E2E locators used to perform user interactions MUST use `getByTestId()`.
+
+This includes, but is not limited to:
+
+- buttons
+- links and actions
+- menus
+- tabs
+- dialogs
+- form controls
+- selects
+- select options
+- interactive table/list rows
+- pagination controls
+- confirmation/cancel actions
+
+Do not use the following for interaction locators:
+
+- `getByText(...)`
+- `getByRole(...)`
+- `getByTitle(...)`
+- CSS selectors
+- XPath
+- `.first()`
+- `.last()`
+- `.nth(...)`
+- DOM-order-dependent selectors
+
+Do not use `force: true`, large arbitrary `waitForTimeout(...)`, or increased retry counts to hide locator or synchronization problems.
+
+### Assertions
+
+Semantic locators such as `getByText()` or `getByRole()` may be used for read-only assertions when the visible content itself is part of the behavior being verified.
+
+They MUST NOT be used to trigger an interaction.
+
+Prefer exact and scoped assertions where practical.
+
+### Test IDs
+
+`data-testid` values MUST represent stable product/domain semantics.
+
+Good examples:
+
+- `account-upload-new`
+- `account-remove-confirm`
+- `relay-node-selector`
+- `relay-node-option-<node-id>`
+- `operation-lifecycle-override-<command-id>`
+
+Bad examples:
+
+- `button-1`
+- `second-row`
+- `dropdown-option-2`
+- `left-panel-item-3`
+- IDs derived from DOM position or visual layout
+
+Test IDs must not depend on:
+
+- translated display text
+- DOM order
+- CSS classes
+- framework-internal DOM structure
+- Ant Design implementation details
+
+### Production testability changes
+
+Adding stable `data-testid` attributes to production frontend components is allowed and is classified as a testability-only change.
+
+Such changes MUST NOT alter:
+
+- business semantics
+- API contracts
+- authentication/authorization
+- backend behavior
+- state transitions
+- workflow behavior
+
+E2E-only product backdoors or authentication bypasses are forbidden.
+
+### Keyboard/accessibility coverage
+
+Stable `getByTestId()` locators do not replace keyboard or accessibility acceptance.
+
+If a test is intended to verify keyboard interaction, it must continue to perform the actual keyboard interaction using `focus()`, `press()`, or equivalent APIs.
+
+Do not replace keyboard acceptance with mouse clicks merely to make the test stable.
+
+### Synchronization
+
+Prefer deterministic synchronization:
+
+- `waitForResponse`
+- `waitForURL`
+- locator assertions
+- bounded backend/database/native conditions
+
+Do not use arbitrary sleeps or blind retries to hide races.
+
+See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
+
 ## 关键边界
 
 - PostgreSQL 是 Control 持久状态的唯一真相；不得用进程内状态伪装持久成功。
