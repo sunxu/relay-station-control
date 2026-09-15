@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -90,8 +90,8 @@ chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"
 INVENTORY_LIFECYCLE_ENABLED="false"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" ]] && INVENTORY_POLL_ENABLED="true"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]] && INVENTORY_POLL_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
@@ -387,6 +387,104 @@ PY
   echo "ENABLE_FIXTURE_INVENTORY=PASS"
   echo "ENABLE_FIXTURE_BROWSER=PASS"
   echo "ENABLE_FIXTURE_READY=PASS"
+  exit 0
+fi
+if [[ "$MODE" == "enable" ]]; then
+  export ACCEPTANCE_ENABLE_EMAIL="$ENABLE_EMAIL"
+  export ACCEPTANCE_NODE_PORT="$NODE_PORT"
+  export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
+  export ACCEPTANCE_ENABLE_FIXTURE_EVIDENCE_FILE="$RUNTIME_DIR/enable-fixture-evidence.json"
+  export ACCEPTANCE_ENABLE_EVIDENCE_FILE="$RUNTIME_DIR/enable-evidence.json"
+  export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  mkdir -p "$RUNTIME_DIR/logs"
+  set +e
+  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable-fixture.spec.ts 2>&1 | tee "$RUNTIME_DIR/fixture-output.log"
+  fixture_test_status="${PIPESTATUS[0]}"
+  set -e
+  [[ "$fixture_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$fixture_test_status"; }
+  compose logs --no-color control > "$RUNTIME_DIR/logs/control-before-enable.log"
+  compose logs --no-color node > "$RUNTIME_DIR/logs/node-before-enable.log"
+  compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter-before-enable.log"
+  set +e
+  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable.spec.ts 2>&1 | tee "$RUNTIME_DIR/enable-output.log"
+  enable_test_status="${PIPESTATUS[0]}"
+  set -e
+  [[ "$enable_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$enable_test_status"; }
+  compose logs --no-color control > "$RUNTIME_DIR/logs/control.log"
+  compose logs --no-color node > "$RUNTIME_DIR/logs/node.log"
+  compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter.log"
+  command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/enable-evidence.json")"
+  [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "enable_evidence_missing_command_id" >&2; exit 1; }
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  [[ "$(psql_count "SELECT count(*) FROM admin_command_registry WHERE command_id='$command_id' AND command_kind='account.enable'")" == 1 ]] || { echo "enable_registry_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='enable' AND account_key='antigravity:$ENABLE_EMAIL' AND execution_state='remote_applied'")" == 1 ]] || { echo "enable_operation_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$command_id'")" == 1 ]] || { echo "enable_receipt_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$command_id'")" == 1 ]] || { echo "enable_audit_mismatch" >&2; exit 1; }
+  before_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/node-counter-before-enable.log" || true)"
+  after_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/node-counter.log" || true)"
+  native_patch_count=$((after_patch_count - before_patch_count))
+  [[ "$native_patch_count" == 1 ]] || { echo "enable_native_patch_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
+  curl --noproxy '*' --silent --show-error --fail --header "Authorization: Bearer $NODE_MANAGEMENT_PASSWORD" "http://127.0.0.1:${NODE_PORT}/v0/management/auth-files" -o "$RUNTIME_DIR/enable-node-observation.json"
+  rg -Fq '"email":"'"$ENABLE_EMAIL"'"' "$RUNTIME_DIR/enable-node-observation.json" || { echo "enable_node_observation_missing" >&2; exit 1; }
+  rg -Fq '"disabled":false' "$RUNTIME_DIR/enable-node-observation.json" || { echo "enable_node_state_mismatch" >&2; exit 1; }
+  rm -f -- "$RUNTIME_DIR/enable-node-observation.json"
+  scan_enable_secret() {
+    local category="$1" value="$2"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" \
+      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" \
+      "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" \
+      "$RUNTIME_DIR/fixture-output.log" "$RUNTIME_DIR/enable-output.log" \
+      "$RUNTIME_DIR/enable-fixture-evidence.json" "$RUNTIME_DIR/enable-evidence.json" >/dev/null 2>&1; then
+      echo "enable_secret_artifact_match category=$category location=<redacted>" >&2
+      return 1
+    fi
+  }
+  scan_enable_secret "credential-marker" "$ENABLE_SECRET_MARKER"
+  scan_enable_secret "access-token" "phase7-disposable-enable-token"
+  scan_enable_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
+  scan_enable_binary_secret() {
+    local category="$1" secret_file="$2"
+    python3 - "$category" "$secret_file" \
+      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" \
+      "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" \
+      "$RUNTIME_DIR/fixture-output.log" "$RUNTIME_DIR/enable-output.log" \
+      "$RUNTIME_DIR/enable-fixture-evidence.json" "$RUNTIME_DIR/enable-evidence.json" <<'PY'
+import pathlib
+import sys
+
+category, secret_file, *targets = sys.argv[1:]
+needle = pathlib.Path(secret_file).read_bytes()
+matches = 0
+for target in targets:
+    path = pathlib.Path(target)
+    paths = path.rglob("*") if path.is_dir() else (path,)
+    for candidate in paths:
+        if candidate.is_file():
+            try:
+                matches += candidate.read_bytes().count(needle)
+            except OSError:
+                pass
+if matches:
+    print(f"enable_secret_artifact_match category={category} location=<redacted>", file=sys.stderr)
+    raise SystemExit(1)
+PY
+  }
+  scan_enable_binary_secret "intent-key" "$RUNTIME_DIR/account-operation-intent-key"
+  scan_enable_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_enable_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_enable_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_enable_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
+  echo "ENABLE_FIXTURE_READY=PASS"
+  echo "ENABLE_HTTP=PASS"
+  echo "ENABLE_POSTGRES=PASS"
+  echo "ENABLE_RECEIPT=PASS"
+  echo "ENABLE_AUDIT=PASS"
+  echo "ENABLE_NATIVE_PATCHES=$native_patch_count"
+  echo "ENABLE_NODE=PASS"
+  echo "ENABLE_SECRET_SCAN=PASS"
   exit 0
 fi
 if [[ "${1:-all}" == "all" ]]; then
