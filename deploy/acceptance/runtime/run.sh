@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove|override]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -48,6 +48,10 @@ printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-rep
 printf '{"type":"antigravity","email":"%s","refresh_token":"phase7-disposable-replace-refresh-token","phase7_marker":"%s","status":"active","unavailable":false}\n' "$REPLACE_EMAIL" "$REPLACE_SECRET_MARKER" > "$RUNTIME_DIR/replace-credential.json"
 REMOVE_EMAIL="phase7-remove-${PROJECT}@example.invalid"
 printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-remove-token","disabled":false}\n' "$REMOVE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-remove.json"
+OVERRIDE_LIFECYCLE_EMAIL="phase7-override-lifecycle-${PROJECT}@example.invalid"
+OVERRIDE_SAME_EMAIL="phase7-override-same-${PROJECT}@example.invalid"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-lifecycle-token","disabled":false}\n' "$OVERRIDE_LIFECYCLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-lifecycle.json"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-same-token","disabled":false}\n' "$OVERRIDE_SAME_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-same.json"
 printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
@@ -97,8 +101,8 @@ chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"
 INVENTORY_LIFECYCLE_ENABLED="false"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" ]] && INVENTORY_POLL_ENABLED="true"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_POLL_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
@@ -217,6 +221,37 @@ export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
 chmod 600 "$RUNTIME_DIR/storage-state.json"
 echo "AUTH_COMPOSITION_SMOKE=PASS"
+if [[ "$MODE" == "override" ]]; then
+  OVERRIDE_LIFECYCLE_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  OVERRIDE_SAME_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  OVERRIDE_ADMIN_ID="$(compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "SELECT admin_id FROM control_admin_users WHERE status='enabled' ORDER BY activated_at LIMIT 1" | tr -d '\r\n[:space:]')"
+  compose exec -T postgres psql --set ON_ERROR_STOP=1 --username relay_control_migrator --dbname relay_station_control <<SQL
+SELECT public.control_accept_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','$OVERRIDE_ADMIN_ID','account.disable',decode(repeat('aa',32),'hex'),NULL,'00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','disable',NULL);
+SELECT public.control_admit_account_dispatch_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','override-fixture');
+SELECT public.control_transition_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','dispatched','outcome_unknown');
+SELECT public.control_accept_account_admin_operation_v1('$OVERRIDE_SAME_COMMAND_ID','$OVERRIDE_ADMIN_ID','account.disable',decode(repeat('bb',32),'hex'),NULL,'00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_SAME_EMAIL','disable',NULL);
+SELECT public.control_admit_account_dispatch_v1('$OVERRIDE_SAME_COMMAND_ID','00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_SAME_EMAIL','override-fixture');
+SELECT public.control_transition_account_admin_operation_v1('$OVERRIDE_SAME_COMMAND_ID','dispatched','outcome_unknown');
+SQL
+  export ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL="$OVERRIDE_LIFECYCLE_EMAIL" ACCEPTANCE_OVERRIDE_SAME_EMAIL="$OVERRIDE_SAME_EMAIL" ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID="$OVERRIDE_LIFECYCLE_COMMAND_ID" ACCEPTANCE_OVERRIDE_SAME_COMMAND_ID="$OVERRIDE_SAME_COMMAND_ID" ACCEPTANCE_OVERRIDE_EVIDENCE_FILE="$RUNTIME_DIR/override-evidence.json" ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log" CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output" CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  mkdir -p "$RUNTIME_DIR/logs"
+  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-override.spec.ts
+  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND lifecycle_override_at IS NOT NULL AND lifecycle_override_reason='process_restarted'")" == 1 ]] || { echo "lifecycle_override_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_SAME_COMMAND_ID' AND same_account_override_at IS NOT NULL AND same_account_override_reason='process_restarted'")" == 1 ]] || { echo "same_account_override_mismatch" >&2; exit 1; }
+  scan_override_secret() { local value="$1"; [[ -n "$value" ]] && ! rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/override-evidence.json" >/dev/null 2>&1; }
+  scan_override_secret "$NODE_MANAGEMENT_PASSWORD"
+  scan_override_secret "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
+  scan_override_secret "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_override_secret "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_override_secret "$(cat "$RUNTIME_DIR/second-admin-password")"
+  echo "OVERRIDE_SECRET_SCAN=PASS"
+  echo "OVERRIDE_LIFECYCLE=PASS"
+  echo "OVERRIDE_SAME_ACCOUNT=PASS"
+  echo "OVERRIDE_CANCEL=PASS"
+  exit 0
+fi
 if [[ "$MODE" == "upload" ]]; then
   export ACCEPTANCE_UPLOAD_CREDENTIAL_FILE="$RUNTIME_DIR/upload-credential.json"
   export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
