@@ -11,10 +11,22 @@ test.beforeEach(() => requireAcceptanceEnv("disable", ["ACCEPTANCE_STORAGE_STATE
 
 async function openAccount(page: Page, accountKey: string) {
   const detail = page.getByTestId(`account-details-${encodeURIComponent(accountKey)}`);
-  await expect.poll(async () => {
-    if (await detail.count() === 0) await page.getByTestId("account-query").click();
-    return await detail.count();
-  }, { timeout: 390_000, intervals: [1000, 2000, 5000] }).toBeGreaterThan(0);
+  let lastObservedCount = 0;
+  const startedAt = Date.now();
+  try {
+    await expect.poll(async () => {
+      lastObservedCount = await detail.count();
+      if (lastObservedCount === 0) await page.getByTestId("account-query").click();
+      lastObservedCount = await detail.count();
+      return lastObservedCount;
+    }, { timeout: 30_000, intervals: [250, 500, 1000] }).toBeGreaterThan(0);
+  } catch (error) {
+    const elapsed = Date.now() - startedAt;
+    throw new Error(
+      `DISABLE_FIXTURE_DISCOVERY_TIMEOUT layer=browser/inventory expected=${accountKey} observed_detail_count=${lastObservedCount} elapsed=${elapsed}ms`,
+      { cause: error },
+    );
+  }
   await detail.click();
   await page.getByTestId("account-operations-tab").click();
   await expect(page.getByTestId("account-operation-read")).toBeVisible();
