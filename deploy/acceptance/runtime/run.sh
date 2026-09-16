@@ -263,6 +263,18 @@ VALUES ('00000000-0000-4000-8000-000000000047',
         'deployment_enable','acceptance-harness',
         to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 SQL
+if [[ "$MODE" == "all" || "$MODE" == "internal" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=internal
+  echo "ACCEPTANCE_MODE=INTERNAL_LIFECYCLE"
+  [[ "$MODE" == "all" ]] && echo "ALL_COMPATIBILITY_ALIAS=internal"
+  echo "ACCEPTANCE_AUTH_BOOTSTRAP=SKIPPED reason=mode_internal"
+  export CONTROL_DATABASE_TEST_URL="$DATABASE_URL"
+  export CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
+  env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET go test ./internal/store -run '^TestRuntimeAcceptanceLifecycleFixture$' -count=1 -v
+  env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET go test ./internal/store -run '^TestRuntimeAcceptanceLifecycleFixture$' -count=1 -v
+  echo "LIFECYCLE_REPEATED=PASS"
+  exit 0
+fi
 ACCEPTANCE_FAILURE_LAYER=node
 compose up -d secret-init node
 wait_for_node_ready NODE_READINESS "${PROJECT}-node-1" 90
@@ -704,14 +716,4 @@ if [[ "$MODE" == "enable" ]]; then
   echo "ENABLE_NODE=PASS"
   echo "ENABLE_SECRET_SCAN=PASS"
   exit 0
-fi
-if [[ "$MODE" == "all" || "$MODE" == "internal" ]]; then
-  ACCEPTANCE_FAILURE_LAYER=internal
-  echo "ACCEPTANCE_MODE=INTERNAL_LIFECYCLE"
-  [[ "$MODE" == "all" ]] && echo "ALL_COMPATIBILITY_ALIAS=internal"
-  export CONTROL_DATABASE_TEST_URL="$DATABASE_URL"
-  export CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
-  env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET go test ./internal/store -run '^TestRuntimeAcceptanceLifecycleFixture$' -count=1 -v
-  env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET go test ./internal/store -run '^TestRuntimeAcceptanceLifecycleFixture$' -count=1 -v
-  echo "LIFECYCLE_REPEATED=PASS"
 fi
