@@ -62,7 +62,10 @@ DISABLE_EMAIL="phase7-disable-${PROJECT}@example.invalid"
 printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-disable-token"}\n' "$DISABLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-disable.json"
 ENABLE_EMAIL="phase7-enable-${PROJECT}@example.invalid"
 ENABLE_SECRET_MARKER="PHASE7_ENABLE_SECRET_${PROJECT##*-}"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":false}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":true}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
+REPLAY_EMAIL="phase7-replay-${PROJECT}@example.invalid"
+REPLAY_SECRET_MARKER="PHASE7_REPLAY_SECRET_${PROJECT##*-}"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replay-token","phase7_marker":"%s","disabled":false}\n' "$REPLAY_EMAIL" "$REPLAY_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replay.json"
 REPLACE_EMAIL="phase7-replace-${PROJECT}@example.invalid"
 REPLACE_BASE_SECRET_MARKER="PHASE7_REPLACE_BASE_${PROJECT##*-}"
 REPLACE_SECRET_MARKER="PHASE7_REPLACE_SECRET_${PROJECT##*-}"
@@ -243,7 +246,7 @@ fi
 compose up -d tls
 wait_http "https://127.0.0.1:${TLS_PORT}/api/healthz"
 export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.0.1:${TLS_PORT}" ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json"
-[[ "$MODE" == "security-replay" ]] || export ACCEPTANCE_CONTROL_CONTAINER="$CONTROL_CONTAINER"
+[[ "$MODE" == "security-replay" || "$MODE" == "enable" || "$MODE" == "enable-fixture" ]] || export ACCEPTANCE_CONTROL_CONTAINER="$CONTROL_CONTAINER"
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
 chmod 600 "$RUNTIME_DIR/storage-state.json"
 echo "AUTH_COMPOSITION_SMOKE=PASS"
@@ -280,7 +283,7 @@ SQL
 fi
 if [[ "$MODE" == "security-replay" ]]; then
   export ACCEPTANCE_DISABLE_EMAIL="$DISABLE_EMAIL"
-  export ACCEPTANCE_ENABLE_EMAIL="$ENABLE_EMAIL"
+  export ACCEPTANCE_REPLAY_EMAIL="$REPLAY_EMAIL"
   export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
   export ACCEPTANCE_UPLOAD_CREDENTIAL_FILE="$RUNTIME_DIR/upload-credential.json"
   export ACCEPTANCE_SECURITY_REPLAY_EVIDENCE_FILE="$RUNTIME_DIR/security-replay-evidence.json"
@@ -289,12 +292,40 @@ if [[ "$MODE" == "security-replay" ]]; then
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
   e2e_args=(account-operations-security-replay.spec.ts)
+  if [[ "${SECURITY_REPLAY_FOCUSED:-}" == "normal" ]]; then
+    e2e_args+=(--grep "replays an exact terminal normal mutation")
+  fi
   if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- "${e2e_args[@]}" 2>&1 | tee "$RUNTIME_DIR/acceptance-output.log"; then
     compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
   compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
   psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  if [[ "${SECURITY_REPLAY_FOCUSED:-}" == "normal" ]]; then
+    normal_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["normalReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
+    native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+    [[ "$native_patch_count" == 1 ]] || { echo "focused_normal_replay_native_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
+    [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$normal_command_id'")" == 1 ]] || { echo "focused_normal_replay_operation_count_mismatch" >&2; exit 1; }
+    scan_focused_replay_secret() {
+      local category="$1" value="$2"
+      [[ -n "$value" ]] || return 0
+      if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" "$RUNTIME_DIR/security-replay-evidence.json" >/dev/null 2>&1; then
+        echo "focused_replay_secret_artifact_match category=$category location=<redacted>" >&2
+        return 1
+      fi
+    }
+    scan_focused_replay_secret "replay-marker" "$REPLAY_SECRET_MARKER"
+    scan_focused_replay_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
+    scan_focused_replay_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
+    scan_focused_replay_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+    scan_focused_replay_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+    scan_focused_replay_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
+    scan_focused_replay_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
+    echo "FOCUSED_NORMAL_REPLAY=PASS"
+    echo "FOCUSED_NORMAL_REPLAY_NATIVE_PATCHES=1"
+    echo "FOCUSED_NORMAL_REPLAY_SECRET_SCAN=PASS"
+    exit 0
+  fi
   native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
   native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
   [[ "$native_patch_count" == 2 && "$native_post_count" == 1 ]] || { echo "security_replay_native_count_mismatch:patch=${native_patch_count:-0},post=${native_post_count:-0}" >&2; exit 1; }
@@ -582,6 +613,8 @@ if [[ "$MODE" == "enable-fixture" ]]; then
   fixture_test_status="${PIPESTATUS[0]}"
   set -e
   [[ "$fixture_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$fixture_test_status"; }
+  compose up -d --force-recreate control
+  wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
   psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
   [[ "$(psql_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND lifecycle='present' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_inventory_db_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_snapshot_db_mismatch" >&2; exit 1; }
@@ -667,6 +700,8 @@ if [[ "$MODE" == "enable" ]]; then
   fixture_test_status="${PIPESTATUS[0]}"
   set -e
   [[ "$fixture_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$fixture_test_status"; }
+  compose up -d --force-recreate control
+  wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
   compose logs --no-color control > "$RUNTIME_DIR/logs/control-before-enable.log"
   compose logs --no-color node > "$RUNTIME_DIR/logs/node-before-enable.log"
   compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter-before-enable.log"

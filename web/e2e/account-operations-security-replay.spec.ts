@@ -4,14 +4,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const disableEmail = process.env.ACCEPTANCE_DISABLE_EMAIL;
-const enableEmail = process.env.ACCEPTANCE_ENABLE_EMAIL;
+const replayEmail = process.env.ACCEPTANCE_REPLAY_EMAIL;
 const uploadEmail = process.env.ACCEPTANCE_UPLOAD_EMAIL;
 const uploadCredential = process.env.ACCEPTANCE_UPLOAD_CREDENTIAL_FILE;
 const evidenceFile = process.env.ACCEPTANCE_SECURITY_REPLAY_EVIDENCE_FILE;
 const nodeID = "00000000-0000-4000-8000-000000000047";
 const accountBody = (commandID: string, email: string) => JSON.stringify({ command_id: commandID, node_instance_id: nodeID, account_key: `antigravity:${email}` });
 
-if (!storageState || !disableEmail || !enableEmail || !uploadEmail || !uploadCredential || !evidenceFile) {
+if (!storageState || !disableEmail || !replayEmail || !uploadEmail || !uploadCredential || !evidenceFile) {
   throw new Error("Security/replay acceptance environment is incomplete");
 }
 
@@ -123,7 +123,7 @@ test("replays an exact terminal normal mutation in the browser context", async (
   await page.goto("/topology");
   await expect(page.getByTestId("topology-page")).toBeVisible();
   await selectNode(page);
-  await openAccount(page, enableEmail);
+  await openAccount(page, replayEmail);
   const responsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/account-operations/disable");
   await page.getByTestId("account-disable").click();
   const response = await responsePromise;
