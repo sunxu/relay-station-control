@@ -101,7 +101,8 @@ services:
       - control-tls:/run/control-tls
 
   control:
-    image: ${CONTROL_E2E_IMAGE:-relay-station/control:auth-e2e}
+    image: ${CONTROL_E2E_RESOLVED_IMAGE_ID:?set CONTROL_E2E_RESOLVED_IMAGE_ID}
+    pull_policy: never
     container_name: ${CONTROL_E2E_CONTAINER:-relay-control-auth-e2e}
     user: "65532:65532"
     read_only: true

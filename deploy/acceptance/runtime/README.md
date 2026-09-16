@@ -12,7 +12,7 @@
 
 ## Environment contract
 
-调用方必须提供 `EXPECTED_SHA` 对应的 clean candidate source，以及显式不可变的 Node identity：`CONTROL_E2E_NODE_IMAGE`、`CONTROL_E2E_NODE_DIGEST`、`CONTROL_E2E_NODE_VERSION` 和完整的 `CONTROL_E2E_NODE_COMMIT`。可选的 `ACCEPTANCE_IMAGE` 也必须通过 image revision 和 digest/image-ID 校验；不能 fallback 到任意本地 image。`ACCEPTANCE_RUNTIME_DIR` 是必需的 repo-external 运行目录。
+调用方必须提供 `EXPECTED_SHA` 对应的 clean candidate source，以及显式不可变的 Node identity：`CONTROL_E2E_NODE_IMAGE`、`CONTROL_E2E_NODE_DIGEST`、`CONTROL_E2E_NODE_VERSION` 和完整的 `CONTROL_E2E_NODE_COMMIT`。可选的 `ACCEPTANCE_IMAGE` 是人类可读的 image ref；它必须通过 OCI revision 和 `EXPECTED_CONTROL_IMAGE_ID`（Docker local image ID）校验。Control 启动使用 harness 一次解析出的 `RESOLVED_CONTROL_IMAGE_ID`，不使用 mutable tag，也不依赖 RepoDigest；不能 fallback 到任意本地 image。`ACCEPTANCE_RUNTIME_DIR` 是必需的 repo-external 运行目录。
 
 runner 生成或导出的 runtime 目录、端口、认证材料、fixture identity、storage-state 和 mode-specific Browser 变量仅用于本次执行；secret 只能写入 repo-external 受保护文件。发现阶段不需要这些执行期变量，执行阶段仍必须 fail closed。
 
@@ -22,7 +22,7 @@ runner 生成或导出的 runtime 目录、端口、认证材料、fixture ident
 
 `build-image.sh` 为每次构建创建 `/private/tmp` 下的临时 `BUILDX_CONFIG`，验证 `org.opencontainers.image.revision` 和 platform 后退出。它不修改 `~/.docker/buildx`。使用 `EXPECTED_SHA=<candidate> IMAGE=<tag> ./build-image.sh`。
 
-启动前 harness 必须验证 image 的 `org.opencontainers.image.revision` 与当前 expected SHA 完全一致，并绑定已解析的本地 image ID；缺少 label、label 不匹配、image 不存在或显式指定的 stale image 都会 fail closed。正式 candidate 要求 source worktree clean；不会使用 dirty source 构建，也不会 fallback 到任意本地 image。Control 默认 image tag 为 `relay-station/control:acceptance-<short-sha>`，Node 必须由调用方显式提供 `CONTROL_E2E_NODE_IMAGE`、`CONTROL_E2E_NODE_DIGEST`、`CONTROL_E2E_NODE_VERSION` 和完整 `CONTROL_E2E_NODE_COMMIT`。
+启动前 harness 必须验证 image 的 `org.opencontainers.image.revision` 与当前 expected SHA 完全一致，并解析有效的 `RESOLVED_CONTROL_IMAGE_ID`。Compose 的 Control service 使用该 local image ID 并设置 `pull_policy: never`；容器 `.Image` 必须与该 ID 完全一致。缺少 label、label 不匹配、image 不存在、prebuilt identity 缺失或 identity 不匹配都会 fail closed。正式 candidate 要求 source worktree clean；不会使用 dirty source 构建，也不会 fallback 到任意本地 image。`ACCEPTANCE_IMAGE` 仅保留为 source ref/诊断上下文；Control 默认 source ref 为 `relay-station/control:acceptance-<short-sha>`。这里的 local image ID 来自 `docker image inspect .Id`，不是 registry `RepoDigest`。Node 必须由调用方显式提供 `CONTROL_E2E_NODE_IMAGE`、`CONTROL_E2E_NODE_DIGEST`、`CONTROL_E2E_NODE_VERSION` 和完整 `CONTROL_E2E_NODE_COMMIT`。
 
 ## Auth
 
