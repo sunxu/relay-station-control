@@ -147,6 +147,8 @@ See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
 - Prove behavior at the lowest owning layer; keep Browser E2E focused on real user paths and unique cross-layer evidence.
 - Check the frozen contract before asserting or waiting for a state. Keep execution truth separate from Inventory observation.
 - Build and verify the production-like stack and runtime/artifact provenance before debugging behavior.
+- For artifact or identity handoffs, distinguish mutable references from immutable identities; resolve references once, pass the immutable identity downstream, and verify execution consumed that identity.
+- Review check-then-use handoffs for TOCTOU drift; when identity drift could affect correctness or reproducibility, prove immutable execution or fail-closed behavior with a negative handoff test.
 - Diagnose failures layer-by-layer, classify them before changing production code, and stop at the earliest blocker.
 - Keep waits bounded (normally no more than 30 seconds per async business layer); never hide failures with sleeps, blind retries, or timeout increases.
 - Keep corrective rounds narrow and reuse proven harness infrastructure, real observers, real mutation evidence, and one shared secret scanner.

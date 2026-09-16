@@ -294,6 +294,56 @@ Prefer evidence such as:
 
 A stale image is an acceptance-harness problem, not a product bug.
 
+### Artifact / Identity Handoff Review
+
+For every artifact or identity passed between acceptance layers, separate:
+
+- the source reference, such as a tag, name, path, branch, or alias
+- the resolved immutable identity, such as a commit SHA, local image ID, manifest digest, or checksum
+- the execution identity actually consumed by the next layer
+- the evidence that verifies the execution identity afterward
+
+Reviewers must answer:
+
+1. What is the source of truth?
+2. Which inputs are mutable references?
+3. Where are those references resolved?
+4. What exact immutable identity is produced?
+5. What value is passed to the next layer?
+6. Does any downstream layer resolve the mutable reference again?
+7. What exact identity does execution consume?
+8. How is that identity verified afterward?
+
+Resolve a mutable reference exactly once before execution whenever identity affects correctness or reproducibility. Downstream execution must consume the resolved immutable identity. Do not convert it back into a mutable name, tag, or path.
+
+For every check-then-use flow, ask:
+
+```text
+What happens if the mutable reference changes after validation but before execution?
+```
+
+If that change can alter the object being executed, record a mutable handoff / TOCTOU gap. Check the complete chain:
+
+```text
+validation → handoff → execution → verification
+```
+
+Matching identity at the validation endpoint and after execution does not by itself prove that the intermediate handoff was immutable.
+
+When identity drift could invalidate correctness, reproducibility, security, or acceptance evidence, consider a negative handoff test:
+
+```text
+resolve mutable reference → identity A
+change mutable reference → identity B
+execute
+```
+
+The acceptable outcomes are execution of A or fail-closed behavior. Silent execution of B is not acceptable. This test is required only where identity drift has material impact; ordinary business references do not need a speculative handoff matrix.
+
+Use precise terminology. Distinguish Git commit SHA, OCI revision label, Docker local image ID, RepoDigest, manifest digest, config digest, and artifact checksum. Values that share the textual form `sha256:<value>` do not necessarily have the same semantic identity.
+
+Identity handoff correctness belongs to the layer that passes identity between components. Prove that handoff there; do not add a Browser matrix merely to compensate for missing lower-layer provenance evidence.
+
 ---
 
 ## 12. Keep Environment Failures Separate From Product Debugging
