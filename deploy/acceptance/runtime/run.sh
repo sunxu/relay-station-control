@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -46,6 +46,8 @@ REPLACE_BASE_SECRET_MARKER="PHASE7_REPLACE_BASE_${PROJECT##*-}"
 REPLACE_SECRET_MARKER="PHASE7_REPLACE_SECRET_${PROJECT##*-}"
 printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replace-base-token","phase7_marker":"%s","disabled":false}\n' "$REPLACE_EMAIL" "$REPLACE_BASE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replace-base.json"
 printf '{"type":"antigravity","email":"%s","refresh_token":"phase7-disposable-replace-refresh-token","phase7_marker":"%s","status":"active","unavailable":false}\n' "$REPLACE_EMAIL" "$REPLACE_SECRET_MARKER" > "$RUNTIME_DIR/replace-credential.json"
+REMOVE_EMAIL="phase7-remove-${PROJECT}@example.invalid"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-remove-token","disabled":false}\n' "$REMOVE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-remove.json"
 printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
@@ -95,8 +97,8 @@ chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"
 INVENTORY_LIFECYCLE_ENABLED="false"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" ]] && INVENTORY_POLL_ENABLED="true"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" ]] && INVENTORY_POLL_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
@@ -408,6 +410,49 @@ PY
   echo "REPLACE_INVENTORY=PASS"
   echo "REPLACE_FILE_LIFECYCLE=PASS"
   echo "REPLACE_SECRET_SCAN=PASS"
+  exit 0
+fi
+if [[ "$MODE" == "remove" ]]; then
+  export ACCEPTANCE_REMOVE_EMAIL="$REMOVE_EMAIL"
+  export ACCEPTANCE_NODE_PORT="$NODE_PORT"
+  export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
+  export ACCEPTANCE_REMOVE_EVIDENCE_FILE="$RUNTIME_DIR/remove-evidence.json"
+  export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  mkdir -p "$RUNTIME_DIR/logs"
+  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-remove.spec.ts; then
+    compose logs --no-color control node node-counter >&2 || true
+    exit 1
+  fi
+  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/remove-evidence.json")"
+  [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "remove_evidence_missing_command_id" >&2; exit 1; }
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='remove' AND account_key='antigravity:$REMOVE_EMAIL' AND execution_state='remote_applied'")" == 1 ]] || { echo "remove_operation_mismatch" >&2; exit 1; }
+  native_delete_count="$(grep -Ec 'DELETE /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  [[ "$native_delete_count" == 1 ]] || { echo "remove_native_delete_count_mismatch:${native_delete_count:-0}" >&2; exit 1; }
+  scan_remove_secret() {
+    local category="$1" value="$2"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" "$RUNTIME_DIR/remove-evidence.json" >/dev/null 2>&1; then
+      echo "remove_secret_artifact_match category=$category location=<redacted>" >&2
+      return 1
+    fi
+  }
+  scan_remove_secret "access-token" "phase7-disposable-remove-token"
+  scan_remove_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
+  scan_remove_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
+  scan_remove_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_remove_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_remove_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_remove_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
+  echo "REMOVE_HTTP=PASS"
+  echo "REMOVE_POSTGRES=PASS"
+  echo "REMOVE_NATIVE_DELETES=$native_delete_count"
+  echo "REMOVE_NODE=PASS"
+  echo "REMOVE_CANCEL=PASS"
+  echo "REMOVE_SECRET_SCAN=PASS"
   exit 0
 fi
 if [[ "$MODE" == "enable-fixture" ]]; then
