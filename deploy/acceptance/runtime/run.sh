@@ -4,6 +4,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONTROL_DIR="$(cd -- "$ROOT/../../.." && pwd)"
 COMPOSE_FILE="$CONTROL_DIR/deploy/acceptance/compose.yaml"
 RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
+ACCEPTANCE_FAILURE_LAYER=source
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
@@ -13,39 +14,47 @@ DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
 NODE_PORT="${ACCEPTANCE_NODE_PORT:-$((19317 + $$ % 500))}"
 EXPECTED_SHA="${EXPECTED_SHA:-$(git -C "$CONTROL_DIR" rev-parse HEAD)}"
-[[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || { echo "DIRTY_SOURCE: candidate acceptance requires a clean source tree" >&2; exit 1; }
-[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "REVISION_MISMATCH: EXPECTED_SHA must be a 40-character candidate SHA" >&2; exit 2; }
-[[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "REVISION_MISMATCH: candidate SHA does not match HEAD" >&2; exit 1; }
+[[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=source" >&2; echo "DIRTY_SOURCE: candidate acceptance requires a clean source tree" >&2; exit 1; }
+[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "REVISION_MISMATCH: EXPECTED_SHA must be a 40-character candidate SHA" >&2; exit 2; }
+[[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "REVISION_MISMATCH: candidate SHA does not match HEAD" >&2; exit 1; }
 SHORT_SHA="${EXPECTED_SHA:0:12}"
 IMAGE="${ACCEPTANCE_IMAGE:-relay-station/control:acceptance-${SHORT_SHA}}"
 CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-}"
 CONTROL_E2E_NODE_DIGEST="${CONTROL_E2E_NODE_DIGEST:-}"
 CONTROL_E2E_NODE_VERSION="${CONTROL_E2E_NODE_VERSION:-}"
 CONTROL_E2E_NODE_COMMIT="${CONTROL_E2E_NODE_COMMIT:-}"
-[[ -n "$CONTROL_E2E_NODE_IMAGE" ]] || { echo "NODE_ARTIFACT_MISSING: set CONTROL_E2E_NODE_IMAGE" >&2; exit 1; }
-[[ "$CONTROL_E2E_NODE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "NODE_ARTIFACT_MISSING: set immutable CONTROL_E2E_NODE_DIGEST" >&2; exit 1; }
-[[ -n "$CONTROL_E2E_NODE_VERSION" ]] || { echo "NODE_ARTIFACT_MISSING: set CONTROL_E2E_NODE_VERSION" >&2; exit 1; }
-[[ "$CONTROL_E2E_NODE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "NODE_ARTIFACT_MISSING: set full CONTROL_E2E_NODE_COMMIT" >&2; exit 1; }
+[[ -n "$CONTROL_E2E_NODE_IMAGE" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "NODE_ARTIFACT_MISSING: set CONTROL_E2E_NODE_IMAGE" >&2; exit 1; }
+[[ "$CONTROL_E2E_NODE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "NODE_ARTIFACT_MISSING: set immutable CONTROL_E2E_NODE_DIGEST" >&2; exit 1; }
+[[ -n "$CONTROL_E2E_NODE_VERSION" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "NODE_ARTIFACT_MISSING: set CONTROL_E2E_NODE_VERSION" >&2; exit 1; }
+[[ "$CONTROL_E2E_NODE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "NODE_ARTIFACT_MISSING: set full CONTROL_E2E_NODE_COMMIT" >&2; exit 1; }
 CONTROL_CONTAINER="${PROJECT}-control-1"
 NODE_MANAGEMENT_PASSWORD="$(openssl rand -hex 32)"
 COMPOSE=(docker compose -p "$PROJECT" -f "$COMPOSE_FILE")
-[[ -n "$RUNTIME_DIR" && "$RUNTIME_DIR" == /* && "$RUNTIME_DIR" != "$CONTROL_DIR"/* ]] || { echo "ACCEPTANCE_RUNTIME_DIR must be repo-external" >&2; exit 2; }
-[[ -z "${DINGTALK_WEBHOOK_URL:-}" && -z "${DINGTALK_SIGNING_SECRET:-}" ]] || { echo "real DingTalk configuration must be absent" >&2; exit 2; }
+[[ -n "$RUNTIME_DIR" && "$RUNTIME_DIR" == /* && "$RUNTIME_DIR" != "$CONTROL_DIR"/* ]] || { echo "ACCEPTANCE_FAILURE_LAYER=source" >&2; echo "ACCEPTANCE_RUNTIME_DIR must be repo-external" >&2; exit 2; }
+[[ -z "${DINGTALK_WEBHOOK_URL:-}" && -z "${DINGTALK_SIGNING_SECRET:-}" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=source" >&2; echo "real DingTalk configuration must be absent" >&2; exit 2; }
 mkdir -p "$RUNTIME_DIR"; chmod 700 "$RUNTIME_DIR"
 cleanup() {
   local exit_code=$?
   if [[ "$exit_code" != 0 ]]; then
+    echo "ACCEPTANCE_FAILURE_LAYER=${ACCEPTANCE_FAILURE_LAYER}" >&2
     echo "ACCEPTANCE_FAILURE_DIAGNOSTICS_BEGIN" >&2
-    compose ps >&2 || true
+    if ! compose ps >&2; then
+      echo "ACCEPTANCE_CLEANUP_FAILURE=diagnostic_compose_ps" >&2
+    fi
     docker inspect "$CONTROL_CONTAINER" --format 'CONTROL_STATE={{.State.Status}} EXIT_CODE={{.State.ExitCode}} ERROR={{.State.Error}} IMAGE={{.Image}}' >&2 2>/dev/null || true
     compose port control 8080 >&2 || true
-    compose logs --no-color --tail=120 control >&2 || true
+    if ! compose logs --no-color --tail=120 control >&2; then
+      echo "ACCEPTANCE_CLEANUP_FAILURE=diagnostic_control_logs" >&2
+    fi
     echo "ACCEPTANCE_FAILURE_DIAGNOSTICS_END" >&2
   fi
-  "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-  CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
-  rm -rf -- "$RUNTIME_DIR"
+  if ! compose down --volumes --remove-orphans >/dev/null 2>&1; then
+    echo "ACCEPTANCE_CLEANUP_FAILURE=compose_down" >&2
+  fi
+  if ! rm -rf -- "$RUNTIME_DIR"; then
+    echo "ACCEPTANCE_CLEANUP_FAILURE=runtime_dir_removal" >&2
+  fi
+  exit "$exit_code"
 }
 trap cleanup EXIT
 umask 077
@@ -214,9 +223,11 @@ ensure_candidate_image() {
   echo "CANDIDATE_IMAGE_ID=$RESOLVED_CONTROL_IMAGE_ID"
   echo "CANDIDATE_IMAGE_REVISION=PASS"
 }
+ACCEPTANCE_FAILURE_LAYER=artifact
 ensure_candidate_image
 EXPECTED_CONTROL_IMAGE_ID="$RESOLVED_CONTROL_IMAGE_ID"
 echo "EXPECTED_CONTROL_IMAGE_ID=$EXPECTED_CONTROL_IMAGE_ID"
+ACCEPTANCE_FAILURE_LAYER=postgres
 compose up -d --wait postgres
 DATABASE_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
 DATABASE_URL="$DATABASE_URL" make --silent migrate-up
@@ -247,18 +258,20 @@ VALUES ('00000000-0000-4000-8000-000000000047',
         'deployment_enable','acceptance-harness',
         to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 SQL
+ACCEPTANCE_FAILURE_LAYER=node
 compose up -d secret-init node
 wait_for_node_ready NODE_READINESS "${PROJECT}-node-1" 90
 secret_status="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.Status}}' 2>/dev/null || true)"
 secret_exit="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
-[[ "$secret_status" == "exited" && "$secret_exit" == "0" ]] || { echo "secret_init_failed" >&2; exit 1; }
+[[ "$secret_status" == "exited" && "$secret_exit" == "0" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=node" >&2; echo "secret_init_failed" >&2; exit 1; }
 CONTROL_E2E_NODE_IMAGE="$CONTROL_E2E_NODE_IMAGE" CONTROL_E2E_NODE_DIGEST="$CONTROL_E2E_NODE_DIGEST" \
   CONTROL_E2E_NODE_VERSION="$CONTROL_E2E_NODE_VERSION" CONTROL_E2E_NODE_COMMIT="$CONTROL_E2E_NODE_COMMIT" \
   CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
   "$ROOT/gate-b-smoke.sh"
+ACCEPTANCE_FAILURE_LAYER=control
 compose up -d control
 RUNNING_CONTROL_IMAGE_ID="$(docker inspect "$CONTROL_CONTAINER" --format '{{.Image}}')"
-[[ "$RUNNING_CONTROL_IMAGE_ID" == "$EXPECTED_CONTROL_IMAGE_ID" ]] || { echo "control_image_provenance_mismatch" >&2; exit 1; }
+[[ "$RUNNING_CONTROL_IMAGE_ID" == "$EXPECTED_CONTROL_IMAGE_ID" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "control_image_provenance_mismatch" >&2; exit 1; }
 echo "RUNNING_CONTROL_IMAGE_ID=$RUNNING_CONTROL_IMAGE_ID"
 echo "CONTROL_ACTUAL_PORT=$(compose port control 8080)"
 wait_for_http CONTROL_READINESS "http://127.0.0.1:${HTTP_PORT}/api/healthz" 60
@@ -272,18 +285,21 @@ if [[ "$MODE" == "startup" ]]; then
   wait_for_http CONTROL_READINESS "http://127.0.0.1:${HTTP_PORT}/api/healthz" 60
   compose stop -t 15 control
   exit_code="$(docker inspect "$CONTROL_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
-  [[ "$exit_code" == "0" ]] || { echo "control did not exit cleanly: ${exit_code:-unknown}" >&2; exit 1; }
+  [[ "$exit_code" == "0" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=control" >&2; echo "control did not exit cleanly: ${exit_code:-unknown}" >&2; exit 1; }
   echo "CONTROL_STARTUP_GATE=PASS"
   exit 0
 fi
+ACCEPTANCE_FAILURE_LAYER=control
 compose up -d tls
 wait_for_http HTTP_READINESS "https://127.0.0.1:${TLS_PORT}/api/healthz" 60
 export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.0.1:${TLS_PORT}" ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json"
 [[ "$MODE" == "security-replay" || "$MODE" == "enable" || "$MODE" == "enable-fixture" ]] || export ACCEPTANCE_CONTROL_CONTAINER="$CONTROL_CONTAINER"
+ACCEPTANCE_FAILURE_LAYER=auth
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
 chmod 600 "$RUNTIME_DIR/storage-state.json"
 echo "AUTH_COMPOSITION_SMOKE=PASS"
 if [[ "$MODE" == "override" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   OVERRIDE_LIFECYCLE_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
   OVERRIDE_SAME_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
   OVERRIDE_ADMIN_ID="$(compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "SELECT admin_id FROM control_admin_users WHERE status='enabled' ORDER BY activated_at LIMIT 1" | tr -d '\r\n[:space:]')"
@@ -316,6 +332,7 @@ SQL
   exit 0
 fi
 if [[ "$MODE" == "security-replay" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_DISABLE_EMAIL="$DISABLE_EMAIL"
   export ACCEPTANCE_REPLAY_EMAIL="$REPLAY_EMAIL"
   export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
@@ -382,6 +399,7 @@ if [[ "$MODE" == "security-replay" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "upload" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_UPLOAD_CREDENTIAL_FILE="$RUNTIME_DIR/upload-credential.json"
   export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
   export ACCEPTANCE_UPLOAD_SECRET_MARKER="$UPLOAD_SECRET_MARKER"
@@ -432,6 +450,7 @@ if [[ "$MODE" == "upload" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "disable" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_DISABLE_EMAIL="$DISABLE_EMAIL"
   export ACCEPTANCE_DISABLE_EVIDENCE_FILE="$RUNTIME_DIR/disable-evidence.json"
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
@@ -467,6 +486,7 @@ if [[ "$MODE" == "disable" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "replace" || "$MODE" == "replace-discovery" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   [[ "$MODE" == "replace-discovery" ]] && export ACCEPTANCE_REPLACE_DISCOVERY_ONLY=1
   export ACCEPTANCE_REPLACE_EMAIL="$REPLACE_EMAIL"
   export ACCEPTANCE_REPLACE_CREDENTIAL_FILE="$RUNTIME_DIR/replace-credential.json"
@@ -531,6 +551,7 @@ if [[ "$MODE" == "replace" || "$MODE" == "replace-discovery" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "remove" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_REMOVE_EMAIL="$REMOVE_EMAIL"
   export ACCEPTANCE_NODE_PORT="$NODE_PORT"
   export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
@@ -568,6 +589,7 @@ if [[ "$MODE" == "remove" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "enable-fixture" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_ENABLE_EMAIL="$ENABLE_EMAIL"
   export ACCEPTANCE_NODE_PORT="$NODE_PORT"
   export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
@@ -612,6 +634,7 @@ if [[ "$MODE" == "enable-fixture" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "enable" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_ENABLE_EMAIL="$ENABLE_EMAIL"
   export ACCEPTANCE_NODE_PORT="$NODE_PORT"
   export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
@@ -678,6 +701,7 @@ if [[ "$MODE" == "enable" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "all" || "$MODE" == "internal" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=internal
   echo "ACCEPTANCE_MODE=INTERNAL_LIFECYCLE"
   [[ "$MODE" == "all" ]] && echo "ALL_COMPATIBILITY_ALIAS=internal"
   export CONTROL_DATABASE_TEST_URL="$DATABASE_URL"
