@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove|override]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" || "$MODE" == "security-replay" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove|override|security-replay]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -22,6 +22,15 @@ COMPOSE=(docker compose -p "$PROJECT" -f "$COMPOSE_FILE")
 [[ -z "${DINGTALK_WEBHOOK_URL:-}" && -z "${DINGTALK_SIGNING_SECRET:-}" ]] || { echo "real DingTalk configuration must be absent" >&2; exit 2; }
 mkdir -p "$RUNTIME_DIR"; chmod 700 "$RUNTIME_DIR"
 cleanup() {
+  local exit_code=$?
+  if [[ "$exit_code" != 0 ]]; then
+    echo "ACCEPTANCE_FAILURE_DIAGNOSTICS_BEGIN" >&2
+    compose ps >&2 || true
+    docker inspect "$CONTROL_CONTAINER" --format 'CONTROL_STATE={{.State.Status}} EXIT_CODE={{.State.ExitCode}} ERROR={{.State.Error}} IMAGE={{.Image}}' >&2 2>/dev/null || true
+    compose port control 8080 >&2 || true
+    compose logs --no-color --tail=120 control >&2 || true
+    echo "ACCEPTANCE_FAILURE_DIAGNOSTICS_END" >&2
+  fi
   "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -29,6 +38,19 @@ cleanup() {
 }
 trap cleanup EXIT
 umask 077
+port_available() {
+  local label="$1" port="$2"
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | tail -n +2 | grep -q .; then
+    echo "${label}_PORT_UNAVAILABLE=${port}" >&2
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+  echo "${label}_PORT_AVAILABLE=${port}"
+}
+port_available HTTP "$HTTP_PORT"
+port_available DB "$DB_PORT"
+port_available TLS "$TLS_PORT"
+port_available NODE "$NODE_PORT"
 openssl rand -hex 32 > "$RUNTIME_DIR/bootstrap-secret"
 openssl rand -out "$RUNTIME_DIR/account-operation-intent-key" 32
 printf '%s' "$NODE_MANAGEMENT_PASSWORD" > "$RUNTIME_DIR/node-management-key"
@@ -101,9 +123,11 @@ chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"
 INVENTORY_LIFECYCLE_ENABLED="false"
+INVENTORY_POLL_START_GRACE="299s"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_POLL_ENABLED="true"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
-export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED
+[[ "$MODE" == "security-replay" ]] && { INVENTORY_POLL_ENABLED="true"; INVENTORY_LIFECYCLE_ENABLED="true"; INVENTORY_POLL_START_GRACE="299s"; }
+export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED INVENTORY_POLL_START_GRACE
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
   control:
@@ -120,7 +144,7 @@ services:
       CONTROL_JOB_RECONCILE_INTERVAL: "1s"
       CONTROL_JOB_DATABASE_BACKOFF: "1s"
       CONTROL_JOB_SHUTDOWN_GRACE: "3s"
-      CONTROL_ACCOUNT_INVENTORY_POLL_START_GRACE: "299s"
+      CONTROL_ACCOUNT_INVENTORY_POLL_START_GRACE: "${INVENTORY_POLL_START_GRACE}"
 YAML
 COMPOSE+=( -f "$OVERRIDE_FILE" )
 compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" "${COMPOSE[@]}" "$@"; }
@@ -200,6 +224,7 @@ compose up -d control
 RUNNING_CONTROL_IMAGE_ID="$(docker inspect "$CONTROL_CONTAINER" --format '{{.Image}}')"
 [[ "$RUNNING_CONTROL_IMAGE_ID" == "$EXPECTED_CONTROL_IMAGE_ID" ]] || { echo "control_image_provenance_mismatch" >&2; exit 1; }
 echo "RUNNING_CONTROL_IMAGE_ID=$RUNNING_CONTROL_IMAGE_ID"
+echo "CONTROL_ACTUAL_PORT=$(compose port control 8080)"
 wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
 CONTROL_DATABASE_TEST_URL="$DATABASE_URL" \
   CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable" \
@@ -217,7 +242,8 @@ if [[ "$MODE" == "startup" ]]; then
 fi
 compose up -d tls
 wait_http "https://127.0.0.1:${TLS_PORT}/api/healthz"
-export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.0.1:${TLS_PORT}" ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json" ACCEPTANCE_CONTROL_CONTAINER="$CONTROL_CONTAINER"
+export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.0.1:${TLS_PORT}" ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json"
+[[ "$MODE" == "security-replay" ]] || export ACCEPTANCE_CONTROL_CONTAINER="$CONTROL_CONTAINER"
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
 chmod 600 "$RUNTIME_DIR/storage-state.json"
 echo "AUTH_COMPOSITION_SMOKE=PASS"
@@ -250,6 +276,58 @@ SQL
   echo "OVERRIDE_LIFECYCLE=PASS"
   echo "OVERRIDE_SAME_ACCOUNT=PASS"
   echo "OVERRIDE_CANCEL=PASS"
+  exit 0
+fi
+if [[ "$MODE" == "security-replay" ]]; then
+  export ACCEPTANCE_DISABLE_EMAIL="$DISABLE_EMAIL"
+  export ACCEPTANCE_ENABLE_EMAIL="$ENABLE_EMAIL"
+  export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
+  export ACCEPTANCE_UPLOAD_CREDENTIAL_FILE="$RUNTIME_DIR/upload-credential.json"
+  export ACCEPTANCE_SECURITY_REPLAY_EVIDENCE_FILE="$RUNTIME_DIR/security-replay-evidence.json"
+  export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  mkdir -p "$RUNTIME_DIR/logs"
+  e2e_args=(account-operations-security-replay.spec.ts)
+  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- "${e2e_args[@]}" 2>&1 | tee "$RUNTIME_DIR/acceptance-output.log"; then
+    compose logs --no-color control node node-counter >&2 || true
+    exit 1
+  fi
+  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  [[ "$native_patch_count" == 2 && "$native_post_count" == 1 ]] || { echo "security_replay_native_count_mismatch:patch=${native_patch_count:-0},post=${native_post_count:-0}" >&2; exit 1; }
+  duplicate_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["duplicate"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
+  normal_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["normalReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
+  credential_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["credentialReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$duplicate_command_id'")" == 1 ]] || { echo "duplicate_operation_count_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$normal_command_id'")" == 1 ]] || { echo "normal_replay_operation_count_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$credential_command_id'")" == 1 ]] || { echo "credential_replay_operation_count_mismatch" >&2; exit 1; }
+  scan_security_replay_secret() {
+    local category="$1" value="$2"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" "$RUNTIME_DIR/security-replay-evidence.json" >/dev/null 2>&1; then
+      echo "security_replay_secret_artifact_match category=$category location=<redacted>" >&2
+      return 1
+    fi
+  }
+  scan_security_replay_secret "upload-marker" "$UPLOAD_SECRET_MARKER"
+  scan_security_replay_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
+  scan_security_replay_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
+  scan_security_replay_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_security_replay_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_security_replay_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_security_replay_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
+  echo "SECURITY_REPLAY_SECRET_SCAN=PASS"
+  echo "SECURITY=PASS"
+  echo "DUPLICATE_SUBMIT=PASS"
+  echo "DUPLICATE_HTTP_MUTATIONS=1"
+  echo "DUPLICATE_NATIVE_MUTATIONS=1"
+  echo "NORMAL_REPLAY=PASS"
+  echo "NORMAL_REPLAY_NATIVE_MUTATIONS=0"
+  echo "CREDENTIAL_REPLAY=PASS"
+  echo "CREDENTIAL_REPLAY_NATIVE_MUTATIONS=0"
   exit 0
 fi
 if [[ "$MODE" == "upload" ]]; then
