@@ -170,6 +170,48 @@ The acceptance stack should expose missing dependencies early, including:
 - runtime artifact identity
 - required database bootstrap
 
+## 6.1 Shared Schema and Migration Compatibility
+
+Fresh-install migration success does not prove upgrade compatibility. Any migration
+that changes a shared schema contract, including a `CHECK`, enum, `NOT NULL`,
+`UNIQUE`, foreign key, bounded taxonomy, lookup domain, role/grant, function, or
+trigger, must consider all active producers and consumers and representative data
+from the previous schema version.
+
+At minimum, review and validate:
+
+```text
+fresh database                  0 → latest
+previous-version minimal DB     N-1 → latest
+previous-version realistic DB   N-1 + representative valid data → latest
+```
+
+For every bounded database vocabulary, verify:
+
+```text
+CURRENT_PRODUCED_VALUES ⊆ DB_ALLOWED_VALUES
+```
+
+The producer set includes every active writer, including writers belonging to
+older features. For a constraint replacement, record the set difference
+`OLD_ALLOWED_SET - NEW_ALLOWED_SET`, `CURRENT_PRODUCER_SET - NEW_ALLOWED_SET`,
+and `NEW_ALLOWED_SET - OLD_ALLOWED_SET`. A non-empty current-producer difference
+blocks the change unless that producer is retired in the same reviewed change.
+
+Historical rows that were legal before the migration must either remain valid or
+have an explicitly reviewed, data-preserving transformation. Do not rewrite or
+delete immutable audit history to make a constraint pass. A historical migration
+remains immutable; a `Down` body is not a supported production rollback mechanism
+unless the migration explicitly documents that contract. These rules are
+independent: unsupported `Down` behavior does not remove the requirement to test
+forward upgrades from the previous version.
+
+Migration 38 is a concrete example: an unrelated feature migration narrowed a
+shared audit-category constraint, so fresh-install tests passed while realistic
+previous-version data exposed values still emitted by active producers. The rule
+also applies to status enums, provider kinds, asset types, lifecycle states, job
+types, and other bounded shared vocabularies.
+
 ---
 
 ## 7. One Full-Chain Proof Before Matrix Expansion

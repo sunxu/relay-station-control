@@ -2,6 +2,12 @@
 
 本文覆盖资产注册基础、Gateway lifecycle、Relay Node lifecycle，以及 Phase 6 Stage 3 Node 管理操作。Driver、Provider policy 和预约式 Node monitoring 仍由受控部署流程维护；实名 `super_admin` 可在 Control 同源 Asset Registry 中执行 Node lifecycle、显式 Health/Connection Test 和立即 Monitoring Enable/Disable。Control 不进入模型请求数据面。
 
+当前部署的 Gateway、Driver 和 Relay Node 登记，以及 Provider policy 和 Node
+monitoring 配置，以认证的 Control API/Asset Registry 管理流程为准。下文的
+registrar SQL 模板保留用于历史隔离 fixture 与 recovery procedure；其中
+`register-assets.sql` 是 `LEGACY / NOT CURRENT DEPLOYMENT ENTRY`。不得恢复已
+撤销的历史 registrar 权限，也不得用直接表写入替代当前受控 API。
+
 所有示例值都必须来自目标环境的部署清单或 Secret Manager。不要把数据库口令、Reader Secret、Secret 引用、连接串或带 query 的 URL 写入 Git、工单、终端录屏和验收输出。
 
 生产命令不把含口令连接串放入 argv。数据库平台在 workspace 外提供 owner-only 的 `pg_service.conf` 与 `.pgpass`，部署作业只注入 `CONTROL_PGSERVICE_FILE`、`CONTROL_PGPASS_FILE`、`CONTROL_MIGRATOR_PGSERVICE` 和 `CONTROL_ASSET_REGISTRAR_PGSERVICE`。资产参数变量同样是部署作业的临时输入，不是 Control 进程配置；禁止写入仓库内 `.env` 或 shell history，作业结束后立即销毁。
@@ -82,16 +88,24 @@ SELECT has_function_privilege(
 SQL
 ```
 
-## 受控登记顺序
+## 登记契约与历史 SQL 模板
 
-最终受控模板位于：
+当前部署通过认证 Control API 按以下顺序完成登记；具体 endpoint 契约以
+`api/openapi.yaml` 和本手册的 lifecycle 小节为准：
+
+1. 登记 Gateway、Driver/capability 和 Relay Node；
+2. 激活不可变 Provider policy；
+3. 启用或预约 Node monitoring；
+4. 执行只读 reconcile，并要求所有 issue count 为零。
+
+以下 SQL 模板是历史隔离 fixture/recovery 入口，不是当前部署入口：
 
 1. `deploy/asset-registry/register-assets.sql`：Gateway、Driver/capability、Relay Node/capability；
 2. `deploy/asset-registry/activate-provider-policy.sql`：不可变 Provider 策略版本、当前绑定和激活区间；
 3. `deploy/asset-registry/set-node-monitoring.sql`：Node 账号监控启停或预约；
 4. `deploy/asset-registry/reconcile.sql`：登记后只读对账。
 
-四个模板都只允许环境专用 registrar LOGIN 执行，其中前三个执行受控变更，`reconcile.sql` 只调用固定 SECURITY DEFINER 对账函数。模板输入必须由受控部署系统注入；不要把 Secret 引用或连接串固化在脚本中。以下变量名与模板头部一致，示例没有默认值，任何缺失都会 fail closed：
+这些历史模板都只允许环境专用 registrar LOGIN 执行，其中前三个执行受控变更，`reconcile.sql` 只调用固定 SECURITY DEFINER 对账函数。它们仅用于隔离 fixture/recovery；当前部署不得以模板替代认证 Control API。模板输入必须由受控部署系统注入；不要把 Secret 引用或连接串固化在脚本中。以下变量名与模板头部一致，示例没有默认值，任何缺失都会 fail closed：
 
 ```sh
 PGSERVICEFILE="$CONTROL_PGSERVICE_FILE" \
@@ -239,7 +253,7 @@ Control 或资产数据库故障只影响管理视图。Gateway 和 Relay Node �
 
 1. 未设置 `CONTROL_ENVIRONMENT_ID` 时进程非零退出且端口未监听；设置匹配值后启动；
 2. `make migrate-up` 成功，三类角色权限与上文预期一致；
-3. 四个 `deploy/asset-registry/*.sql` 模板按顺序成功，相同输入重放成功，冲突输入非零且无部分写入；
+3. 历史 `deploy/asset-registry/*.sql` 模板在隔离 fixture/recovery 场景按顺序成功，相同输入重放成功，冲突输入非零且无部分写入；当前部署仍以认证 Control API 的结果为准；
 4. `reconcile.sql` 只输出固定计数/结果且不含 Secret 引用或 endpoint；
 5. 策略历史更新/删除、过去或重叠区间、Node 监控重叠操作均失败；
 6. 停止资产数据库时 `/assets` 显示独立失败与重试，恢复后读取当前值；

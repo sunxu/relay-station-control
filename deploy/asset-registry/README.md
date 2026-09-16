@@ -1,5 +1,12 @@
 # Controlled asset registry SQL
 
+The current deployment path for Gateway and Relay Node registration is the
+authenticated Control API and its supported deployment procedure. The SQL
+templates in this directory are retained for historical isolated fixtures and
+recovery procedures; `register-assets.sql` is `LEGACY / NOT CURRENT DEPLOYMENT
+ENTRY` and must not be used as the normal current deployment path. Do not restore
+old registrar permissions to make that legacy template work.
+
 Run all templates with the environment-specific LOGIN that inherits the
 `relay_control_asset_registrar` capability role. Each mutation template starts
 an explicit transaction at its documented isolation level, fixes the transaction time zone to UTC,

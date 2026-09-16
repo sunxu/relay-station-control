@@ -149,6 +149,8 @@ See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
 - Build and verify the production-like stack and runtime/artifact provenance before debugging behavior.
 - For artifact or identity handoffs, distinguish mutable references from immutable identities; resolve references once, pass the immutable identity downstream, and verify execution consumed that identity.
 - Review check-then-use handoffs for TOCTOU drift; when identity drift could affect correctness or reproducibility, prove immutable execution or fail-closed behavior with a negative handoff test.
+- For shared schema constraints and bounded taxonomies, verify fresh installation, previous-version realistic data, and that current producers remain within the allowed set.
+- Treat shipped forward migrations as immutable; do not use historical Down bodies as a production rollback path unless the migration explicitly supports that contract.
 - Diagnose failures layer-by-layer, classify them before changing production code, and stop at the earliest blocker.
 - Keep waits bounded (normally no more than 30 seconds per async business layer); never hide failures with sleeps, blind retries, or timeout increases.
 - Keep corrective rounds narrow and reuse proven harness infrastructure, real observers, real mutation evidence, and one shared secret scanner.
