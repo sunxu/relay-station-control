@@ -129,6 +129,10 @@ token 过期或疑似泄漏时，原创建人重新认证并生成新 token；�
 
 只有全新、未完成 bootstrap、确认没有依赖数据的环境，才允许人工执行 down。执行前后都必须核对 `environments` 单例保持不变。若生产恢复涉及身份或审计数据，优先从一致备份恢复到隔离实例验证，禁止用 down Migration 作为数据修复手段。
 
+历史 forward Migration 一旦发布即视为不可变。历史文件中存在 `Down` 实现，不代表该 Down 是受支持的生产回滚路径；除非某个 Migration 明确另有说明，生产不得通过历史 Down 回滚。需要从较高 schema 版本回退时，应使用另行评审的 forward corrective migration 或数据库恢复方案。
+
+Migration 38（`00038_account_admin_operations.sql`）是 forward-only。其历史 Down SQL 保留用于记录既有实现，但不支持恢复到 schema version 37：Down 会删除 Migration 38 的表及数据，保留其函数，并且不会恢复被改写的 `audit_logs` 约束。因此 `37 → 38 → Down → 38` 不属于支持的迁移流程；隔离数据库验证中 Up 和 Down SQL 可执行，但 Down 后 schema 不等于 37，随后再次 Up 会因残留函数冲突而失败。Phase 7 的 forward acceptance evidence 不受此历史 Down 限制影响。
+
 ## 9. 验证与证据脱敏
 
 每次演练至少保存以下非敏感结果：Migration 版本、测试用例名称、固定错误码、HTTP 状态、审计 action/result、容器 UID/GID、数据面冒烟成功与时间窗口。证据不得包含真实管理员登录名/显示名、IP、密码、TOTP Secret/验证码、恢复码、Cookie、CSRF、activation/bootstrap token、keyring、数据库连接串或未脱敏响应。
