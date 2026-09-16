@@ -162,22 +162,7 @@ services:
 YAML
 COMPOSE+=( -f "$OVERRIDE_FILE" )
 compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_IMAGE="$CONTROL_E2E_NODE_IMAGE" CONTROL_E2E_NODE_DIGEST="$CONTROL_E2E_NODE_DIGEST" CONTROL_E2E_NODE_VERSION="$CONTROL_E2E_NODE_VERSION" CONTROL_E2E_NODE_COMMIT="$CONTROL_E2E_NODE_COMMIT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" "${COMPOSE[@]}" "$@"; }
-wait_http() { local url="$1"; for _ in $(seq 1 60); do curl --noproxy '*' -ksSf --max-time 2 "$url" >/dev/null && return 0; sleep 1; done; return 1; }
-wait_node_ready() {
-  local node_container="${PROJECT}-node-1" state health
-  for _ in $(seq 1 90); do
-    state="$(docker inspect "$node_container" --format '{{.State.Status}}' 2>/dev/null || true)"
-    health="$(docker inspect "$node_container" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)"
-    [[ "$health" == "healthy" ]] && return 0
-    if [[ "$state" == "exited" || "$state" == "dead" ]]; then
-      compose logs --no-color node >&2 || true
-      return 1
-    fi
-    sleep 1
-  done
-  compose logs --no-color node >&2 || true
-  return 1
-}
+source "$ROOT/lib.sh"
 image_revision() { docker image inspect "$1" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true; }
 ensure_candidate_image() {
   local revision
@@ -230,7 +215,7 @@ VALUES ('00000000-0000-4000-8000-000000000047',
         to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 SQL
 compose up -d secret-init node
-wait_node_ready
+wait_for_node_ready NODE_READINESS "${PROJECT}-node-1" 90
 secret_status="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.Status}}' 2>/dev/null || true)"
 secret_exit="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
 [[ "$secret_status" == "exited" && "$secret_exit" == "0" ]] || { echo "secret_init_failed" >&2; exit 1; }
@@ -243,7 +228,7 @@ RUNNING_CONTROL_IMAGE_ID="$(docker inspect "$CONTROL_CONTAINER" --format '{{.Ima
 [[ "$RUNNING_CONTROL_IMAGE_ID" == "$EXPECTED_CONTROL_IMAGE_ID" ]] || { echo "control_image_provenance_mismatch" >&2; exit 1; }
 echo "RUNNING_CONTROL_IMAGE_ID=$RUNNING_CONTROL_IMAGE_ID"
 echo "CONTROL_ACTUAL_PORT=$(compose port control 8080)"
-wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
+wait_for_http CONTROL_READINESS "http://127.0.0.1:${HTTP_PORT}/api/healthz" 60
 CONTROL_DATABASE_TEST_URL="$DATABASE_URL" \
   CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable" \
   env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET \
@@ -251,7 +236,7 @@ CONTROL_DATABASE_TEST_URL="$DATABASE_URL" \
 echo "NODE_RESOLVER_SMOKE=PASS"
 if [[ "$MODE" == "startup" ]]; then
   sleep 3
-  wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
+  wait_for_http CONTROL_READINESS "http://127.0.0.1:${HTTP_PORT}/api/healthz" 60
   compose stop -t 15 control
   exit_code="$(docker inspect "$CONTROL_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
   [[ "$exit_code" == "0" ]] || { echo "control did not exit cleanly: ${exit_code:-unknown}" >&2; exit 1; }
@@ -259,7 +244,7 @@ if [[ "$MODE" == "startup" ]]; then
   exit 0
 fi
 compose up -d tls
-wait_http "https://127.0.0.1:${TLS_PORT}/api/healthz"
+wait_for_http HTTP_READINESS "https://127.0.0.1:${TLS_PORT}/api/healthz" 60
 export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.0.1:${TLS_PORT}" ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json"
 [[ "$MODE" == "security-replay" || "$MODE" == "enable" || "$MODE" == "enable-fixture" ]] || export ACCEPTANCE_CONTROL_CONTAINER="$CONTROL_CONTAINER"
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
@@ -279,12 +264,13 @@ SELECT public.control_transition_account_admin_operation_v1('$OVERRIDE_SAME_COMM
 SQL
   export ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL="$OVERRIDE_LIFECYCLE_EMAIL" ACCEPTANCE_OVERRIDE_SAME_EMAIL="$OVERRIDE_SAME_EMAIL" ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID="$OVERRIDE_LIFECYCLE_COMMAND_ID" ACCEPTANCE_OVERRIDE_SAME_COMMAND_ID="$OVERRIDE_SAME_COMMAND_ID" ACCEPTANCE_OVERRIDE_EVIDENCE_FILE="$RUNTIME_DIR/override-evidence.json" ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log" CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output" CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
-  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-override.spec.ts
-  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  run_browser_spec override "$RUNTIME_DIR/acceptance-output.log" account-operations-override.spec.ts
+  capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND lifecycle_override_at IS NOT NULL AND lifecycle_override_reason='process_restarted'")" == 1 ]] || { echo "lifecycle_override_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_SAME_COMMAND_ID' AND same_account_override_at IS NOT NULL AND same_account_override_reason='process_restarted'")" == 1 ]] || { echo "same_account_override_mismatch" >&2; exit 1; }
-  scan_override_secret() { local value="$1"; [[ -n "$value" ]] && ! rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/override-evidence.json" >/dev/null 2>&1; }
+  scan_override_secret() {
+    scan_secret_value "secret" "$1"
+  }
   scan_override_secret "$NODE_MANAGEMENT_PASSWORD"
   scan_override_secret "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
   scan_override_secret "$(cat "$RUNTIME_DIR/bootstrap-secret")"
@@ -310,25 +296,18 @@ if [[ "$MODE" == "security-replay" ]]; then
   if [[ "${SECURITY_REPLAY_FOCUSED:-}" == "normal" ]]; then
     e2e_args+=(--grep "replays an exact terminal normal mutation")
   fi
-  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- "${e2e_args[@]}" 2>&1 | tee "$RUNTIME_DIR/acceptance-output.log"; then
-    compose logs --no-color control node node-counter >&2 || true
+  if ! run_browser_spec security-replay "$RUNTIME_DIR/acceptance-output.log" "${e2e_args[@]}"; then
     exit 1
   fi
-  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   if [[ "${SECURITY_REPLAY_FOCUSED:-}" == "normal" ]]; then
     normal_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["normalReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
-    native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+    native_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" PATCH "/v0/management/auth-files/status")"
     [[ "$native_patch_count" == 1 ]] || { echo "focused_normal_replay_native_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
     [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$normal_command_id'")" == 1 ]] || { echo "focused_normal_replay_operation_count_mismatch" >&2; exit 1; }
     scan_focused_replay_secret() {
-      local category="$1" value="$2"
-      [[ -n "$value" ]] || return 0
-      if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" "$RUNTIME_DIR/security-replay-evidence.json" >/dev/null 2>&1; then
-        echo "focused_replay_secret_artifact_match category=$category location=<redacted>" >&2
-        return 1
-      fi
-    }
+    scan_secret_value "$1" "$2"
+  }
     scan_focused_replay_secret "replay-marker" "$REPLAY_SECRET_MARKER"
     scan_focused_replay_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
     scan_focused_replay_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
@@ -341,8 +320,8 @@ if [[ "$MODE" == "security-replay" ]]; then
     echo "FOCUSED_NORMAL_REPLAY_SECRET_SCAN=PASS"
     exit 0
   fi
-  native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
-  native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  native_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" PATCH "/v0/management/auth-files/status")"
+  native_post_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" POST "/v0/management/auth-files")"
   [[ "$native_patch_count" == 2 && "$native_post_count" == 1 ]] || { echo "security_replay_native_count_mismatch:patch=${native_patch_count:-0},post=${native_post_count:-0}" >&2; exit 1; }
   duplicate_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["duplicate"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
   normal_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["normalReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
@@ -350,14 +329,7 @@ if [[ "$MODE" == "security-replay" ]]; then
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$duplicate_command_id'")" == 1 ]] || { echo "duplicate_operation_count_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$normal_command_id'")" == 1 ]] || { echo "normal_replay_operation_count_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$credential_command_id'")" == 1 ]] || { echo "credential_replay_operation_count_mismatch" >&2; exit 1; }
-  scan_security_replay_secret() {
-    local category="$1" value="$2"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" "$RUNTIME_DIR/security-replay-evidence.json" >/dev/null 2>&1; then
-      echo "security_replay_secret_artifact_match category=$category location=<redacted>" >&2
-      return 1
-    fi
-  }
+  scan_security_replay_secret() { scan_secret_value "$1" "$2"; }
   scan_security_replay_secret "upload-marker" "$UPLOAD_SECRET_MARKER"
   scan_security_replay_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
   scan_security_replay_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
@@ -384,7 +356,7 @@ if [[ "$MODE" == "upload" ]]; then
   export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
-  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-upload.spec.ts; then
+  if ! run_browser_spec upload "$RUNTIME_DIR/acceptance-output.log" account-operations-upload.spec.ts; then
     compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
@@ -400,20 +372,15 @@ if [[ "$MODE" == "upload" ]]; then
   assert_upload_count receipt "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$upload_command_id'"
   assert_upload_count audit "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$upload_command_id'"
   mkdir -p "$RUNTIME_DIR/logs"
-  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
-  native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
+  native_post_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" POST "/v0/management/auth-files")"
   [[ "$native_post_count" == 1 ]] || { echo "native_upload_post_count_mismatch:${native_post_count:-0}" >&2; exit 1; }
   node_observation="$RUNTIME_DIR/node-observation.json"
   curl --noproxy '*' --silent --show-error --fail --header "Authorization: Bearer $NODE_MANAGEMENT_PASSWORD" "http://127.0.0.1:${NODE_PORT}/v0/management/auth-files" -o "$node_observation"
   grep -Fq "$UPLOAD_EMAIL" "$node_observation" || { echo "node_upload_observation_missing" >&2; exit 1; }
   rm -f -- "$node_observation"
   scan_secret() {
-    local value="$1"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/upload-evidence.json" >/dev/null 2>&1; then
-      echo "secret_artifact_match" >&2
-      return 1
-    fi
+    scan_secret_value "secret" "$1"
   }
   scan_secret "$UPLOAD_SECRET_MARKER"
   scan_secret "$NODE_MANAGEMENT_PASSWORD"
@@ -436,27 +403,21 @@ if [[ "$MODE" == "disable" ]]; then
   export ACCEPTANCE_DISABLE_EVIDENCE_FILE="$RUNTIME_DIR/disable-evidence.json"
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
-  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-disable.spec.ts; then
+  if ! run_browser_spec disable "$RUNTIME_DIR/acceptance-output.log" account-operations-disable.spec.ts; then
     compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
   mkdir -p "$RUNTIME_DIR/logs"
-  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/disable-evidence.json")"
   [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "disable_evidence_missing_command_id" >&2; exit 1; }
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='disable' AND execution_state='remote_applied'")" == 1 ]] || { echo "disable_operation_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$command_id'")" == 1 ]] || { echo "disable_receipt_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$command_id'")" == 1 ]] || { echo "disable_audit_mismatch" >&2; exit 1; }
-  native_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  native_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" PATCH "/v0/management/auth-files/status")"
   [[ "$native_patch_count" == 1 ]] || { echo "disable_native_patch_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
   scan_disable_secret() {
-    local value="$1"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/disable-evidence.json" >/dev/null 2>&1; then
-      echo "disable_secret_artifact_match" >&2
-      return 1
-    fi
+    scan_secret_value "secret" "$1"
   }
   scan_disable_secret "$NODE_MANAGEMENT_PASSWORD"
   scan_disable_secret "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
@@ -484,17 +445,14 @@ if [[ "$MODE" == "replace" || "$MODE" == "replace-discovery" ]]; then
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
-  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-replace.spec.ts; then
+  if ! run_browser_spec replace "$RUNTIME_DIR/acceptance-output.log" account-operations-replace.spec.ts; then
     compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
   if [[ "$MODE" == "replace-discovery" ]]; then
-    discovery_count() {
-      compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'
-    }
-    [[ "$(discovery_count "SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id='00000000-0000-4000-8000-000000000047' AND status='finalized'")" -ge 1 ]] || { echo "replace_discovery_poll_run_missing" >&2; exit 1; }
-    [[ "$(discovery_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$REPLACE_EMAIL'")" -ge 1 ]] || { echo "replace_discovery_snapshot_missing" >&2; exit 1; }
-    [[ "$(discovery_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$REPLACE_EMAIL' AND lifecycle='present'")" == 1 ]] || { echo "replace_discovery_inventory_missing" >&2; exit 1; }
+    [[ "$(psql_count "SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id='00000000-0000-4000-8000-000000000047' AND status='finalized'")" -ge 1 ]] || { echo "replace_discovery_poll_run_missing" >&2; exit 1; }
+    [[ "$(psql_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$REPLACE_EMAIL'")" -ge 1 ]] || { echo "replace_discovery_snapshot_missing" >&2; exit 1; }
+    [[ "$(psql_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$REPLACE_EMAIL' AND lifecycle='present'")" == 1 ]] || { echo "replace_discovery_inventory_missing" >&2; exit 1; }
     echo "REPLACE_DISCOVERY=PASS"
     echo "REPLACE_DISCOVERY_POLL_RUN=PASS"
     echo "REPLACE_DISCOVERY_SNAPSHOT=PASS"
@@ -503,26 +461,17 @@ if [[ "$MODE" == "replace" || "$MODE" == "replace-discovery" ]]; then
     echo "REPLACE_NATIVE_POSTS=0"
     exit 0
   fi
-  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/replace-evidence.json")"
   [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "replace_evidence_missing_command_id" >&2; exit 1; }
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
   [[ "$(psql_count "SELECT count(*) FROM admin_command_registry WHERE command_id='$command_id' AND command_kind='account.replace_existing'")" == 1 ]] || { echo "replace_registry_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='replace_existing' AND account_key='antigravity:$REPLACE_EMAIL' AND execution_state='remote_applied'")" == 1 ]] || { echo "replace_operation_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$command_id'")" == 1 ]] || { echo "replace_receipt_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$command_id'")" == 1 ]] || { echo "replace_audit_mismatch" >&2; exit 1; }
-  native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  native_post_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" POST "/v0/management/auth-files")"
   [[ "$native_post_count" == 1 ]] || { echo "replace_native_post_count_mismatch:${native_post_count:-0}" >&2; exit 1; }
   scan_replace_secret() {
-    local category="$1" value="$2"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" \
-      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" \
-      "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" \
-      "$RUNTIME_DIR/replace-evidence.json" >/dev/null 2>&1; then
-      echo "replace_secret_artifact_match category=$category location=<redacted>" >&2
-      return 1
-    fi
+    scan_secret_value "$1" "$2"
   }
   scan_replace_secret "replacement-marker" "$REPLACE_SECRET_MARKER"
   scan_replace_secret "base-marker" "$REPLACE_BASE_SECRET_MARKER"
@@ -534,30 +483,7 @@ if [[ "$MODE" == "replace" || "$MODE" == "replace-discovery" ]]; then
   scan_replace_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
   scan_replace_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
   scan_replace_binary_secret() {
-    local category="$1" secret_file="$2"
-    python3 - "$category" "$secret_file" \
-      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" \
-      "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" \
-      "$RUNTIME_DIR/replace-evidence.json" <<'PY'
-import pathlib
-import sys
-
-category, secret_file, *targets = sys.argv[1:]
-needle = pathlib.Path(secret_file).read_bytes()
-matches = 0
-for target in targets:
-    path = pathlib.Path(target)
-    paths = path.rglob("*") if path.is_dir() else (path,)
-    for candidate in paths:
-        if candidate.is_file():
-            try:
-                matches += candidate.read_bytes().count(needle)
-            except OSError:
-                pass
-if matches:
-    print(f"replace_secret_artifact_match category={category} location=<redacted>", file=sys.stderr)
-    raise SystemExit(1)
-PY
+    scan_secret_file "$1" "$2"
   }
   scan_replace_binary_secret "intent-key" "$RUNTIME_DIR/account-operation-intent-key"
   echo "REPLACE_HTTP=PASS"
@@ -580,24 +506,18 @@ if [[ "$MODE" == "remove" ]]; then
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
-  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-remove.spec.ts; then
+  if ! run_browser_spec remove "$RUNTIME_DIR/acceptance-output.log" account-operations-remove.spec.ts; then
     compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
-  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/remove-evidence.json")"
   [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "remove_evidence_missing_command_id" >&2; exit 1; }
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='remove' AND account_key='antigravity:$REMOVE_EMAIL' AND execution_state='remote_applied'")" == 1 ]] || { echo "remove_operation_mismatch" >&2; exit 1; }
-  native_delete_count="$(grep -Ec 'DELETE /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  native_delete_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" DELETE "/v0/management/auth-files")"
   [[ "$native_delete_count" == 1 ]] || { echo "remove_native_delete_count_mismatch:${native_delete_count:-0}" >&2; exit 1; }
   scan_remove_secret() {
-    local category="$1" value="$2"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" "$RUNTIME_DIR/remove-evidence.json" >/dev/null 2>&1; then
-      echo "remove_secret_artifact_match category=$category location=<redacted>" >&2
-      return 1
-    fi
+    scan_secret_value "$1" "$2"
   }
   scan_remove_secret "access-token" "phase7-disposable-remove-token"
   scan_remove_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
@@ -624,67 +544,25 @@ if [[ "$MODE" == "enable-fixture" ]]; then
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
   set +e
-  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable-fixture.spec.ts 2>&1 | tee "$RUNTIME_DIR/acceptance-output.log"
-  fixture_test_status="${PIPESTATUS[0]}"
+  run_browser_spec enable-fixture "$RUNTIME_DIR/acceptance-output.log" account-operations-enable-fixture.spec.ts
+  fixture_test_status="$?"
   set -e
   [[ "$fixture_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$fixture_test_status"; }
   compose up -d --force-recreate control
-  wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  wait_for_http CONTROL_READINESS "http://127.0.0.1:${HTTP_PORT}/api/healthz" 60
   [[ "$(psql_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND lifecycle='present' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_inventory_db_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$ENABLE_EMAIL' AND basic_status='disabled'")" == 1 ]] || { echo "enable_fixture_snapshot_db_mismatch" >&2; exit 1; }
-  compose logs --no-color control > "$RUNTIME_DIR/logs/control.log"
-  compose logs --no-color node > "$RUNTIME_DIR/logs/node.log"
-  compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter.log"
+  capture_compose_logs "$RUNTIME_DIR/logs/control.log" control
+  capture_compose_logs "$RUNTIME_DIR/logs/node.log" node
+  capture_compose_logs "$RUNTIME_DIR/logs/node-counter.log" node-counter
   scan_enable_fixture_secret() {
-    local category="$1" value="$2"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" \
-      "$RUNTIME_DIR/logs" \
-      "$RUNTIME_DIR/node/logs" \
-      "$RUNTIME_DIR/playwright-output" \
-      "$RUNTIME_DIR/browser-console.log" \
-      "$RUNTIME_DIR/acceptance-output.log" \
-      "$RUNTIME_DIR/enable-fixture-evidence.json" >/dev/null 2>&1; then
-      echo "enable_fixture_secret_artifact_match category=$category location=<redacted>" >&2
-      return 1
-    fi
+    scan_secret_value "$1" "$2"
   }
   scan_enable_fixture_secret "credential-marker" "$ENABLE_SECRET_MARKER"
   scan_enable_fixture_secret "access-token" "phase7-disposable-enable-token"
   scan_enable_fixture_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
   scan_enable_fixture_binary_secret() {
-    local category="$1" secret_file="$2"
-    if python3 - "$category" "$secret_file" \
-      "$RUNTIME_DIR/logs" \
-      "$RUNTIME_DIR/node/logs" \
-      "$RUNTIME_DIR/playwright-output" \
-      "$RUNTIME_DIR/browser-console.log" \
-      "$RUNTIME_DIR/acceptance-output.log" \
-      "$RUNTIME_DIR/enable-fixture-evidence.json" <<'PY'
-import pathlib
-import sys
-
-category, secret_file, *targets = sys.argv[1:]
-needle = pathlib.Path(secret_file).read_bytes()
-matches = 0
-for target in targets:
-    path = pathlib.Path(target)
-    paths = path.rglob("*") if path.is_dir() else (path,)
-    for candidate in paths:
-        if candidate.is_file():
-            try:
-                matches += candidate.read_bytes().count(needle)
-            except OSError:
-                pass
-if matches:
-    print(f"enable_fixture_secret_artifact_match category={category} location=<redacted>", file=sys.stderr)
-    raise SystemExit(1)
-PY
-    then
-      return 0
-    fi
-    return 1
+    scan_secret_file "$1" "$2"
   }
   scan_enable_fixture_binary_secret "intent-key" "$RUNTIME_DIR/account-operation-intent-key"
   scan_enable_fixture_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
@@ -711,32 +589,31 @@ if [[ "$MODE" == "enable" ]]; then
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
   set +e
-  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable-fixture.spec.ts 2>&1 | tee "$RUNTIME_DIR/fixture-output.log"
-  fixture_test_status="${PIPESTATUS[0]}"
+  run_browser_spec enable-fixture "$RUNTIME_DIR/fixture-output.log" account-operations-enable-fixture.spec.ts
+  fixture_test_status="$?"
   set -e
   [[ "$fixture_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$fixture_test_status"; }
   compose up -d --force-recreate control
-  wait_http "http://127.0.0.1:${HTTP_PORT}/api/healthz"
-  compose logs --no-color control > "$RUNTIME_DIR/logs/control-before-enable.log"
-  compose logs --no-color node > "$RUNTIME_DIR/logs/node-before-enable.log"
-  compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter-before-enable.log"
+  wait_for_http CONTROL_READINESS "http://127.0.0.1:${HTTP_PORT}/api/healthz" 60
+  capture_compose_logs "$RUNTIME_DIR/logs/control-before-enable.log" control
+  capture_compose_logs "$RUNTIME_DIR/logs/node-before-enable.log" node
+  capture_compose_logs "$RUNTIME_DIR/logs/node-counter-before-enable.log" node-counter
   set +e
-  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-enable.spec.ts 2>&1 | tee "$RUNTIME_DIR/enable-output.log"
-  enable_test_status="${PIPESTATUS[0]}"
+  run_browser_spec enable "$RUNTIME_DIR/enable-output.log" account-operations-enable.spec.ts
+  enable_test_status="$?"
   set -e
   [[ "$enable_test_status" == 0 ]] || { compose logs --no-color control node node-counter >&2 || true; exit "$enable_test_status"; }
-  compose logs --no-color control > "$RUNTIME_DIR/logs/control.log"
-  compose logs --no-color node > "$RUNTIME_DIR/logs/node.log"
-  compose logs --no-color node-counter > "$RUNTIME_DIR/logs/node-counter.log"
+  capture_compose_logs "$RUNTIME_DIR/logs/control.log" control
+  capture_compose_logs "$RUNTIME_DIR/logs/node.log" node
+  capture_compose_logs "$RUNTIME_DIR/logs/node-counter.log" node-counter
   command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/enable-evidence.json")"
   [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "enable_evidence_missing_command_id" >&2; exit 1; }
-  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
   [[ "$(psql_count "SELECT count(*) FROM admin_command_registry WHERE command_id='$command_id' AND command_kind='account.enable'")" == 1 ]] || { echo "enable_registry_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='enable' AND account_key='antigravity:$ENABLE_EMAIL' AND execution_state='remote_applied'")" == 1 ]] || { echo "enable_operation_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$command_id'")" == 1 ]] || { echo "enable_receipt_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$command_id'")" == 1 ]] || { echo "enable_audit_mismatch" >&2; exit 1; }
-  before_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/node-counter-before-enable.log" || true)"
-  after_patch_count="$(grep -Ec 'PATCH /v0/management/auth-files/status [0-9]{3}$' "$RUNTIME_DIR/logs/node-counter.log" || true)"
+  before_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/node-counter-before-enable.log" PATCH "/v0/management/auth-files/status")"
+  after_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/node-counter.log" PATCH "/v0/management/auth-files/status")"
   native_patch_count=$((after_patch_count - before_patch_count))
   [[ "$native_patch_count" == 1 ]] || { echo "enable_native_patch_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
   curl --noproxy '*' --silent --show-error --fail --header "Authorization: Bearer $NODE_MANAGEMENT_PASSWORD" "http://127.0.0.1:${NODE_PORT}/v0/management/auth-files" -o "$RUNTIME_DIR/enable-node-observation.json"
@@ -744,46 +621,13 @@ if [[ "$MODE" == "enable" ]]; then
   rg -Fq '"disabled":false' "$RUNTIME_DIR/enable-node-observation.json" || { echo "enable_node_state_mismatch" >&2; exit 1; }
   rm -f -- "$RUNTIME_DIR/enable-node-observation.json"
   scan_enable_secret() {
-    local category="$1" value="$2"
-    [[ -n "$value" ]] || return 0
-    if rg -l -F -- "$value" \
-      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" \
-      "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" \
-      "$RUNTIME_DIR/fixture-output.log" "$RUNTIME_DIR/enable-output.log" \
-      "$RUNTIME_DIR/enable-fixture-evidence.json" "$RUNTIME_DIR/enable-evidence.json" >/dev/null 2>&1; then
-      echo "enable_secret_artifact_match category=$category location=<redacted>" >&2
-      return 1
-    fi
+    scan_secret_value "$1" "$2"
   }
   scan_enable_secret "credential-marker" "$ENABLE_SECRET_MARKER"
   scan_enable_secret "access-token" "phase7-disposable-enable-token"
   scan_enable_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
   scan_enable_binary_secret() {
-    local category="$1" secret_file="$2"
-    python3 - "$category" "$secret_file" \
-      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" \
-      "$RUNTIME_DIR/playwright-output" "$RUNTIME_DIR/browser-console.log" \
-      "$RUNTIME_DIR/fixture-output.log" "$RUNTIME_DIR/enable-output.log" \
-      "$RUNTIME_DIR/enable-fixture-evidence.json" "$RUNTIME_DIR/enable-evidence.json" <<'PY'
-import pathlib
-import sys
-
-category, secret_file, *targets = sys.argv[1:]
-needle = pathlib.Path(secret_file).read_bytes()
-matches = 0
-for target in targets:
-    path = pathlib.Path(target)
-    paths = path.rglob("*") if path.is_dir() else (path,)
-    for candidate in paths:
-        if candidate.is_file():
-            try:
-                matches += candidate.read_bytes().count(needle)
-            except OSError:
-                pass
-if matches:
-    print(f"enable_secret_artifact_match category={category} location=<redacted>", file=sys.stderr)
-    raise SystemExit(1)
-PY
+    scan_secret_file "$1" "$2"
   }
   scan_enable_binary_secret "intent-key" "$RUNTIME_DIR/account-operation-intent-key"
   scan_enable_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
