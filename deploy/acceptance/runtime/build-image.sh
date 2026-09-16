@@ -10,7 +10,7 @@ BUILDX_CONFIG_DIR="${BUILDX_CONFIG_DIR:-}"
 if [[ -z "$BUILDX_CONFIG_DIR" ]]; then BUILDX_CONFIG_DIR="$(mktemp -d /private/tmp/relay-control-buildx.XXXXXX)"; CLEAN_BUILDX=1; else CLEAN_BUILDX=0; fi
 case "$BUILDX_CONFIG_DIR" in "$CONTROL_DIR"/*) echo "BUILDX_CONFIG_DIR must be outside repository" >&2; exit 2;; esac
 umask 077; mkdir -p "$BUILDX_CONFIG_DIR"; test -w "$BUILDX_CONFIG_DIR"; export BUILDX_CONFIG="$BUILDX_CONFIG_DIR"
-cleanup() { [[ "$CLEAN_BUILDX" == 1 ]] && rm -rf -- "$BUILDX_CONFIG_DIR"; }; trap cleanup EXIT
+cleanup() { if [[ "$CLEAN_BUILDX" == 1 ]]; then rm -rf -- "$BUILDX_CONFIG_DIR"; fi; }; trap cleanup EXIT
 [[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "candidate SHA mismatch" >&2; exit 1; }
 if [[ "${ALLOW_DIRTY:-0}" != 1 ]]; then
   [[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || { echo "worktree must be clean" >&2; exit 1; }
