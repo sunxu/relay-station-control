@@ -43,7 +43,7 @@ services:
       - control-secrets:/run/control-secrets
 
   node:
-    image: ${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}
+    image: ${CONTROL_E2E_NODE_IMAGE:?set CONTROL_E2E_NODE_IMAGE}
     pull_policy: never
     environment:
       MANAGEMENT_PASSWORD: ${CONTROL_E2E_NODE_MANAGEMENT_PASSWORD:?set CONTROL_E2E_NODE_MANAGEMENT_PASSWORD}

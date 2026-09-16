@@ -39,7 +39,7 @@ trap cleanup EXIT INT TERM
 TEMP_COMMIT="$BASE_SHA"
 
 BUILDX_STATE="$(mktemp -d /private/tmp/relay-recovery-buildx.XXXXXX)"
-EXPECTED_SHA="$TEMP_COMMIT" IMAGE="$IMAGE" ALLOW_DIRTY=0 \
+EXPECTED_SHA="$TEMP_COMMIT" IMAGE="$IMAGE" \
   BUILDX_CONFIG_DIR="$BUILDX_STATE" \
   "$SOURCE_DIR/deploy/acceptance/runtime/build-image.sh" || BUILD_STATUS=$?
 BUILD_STATUS="${BUILD_STATUS:-0}"

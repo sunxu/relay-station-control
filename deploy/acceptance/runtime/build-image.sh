@@ -12,11 +12,13 @@ case "$BUILDX_CONFIG_DIR" in "$CONTROL_DIR"/*) echo "BUILDX_CONFIG_DIR must be o
 umask 077; mkdir -p "$BUILDX_CONFIG_DIR"; test -w "$BUILDX_CONFIG_DIR"; export BUILDX_CONFIG="$BUILDX_CONFIG_DIR"
 cleanup() { if [[ "$CLEAN_BUILDX" == 1 ]]; then rm -rf -- "$BUILDX_CONFIG_DIR"; fi; }; trap cleanup EXIT
 [[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "candidate SHA mismatch" >&2; exit 1; }
-if [[ "${ALLOW_DIRTY:-0}" != 1 ]]; then
-  [[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || { echo "worktree must be clean" >&2; exit 1; }
-fi
+[[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || {
+  echo "CANDIDATE_SOURCE_CLEAN=FAIL: candidate acceptance requires a clean source tree" >&2
+  exit 1
+}
 docker buildx build --platform "$PLATFORM" --build-arg "GOPROXY=${GOPROXY:-https://proxy.golang.org,direct}" --label "org.opencontainers.image.revision=$EXPECTED_SHA" --load --tag "$IMAGE" "$CONTROL_DIR"
 revision="$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
 image_platform="$(docker image inspect "$IMAGE" --format '{{.Os}}/{{.Architecture}}')"
 [[ "$revision" == "$EXPECTED_SHA" && "$image_platform" == "$PLATFORM" ]] || { echo "image identity verification failed" >&2; exit 1; }
-printf 'IMAGE=%s\nIMAGE_REVISION=%s\nPLATFORM=%s\nBUILDX_ISOLATED=YES\n' "$IMAGE" "$revision" "$image_platform"
+image_id="$(docker image inspect "$IMAGE" --format '{{.Id}}')"
+printf 'IMAGE=%s\nIMAGE_ID=%s\nIMAGE_REVISION=%s\nPLATFORM=%s\nBUILDX_ISOLATED=YES\n' "$IMAGE" "$image_id" "$revision" "$image_platform"

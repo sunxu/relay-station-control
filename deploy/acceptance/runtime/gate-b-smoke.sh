@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-image="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}"
+image="${CONTROL_E2E_NODE_IMAGE:?set CONTROL_E2E_NODE_IMAGE}"
 node_port="${CONTROL_E2E_NODE_PORT:?set CONTROL_E2E_NODE_PORT}"
 node_password="${CONTROL_E2E_NODE_MANAGEMENT_PASSWORD:?set CONTROL_E2E_NODE_MANAGEMENT_PASSWORD}"
-expected_digest="sha256:46a4fa73b80974928978d104bbdf03a0c4f6db0e6ff457df823333e1050b27d8"
-expected_version="7.3.2"
-expected_commit="0b34a22fcaec392d39f710f3a8418595b491607d"
+expected_digest="${CONTROL_E2E_NODE_DIGEST:?set CONTROL_E2E_NODE_DIGEST}"
+expected_version="${CONTROL_E2E_NODE_VERSION:?set CONTROL_E2E_NODE_VERSION}"
+expected_commit="${CONTROL_E2E_NODE_COMMIT:?set full CONTROL_E2E_NODE_COMMIT}"
 
-actual_digest="$(docker image inspect "$image" --format '{{.Id}}')"
+actual_digest="$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null || true)"
 [[ "$actual_digest" == "$expected_digest" ]] || { echo "pinned_node_digest_mismatch" >&2; exit 1; }
 
 headers=""

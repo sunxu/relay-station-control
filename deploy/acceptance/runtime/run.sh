@@ -13,8 +13,19 @@ DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
 NODE_PORT="${ACCEPTANCE_NODE_PORT:-$((19317 + $$ % 500))}"
 EXPECTED_SHA="${EXPECTED_SHA:-$(git -C "$CONTROL_DIR" rev-parse HEAD)}"
+[[ -z "$(git -C "$CONTROL_DIR" status --porcelain)" ]] || { echo "DIRTY_SOURCE: candidate acceptance requires a clean source tree" >&2; exit 1; }
+[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "REVISION_MISMATCH: EXPECTED_SHA must be a 40-character candidate SHA" >&2; exit 2; }
+[[ "$(git -C "$CONTROL_DIR" rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "REVISION_MISMATCH: candidate SHA does not match HEAD" >&2; exit 1; }
 SHORT_SHA="${EXPECTED_SHA:0:12}"
 IMAGE="${ACCEPTANCE_IMAGE:-relay-station/control:acceptance-${SHORT_SHA}}"
+CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-}"
+CONTROL_E2E_NODE_DIGEST="${CONTROL_E2E_NODE_DIGEST:-}"
+CONTROL_E2E_NODE_VERSION="${CONTROL_E2E_NODE_VERSION:-}"
+CONTROL_E2E_NODE_COMMIT="${CONTROL_E2E_NODE_COMMIT:-}"
+[[ -n "$CONTROL_E2E_NODE_IMAGE" ]] || { echo "NODE_ARTIFACT_MISSING: set CONTROL_E2E_NODE_IMAGE" >&2; exit 1; }
+[[ "$CONTROL_E2E_NODE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "NODE_ARTIFACT_MISSING: set immutable CONTROL_E2E_NODE_DIGEST" >&2; exit 1; }
+[[ -n "$CONTROL_E2E_NODE_VERSION" ]] || { echo "NODE_ARTIFACT_MISSING: set CONTROL_E2E_NODE_VERSION" >&2; exit 1; }
+[[ "$CONTROL_E2E_NODE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "NODE_ARTIFACT_MISSING: set full CONTROL_E2E_NODE_COMMIT" >&2; exit 1; }
 CONTROL_CONTAINER="${PROJECT}-control-1"
 NODE_MANAGEMENT_PASSWORD="$(openssl rand -hex 32)"
 COMPOSE=(docker compose -p "$PROJECT" -f "$COMPOSE_FILE")
@@ -150,7 +161,7 @@ services:
       CONTROL_ACCOUNT_INVENTORY_POLL_START_GRACE: "${INVENTORY_POLL_START_GRACE}"
 YAML
 COMPOSE+=( -f "$OVERRIDE_FILE" )
-compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" "${COMPOSE[@]}" "$@"; }
+compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_IMAGE="$CONTROL_E2E_NODE_IMAGE" CONTROL_E2E_NODE_DIGEST="$CONTROL_E2E_NODE_DIGEST" CONTROL_E2E_NODE_VERSION="$CONTROL_E2E_NODE_VERSION" CONTROL_E2E_NODE_COMMIT="$CONTROL_E2E_NODE_COMMIT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" "${COMPOSE[@]}" "$@"; }
 wait_http() { local url="$1"; for _ in $(seq 1 60); do curl --noproxy '*' -ksSf --max-time 2 "$url" >/dev/null && return 0; sleep 1; done; return 1; }
 wait_node_ready() {
   local node_container="${PROJECT}-node-1" state health
@@ -175,15 +186,18 @@ ensure_candidate_image() {
     [[ -n "${ACCEPTANCE_IMAGE:-}" ]] && { echo "candidate_image_mismatch" >&2; exit 1; }
     local buildx_state
     buildx_state="$(mktemp -d /private/tmp/relay-control-buildx.XXXXXX)"
-    BUILDX_CONFIG_DIR="$buildx_state" EXPECTED_SHA="$EXPECTED_SHA" IMAGE="$IMAGE" ALLOW_DIRTY=1 "$ROOT/build-image.sh"
+    BUILDX_CONFIG_DIR="$buildx_state" EXPECTED_SHA="$EXPECTED_SHA" IMAGE="$IMAGE" "$ROOT/build-image.sh"
     rm -rf -- "$buildx_state"
     revision="$(image_revision "$IMAGE")"
   fi
-  [[ "$revision" == "$EXPECTED_SHA" ]] || { echo "candidate_image_mismatch" >&2; exit 1; }
+  [[ "$revision" == "$EXPECTED_SHA" ]] || { echo "REVISION_MISMATCH: candidate image revision does not match expected SHA" >&2; exit 1; }
+  RESOLVED_CONTROL_IMAGE_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
+  [[ -n "$RESOLVED_CONTROL_IMAGE_ID" ]] || { echo "IMAGE_RESOLUTION_FAILURE: candidate image is unavailable" >&2; exit 1; }
+  echo "CANDIDATE_IMAGE_ID=$RESOLVED_CONTROL_IMAGE_ID"
   echo "CANDIDATE_IMAGE_REVISION=PASS"
 }
 ensure_candidate_image
-EXPECTED_CONTROL_IMAGE_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}')"
+EXPECTED_CONTROL_IMAGE_ID="$RESOLVED_CONTROL_IMAGE_ID"
 echo "EXPECTED_CONTROL_IMAGE_ID=$EXPECTED_CONTROL_IMAGE_ID"
 compose up -d --wait postgres
 DATABASE_URL="postgres://relay_control_migrator:relay_control_migrator_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
@@ -220,7 +234,8 @@ wait_node_ready
 secret_status="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.Status}}' 2>/dev/null || true)"
 secret_exit="$(docker inspect "${PROJECT}-secret-init-1" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
 [[ "$secret_status" == "exited" && "$secret_exit" == "0" ]] || { echo "secret_init_failed" >&2; exit 1; }
-CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}" \
+CONTROL_E2E_NODE_IMAGE="$CONTROL_E2E_NODE_IMAGE" CONTROL_E2E_NODE_DIGEST="$CONTROL_E2E_NODE_DIGEST" \
+  CONTROL_E2E_NODE_VERSION="$CONTROL_E2E_NODE_VERSION" CONTROL_E2E_NODE_COMMIT="$CONTROL_E2E_NODE_COMMIT" \
   CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
   "$ROOT/gate-b-smoke.sh"
 compose up -d control

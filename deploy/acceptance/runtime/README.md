@@ -6,7 +6,7 @@
 
 `build-image.sh` 为每次构建创建 `/private/tmp` 下的临时 `BUILDX_CONFIG`，验证 `org.opencontainers.image.revision` 和 platform 后退出。它不修改 `~/.docker/buildx`。使用 `EXPECTED_SHA=<candidate> IMAGE=<tag> ./build-image.sh`。
 
-启动前 harness 必须验证 image 的 `org.opencontainers.image.revision` 与当前 expected SHA 完全一致。缺少 label、label 不匹配或显式指定的 stale image 都会 fail closed 为 `candidate_image_mismatch`；不会 fallback 到任意本地 image。默认 image tag 为 `relay-station/control:acceptance-<short-sha>`。
+启动前 harness 必须验证 image 的 `org.opencontainers.image.revision` 与当前 expected SHA 完全一致，并绑定已解析的本地 image ID；缺少 label、label 不匹配、image 不存在或显式指定的 stale image 都会 fail closed。正式 candidate 要求 source worktree clean；不会使用 dirty source 构建，也不会 fallback 到任意本地 image。Control 默认 image tag 为 `relay-station/control:acceptance-<short-sha>`，Node 必须由调用方显式提供 `CONTROL_E2E_NODE_IMAGE`、`CONTROL_E2E_NODE_DIGEST`、`CONTROL_E2E_NODE_VERSION` 和完整 `CONTROL_E2E_NODE_COMMIT`。
 
 ## Auth
 
