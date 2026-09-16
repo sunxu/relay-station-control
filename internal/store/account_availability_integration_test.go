@@ -55,9 +55,6 @@ func newAvailabilityFixture(t *testing.T, n int, migrationArgs ...string) *avail
 	if err = inventory.FinalizeFenced(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,created_at,reason,actor) VALUES($1,clock_timestamp()-interval '1 hour',clock_timestamp()-interval '2 hours','reconciliation','availability-test')`, f.node); err != nil {
-		t.Fatal(err)
-	}
 	if err = db.owner.QueryRow(ctx, `SELECT statement_timestamp()`).Scan(&f.now); err != nil {
 		t.Fatal(err)
 	}

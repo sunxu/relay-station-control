@@ -61,7 +61,7 @@ func newProblemOwnershipNodeGroup(
 			instance_id,display_name,node_type,driver_contract_version,
 			management_endpoint,reader_secret_ref
 		) VALUES ($1,'Ownership Test Node',$2,$3,$4,NULL)`,
-			nodeID, group.nodeType, group.contract, "https://node-"+nodeID.String()+".test"); err != nil {
+			nodeID, group.nodeType, group.contract, "http://node-"+nodeID.String()+".test"); err != nil {
 			t.Fatal(err)
 		}
 		group.nodes = append(group.nodes, nodeID)
