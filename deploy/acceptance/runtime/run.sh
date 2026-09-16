@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -41,6 +41,11 @@ printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-dis
 ENABLE_EMAIL="phase7-enable-${PROJECT}@example.invalid"
 ENABLE_SECRET_MARKER="PHASE7_ENABLE_SECRET_${PROJECT##*-}"
 printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":false}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
+REPLACE_EMAIL="phase7-replace-${PROJECT}@example.invalid"
+REPLACE_BASE_SECRET_MARKER="PHASE7_REPLACE_BASE_${PROJECT##*-}"
+REPLACE_SECRET_MARKER="PHASE7_REPLACE_SECRET_${PROJECT##*-}"
+printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replace-base-token","phase7_marker":"%s","disabled":false}\n' "$REPLACE_EMAIL" "$REPLACE_BASE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replace-base.json"
+printf '{"type":"antigravity","email":"%s","refresh_token":"phase7-disposable-replace-refresh-token","phase7_marker":"%s","status":"active","unavailable":false}\n' "$REPLACE_EMAIL" "$REPLACE_SECRET_MARKER" > "$RUNTIME_DIR/replace-credential.json"
 printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
@@ -90,8 +95,8 @@ chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"
 INVENTORY_LIFECYCLE_ENABLED="false"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]] && INVENTORY_POLL_ENABLED="true"
-[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" ]] && INVENTORY_POLL_ENABLED="true"
+[[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
@@ -109,6 +114,7 @@ services:
       CONTROL_JOB_RECONCILE_INTERVAL: "1s"
       CONTROL_JOB_DATABASE_BACKOFF: "1s"
       CONTROL_JOB_SHUTDOWN_GRACE: "3s"
+      CONTROL_ACCOUNT_INVENTORY_POLL_START_GRACE: "299s"
 YAML
 COMPOSE+=( -f "$OVERRIDE_FILE" )
 compose() { CONTROL_E2E_RUNTIME_DIR="$RUNTIME_DIR" CONTROL_E2E_IMAGE="$IMAGE" CONTROL_E2E_CONTAINER="$CONTROL_CONTAINER" CONTROL_E2E_PORT="$HTTP_PORT" CONTROL_E2E_DB_PORT="$DB_PORT" CONTROL_E2E_TLS_PORT="$TLS_PORT" CONTROL_E2E_NODE_PORT="$NODE_PORT" CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-gate4}" CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" "${COMPOSE[@]}" "$@"; }
@@ -303,6 +309,105 @@ if [[ "$MODE" == "disable" ]]; then
   echo "DISABLE_RECEIPT=PASS"
   echo "DISABLE_AUDIT=PASS"
   echo "DISABLE_NATIVE_PATCHES=$native_patch_count"
+  exit 0
+fi
+if [[ "$MODE" == "replace" || "$MODE" == "replace-discovery" ]]; then
+  [[ "$MODE" == "replace-discovery" ]] && export ACCEPTANCE_REPLACE_DISCOVERY_ONLY=1
+  export ACCEPTANCE_REPLACE_EMAIL="$REPLACE_EMAIL"
+  export ACCEPTANCE_REPLACE_CREDENTIAL_FILE="$RUNTIME_DIR/replace-credential.json"
+  export ACCEPTANCE_REPLACE_SECRET_MARKER="$REPLACE_SECRET_MARKER"
+  export ACCEPTANCE_NODE_PORT="$NODE_PORT"
+  export ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD"
+  export ACCEPTANCE_REPLACE_EVIDENCE_FILE="$RUNTIME_DIR/replace-evidence.json"
+  export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
+  export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
+  export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  mkdir -p "$RUNTIME_DIR/logs"
+  if ! CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- account-operations-replace.spec.ts; then
+    compose logs --no-color control node node-counter >&2 || true
+    exit 1
+  fi
+  if [[ "$MODE" == "replace-discovery" ]]; then
+    discovery_count() {
+      compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'
+    }
+    [[ "$(discovery_count "SELECT count(*) FROM account_inventory_poll_runs WHERE instance_id='00000000-0000-4000-8000-000000000047' AND status='finalized'")" -ge 1 ]] || { echo "replace_discovery_poll_run_missing" >&2; exit 1; }
+    [[ "$(discovery_count "SELECT count(*) FROM account_inventory_snapshot_items WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$REPLACE_EMAIL'")" -ge 1 ]] || { echo "replace_discovery_snapshot_missing" >&2; exit 1; }
+    [[ "$(discovery_count "SELECT count(*) FROM account_inventory WHERE instance_id='00000000-0000-4000-8000-000000000047' AND provider='antigravity' AND normalized_email='$REPLACE_EMAIL' AND lifecycle='present'")" == 1 ]] || { echo "replace_discovery_inventory_missing" >&2; exit 1; }
+    echo "REPLACE_DISCOVERY=PASS"
+    echo "REPLACE_DISCOVERY_POLL_RUN=PASS"
+    echo "REPLACE_DISCOVERY_SNAPSHOT=PASS"
+    echo "REPLACE_DISCOVERY_INVENTORY_DB=PASS"
+    echo "REPLACE_HTTP=NOT_RUN"
+    echo "REPLACE_NATIVE_POSTS=0"
+    exit 0
+  fi
+  compose logs --no-color control node node-counter > "$RUNTIME_DIR/logs/compose.log"
+  command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/replace-evidence.json")"
+  [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "replace_evidence_missing_command_id" >&2; exit 1; }
+  psql_count() { compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "$1" | tr -d '\r\n[:space:]'; }
+  [[ "$(psql_count "SELECT count(*) FROM admin_command_registry WHERE command_id='$command_id' AND command_kind='account.replace_existing'")" == 1 ]] || { echo "replace_registry_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$command_id' AND operation_kind='replace_existing' AND account_key='antigravity:$REPLACE_EMAIL' AND execution_state='remote_applied'")" == 1 ]] || { echo "replace_operation_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$command_id'")" == 1 ]] || { echo "replace_receipt_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$command_id'")" == 1 ]] || { echo "replace_audit_mismatch" >&2; exit 1; }
+  native_post_count="$(grep -Ec 'POST /v0/management/auth-files [0-9]{3}$' "$RUNTIME_DIR/logs/compose.log" || true)"
+  [[ "$native_post_count" == 1 ]] || { echo "replace_native_post_count_mismatch:${native_post_count:-0}" >&2; exit 1; }
+  scan_replace_secret() {
+    local category="$1" value="$2"
+    [[ -n "$value" ]] || return 0
+    if rg -l -F -- "$value" \
+      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" \
+      "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" \
+      "$RUNTIME_DIR/replace-evidence.json" >/dev/null 2>&1; then
+      echo "replace_secret_artifact_match category=$category location=<redacted>" >&2
+      return 1
+    fi
+  }
+  scan_replace_secret "replacement-marker" "$REPLACE_SECRET_MARKER"
+  scan_replace_secret "base-marker" "$REPLACE_BASE_SECRET_MARKER"
+  scan_replace_secret "replacement-refresh-token" "phase7-disposable-replace-refresh-token"
+  scan_replace_secret "base-token" "phase7-disposable-replace-base-token"
+  scan_replace_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
+  scan_replace_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
+  scan_replace_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
+  scan_replace_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
+  scan_replace_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
+  scan_replace_binary_secret() {
+    local category="$1" secret_file="$2"
+    python3 - "$category" "$secret_file" \
+      "$RUNTIME_DIR/logs" "$RUNTIME_DIR/node/logs" "$RUNTIME_DIR/playwright-output" \
+      "$RUNTIME_DIR/browser-console.log" "$RUNTIME_DIR/acceptance-output.log" \
+      "$RUNTIME_DIR/replace-evidence.json" <<'PY'
+import pathlib
+import sys
+
+category, secret_file, *targets = sys.argv[1:]
+needle = pathlib.Path(secret_file).read_bytes()
+matches = 0
+for target in targets:
+    path = pathlib.Path(target)
+    paths = path.rglob("*") if path.is_dir() else (path,)
+    for candidate in paths:
+        if candidate.is_file():
+            try:
+                matches += candidate.read_bytes().count(needle)
+            except OSError:
+                pass
+if matches:
+    print(f"replace_secret_artifact_match category={category} location=<redacted>", file=sys.stderr)
+    raise SystemExit(1)
+PY
+  }
+  scan_replace_binary_secret "intent-key" "$RUNTIME_DIR/account-operation-intent-key"
+  echo "REPLACE_HTTP=PASS"
+  echo "REPLACE_POSTGRES=PASS"
+  echo "REPLACE_RECEIPT=PASS"
+  echo "REPLACE_AUDIT=PASS"
+  echo "REPLACE_NATIVE_POSTS=$native_post_count"
+  echo "REPLACE_NODE=PASS"
+  echo "REPLACE_INVENTORY=PASS"
+  echo "REPLACE_FILE_LIFECYCLE=PASS"
+  echo "REPLACE_SECRET_SCAN=PASS"
   exit 0
 fi
 if [[ "$MODE" == "enable-fixture" ]]; then
