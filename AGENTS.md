@@ -141,6 +141,19 @@ Do not use arbitrary sleeps or blind retries to hide races.
 
 See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
 
+## Acceptance & E2E Rules
+
+- Follow `docs/testing/ACCEPTANCE_E2E_POLICY.md` for the detailed workflow.
+- Prove behavior at the lowest owning layer; keep Browser E2E focused on real user paths and unique cross-layer evidence.
+- Check the frozen contract before asserting or waiting for a state. Keep execution truth separate from Inventory observation.
+- Build and verify the production-like stack and runtime/artifact provenance before debugging behavior.
+- Diagnose failures layer-by-layer, classify them before changing production code, and stop at the earliest blocker.
+- Keep waits bounded (normally no more than 30 seconds per async business layer); never hide failures with sleeps, blind retries, or timeout increases.
+- Keep corrective rounds narrow and reuse proven harness infrastructure, real observers, real mutation evidence, and one shared secret scanner.
+- Before a multi-case Browser suite, freeze every fixture's initial state, owner/setup, cross-case dependencies, and Inventory dependency. Cross-case mutable business dependencies are forbidden.
+- Every focused case must pass independently before the suite; run 1 must pass before 3/3 repeatability.
+- Do not casually modify pinned upstream/runtime code or re-freeze artifacts for unrelated findings; compare baselines before calling a failure a regression.
+
 ## 关键边界
 
 - PostgreSQL 是 Control 持久状态的唯一真相；不得用进程内状态伪装持久成功。
