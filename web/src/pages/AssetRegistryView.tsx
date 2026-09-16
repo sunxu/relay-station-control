@@ -52,13 +52,28 @@ type NodeFormValues = {
   management_endpoint: string;
   node_type: string;
   driver_contract_version: string;
-  capabilities: string;
+  capabilities: NodeCapability[];
   reader_secret_ref?: string;
   clear_secret?: boolean;
 };
 
 function commandId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function instanceId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+function selectableDrivers(drivers: DriverAsset[] | undefined) {
+  return [...(drivers ?? [])]
+    .filter((driver) => driver.status === "active")
+    .sort((left, right) => left.nodeType.localeCompare(right.nodeType) || left.driverContractVersion.localeCompare(right.driverContractVersion));
 }
 
 function gatewayError(error: unknown) {
@@ -261,6 +276,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 	const nodeDetailRequestRef = useRef(0);
 	const commandIdsRef = useRef(new Map<string, string>());
 	const [nodeForm] = Form.useForm<NodeFormValues>();
+  const nodeTypeValue = Form.useWatch("node_type", nodeForm);
+  const driverContractValue = Form.useWatch("driver_contract_version", nodeForm);
   const cursor = cursorHistory.at(-1);
   const filters = useMemo<NodeFilters>(() => ({
 		lifecycle,
@@ -274,6 +291,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
   const environment = useEnvironmentAsset(api);
   const gateway = useGatewayAsset(api);
   const drivers = useDriverAssets(api);
+  const activeDrivers = useMemo(() => selectableDrivers(drivers.data), [drivers.data]);
+  const nodeTypeOptions = useMemo(() => [...new Set(activeDrivers.map((driver) => driver.nodeType))].map((value) => ({ value, label: value })), [activeDrivers]);
+  const contractOptions = useMemo(() => activeDrivers.filter((driver) => driver.nodeType === nodeTypeValue).map((driver) => ({ value: driver.driverContractVersion, label: driver.driverContractVersion })), [activeDrivers, nodeTypeValue]);
+  const selectedDriver = activeDrivers.find((driver) => driver.nodeType === nodeTypeValue && driver.driverContractVersion === driverContractValue);
+  const nodeRegistrationDisabled = drivers.isPending || Boolean(drivers.error) || activeDrivers.length === 0;
   const policy = useCurrentProviderPolicy(api, policyScope);
   const nodes = useNodeAssets(api, filters);
   const errors = [environment.error, gateway.error, drivers.error, policy.error, nodes.error];
@@ -291,27 +313,38 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
     });
   }, [drivers.data, policyScope]);
 
-  const resetCursor = () => setCursorHistory([undefined]);
+	const resetCursor = () => setCursorHistory([undefined]);
 	const openNodeForm = (mode: "register" | "edit" | "replace", node?: NodeAsset) => {
+		const inheritedDriver = node && activeDrivers.find((driver) => driver.nodeType === node.nodeType && driver.driverContractVersion === node.driverContractVersion);
+		const initialDriver = inheritedDriver ?? activeDrivers[0];
 		setSelectedNode(node);
 		setNodeMessage(undefined);
 		setNodeModal(mode);
-		nodeForm.setFieldsValue(node ? {
+		nodeForm.setFieldsValue(mode === "edit" && node ? {
 			display_name: node.displayName,
 			management_endpoint: node.managementEndpoint,
 			node_type: node.nodeType,
 			driver_contract_version: node.driverContractVersion,
-			capabilities: node.capabilities.join(","),
+			capabilities: node.capabilities as NodeCapability[],
 			new_instance_id: undefined,
 			reader_secret_ref: undefined,
 			clear_secret: false,
-		} : { display_name: "", management_endpoint: "http://", node_type: "", driver_contract_version: "", capabilities: "", new_instance_id: "" });
+		} : {
+			display_name: node?.displayName ?? "",
+			management_endpoint: node?.managementEndpoint ?? "http://",
+			node_type: initialDriver?.nodeType ?? "",
+			driver_contract_version: initialDriver?.driverContractVersion ?? "",
+			capabilities: (initialDriver?.capabilities ?? []) as NodeCapability[],
+			new_instance_id: instanceId(),
+			reader_secret_ref: undefined,
+			clear_secret: false,
+		});
 	};
 	const submitNode = async (values: NodeFormValues) => {
 		if (!nodeModal) return;
 		setNodeBusy(true);
 		try {
-			const capabilities = (values.capabilities ?? "").split(",").map((value) => value.trim()).filter(Boolean) as NodeCapability[];
+			const capabilities = values.capabilities;
 			if (nodeModal === "register" && api.registerNode) {
 				await api.registerNode({ command_id: commandId(), new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, node_type: values.node_type, driver_contract_version: values.driver_contract_version, capabilities, ...(values.reader_secret_ref ? { reader_secret_ref: values.reader_secret_ref } : {}) }, csrfToken);
 			} else if (nodeModal === "edit" && selectedNode && api.editNode) {
@@ -443,7 +476,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			<Button size="small" onClick={() => void showNodeDetail(node)}>详情</Button>
 			{node.lifecycleStatus === "active" && <>
 				<Button size="small" onClick={() => openNodeForm("edit", node)}>编辑</Button>
-				<Button size="small" onClick={() => openNodeForm("replace", node)}>Replace</Button>
+				<Button size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>Replace</Button>
 				<Popconfirm title="确认退役此 Node？" onConfirm={() => void retireNode(node)} okText="退役" cancelText="取消"><Button size="small" danger disabled={nodeBusy}>Retire</Button></Popconfirm>
 			</>}
 		</Space> },
@@ -564,8 +597,9 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
               style={{ minWidth: 180 }}
             />
           </Space>
-			{lifecycle === "active" && api.registerNode && <Button type="primary" onClick={() => openNodeForm("register")}>登记 Node</Button>}
+			{lifecycle === "active" && api.registerNode && <Button type="primary" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("register")}>登记 Node</Button>}
 			</Flex>
+			{drivers.error && <Alert type="warning" showIcon message="Driver 信息不可用，无法登记 Node" />}
           <ResourceFrame loading={nodes.isPending} error={nodes.error} retry={() => void nodes.refetch()}>
             {nodes.data && nodes.data.items.length > 0 ? (
               <Table<NodeAsset> rowKey="instanceId" size="small" scroll={{ x: 1260 }} pagination={false} dataSource={nodes.data.items} columns={columns} />
@@ -580,13 +614,13 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
         </Flex>
 		<Modal open={Boolean(nodeModal)} title={nodeModal === "register" ? "登记 Node" : nodeModal === "edit" ? "编辑 Node" : "Replace Node"} okText="保存" cancelText="取消" confirmLoading={nodeBusy} onCancel={() => setNodeModal(undefined)} onOk={() => void nodeForm.submit()} destroyOnHidden>
 			<Form form={nodeForm} layout="vertical" onFinish={(values) => void submitNode(values)}>
-				{nodeModal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" rules={[{ required: true }]}><Input placeholder="UUID" /></Form.Item>}
-				<Form.Item name="display_name" label="显示名称" rules={[{ required: true }]}><Input maxLength={100} /></Form.Item>
-				<Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://node:8317" /></Form.Item>
+				{nodeModal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" extra="自动生成"><Input data-testid={nodeModal === "register" ? "node-register-instance-id" : "node-replace-instance-id"} readOnly /></Form.Item>}
+				<Form.Item name="display_name" label="显示名称" rules={[{ required: true }]}><Input data-testid="node-form-display-name" maxLength={100} /></Form.Item>
+				<Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input data-testid="node-form-management-endpoint" placeholder="http://node:8317" /></Form.Item>
 				{nodeModal !== "edit" && <>
-					<Form.Item name="node_type" label="Node 类型" rules={[{ required: true }]}><Input /></Form.Item>
-					<Form.Item name="driver_contract_version" label="Driver 合约" rules={[{ required: true }]}><Input /></Form.Item>
-					<Form.Item name="capabilities" label="Capabilities（逗号分隔）" rules={[{ required: true }]}><Input /></Form.Item>
+					<Form.Item name="node_type" label="Node 类型" rules={[{ required: true }]}><Select data-testid="node-register-node-type" options={nodeTypeOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === value); nodeForm.setFieldsValue({ driver_contract_version: next?.driverContractVersion ?? "", capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
+					<Form.Item name="driver_contract_version" label="Driver 合约" rules={[{ required: true }]}><Select data-testid="node-register-driver-contract" options={contractOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === nodeTypeValue && driver.driverContractVersion === value); nodeForm.setFieldsValue({ capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
+					<Form.Item name="capabilities" label="Capabilities" rules={[{ required: true }]}><Select data-testid="node-register-capabilities" mode="multiple" options={(selectedDriver?.capabilities ?? []).map((value) => ({ value, label: value }))} /></Form.Item>
 				</>}
 				<Form.Item name="reader_secret_ref" label="Reader Secret reference（可选）"><Input.Password autoComplete="new-password" /></Form.Item>
 				{nodeModal === "edit" && <Form.Item name="clear_secret" valuePropName="checked"><Checkbox>清除已保存的 Secret reference</Checkbox></Form.Item>}

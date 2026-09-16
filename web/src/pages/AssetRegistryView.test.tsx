@@ -15,6 +15,13 @@ const drivers: DriverAsset[] = [{
   capabilities: ["management_health_read", "management_account_inventory_read"],
 }];
 
+const catalogDrivers: DriverAsset[] = [
+  ...drivers,
+  { nodeType: "custom-node", driverContractVersion: "contract-b", displayName: "Custom B", status: "active", capabilities: ["cap-b"] },
+  { nodeType: "custom-node", driverContractVersion: "contract-a", displayName: "Custom A", status: "active", capabilities: ["cap-a", "cap-shared"] },
+  { nodeType: "retired-node", driverContractVersion: "retired", displayName: "Retired", status: "retired", capabilities: ["cap-retired"] },
+];
+
 const firstNode: NodeAsset = {
   instanceId: "00000000-0000-4000-8000-000000000101",
   displayName: "Singapore Node",
@@ -248,27 +255,70 @@ describe("asset registry read-only view", () => {
 		vi.mocked(api.nodes).mockResolvedValue({ items: [], nextCursor: null });
 		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
 
-		fireEvent.click(await screen.findByRole("button", { name: "登记 Node" }));
-		fireEvent.change(await screen.findByLabelText("新 Instance ID"), { target: { value: "00000000-0000-4000-8000-000000000102" } });
+		await waitFor(() => expect(screen.getByRole("button", { name: "登记 Node" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "登记 Node" }));
 		fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "Docker Node" } });
 		fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "http://node:8317" } });
-		fireEvent.change(screen.getByRole("textbox", { name: "Node 类型" }), { target: { value: "cliproxyapi" } });
-		fireEvent.change(screen.getByLabelText("Driver 合约"), { target: { value: "v1" } });
-		fireEvent.change(screen.getByLabelText("Capabilities（逗号分隔）"), { target: { value: "management_health_read" } });
 		fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
-		await waitFor(() => expect(api.registerNode).toHaveBeenCalledWith(expect.objectContaining({ management_endpoint: "http://node:8317" }), "csrf-proof"));
+		await waitFor(() => expect(api.registerNode).toHaveBeenCalledWith(expect.objectContaining({ management_endpoint: "http://node:8317", node_type: "cliproxyapi", driver_contract_version: "v1", capabilities: drivers[0]!.capabilities }), "csrf-proof"));
 
 		vi.mocked(api.registerNode).mockClear();
-		fireEvent.click(await screen.findByRole("button", { name: "登记 Node" }));
-		fireEvent.change(await screen.findByLabelText("新 Instance ID"), { target: { value: "00000000-0000-4000-8000-000000000103" } });
+		await waitFor(() => expect(screen.getByRole("button", { name: "登记 Node" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "登记 Node" }));
 		fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "HTTPS Node" } });
 		fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "https://node:8317" } });
-		fireEvent.change(screen.getByRole("textbox", { name: "Node 类型" }), { target: { value: "cliproxyapi" } });
-		fireEvent.change(screen.getByLabelText("Driver 合约"), { target: { value: "v1" } });
-		fireEvent.change(screen.getByLabelText("Capabilities（逗号分隔）"), { target: { value: "management_health_read" } });
 		fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
 		expect(await screen.findByText("仅支持 http://")).toBeInTheDocument();
 		expect(api.registerNode).not.toHaveBeenCalled();
+	});
+
+	it("uses Driver Catalog values and keeps the generated UUID stable across a failed submit", async () => {
+		const api = makeApi();
+		api.registerNode = vi.fn().mockRejectedValue(new Error("retry"));
+		vi.mocked(api.drivers).mockResolvedValue(catalogDrivers);
+		vi.mocked(api.nodes).mockResolvedValue({ items: [], nextCursor: null });
+		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+
+		await waitFor(() => expect(screen.getByRole("button", { name: "登记 Node" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "登记 Node" }));
+		const instanceId = screen.getByTestId("node-register-instance-id") as HTMLInputElement;
+		expect(instanceId.value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+		expect(instanceId).toHaveAttribute("readonly");
+
+		fireEvent.mouseDown(screen.getByTestId("node-register-node-type"));
+		fireEvent.click(await screen.findByText("custom-node", { selector: ".ant-select-item-option-content" }));
+		fireEvent.mouseDown(screen.getByTestId("node-register-driver-contract"));
+		expect(await screen.findByText("contract-a", { selector: ".ant-select-item-option-content" })).toBeInTheDocument();
+		expect(screen.getByText("contract-b", { selector: ".ant-select-item-option-content" })).toBeInTheDocument();
+		fireEvent.click(screen.getByText("contract-a", { selector: ".ant-select-item-option-content" }));
+		fireEvent.mouseDown(screen.getByTestId("node-register-capabilities"));
+		expect(await screen.findByText("cap-a", { selector: ".ant-select-item-option-content" })).toBeInTheDocument();
+		expect(screen.queryByText("cap-b", { selector: ".ant-select-item-option-content" })).not.toBeInTheDocument();
+		fireEvent.keyDown(screen.getByTestId("node-register-capabilities"), { key: "Escape" });
+		fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "Catalog Node" } });
+		fireEvent.change(screen.getByLabelText("Management endpoint"), { target: { value: "http://node:8317" } });
+		fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+		await waitFor(() => expect(api.registerNode).toHaveBeenCalledWith(expect.objectContaining({ new_instance_id: instanceId.value, node_type: "custom-node", driver_contract_version: "contract-a", capabilities: ["cap-a", "cap-shared"] }), "csrf-proof"));
+		expect(screen.getByTestId("node-register-instance-id")).toHaveValue(instanceId.value);
+	});
+
+	it("resets contract and capabilities when Node Type changes", async () => {
+		const api = makeApi();
+		api.registerNode = vi.fn().mockResolvedValue(undefined);
+		vi.mocked(api.drivers).mockResolvedValue(catalogDrivers);
+		vi.mocked(api.nodes).mockResolvedValue({ items: [], nextCursor: null });
+		render(<AssetRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+		await waitFor(() => expect(screen.getByRole("button", { name: "登记 Node" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "登记 Node" }));
+		fireEvent.mouseDown(screen.getByTestId("node-register-node-type"));
+		fireEvent.click(await screen.findByText("custom-node", { selector: ".ant-select-item-option-content" }));
+		fireEvent.mouseDown(screen.getByTestId("node-register-driver-contract"));
+		fireEvent.click(await screen.findByText("contract-b", { selector: ".ant-select-item-option-content" }));
+		fireEvent.mouseDown(screen.getByTestId("node-register-node-type"));
+		fireEvent.click(await screen.findByText("cliproxyapi", { selector: ".ant-select-item-option-content" }));
+		expect(screen.getByTestId("node-register-driver-contract")).toHaveTextContent("v1");
+		expect(screen.getByTestId("node-register-capabilities")).toHaveTextContent("management_health_read");
+		expect(screen.getByTestId("node-register-capabilities")).not.toHaveTextContent("cap-b");
 	});
 
 	it("runs probes only after explicit clicks and confirms immediate disable", async () => {

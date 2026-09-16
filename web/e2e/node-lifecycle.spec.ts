@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
 const firstID = "10000000-0000-4000-8000-000000000001";
-const replacementID = "10000000-0000-4000-8000-000000000002";
 const secretReference = "vault://e2e/NODE-SECRET-MUST-NOT-RENDER";
 
 const session = {
@@ -41,6 +40,7 @@ function node(instance_id: string, display_name: string, revision: string, lifec
 test("authenticated administrator uses Node lifecycle and explicit Stage 3 controls", async ({ page, baseURL }) => {
   type NodeFixture = ReturnType<typeof node>;
   let current: NodeFixture | undefined = node(firstID, "Primary Node", "1");
+  let replacementID: string | undefined;
   const history = new Map<string, NodeFixture>();
   const requests: string[] = [];
   const browserRequests: string[] = [];
@@ -119,6 +119,7 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
       if (!current) return json({ code: "asset_not_found" }, 404);
       if (mutation[2] === "replace") {
         const body = request.postDataJSON() as { new_instance_id: string; display_name: string };
+        replacementID = body.new_instance_id;
         const retired = { ...current, lifecycle_status: "retired" as const, retired_at: "2026-09-13T00:03:00Z", retired_by: session.administrator.id, retire_reason: "replacement" };
         history.set(retired.instance_id, retired);
         current = node(body.new_instance_id, body.display_name, "1");
@@ -157,13 +158,15 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   await expect(activeDetail).toBeHidden();
 
   await card.getByRole("button", { name: /编\s*辑/ }).click();
-  await page.getByLabel("显示名称").fill("Edited Node");
+  await page.getByTestId("node-form-display-name").fill("Edited Node");
   await page.getByRole("button", { name: /保\s*存/ }).click();
   await expect(card.getByText("Edited Node")).toBeVisible();
 
   await card.getByRole("button", { name: "Replace" }).click();
-  await page.getByLabel("新 Instance ID").fill(replacementID);
-  await page.getByLabel("显示名称").fill("Replacement Node");
+  const replacementInstance = page.getByTestId("node-replace-instance-id");
+  await expect(replacementInstance).toHaveAttribute("readonly");
+  await expect(replacementInstance).toHaveValue(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  await page.getByTestId("node-form-display-name").fill("Replacement Node");
   await page.getByRole("button", { name: /保\s*存/ }).click();
   await expect(card.getByText("Replacement Node")).toBeVisible();
 
@@ -172,7 +175,7 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   await expect(card.getByText("Edited Node")).toBeVisible();
   await card.getByRole("button", { name: /详\s*情/ }).click();
   const detailDialog = page.getByLabel("Node 详情");
-  await expect(detailDialog.getByText(replacementID, { exact: true })).toBeVisible();
+  await expect(detailDialog.getByText(replacementID!, { exact: true })).toBeVisible();
   await expect(detailDialog.getByText(firstID, { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Retire" })).toHaveCount(0);
   await expect(card.getByRole("button", { name: "Health" })).toHaveCount(0);
