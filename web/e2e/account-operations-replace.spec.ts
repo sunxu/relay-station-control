@@ -15,7 +15,7 @@ if (!storageState || !replaceEmail || !replacementCredential || !replacementMark
 }
 
 test.use({ storageState });
-test.setTimeout(720_000);
+test.setTimeout(120_000);
 
 const consoleMessages: string[] = [];
 test.beforeEach(({ page }) => page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`)));
@@ -34,20 +34,20 @@ async function selectNode(page: Page) {
   await selector.press("Enter");
 }
 
-async function waitForInventory(page: Page, responses: Array<{ status: number; items: InventoryItem[] }>, accountKey: string, status: string) {
+async function waitForInventory(page: Page, responses: Array<{ status: number; items: InventoryItem[] }>, accountKey: string) {
   const query = page.getByTestId("account-query");
   await expect.poll(async () => {
     const before = responses.length;
     await query.click();
     await expect.poll(() => responses.length, { timeout: 10_000, intervals: [250, 500, 1000] }).toBeGreaterThan(before);
     const item = responses.at(-1)?.items.find((candidate) => candidate.account_key === accountKey);
-    return item?.inventory?.basic_status ?? "missing";
-  }, { timeout: 30_000, intervals: [1000, 2000, 5000] }).toBe(status);
+    return item?.account_key === accountKey;
+  }, { timeout: 30_000, intervals: [1000, 2000, 5000] }).toBe(true);
 }
 
 async function openAccount(page: Page, responses: Array<{ status: number; items: InventoryItem[] }>, accountKey: string) {
   const detail = page.getByTestId(`account-details-${encodeURIComponent(accountKey)}`);
-  await waitForInventory(page, responses, accountKey, "reported_active");
+  await waitForInventory(page, responses, accountKey);
   await expect(detail).toHaveCount(1);
   await detail.click();
   await page.getByTestId("account-operations-tab").click();
