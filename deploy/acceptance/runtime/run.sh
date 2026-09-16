@@ -67,28 +67,61 @@ openssl rand -out "$RUNTIME_DIR/account-operation-intent-key" 32
 printf '%s' "$NODE_MANAGEMENT_PASSWORD" > "$RUNTIME_DIR/node-management-key"
 UPLOAD_EMAIL="phase7-${PROJECT##*-}@example.invalid"
 UPLOAD_SECRET_MARKER="PHASE7_E2E_SECRET_${PROJECT##*-}"
-printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
 mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
 DISABLE_EMAIL="phase7-disable-${PROJECT}@example.invalid"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-disable-token"}\n' "$DISABLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-disable.json"
 ENABLE_EMAIL="phase7-enable-${PROJECT}@example.invalid"
 ENABLE_SECRET_MARKER="PHASE7_ENABLE_SECRET_${PROJECT##*-}"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":true}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
 REPLAY_EMAIL="phase7-replay-${PROJECT}@example.invalid"
 REPLAY_SECRET_MARKER="PHASE7_REPLAY_SECRET_${PROJECT##*-}"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replay-token","phase7_marker":"%s","disabled":false}\n' "$REPLAY_EMAIL" "$REPLAY_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replay.json"
 REPLACE_EMAIL="phase7-replace-${PROJECT}@example.invalid"
 REPLACE_BASE_SECRET_MARKER="PHASE7_REPLACE_BASE_${PROJECT##*-}"
 REPLACE_SECRET_MARKER="PHASE7_REPLACE_SECRET_${PROJECT##*-}"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replace-base-token","phase7_marker":"%s","disabled":false}\n' "$REPLACE_EMAIL" "$REPLACE_BASE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replace-base.json"
-printf '{"type":"antigravity","email":"%s","refresh_token":"phase7-disposable-replace-refresh-token","phase7_marker":"%s","status":"active","unavailable":false}\n' "$REPLACE_EMAIL" "$REPLACE_SECRET_MARKER" > "$RUNTIME_DIR/replace-credential.json"
 REMOVE_EMAIL="phase7-remove-${PROJECT}@example.invalid"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-remove-token","disabled":false}\n' "$REMOVE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-remove.json"
 OVERRIDE_LIFECYCLE_EMAIL="phase7-override-lifecycle-${PROJECT}@example.invalid"
 OVERRIDE_SAME_EMAIL="phase7-override-same-${PROJECT}@example.invalid"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-lifecycle-token","disabled":false}\n' "$OVERRIDE_LIFECYCLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-lifecycle.json"
-printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-same-token","disabled":false}\n' "$OVERRIDE_SAME_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-same.json"
-printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
+setup_upload_fixture() {
+  printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
+}
+setup_upload_seed_fixture() {
+  printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
+}
+setup_disable_fixture() {
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-disable-token"}\n' "$DISABLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-disable.json"
+}
+setup_enable_fixture() {
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":true}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
+}
+setup_replay_fixture() {
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replay-token","phase7_marker":"%s","disabled":false}\n' "$REPLAY_EMAIL" "$REPLAY_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replay.json"
+}
+setup_replace_fixture() {
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replace-base-token","phase7_marker":"%s","disabled":false}\n' "$REPLACE_EMAIL" "$REPLACE_BASE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replace-base.json"
+  printf '{"type":"antigravity","email":"%s","refresh_token":"phase7-disposable-replace-refresh-token","phase7_marker":"%s","status":"active","unavailable":false}\n' "$REPLACE_EMAIL" "$REPLACE_SECRET_MARKER" > "$RUNTIME_DIR/replace-credential.json"
+}
+setup_remove_fixture() {
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-remove-token","disabled":false}\n' "$REMOVE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-remove.json"
+}
+setup_override_fixtures() {
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-lifecycle-token","disabled":false}\n' "$OVERRIDE_LIFECYCLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-lifecycle.json"
+  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-same-token","disabled":false}\n' "$OVERRIDE_SAME_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-same.json"
+}
+case "$MODE" in
+  upload)
+    setup_upload_fixture
+    setup_upload_seed_fixture
+    ;;
+  security-replay)
+    setup_disable_fixture
+    setup_replay_fixture
+    setup_upload_fixture
+    ;;
+  disable) setup_disable_fixture ;;
+  enable-fixture|enable) setup_enable_fixture ;;
+  replace|replace-discovery) setup_replace_fixture ;;
+  remove) setup_remove_fixture ;;
+  override) setup_override_fixtures ;;
+  auth|startup|internal|all) ;;
+esac
 cat > "$RUNTIME_DIR/node/config.yaml" <<YAML
 host: "0.0.0.0"
 port: 8317
