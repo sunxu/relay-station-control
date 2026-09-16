@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const disableEmail = process.env.ACCEPTANCE_DISABLE_EMAIL;
 const evidenceFile = process.env.ACCEPTANCE_DISABLE_EVIDENCE_FILE;
-if (!storageState || !disableEmail || !evidenceFile) throw new Error("Disable acceptance environment is incomplete");
 test.use({ storageState });
 test.setTimeout(480_000);
+test.beforeEach(() => requireAcceptanceEnv("disable", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_DISABLE_EMAIL", "ACCEPTANCE_DISABLE_EVIDENCE_FILE"]));
 
 async function openAccount(page: Page, accountKey: string) {
   const detail = page.getByTestId(`account-details-${encodeURIComponent(accountKey)}`);

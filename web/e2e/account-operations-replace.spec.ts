@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const replaceEmail = process.env.ACCEPTANCE_REPLACE_EMAIL;
@@ -10,12 +11,9 @@ const nodePassword = process.env.ACCEPTANCE_NODE_MANAGEMENT_PASSWORD;
 const evidenceFile = process.env.ACCEPTANCE_REPLACE_EVIDENCE_FILE;
 const browserConsoleFile = process.env.ACCEPTANCE_BROWSER_CONSOLE_FILE;
 const discoveryOnly = process.env.ACCEPTANCE_REPLACE_DISCOVERY_ONLY === "1";
-if (!storageState || !replaceEmail || !replacementCredential || !replacementMarker || !nodePort || !nodePassword || !evidenceFile || !browserConsoleFile) {
-  throw new Error("Replace acceptance environment is incomplete");
-}
-
 test.use({ storageState });
 test.setTimeout(120_000);
+test.beforeEach(() => requireAcceptanceEnv("replace", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_REPLACE_EMAIL", "ACCEPTANCE_REPLACE_CREDENTIAL_FILE", "ACCEPTANCE_REPLACE_SECRET_MARKER", "ACCEPTANCE_NODE_PORT", "ACCEPTANCE_NODE_MANAGEMENT_PASSWORD", "ACCEPTANCE_REPLACE_EVIDENCE_FILE", "ACCEPTANCE_BROWSER_CONSOLE_FILE"]));
 
 const consoleMessages: string[] = [];
 test.beforeEach(({ page }) => page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`)));

@@ -7,7 +7,7 @@ RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 OVERRIDE_FILE=""
 PROJECT="${ACCEPTANCE_COMPOSE_PROJECT:-relay-control-harness-$$}"
 MODE="${1:-all}"
-[[ "$MODE" == "all" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" || "$MODE" == "security-replay" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove|override|security-replay]" >&2; exit 2; }
+[[ "$MODE" == "all" || "$MODE" == "internal" || "$MODE" == "auth" || "$MODE" == "startup" || "$MODE" == "upload" || "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" || "$MODE" == "security-replay" ]] || { echo "usage: ACCEPTANCE_RUNTIME_DIR=/external/path $0 [all|internal|auth|startup|upload|disable|enable-fixture|enable|replace|replace-discovery|remove|override|security-replay]" >&2; exit 2; }
 HTTP_PORT="${ACCEPTANCE_HTTP_PORT:-$((19080 + $$ % 500))}"
 DB_PORT="${ACCEPTANCE_DB_PORT:-$((19543 + $$ % 500))}"
 TLS_PORT="${ACCEPTANCE_TLS_PORT:-$((19443 + $$ % 500))}"
@@ -644,7 +644,9 @@ if [[ "$MODE" == "enable" ]]; then
   echo "ENABLE_SECRET_SCAN=PASS"
   exit 0
 fi
-if [[ "${1:-all}" == "all" ]]; then
+if [[ "$MODE" == "all" || "$MODE" == "internal" ]]; then
+  echo "ACCEPTANCE_MODE=INTERNAL_LIFECYCLE"
+  [[ "$MODE" == "all" ]] && echo "ALL_COMPATIBILITY_ALIAS=internal"
   export CONTROL_DATABASE_TEST_URL="$DATABASE_URL"
   export CONTROL_RUNTIME_DATABASE_TEST_URL="postgres://relay_control_app_dev:relay_control_runtime_dev_only@127.0.0.1:${DB_PORT}/relay_station_control?sslmode=disable"
   env -u DINGTALK_WEBHOOK_URL -u DINGTALK_SIGNING_SECRET go test ./internal/store -run '^TestRuntimeAcceptanceLifecycleFixture$' -count=1 -v

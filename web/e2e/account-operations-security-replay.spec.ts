@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const disableEmail = process.env.ACCEPTANCE_DISABLE_EMAIL;
@@ -11,12 +12,9 @@ const evidenceFile = process.env.ACCEPTANCE_SECURITY_REPLAY_EVIDENCE_FILE;
 const nodeID = "00000000-0000-4000-8000-000000000047";
 const accountBody = (commandID: string, email: string) => JSON.stringify({ command_id: commandID, node_instance_id: nodeID, account_key: `antigravity:${email}` });
 
-if (!storageState || !disableEmail || !replayEmail || !uploadEmail || !uploadCredential || !evidenceFile) {
-  throw new Error("Security/replay acceptance environment is incomplete");
-}
-
 test.use({ storageState });
 test.setTimeout(180_000);
+test.beforeEach(() => requireAcceptanceEnv("security-replay", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_DISABLE_EMAIL", "ACCEPTANCE_REPLAY_EMAIL", "ACCEPTANCE_UPLOAD_EMAIL", "ACCEPTANCE_UPLOAD_CREDENTIAL_FILE", "ACCEPTANCE_SECURITY_REPLAY_EVIDENCE_FILE"]));
 
 type Evidence = {
   security: Record<string, unknown>;

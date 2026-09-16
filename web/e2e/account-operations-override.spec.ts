@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const lifecycleEmail = process.env.ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL;
@@ -7,10 +8,9 @@ const sameEmail = process.env.ACCEPTANCE_OVERRIDE_SAME_EMAIL;
 const lifecycleCommandID = process.env.ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID;
 const sameCommandID = process.env.ACCEPTANCE_OVERRIDE_SAME_COMMAND_ID;
 const evidenceFile = process.env.ACCEPTANCE_OVERRIDE_EVIDENCE_FILE;
-if (!storageState || !lifecycleEmail || !sameEmail || !lifecycleCommandID || !sameCommandID || !evidenceFile) throw new Error("Override acceptance environment is incomplete");
-
 test.use({ storageState });
 test.setTimeout(120_000);
+test.beforeEach(() => requireAcceptanceEnv("override", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL", "ACCEPTANCE_OVERRIDE_SAME_EMAIL", "ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID", "ACCEPTANCE_OVERRIDE_SAME_COMMAND_ID", "ACCEPTANCE_OVERRIDE_EVIDENCE_FILE"]));
 
 async function selectNode(page: Page) {
   const selector = page.getByTestId("relay-node-selector");

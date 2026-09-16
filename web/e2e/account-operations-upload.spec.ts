@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const credentialFile = process.env.ACCEPTANCE_UPLOAD_CREDENTIAL_FILE;
@@ -8,11 +9,8 @@ const secretMarker = process.env.ACCEPTANCE_UPLOAD_SECRET_MARKER;
 const evidenceFile = process.env.ACCEPTANCE_UPLOAD_EVIDENCE_FILE;
 const browserConsoleFile = process.env.ACCEPTANCE_BROWSER_CONSOLE_FILE;
 
-if (!storageState || !credentialFile || !uploadEmail || !secretMarker || !evidenceFile || !browserConsoleFile) {
-  throw new Error("Gate C upload acceptance environment is incomplete");
-}
-
 test.use({ storageState });
+test.beforeEach(() => requireAcceptanceEnv("upload", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_UPLOAD_CREDENTIAL_FILE", "ACCEPTANCE_UPLOAD_EMAIL", "ACCEPTANCE_UPLOAD_SECRET_MARKER", "ACCEPTANCE_UPLOAD_EVIDENCE_FILE", "ACCEPTANCE_BROWSER_CONSOLE_FILE"]));
 
 const browserConsoleMessages: string[] = [];
 

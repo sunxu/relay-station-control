@@ -1,14 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const enableEmail = process.env.ACCEPTANCE_ENABLE_EMAIL;
 const nodePort = process.env.ACCEPTANCE_NODE_PORT;
 const nodePassword = process.env.ACCEPTANCE_NODE_MANAGEMENT_PASSWORD;
 const evidenceFile = process.env.ACCEPTANCE_ENABLE_EVIDENCE_FILE;
-if (!storageState || !enableEmail || !nodePort || !nodePassword || !evidenceFile) throw new Error("Enable acceptance environment is incomplete");
 test.use({ storageState });
 test.setTimeout(120_000);
+test.beforeEach(() => requireAcceptanceEnv("enable", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_ENABLE_EMAIL", "ACCEPTANCE_NODE_PORT", "ACCEPTANCE_NODE_MANAGEMENT_PASSWORD", "ACCEPTANCE_ENABLE_EVIDENCE_FILE"]));
 const inventoryWaitTimeout = 30_000;
 
 type InventoryResponse = { status: number; items: Array<{ account_key?: string; email?: string; provider?: string; inventory?: { basic_status?: string; lifecycle?: string } }> };

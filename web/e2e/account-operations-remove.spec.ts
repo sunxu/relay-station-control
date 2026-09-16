@@ -1,15 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { requireAcceptanceEnv } from "./acceptance-env";
 
 const storageState = process.env.ACCEPTANCE_STORAGE_STATE;
 const removeEmail = process.env.ACCEPTANCE_REMOVE_EMAIL;
 const nodePort = process.env.ACCEPTANCE_NODE_PORT;
 const nodePassword = process.env.ACCEPTANCE_NODE_MANAGEMENT_PASSWORD;
 const evidenceFile = process.env.ACCEPTANCE_REMOVE_EVIDENCE_FILE;
-if (!storageState || !removeEmail || !nodePort || !nodePassword || !evidenceFile) throw new Error("Remove acceptance environment is incomplete");
-
 test.use({ storageState });
 test.setTimeout(120_000);
+test.beforeEach(() => requireAcceptanceEnv("remove", ["ACCEPTANCE_STORAGE_STATE", "ACCEPTANCE_REMOVE_EMAIL", "ACCEPTANCE_NODE_PORT", "ACCEPTANCE_NODE_MANAGEMENT_PASSWORD", "ACCEPTANCE_REMOVE_EVIDENCE_FILE"]));
 
 async function selectNode(page: Page) {
   const selector = page.getByTestId("relay-node-selector");

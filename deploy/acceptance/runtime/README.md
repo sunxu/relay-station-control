@@ -2,6 +2,22 @@
 
 这是 repo-external acceptance 编排入口，不是 production runtime。`ACCEPTANCE_RUNTIME_DIR` 必须是 repo 外的显式绝对路径；不得把 runtime、storage-state 或证书写入 Git 工作树。
 
+## Modes
+
+`run.sh` 的 focused mode 只负责一个已批准的 Browser acceptance 场景：`upload`、`disable`、`enable-fixture`、`enable`、`replace`、`replace-discovery`、`remove`、`override` 和 `security-replay`。`auth` 只准备认证组合，`startup` 只验证启动与就绪。
+
+`internal` 运行 `internal/store` 生命周期 self-check，不执行 Browser acceptance。为兼容既有调用，`all` 仍保留为 `internal` 的兼容别名，并会明确打印该语义；它不是某个 Phase 的产品 acceptance gate。当前没有内置 `core` runner；Core acceptance 是外部对已独立批准 focused modes 的组合，不能依赖跨 case 的可变业务状态。
+
+模式选择后才校验该模式需要的运行时输入。Playwright spec 可以在没有 acceptance runtime 环境变量的普通 shell 中被 list/discover；实际执行在 fixture/setup 阶段缺少必需变量时，以 `MISSING_REQUIRED_ACCEPTANCE_ENV` 明确快速失败。缺少配置不会被空值、假凭据或静默跳过掩盖。
+
+## Environment contract
+
+调用方必须提供 `EXPECTED_SHA` 对应的 clean candidate source，以及显式不可变的 Node identity：`CONTROL_E2E_NODE_IMAGE`、`CONTROL_E2E_NODE_DIGEST`、`CONTROL_E2E_NODE_VERSION` 和完整的 `CONTROL_E2E_NODE_COMMIT`。可选的 `ACCEPTANCE_IMAGE` 也必须通过 image revision 和 digest/image-ID 校验；不能 fallback 到任意本地 image。`ACCEPTANCE_RUNTIME_DIR` 是必需的 repo-external 运行目录。
+
+runner 生成或导出的 runtime 目录、端口、认证材料、fixture identity、storage-state 和 mode-specific Browser 变量仅用于本次执行；secret 只能写入 repo-external 受保护文件。发现阶段不需要这些执行期变量，执行阶段仍必须 fail closed。
+
+建议使用具体 focused mode 证明单一行为；使用外部组合运行 Core acceptance；使用 `internal` 检查 harness/store 生命周期。不要把 `all` 当作产品 acceptance 的同义词。
+
 ## Buildx
 
 `build-image.sh` 为每次构建创建 `/private/tmp` 下的临时 `BUILDX_CONFIG`，验证 `org.opencontainers.image.revision` 和 platform 后退出。它不修改 `~/.docker/buildx`。使用 `EXPECTED_SHA=<candidate> IMAGE=<tag> ./build-image.sh`。
