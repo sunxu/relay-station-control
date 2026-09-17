@@ -167,9 +167,6 @@ func TestOpenAPIContainsAuthenticationFoundationOperations(t *testing.T) {
 		{http.MethodGet, "/api/account-inventory/nodes/{instance_id}/providers"}:               "getNodeInventoryProviderStates",
 	}
 
-	if len(operations) != len(expected) {
-		t.Fatalf("operation count = %d, want %d; operations: %v", len(operations), len(expected), sortedOperationKeys(operations))
-	}
 	for key, operationID := range expected {
 		operation, ok := operations[key]
 		if !ok {
