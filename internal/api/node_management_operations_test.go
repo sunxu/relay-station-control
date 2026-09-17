@@ -13,6 +13,7 @@ import (
 
 	authn "github.com/sunxu/relay-station-control/internal/auth"
 	"github.com/sunxu/relay-station-control/internal/drivers"
+	assetstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
 type nodeProbeAuthorizerStub struct {
@@ -197,5 +198,15 @@ func TestNodeManagementRoutesHaveFrozenMethods(t *testing.T) {
 		if recorder.Code == http.StatusMethodNotAllowed || recorder.Code == http.StatusNotFound {
 			t.Fatalf("route missing for %s %s: status=%d", test.method, test.path, recorder.Code)
 		}
+	}
+}
+
+func TestNodeLifecycleAccountBlockUsesExactErrorCode(t *testing.T) {
+	server := &Server{resolver: authn.NewSourceResolver(nil)}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/assets/nodes/1/retire", nil)
+	nodeError(recorder, request, server, assetstore.ErrAccountOperationBlocked)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), `"code":"account_operation_in_progress"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

@@ -568,6 +568,7 @@ func (e EnvironmentAssetEnvironmentType) Valid() bool {
 const (
 	ErrorCodeAccountConflict                   ErrorCode = "account_conflict"
 	ErrorCodeAccountNotFound                   ErrorCode = "account_not_found"
+	ErrorCodeAccountOperationInProgress        ErrorCode = "account_operation_in_progress"
 	ErrorCodeAdministratorSelfDisableForbidden ErrorCode = "administrator_self_disable_forbidden"
 	ErrorCodeAlreadyUnbound                    ErrorCode = "already_unbound"
 	ErrorCodeAssetNotFound                     ErrorCode = "asset_not_found"
@@ -615,6 +616,8 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeAccountConflict:
 		return true
 	case ErrorCodeAccountNotFound:
+		return true
+	case ErrorCodeAccountOperationInProgress:
 		return true
 	case ErrorCodeAdministratorSelfDisableForbidden:
 		return true

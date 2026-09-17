@@ -103,7 +103,23 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 	if _, err = owner.Exec(ctx, `INSERT INTO node_drivers(node_type,driver_contract_version,display_name) VALUES('cliproxyapi','cliproxyapi.auth-files.v1','CLIProxyAPI')`); err != nil {
 		t.Fatal(err)
 	}
+	seedPolicyID := uuid.New()
+	if _, err = owner.Exec(ctx, `INSERT INTO driver_capabilities(node_type,driver_contract_version,capability) VALUES('cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = owner.Exec(ctx, `INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint) VALUES($1,'Account API integration node','cliproxyapi','cliproxyapi.auth-files.v1',$2)`, nodeID, native.URL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(ctx, `INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES($1,'cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read')`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(ctx, `INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by) VALUES($1,'cliproxyapi','cliproxyapi.auth-files.v1',ARRAY['antigravity'],ARRAY[]::text[],'account-api-test')`, seedPolicyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(ctx, `INSERT INTO provider_inventory_policy_activations(node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at) SELECT 'cliproxyapi','cliproxyapi.auth-files.v1',$1,t,'account-api-test',t FROM (SELECT clock_timestamp()-interval '1 minute' AS t) AS boundary`, seedPolicyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at) SELECT $1,t,'deployment_enable','account-api-test',t FROM (SELECT clock_timestamp()-interval '1 minute' AS t) AS boundary`, nodeID); err != nil {
 		t.Fatal(err)
 	}
 

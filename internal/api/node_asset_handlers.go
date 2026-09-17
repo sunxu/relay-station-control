@@ -147,7 +147,7 @@ func nodeError(w http.ResponseWriter, r *http.Request, s *Server, err error) {
 	case errors.Is(err, assetstore.ErrNodeRetired):
 		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeAssetRetired)
 	case errors.Is(err, assetstore.ErrAccountOperationBlocked):
-		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeConflict)
+		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCode("account_operation_in_progress"))
 	case errors.Is(err, assetstore.ErrNodeIdentityExists):
 		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeDuplicateIdentity)
 	case errors.Is(err, assetstore.ErrStaleAssetRevision):

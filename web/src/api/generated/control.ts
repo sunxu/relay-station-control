@@ -147,6 +147,7 @@ export const ErrorCode = {
   csrf_invalid: 'csrf_invalid',
   validation_failed: 'validation_failed',
   conflict: 'conflict',
+  account_operation_in_progress: 'account_operation_in_progress',
   bootstrap_unavailable: 'bootstrap_unavailable',
   reauthentication_required: 'reauthentication_required',
   last_administrator_protected: 'last_administrator_protected',

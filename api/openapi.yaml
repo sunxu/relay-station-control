@@ -3918,6 +3918,7 @@ components:
         - csrf_invalid
         - validation_failed
         - conflict
+        - account_operation_in_progress
         - bootstrap_unavailable
         - reauthentication_required
         - last_administrator_protected

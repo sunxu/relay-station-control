@@ -366,6 +366,12 @@ func (r *AccountOperationRepository) AdmitAccountNoop(ctx context.Context, id, n
 		return false, AccountAdminOperation{}, err
 	}
 	defer tx.Rollback(ctx)
+	var lifecycleStatus string
+	if err = tx.QueryRow(ctx, `SELECT lifecycle_status FROM relay_node_assets WHERE instance_id=$1 FOR UPDATE`, nodeID).Scan(&lifecycleStatus); errors.Is(err, pgx.ErrNoRows) {
+		return false, AccountAdminOperation{}, ErrNodeNotFound
+	} else if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
 	if err = lockAdminCommand(ctx, tx, id); err != nil {
 		return false, AccountAdminOperation{}, err
 	}
