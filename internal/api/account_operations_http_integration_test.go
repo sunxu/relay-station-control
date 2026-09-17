@@ -173,6 +173,23 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 	postUpload := func(path string, commandID uuid.UUID) *httptest.ResponseRecorder {
 		return postUploadAs(path, commandID, token, csrf)
 	}
+	postUploadEmail := func(path string, commandID uuid.UUID, email string) *httptest.ResponseRecorder {
+		var body strings.Builder
+		mw := multipart.NewWriter(&body)
+		requestPart, _ := mw.CreateFormField("request")
+		_, _ = io.WriteString(requestPart, `{"command_id":"`+commandID.String()+`","node_instance_id":"`+nodeID.String()+`","account_key":"antigravity:`+email+`"}`)
+		credential, _ := mw.CreateFormFile("credential", "credential.json")
+		_, _ = io.WriteString(credential, `{"type":"antigravity","email":"`+email+`","refresh_token":"synthetic"}`)
+		_ = mw.Close()
+		r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18080"+path, strings.NewReader(body.String()))
+		r.Header.Set("Origin", "http://127.0.0.1:18080")
+		r.Header.Set("X-CSRF-Token", csrf)
+		r.Header.Set("Content-Type", mw.FormDataContentType())
+		r.AddCookie(&http.Cookie{Name: authn.DevSessionCookieName, Value: token})
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
 	get := func(path string, cookie bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18080"+path, nil)
 		if cookie {
@@ -206,6 +223,22 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 		if (receipts > 0) != wantReceipt || (audits > 0) != wantAudit {
 			t.Fatalf("receipt/audit=%d/%d", receipts, audits)
 		}
+	}
+
+	// Upload New identity admission occurs before durable acceptance.
+	longEmail := strings.Repeat("a", 239-len("@example.invalid")) + "@example.invalid"
+	invalidUploadID := uuid.New()
+	invalidUpload := postUploadEmail("/api/account-operations/upload-new", invalidUploadID, longEmail)
+	invalidUploadRetry := postUploadEmail("/api/account-operations/upload-new", invalidUploadID, longEmail)
+	if invalidUpload.Code != http.StatusBadRequest || invalidUploadRetry.Code != http.StatusBadRequest || !strings.Contains(invalidUpload.Body.String(), `"invalid_request"`) {
+		t.Fatalf("invalid upload status/body=%d/%s retry=%d/%s", invalidUpload.Code, invalidUpload.Body.String(), invalidUploadRetry.Code, invalidUploadRetry.Body.String())
+	}
+	var registryRows, operationRows, receiptRows int
+	if err = owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM admin_command_registry WHERE command_id=$1), (SELECT count(*) FROM account_admin_operations WHERE command_id=$1), (SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1)`, invalidUploadID).Scan(&registryRows, &operationRows, &receiptRows); err != nil {
+		t.Fatal(err)
+	}
+	if registryRows != 0 || operationRows != 0 || receiptRows != 0 {
+		t.Fatalf("invalid upload persisted registry=%d operation=%d receipt=%d", registryRows, operationRows, receiptRows)
 	}
 
 	// A syntactically valid but out-of-scope provider is rejected before the

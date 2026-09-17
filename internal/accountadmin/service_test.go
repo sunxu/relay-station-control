@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -41,13 +44,15 @@ func (r *countingNodeResolver) Count() int {
 }
 
 type fakeOperationStore struct {
-	mu            sync.Mutex
-	operation     store.AccountAdminOperation
-	terminal      bool
-	admitted      bool
-	dispatchCalls int
-	receipt       store.AccountCommandReceipt
-	replayErr     error
+	mu                       sync.Mutex
+	operation                store.AccountAdminOperation
+	terminal                 bool
+	admitted                 bool
+	dispatchCalls            int
+	acceptCalls              int
+	acceptWithIntentKeyCalls int
+	receipt                  store.AccountCommandReceipt
+	replayErr                error
 }
 
 func (s *fakeOperationStore) ReplayTerminal(context.Context, store.AccountOperationAcceptance) (store.AccountCommandReceipt, error) {
@@ -74,11 +79,16 @@ func (s *fakeOperationStore) Operation(context.Context, uuid.UUID) (store.Accoun
 func (s *fakeOperationStore) Accept(context.Context, store.AccountOperationAcceptance) (store.AccountAdminOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.acceptCalls++
 	s.operation.ExecutionState = store.AccountPrepared
 	return s.operation, nil
 }
-func (s *fakeOperationStore) AcceptWithIntentKey(ctx context.Context, _ string, c store.AccountOperationAcceptance, _ []byte) (store.AccountAdminOperation, error) {
-	return s.Accept(ctx, c)
+func (s *fakeOperationStore) AcceptWithIntentKey(context.Context, string, store.AccountOperationAcceptance, []byte) (store.AccountAdminOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.acceptWithIntentKeyCalls++
+	s.operation.ExecutionState = store.AccountPrepared
+	return s.operation, nil
 }
 func (s *fakeOperationStore) TerminalizePreDispatchFailure(_ context.Context, _ uuid.UUID, f store.AccountFailure, _ string) error {
 	s.mu.Lock()
@@ -379,5 +389,62 @@ func TestExecuteConcurrentNonterminalRetriesDoNoNativeWork(t *testing.T) {
 				t.Fatalf("resolver=%d dispatch=%d", resolver.Count(), ops.dispatchCalls)
 			}
 		})
+	}
+}
+
+func TestUploadNewRejects239ByteEmailBeforeAcceptance(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "intent.key")
+	if err := os.WriteFile(keyPath, []byte("01234567890123456789012345678901"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	nodeID := uuid.New()
+	email := strings.Repeat("a", 239-len("@example.invalid")) + "@example.invalid"
+	accountKey := "antigravity:" + email
+	credential := []byte(`{"type":"antigravity","email":"` + email + `"}`)
+	commandID, adminID := uuid.New(), uuid.New()
+	command := Command{CommandID: commandID, ActorAdminID: adminID, NodeInstanceID: nodeID, AccountKey: accountKey, Kind: store.AccountUploadNew, IntentKeyPath: keyPath, Credential: credential}
+	service, err := NewService(&fakeOperationStore{}, &countingNodeResolver{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.CanonicalIntent, err = service.CanonicalIntentForCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := service.operations.(*fakeOperationStore)
+	resolver := service.nodes.(*countingNodeResolver)
+	if _, err := service.Execute(context.Background(), command); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("error=%v, want invalid command", err)
+	}
+	if ops.acceptCalls != 0 || ops.acceptWithIntentKeyCalls != 0 || resolver.Count() != 0 || ops.dispatchCalls != 0 {
+		t.Fatalf("accept=%d accept_with_key=%d resolve=%d dispatch=%d", ops.acceptCalls, ops.acceptWithIntentKeyCalls, resolver.Count(), ops.dispatchCalls)
+	}
+}
+
+func TestUploadNewRejectsUnsafeGeneratedBasenameBeforeAcceptance(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "intent.key")
+	if err := os.WriteFile(keyPath, []byte("01234567890123456789012345678901"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	nodeID := uuid.New()
+	email := "a/b@example.invalid"
+	accountKey := "antigravity:" + email
+	credential := []byte(`{"type":"antigravity","email":"` + email + `"}`)
+	command := Command{CommandID: uuid.New(), ActorAdminID: uuid.New(), NodeInstanceID: nodeID, AccountKey: accountKey, Kind: store.AccountUploadNew, IntentKeyPath: keyPath, Credential: credential}
+	service, err := NewService(&fakeOperationStore{}, &countingNodeResolver{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.CanonicalIntent, err = service.CanonicalIntentForCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := service.operations.(*fakeOperationStore)
+	resolver := service.nodes.(*countingNodeResolver)
+	if _, err := service.Execute(context.Background(), command); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("error=%v, want invalid command", err)
+	}
+	if ops.acceptCalls != 0 || ops.acceptWithIntentKeyCalls != 0 || resolver.Count() != 0 || ops.dispatchCalls != 0 {
+		t.Fatalf("accept=%d accept_with_key=%d resolve=%d dispatch=%d", ops.acceptCalls, ops.acceptWithIntentKeyCalls, resolver.Count(), ops.dispatchCalls)
 	}
 }

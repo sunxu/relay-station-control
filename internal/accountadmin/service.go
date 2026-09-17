@@ -180,6 +180,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		acceptance.UploadIntentFingerprint = fingerprint
 	}
 	resumePrepared := false
+	freshAcceptance := false
 	var operation store.AccountAdminOperation
 	if receipt, err := s.operations.ReplayTerminal(ctx, acceptance); err == nil {
 		if receipt.TargetOperationCommandID == nil {
@@ -189,6 +190,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	} else {
 		switch {
 		case errors.Is(err, store.ErrAccountOperationNotFound):
+			freshAcceptance = true
 		case errors.Is(err, store.ErrCommandConflict):
 			return store.AccountAdminOperation{}, err
 		case errors.Is(err, store.ErrAccountOperationState):
@@ -206,6 +208,12 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 			}
 		default:
 			return store.AccountAdminOperation{}, err
+		}
+	}
+	if freshAcceptance && command.Kind == store.AccountUploadNew {
+		provider, email, _ := strings.Cut(command.AccountKey, ":")
+		if !cliproxyapi.ValidUploadNewIdentity(provider, email) {
+			return store.AccountAdminOperation{}, ErrInvalidCommand
 		}
 	}
 	if err := validateCanonicalIntent(command, acceptance.UploadIntentFingerprint); err != nil {

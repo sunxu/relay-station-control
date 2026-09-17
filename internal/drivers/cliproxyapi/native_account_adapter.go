@@ -293,6 +293,13 @@ func validNativeBasename(value string) bool {
 	return value != "" && utf8.ValidString(value) && len(value) <= 255 && safeNativeBasename.MatchString(value) && value != "." && value != ".." && !strings.Contains(value, "..") && strings.IndexFunc(value, unicode.IsControl) < 0
 }
 
+// ValidUploadNewIdentity validates the deterministic identity-to-basename
+// mapping before any snapshot or mutation work is performed.
+func ValidUploadNewIdentity(provider, email string) bool {
+	provider, email = strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(email))
+	return provider == "antigravity" && email != "" && len(email) <= maxCreateEmailBytes && validNativeBasename(nativeUploadPrefix+email+nativeUploadSuffix)
+}
+
 // ResolveMutationTarget uses only the supplied fresh snapshot and never
 // chooses an arbitrary first/latest record.
 func ResolveMutationTarget(snapshot NativeSnapshot, provider, email string) (NativeAuthFile, NativeFailureCode, error) {
@@ -406,7 +413,7 @@ func (a *NativeAdapter) PrepareDeleteAuthFile(ctx context.Context, provider, ema
 func (a *NativeAdapter) PrepareUploadAuthFile(ctx context.Context, provider, email string, credential []byte) (*PreparedNativeMutation, error) {
 	provider, email = strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(email))
 	name := nativeUploadPrefix + email + nativeUploadSuffix
-	if provider != "antigravity" || email == "" || len(email) > maxCreateEmailBytes || !validNativeBasename(name) || len(credential) == 0 || int64(len(credential)) > 1<<20 {
+	if !ValidUploadNewIdentity(provider, email) || len(credential) == 0 || int64(len(credential)) > 1<<20 {
 		return nil, nativeFailureError(NativeFailureInvalidRequest)
 	}
 	snapshot, err := a.SnapshotAuthFiles(ctx)

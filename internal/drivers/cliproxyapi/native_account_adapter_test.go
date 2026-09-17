@@ -405,3 +405,18 @@ func TestNativeBasenameRejectsTraversalAndControls(t *testing.T) {
 		}
 	}
 }
+
+func TestValidUploadNewIdentityUsesByteAndBasenameBounds(t *testing.T) {
+	domain := "@example.invalid"
+	validEmail := strings.Repeat("a", 238-len(domain)) + domain
+	if len(validEmail) != 238 || !ValidUploadNewIdentity("antigravity", validEmail) {
+		t.Fatalf("238-byte email rejected: bytes=%d", len(validEmail))
+	}
+	tooLong := "a" + validEmail
+	if len(tooLong) != 239 || ValidUploadNewIdentity("antigravity", tooLong) {
+		t.Fatalf("239-byte email accepted: bytes=%d", len(tooLong))
+	}
+	if ValidUploadNewIdentity("antigravity", "a/b@example.invalid") {
+		t.Fatal("unsafe generated basename accepted")
+	}
+}
