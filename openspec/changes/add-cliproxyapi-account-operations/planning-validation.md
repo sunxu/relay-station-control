@@ -1,5 +1,7 @@
 # Phase 7 Change B Planning Validation — Native-First CLIProxyAPI Account Operations
 
+> 历史 planning validation record。当前 Phase 7 实现已完成并通过最终稳定性验收；Validated implementation candidate：`20e48709ffad0012135fff2c31a88116b6ff4315`；当前最终状态见同目录 `implementation-validation.md`。
+
 ## Current status
 
 - Change: `add-cliproxyapi-account-operations`.

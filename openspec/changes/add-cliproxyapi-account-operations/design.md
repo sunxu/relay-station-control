@@ -1,3 +1,5 @@
+> 当前 closeout：Implementation `COMPLETE`；Consolidated Regression `PASS`；Final Stability `3/3 PASS`；Final disposition `PHASE7_FINAL_APPROVED`。Validated implementation candidate：`20e48709ffad0012135fff2c31a88116b6ff4315`。本文阶段性状态保留为历史 evidence；当前最终记录见 `implementation-validation.md`。
+
 ## Context
 
 Phase 7 is the first Relay Station phase that invokes remote credential-side mutation. The current architecture candidate uses upstream CLIProxyAPI native management behavior rather than the historical Stage 7N Relay-specific protocol. Control owns command/replay, authorization, ingress protection, durable serialization, conservative execution state and lifecycle blocking/override. Normal Inventory remains an independent business observation surface. CLIProxyAPI owns credential schema, auth-file persistence, runtime synchronization, refresh, Provider/Account selection, retry and cooldown.

@@ -1,3 +1,5 @@
+> 当前 closeout：Implementation `COMPLETE`；Consolidated Regression `PASS`；Final Stability `3/3 PASS`；Final disposition `PHASE7_FINAL_APPROVED`。Validated implementation candidate：`20e48709ffad0012135fff2c31a88116b6ff4315`。本文阶段性 planning status 保留为历史 evidence；当前最终记录见 `implementation-validation.md`。
+
 ## Why
 
 Phase 7 requires explicit Antigravity account Disable, Enable, Remove, Upload New and Replace Existing while keeping Control outside the request data plane and CLIProxyAPI authoritative for credential/runtime semantics. The previous Stage 7N Relay-specific Node mutation protocol was implemented and reviewed, but the current Native-First architecture candidate supersedes it as a Stage 7B dependency to avoid a parallel Node protocol and maintenance surface.
