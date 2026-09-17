@@ -318,7 +318,7 @@ func TestNativeAdapterMutationResponseBounds(t *testing.T) {
 	}
 }
 
-func TestNativeSnapshotSeparatesTargetAndOccupancyEvidence(t *testing.T) {
+func TestNativeSnapshotSeparatesIdentityTargetAndBasenameEvidence(t *testing.T) {
 	snapshot, err := parseNativeSnapshot([]byte(`{"files":[
 {"name":"file.json","provider":"antigravity","email":"a@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false},
 {"name":"memory.json","provider":"antigravity","email":"b@example.invalid","source":"memory","runtime_only":true,"auth_index":"2","disabled":false}
@@ -326,8 +326,53 @@ func TestNativeSnapshotSeparatesTargetAndOccupancyEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshot.MutationEligible) != 1 || snapshot.MutationEligible[0].Name != "file.json" || len(snapshot.OccupancyEvidence) != 2 {
+	if len(snapshot.IdentityEvidence) != 2 || len(snapshot.MutationEligible) != 1 || snapshot.MutationEligible[0].Name != "file.json" || len(snapshot.BasenameEvidence) != 2 {
 		t.Fatalf("snapshot=%+v", snapshot)
+	}
+}
+
+func TestUnsafeBasenameRetainsLogicalIdentityOccupancy(t *testing.T) {
+	snapshot, err := parseNativeSnapshot([]byte(`{"files":[{"name":"unsafe/name.json","provider":"antigravity","email":"target@example.com","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`), FrozenRuntimeVersion, FrozenRuntimeCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := ClassifyUploadAdmission(snapshot, "antigravity", "target@example.com", "antigravity-target@example.com.json"); code != NativeFailureTargetExists {
+		t.Fatalf("upload occupancy code=%s, want %s", code, NativeFailureTargetExists)
+	}
+}
+
+func TestReplaceUnsafeBasenameReportsPhysicalFailure(t *testing.T) {
+	snapshot, err := parseNativeSnapshot([]byte(`{"files":[{"name":"unsafe/name.json","provider":"antigravity","email":"target@example.com","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`), FrozenRuntimeVersion, FrozenRuntimeCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, code, err := ResolveMutationTarget(snapshot, "antigravity", "target@example.com")
+	if code != NativeFailureInvalidRequest || err == nil {
+		t.Fatalf("replace classification code=%s err=%v, want invalid_request", code, err)
+	}
+}
+
+func TestMutationTargetClassifiesIdentityBeforePhysicalEligibility(t *testing.T) {
+	valid := NativeAuthFile{Name: "target.json", Provider: "antigravity", Email: "target@example.com", Source: "file", AuthIndex: "1"}
+	tests := []struct {
+		name  string
+		files []NativeAuthFile
+		code  NativeFailureCode
+	}{
+		{name: "zero identities", code: NativeFailureTargetNotFound},
+		{name: "one eligible identity", files: []NativeAuthFile{valid}},
+		{name: "two identities", files: []NativeAuthFile{valid, {Name: "other.json", Provider: "antigravity", Email: "target@example.com", Source: "file", AuthIndex: "2"}}, code: NativeFailureTargetAmbiguous},
+		{name: "invalid auth index", files: []NativeAuthFile{{Name: "target.json", Provider: "antigravity", Email: "target@example.com", Source: "file", AuthIndex: ""}}, code: NativeFailureInvalidRequest},
+		{name: "runtime only", files: []NativeAuthFile{{Name: "target.json", Provider: "antigravity", Email: "target@example.com", Source: "memory", RuntimeOnly: true, AuthIndex: "1"}}, code: NativeFailureInvalidRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := NativeSnapshot{IdentityEvidence: test.files}
+			_, code, err := ResolveMutationTarget(snapshot, "antigravity", "target@example.com")
+			if code != test.code {
+				t.Fatalf("code=%s, want %s (err=%v)", code, test.code, err)
+			}
+		})
 	}
 }
 
@@ -383,10 +428,12 @@ func TestExactRuntimeIdentityRejectsMissingDuplicateAndMismatch(t *testing.T) {
 }
 
 func TestNativeTargetResolutionAndUploadOccupancy(t *testing.T) {
-	snapshot := NativeSnapshot{MutationEligible: []NativeAuthFile{
+	mutationFiles := []NativeAuthFile{
 		{Name: "a.json", Provider: "antigravity", Email: "same@example.invalid", Source: "file", AuthIndex: "1"},
 		{Name: "b.json", Provider: "antigravity", Email: "same@example.invalid", Source: "file", AuthIndex: "2"},
-	}, OccupancyEvidence: []NativeAuthFile{{Name: "occupied.json", Provider: "antigravity", Email: "other@example.invalid"}}}
+	}
+	occupied := NativeAuthFile{Name: "occupied.json", Provider: "antigravity", Email: "other@example.invalid"}
+	snapshot := NativeSnapshot{IdentityEvidence: append(append([]NativeAuthFile{}, mutationFiles...), occupied), MutationEligible: mutationFiles, BasenameEvidence: []string{"a.json", "b.json", "occupied.json"}}
 	if _, code, _ := ResolveMutationTarget(snapshot, "antigravity", "same@example.invalid"); code != NativeFailureTargetAmbiguous {
 		t.Fatalf("code=%s", code)
 	}

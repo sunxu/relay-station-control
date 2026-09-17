@@ -448,3 +448,49 @@ func TestUploadNewRejectsUnsafeGeneratedBasenameBeforeAcceptance(t *testing.T) {
 		t.Fatalf("accept=%d accept_with_key=%d resolve=%d dispatch=%d", ops.acceptCalls, ops.acceptWithIntentKeyCalls, resolver.Count(), ops.dispatchCalls)
 	}
 }
+
+func TestReplaceUnsafeBasenameIsPhysicalFailureAfterAcceptance(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"files":[{"name":"unsafe/name.json","provider":"antigravity","email":"replace@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+			return
+		}
+		t.Fatalf("unexpected native mutation %s", r.Method)
+	}))
+	defer server.Close()
+	config, err := (drivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := cliproxyapi.NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(t.TempDir(), "intent.key")
+	if err := os.WriteFile(keyPath, []byte("01234567890123456789012345678901"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	nodeID := uuid.New()
+	accountKey := "antigravity:replace@example.invalid"
+	credential := []byte(`{"type":"antigravity","email":"replace@example.invalid"}`)
+	command := Command{CommandID: uuid.New(), ActorAdminID: uuid.New(), NodeInstanceID: nodeID, AccountKey: accountKey, Kind: store.AccountReplaceExisting, IntentKeyPath: keyPath, Credential: credential}
+	ops := &fakeOperationStore{operation: store.AccountAdminOperation{CommandID: command.CommandID, NodeInstanceID: nodeID, AccountKey: accountKey, OperationKind: store.AccountReplaceExisting}, replayErr: store.ErrAccountOperationNotFound}
+	resolver := &countingNodeResolver{state: NodeState{Adapter: adapter, LifecycleActive: true, MonitoringEligible: true, InventoryReadAllowed: true, ProviderPolicyActive: true}}
+	service, err := NewService(ops, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.CanonicalIntent, err = service.CanonicalIntentForCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.Execute(context.Background(), command)
+	if err != nil || got.ExecutionState != store.AccountFailed || got.RemoteResultCode == nil || *got.RemoteResultCode != "invalid_request" {
+		t.Fatalf("replace result=%#v err=%v", got, err)
+	}
+	if ops.acceptWithIntentKeyCalls != 1 || resolver.Count() != 1 || ops.dispatchCalls != 0 {
+		t.Fatalf("accept_with_key=%d resolve=%d dispatch=%d", ops.acceptWithIntentKeyCalls, resolver.Count(), ops.dispatchCalls)
+	}
+}

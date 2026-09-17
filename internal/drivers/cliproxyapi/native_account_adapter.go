@@ -88,13 +88,14 @@ type NativeAuthFile struct {
 }
 
 type NativeSnapshot struct {
-	Files             []NativeAuthFile
-	Version           string
-	Commit            string
-	Degraded          bool
-	FailureCode       NativeFailureCode
-	MutationEligible  []NativeAuthFile
-	OccupancyEvidence []NativeAuthFile
+	Files            []NativeAuthFile
+	Version          string
+	Commit           string
+	Degraded         bool
+	FailureCode      NativeFailureCode
+	IdentityEvidence []NativeAuthFile
+	MutationEligible []NativeAuthFile
+	BasenameEvidence []string
 }
 
 type NativeAdapter struct {
@@ -181,8 +182,11 @@ func parseNativeSnapshot(encoded []byte, version, commit string) (NativeSnapshot
 			return NativeSnapshot{}, err
 		}
 		snapshot.Files = append(snapshot.Files, file)
-		if usableOccupancyEvidence(file) {
-			snapshot.OccupancyEvidence = append(snapshot.OccupancyEvidence, file)
+		if identityEvidence(file) {
+			snapshot.IdentityEvidence = append(snapshot.IdentityEvidence, file)
+		}
+		if validNativeBasename(file.Name) {
+			snapshot.BasenameEvidence = append(snapshot.BasenameEvidence, file.Name)
 		}
 		if mutationEligible(file) {
 			snapshot.MutationEligible = append(snapshot.MutationEligible, file)
@@ -281,8 +285,8 @@ func mutationEligible(file NativeAuthFile) bool {
 	return file.Source == "file" && !file.RuntimeOnly && validNativeBasename(file.Name) && validAuthIndex(file.AuthIndex) && file.Provider == "antigravity" && file.Email != ""
 }
 
-func usableOccupancyEvidence(file NativeAuthFile) bool {
-	return file.Provider != "" && file.Email != "" && (file.Name == "" || validNativeBasename(file.Name))
+func identityEvidence(file NativeAuthFile) bool {
+	return file.Provider != "" && file.Email != ""
 }
 
 func validAuthIndex(value string) bool {
@@ -308,7 +312,7 @@ func ResolveMutationTarget(snapshot NativeSnapshot, provider, email string) (Nat
 	}
 	provider, email = strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(email))
 	var matches []NativeAuthFile
-	for _, file := range snapshot.MutationEligible {
+	for _, file := range snapshot.IdentityEvidence {
 		if file.Provider == provider && file.Email == email {
 			matches = append(matches, file)
 		}
@@ -317,6 +321,9 @@ func ResolveMutationTarget(snapshot NativeSnapshot, provider, email string) (Nat
 	case 0:
 		return NativeAuthFile{}, NativeFailureTargetNotFound, errors.New(string(NativeFailureTargetNotFound))
 	case 1:
+		if !mutationEligible(matches[0]) {
+			return NativeAuthFile{}, NativeFailureInvalidRequest, errors.New(string(NativeFailureInvalidRequest))
+		}
 		return matches[0], "", nil
 	default:
 		return NativeAuthFile{}, NativeFailureTargetAmbiguous, errors.New(string(NativeFailureTargetAmbiguous))
@@ -330,11 +337,13 @@ func ClassifyUploadAdmission(snapshot NativeSnapshot, provider, email, basename 
 		return NativeFailureNodeManagementUnavailable
 	}
 	provider, email = strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(email))
-	for _, file := range snapshot.OccupancyEvidence {
+	for _, file := range snapshot.IdentityEvidence {
 		if file.Provider == provider && file.Email == email {
 			return NativeFailureTargetExists
 		}
-		if file.Name == basename {
+	}
+	for _, name := range snapshot.BasenameEvidence {
+		if name == basename {
 			return NativeFailureFilenameConflict
 		}
 	}
