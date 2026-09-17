@@ -12,8 +12,45 @@ import (
 
 func TestAccountInventoryProviderStateQueryMigrationRollback(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
-	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	database := newIsolatedJobDatabase(t, "up-to", "17")
+	instanceID := uuid.New()
+	policyID := uuid.New()
+	const nodeType = "provider-state-test"
+	const contract = "v1"
+	if _, err := database.owner.Exec(ctx, `INSERT INTO node_drivers(
+		node_type,driver_contract_version,display_name
+	) VALUES ($1,$2,'Provider State Test Driver')`, nodeType, contract); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_assets(
+		instance_id,display_name,node_type,driver_contract_version,
+		management_endpoint,reader_secret_ref
+	) VALUES ($1,'Provider State Test Node',$2,$3,'http://provider-state.example',
+		'docker-secret://synthetic/provider-state-reader')`, instanceID, nodeType, contract); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_versions(
+		policy_version_id,node_type,driver_contract_version,active_providers,
+		out_of_scope_providers,created_by
+	) VALUES ($1,$2,$3,ARRAY['openai'],ARRAY['legacy'],'integration-test')`, policyID, nodeType, contract); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_bindings(
+		node_type,driver_contract_version,policy_version_id,bound_by,bound_at
+	) VALUES ($1,$2,$3,'integration-test',CURRENT_TIMESTAMP)`, nodeType, contract, policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_activations(
+		node_type,driver_contract_version,policy_version_id,effective_from,
+		activated_by,created_at
+	) VALUES ($1,$2,$3,CURRENT_TIMESTAMP,'integration-test',CURRENT_TIMESTAMP)`, nodeType, contract, policyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) VALUES ($1,CURRENT_TIMESTAMP,'reconciliation','integration-test',CURRENT_TIMESTAMP)`, instanceID); err != nil {
+		t.Fatal(err)
+	}
 	repository, err := productstore.NewAccountInventoryProviderStateRepository(database.runtime)
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +82,7 @@ func TestAccountInventoryProviderStateQueryMigrationRollback(t *testing.T) {
 		return state
 	}
 	before := capture()
-	if _, err := repository.GetProviderStates(ctx, fixture.instanceID); err != nil {
+	if _, err := repository.GetProviderStates(ctx, instanceID); err != nil {
 		t.Fatalf("reader before rollback: %v", err)
 	}
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
@@ -58,7 +95,7 @@ func TestAccountInventoryProviderStateQueryMigrationRollback(t *testing.T) {
 	if newFunctionExists {
 		t.Fatal("Provider state query function survived rollback")
 	}
-	if _, err := repository.GetProviderStates(ctx, fixture.instanceID); err == nil {
+	if _, err := repository.GetProviderStates(ctx, instanceID); err == nil {
 		t.Fatal("reader succeeded after query function rollback")
 	}
 	after := capture()
@@ -68,7 +105,7 @@ func TestAccountInventoryProviderStateQueryMigrationRollback(t *testing.T) {
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
 		t.Fatalf("restore migration 17: %v", err)
 	}
-	if _, err := repository.GetProviderStates(ctx, fixture.instanceID); err != nil {
+	if _, err := repository.GetProviderStates(ctx, instanceID); err != nil {
 		t.Fatalf("reader after restore: %v", err)
 	}
 

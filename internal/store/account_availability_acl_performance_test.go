@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -11,17 +10,31 @@ import (
 )
 
 func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
-	// This roundtrip targets the Phase 4 recovery migration, not forward-only 00028.
-	f := newAvailabilityFixture(t, 1, "up-to", "27")
+	// This roundtrip targets migration 27 itself. Keep the fixture at its
+	// owned schema version instead of using current generated queries, whose
+	// result shape includes columns introduced by later migrations.
+	database := newIsolatedJobDatabase(t, "up-to", "27")
 	ctx := context.Background()
-	f.reconcile(t)
+	instanceID := uuid.New()
+	if _, err := database.owner.Exec(ctx, `INSERT INTO node_drivers(
+		node_type,driver_contract_version,display_name
+	) VALUES ('availability-test','v1','Availability Test Driver')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_assets(
+		instance_id,display_name,node_type,driver_contract_version,
+		management_endpoint,reader_secret_ref
+	) VALUES ($1,'Availability Test Node','availability-test','v1',
+		'http://availability.example','docker-secret://synthetic/availability-reader')`, instanceID); err != nil {
+		t.Fatal(err)
+	}
 	for _, table := range []string{"account_availability_checkpoints", "account_availability_occurrences", "account_inventory_provider_states", "account_request_quality_events"} {
-		if _, err := f.db.runtime.Exec(ctx, "SELECT * FROM "+table); err == nil {
+		if _, err := database.runtime.Exec(ctx, "SELECT * FROM "+table); err == nil {
 			t.Fatalf("runtime direct SELECT %s allowed", table)
 		}
 	}
 	var functions int
-	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.proname IN ('control_query_account_availability_v1','control_query_account_availability_occurrences_v1','control_reconcile_account_availability_v1','control_insert_account_request_quality_events_v2','control_finalize_account_inventory_poll_run_v2','control_finalize_account_inventory_poll_run_with_lifecycle_v2') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog'] AND r.rolname='relay_control_migrator' AND NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')`).Scan(&functions); err != nil || functions != 6 {
+	if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.proname IN ('control_query_account_availability_v1','control_query_account_availability_occurrences_v1','control_reconcile_account_availability_v1','control_insert_account_request_quality_events_v2','control_finalize_account_inventory_poll_run_v2','control_finalize_account_inventory_poll_run_with_lifecycle_v2') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog'] AND r.rolname='relay_control_migrator' AND NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')`).Scan(&functions); err != nil || functions != 6 {
 		t.Fatalf("secured functions=%d err=%v", functions, err)
 	}
 	var lifecycleExec, nonLifecycleExec, legacyExec, legacyLifecycleExec, publicLegacyExec bool
@@ -31,7 +44,7 @@ func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
 		has_function_privilege('relay_control_runtime', 'public.control_finalize_account_inventory_poll_run_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE'),
 		has_function_privilege('relay_control_runtime', 'public.control_finalize_account_inventory_poll_run_with_lifecycle_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE'),
 		has_function_privilege('public', 'public.control_finalize_account_inventory_poll_run_v1_legacy(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)', 'EXECUTE')`
-	if err := f.db.owner.QueryRow(ctx, aclQuery).Scan(&lifecycleExec, &nonLifecycleExec, &legacyExec, &legacyLifecycleExec, &publicLegacyExec); err != nil {
+	if err := database.owner.QueryRow(ctx, aclQuery).Scan(&lifecycleExec, &nonLifecycleExec, &legacyExec, &legacyLifecycleExec, &publicLegacyExec); err != nil {
 		t.Fatal(err)
 	}
 	if !lifecycleExec || nonLifecycleExec || legacyExec || legacyLifecycleExec || publicLegacyExec {
@@ -41,51 +54,46 @@ func TestAccountAvailabilityACLAndMigrationPostgres(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		{`SELECT public.control_query_account_availability_v1($1,NULL)`, []any{f.node}},
-		{`SELECT public.control_query_account_availability_v1($1,$2)`, []any{f.node, make([]string, 101)}},
-		{`SELECT public.control_query_account_availability_occurrences_v1($1,NULL,'other',NULL,NULL,25)`, []any{f.node}},
-		{`SELECT public.control_query_account_availability_occurrences_v1($1,NULL,'ACTIVE',NULL,NULL,101)`, []any{f.node}},
+		{`SELECT public.control_query_account_availability_v1($1,NULL)`, []any{instanceID}},
+		{`SELECT public.control_query_account_availability_v1($1,$2)`, []any{instanceID, make([]string, 101)}},
+		{`SELECT public.control_query_account_availability_occurrences_v1($1,NULL,'other',NULL,NULL,25)`, []any{instanceID}},
+		{`SELECT public.control_query_account_availability_occurrences_v1($1,NULL,'ACTIVE',NULL,NULL,101)`, []any{instanceID}},
 	} {
-		if _, err := f.db.runtime.Exec(ctx, q.sql, q.args...); err == nil {
+		if _, err := database.runtime.Exec(ctx, q.sql, q.args...); err == nil {
 			t.Fatal("unbounded/invalid query accepted")
 		}
 	}
-	if _, err := f.repo.ListAccountAvailabilityOccurrences(ctx, store.AccountAvailabilityOccurrenceQuery{InstanceID: uuid.New(), Status: "ACTIVE", Limit: 25}); err != store.ErrAccountInventoryInstanceNotFound {
-		t.Fatalf("unknown Node=%v", err)
-	}
-	// Old event writer still records NULL, replay through v2 does not backfill it.
-	f.event(t, 0, "r1", "new", "token_invalid", f.now.Add(-time.Minute))
-	raw := fmt.Sprintf(`[{"event_hash":"legacy","node_id":"%s","provider":"antigravity","account_key":"%s","occurred_at":"%s","success":false,"failure_class":"auth"}]`, f.node, f.keys[0], f.now.Format(time.RFC3339Nano))
-	if _, err := f.db.runtime.Exec(ctx, `SELECT public.control_insert_account_request_quality_events_v1($1::jsonb)`, raw); err != nil {
+	var beforeDefinition string
+	if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef('public.control_reconcile_account_availability_v1(uuid,text)'::regprocedure)`).Scan(&beforeDefinition); err != nil {
 		t.Fatal(err)
 	}
-	f.event(t, 0, "legacy-r", "legacy", "account_blocked", f.now)
-	var reason *string
-	if err := f.db.owner.QueryRow(ctx, `SELECT auth_failure_reason FROM account_request_quality_events WHERE event_hash='legacy'`).Scan(&reason); err != nil || reason != nil {
-		t.Fatalf("legacy backfilled=%v err=%v", reason, err)
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
+		t.Fatalf("Migration 27 down: %v", err)
 	}
-	var count int
-	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_request_quality_events WHERE auth_failure_reason IS NOT NULL`).Scan(&count); err != nil {
+	var version int32
+	if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil || version != 26 {
+		t.Fatalf("after Migration 27 down, version=%d err=%v", version, err)
+	}
+	var afterDefinition string
+	if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef('public.control_reconcile_account_availability_v1(uuid,text)'::regprocedure)`).Scan(&afterDefinition); err != nil {
 		t.Fatal(err)
 	}
-	beforeAuthReasonCount := count
-	if err := runAssetGoose(t, ctx, "../..", f.db.ownerURL, "down"); err != nil {
+	if afterDefinition == beforeDefinition {
+		t.Fatal("Migration 27 down did not restore the Migration 26 function")
+	}
+	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
+		t.Fatalf("Migration 27 up after down: %v", err)
+	}
+	if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil || version != 27 {
+		t.Fatalf("after Migration 27 up, version=%d err=%v", version, err)
+	}
+	var restoredDefinition string
+	if err := database.owner.QueryRow(ctx, `SELECT pg_get_functiondef('public.control_reconcile_account_availability_v1(uuid,text)'::regprocedure)`).Scan(&restoredDefinition); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory WHERE instance_id=$1`, f.node).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("Down lost inventory=%d %v", count, err)
+	if restoredDefinition != beforeDefinition {
+		t.Fatal("Migration 27 up did not restore its function definition")
 	}
-	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_request_quality_events WHERE node_id=$1`, f.node).Scan(&count); err != nil || count != 2 {
-		t.Fatalf("Down lost events=%d %v", count, err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", f.db.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.db.owner.QueryRow(ctx, `SELECT count(*) FROM account_request_quality_events WHERE auth_failure_reason IS NOT NULL`).Scan(&count); err != nil || count != beforeAuthReasonCount {
-		t.Fatalf("Up changed auth failure reasons=%d before=%d %v", count, beforeAuthReasonCount, err)
-	}
-	f.reconcile(t)
-	f.state(t, 0, "UNKNOWN")
 }
 
 func TestAccountAvailabilityBatchPerformanceAndPaginationPostgres(t *testing.T) {

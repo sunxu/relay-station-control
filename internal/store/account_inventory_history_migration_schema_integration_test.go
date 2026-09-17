@@ -805,7 +805,7 @@ func TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff(t 
 
 func TestAccountInventoryHistorySchemaACLAndProtectedDown(t *testing.T) {
 	ctx := context.Background()
-	database := newIsolatedJobDatabase(t)
+	database := newIsolatedJobDatabase(t, "up-to", "9")
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
 
 	for _, table := range historyTables {
