@@ -1,7 +1,7 @@
 # account-admin-operation Specification
 
 ## Purpose
-TBD - created by archiving change add-cliproxyapi-account-operations. Update Purpose after archive.
+定义 Control 对 CLIProxyAPI 单账号管理操作的持久命令、执行状态、Node-first admission、原生 mutation、replay、override、receipt/audit 与安全边界。
 
 ## Requirements
 
@@ -127,13 +127,21 @@ Upload New MUST require one fresh version-valid non-degraded snapshot to prove b
 - **WHEN** credential refresh commits after Control snapshot but before administrator POST
 - **THEN** native last-writer-wins may overwrite the refresh and Control does not claim lost-update prevention
 
-### Requirement: Dispatch SHALL use durable same-account serialization and Node-first eligibility
+### Requirement: Dispatch and no-op admission SHALL use durable same-account serialization and Node-first eligibility
 
-Before native mutation, one short PostgreSQL transaction MUST lock Node first, require active lifecycle, lock/read current non-cancelled monitoring under the existing graph, require `management_account_inventory_read` and matching active Provider policy, acquire/check durable serialization for `(node_instance_id,account_key)`, and reject another same-account operation when `execution_state IN ('dispatched','outcome_unknown') AND same_account_override_at IS NULL`. `lifecycle_override_at` has no effect on this predicate; `same_account_override_at` is the only override field that may waive it. The transaction MUST lock the prepared operation, persist dispatch start and transition `prepared -> dispatched`; prepared resume MUST rerun this check with fresh durable state. It then commits before native HTTP. In-memory-only mutex is insufficient and no DB lock may cross HTTP.
+Before native mutation or no-op terminalization, one short PostgreSQL transaction MUST lock Node first, require active lifecycle, lock/read current non-cancelled monitoring under the existing graph, require `management_account_inventory_read` and matching active Provider policy, acquire/check durable serialization for `(node_instance_id,account_key)`, and reject another same-account operation when `execution_state IN ('dispatched','outcome_unknown') AND same_account_override_at IS NULL`. `lifecycle_override_at` has no effect on this predicate; `same_account_override_at` is the only override field that may waive it. The transaction MUST lock the prepared operation, persist dispatch start and transition `prepared -> dispatched`, or terminalize an already-satisfied Disable/Enable as `prepared -> remote_noop`; prepared resume MUST rerun this check with fresh durable state. It then commits before native HTTP. In-memory-only mutex is insufficient and no DB lock may cross HTTP. A positive earlier resolver snapshot MUST NOT authorize dispatch or no-op terminalization when any durable eligibility condition is false at admission.
 
 #### Scenario: Same-account command races another dispatch
 - **WHEN** command A is dispatched or outcome-unknown and command B targets the same Node/account, including after a lifecycle override
 - **THEN** command B returns `account_operation_in_progress` and sends zero native mutation
+
+#### Scenario: Stale resolver eligibility is rejected at admission
+- **WHEN** an earlier resolver snapshot is eligible but active lifecycle, current monitoring, `management_account_inventory_read`, active Provider policy or same-account serialization is no longer eligible at the durable admission boundary
+- **THEN** the accepted operation commits `prepared -> failed` with the corresponding bounded error, its normal receipt and audit are committed atomically, and native mutation count is zero
+
+#### Scenario: Concurrent prepared no-op retries converge
+- **WHEN** two callers concurrently admit the same prepared Disable or Enable command whose fresh target already has the desired state
+- **THEN** one caller commits `remote_noop` with one immutable terminal receipt, and the other returns that committed terminal operation and receipt without leaking a state mismatch or `service_unavailable` and without native mutation
 
 #### Scenario: Non-empty snapshot contains fallback or degraded evidence
 - **WHEN** a non-empty snapshot contains disk-fallback, malformed, degraded or otherwise unusable evidence that prevents safe mutation-eligibility or occupancy classification
