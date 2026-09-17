@@ -4732,12 +4732,13 @@ func TestAccountInventoryHistorySensitiveCanaryDatabaseSinks(t *testing.T) {
 	pollID := uuid.New()
 	emailCanary := "canary-email-8-4@example.invalid"
 	accountKeyCanary := "openai:" + emailCanary
-	endpointCanary := "https://canary-endpoint-8-4.invalid"
+	endpointCanary := "http://canary-endpoint-8-4.invalid"
 	secretCanary := "docker-secret://canary-secret-8-4"
 	rawErrorCanary := "raw-postgres-error-canary-8-4"
 
 	if _, err := database.owner.Exec(ctx, `UPDATE relay_node_assets
-		SET management_endpoint=$1,reader_secret_ref=$2 WHERE instance_id=$3`,
+		SET management_endpoint=$1,reader_secret_ref=$2,
+			revision=revision+1,updated_at=clock_timestamp() WHERE instance_id=$3`,
 		endpointCanary, secretCanary, fixture.instanceID); err != nil {
 		t.Fatal(err)
 	}

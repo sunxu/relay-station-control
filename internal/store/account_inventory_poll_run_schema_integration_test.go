@@ -132,6 +132,7 @@ func TestInventoryPollRepositoryClaimFinalizeAndFencing(t *testing.T) {
 		fixture.instanceID); err != nil {
 		t.Fatal(err)
 	}
+	enableCurrentNodeMonitoring(t, ctx, database, fixture.instanceID)
 	if _, err := database.owner.Exec(ctx, `INSERT INTO provider_inventory_policy_versions(
 		policy_version_id,node_type,driver_contract_version,active_providers,
 		out_of_scope_providers,created_by

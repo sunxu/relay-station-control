@@ -1047,28 +1047,57 @@ func TestAccountInventorySnapshotMigrationDownRefusesPromotionEvidence(t *testin
 	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
 	database := newIsolatedJobDatabase(t, "up-to", "27")
 	fixture := insertSnapshotPollFixture(t, ctx, database)
-	repository, err := pollstore.NewInventoryPollRepository(database.runtime)
-	if err != nil {
+	const historicalFinalizeSignature = "public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(uuid,uuid,boolean,boolean,boolean,text,boolean,boolean,boolean,text,text,integer,integer,integer,integer,integer,text,text,jsonb,jsonb,jsonb)"
+	var historicalFinalizeExists bool
+	if err := database.runtime.QueryRow(ctx, `SELECT to_regprocedure($1) IS NOT NULL`, historicalFinalizeSignature).Scan(&historicalFinalizeExists); err != nil {
 		t.Fatal(err)
+	}
+	if !historicalFinalizeExists {
+		t.Fatalf("historical finalize function %s is unavailable in schema 27", historicalFinalizeSignature)
 	}
 	token := uuid.New()
-	if _, err := repository.ClaimRunnable(ctx, inventorypoll.ClaimRequest{
-		Token: token, LeaseDuration: 30 * time.Second,
-	}); err != nil {
+	if _, err := database.runtime.Exec(ctx, `WITH boundary AS (
+		SELECT clock_timestamp() AS ts
+	) UPDATE account_inventory_poll_runs AS run
+	SET status = 'running', attempt_count = 1,
+		first_started_at = boundary.ts, last_started_at = boundary.ts,
+		lease_expires_at = boundary.ts + interval '30 seconds',
+		lease_fencing_token = $2
+	FROM boundary
+	WHERE run.poll_run_id = $1`, fixture.pollRunID, token); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.FinalizeFenced(ctx, inventorypoll.FinalizeRequest{
-		PollRunID: fixture.pollRunID, FencingToken: token,
-		Node: inventorypoll.NodeEvidence{
-			Degraded: true, Result: drivers.ResultFailed, Reason: drivers.ReasonTimeout,
-			Version: "unknown", Commit: "unknown",
-		},
-		Providers: []inventorypoll.ProviderEvidence{{
-			Provider: fixture.provider, IdentityComplete: true, Degraded: true,
-			Reason: inventorypoll.ProviderReasonTransportFailed,
-		}},
-	}); err != nil {
+	providerResults := fmt.Sprintf(`[{"provider":%q,"identifiable_count":1,"missing_identity_count":0,"duplicate_identity_count":0,"identity_complete":true,"snapshot_complete":true,"degraded":false,"reason":"complete"}]`, fixture.provider)
+	snapshotItems := fmt.Sprintf(`[{"provider":%q,"account_key":%q,"email":"historical@example.invalid","basic_status":"active","success_count":1,"failed_count":0,"recent_request_count":0,"last_refresh_unix":null,"next_retry_unix":null,"updated_at_unix":null}]`, fixture.provider, fixture.provider+":historical@example.invalid")
+	duplicateEvidence := `[]`
+	var finalized int
+	if err := database.runtime.QueryRow(ctx, `SELECT count(*)
+		FROM public.control_finalize_account_inventory_poll_run_with_lifecycle_v2(
+			$1, $2, true, true, true, 'runtime', true, true, false,
+			'success', 'none', 1, 1, 0, 0, 0, 'unknown', 'unknown',
+			$3::jsonb, $4::jsonb, $5::jsonb)`,
+		fixture.pollRunID, token, providerResults, snapshotItems, duplicateEvidence).Scan(&finalized); err != nil {
 		t.Fatal(err)
+	}
+	if finalized != 1 {
+		t.Fatalf("historical finalize returned %d rows", finalized)
+	}
+	var status string
+	var promotionApplied bool
+	var snapshotItemsCount, providerStatesCount int
+	if err := database.runtime.QueryRow(ctx, `SELECT run.status,
+			COALESCE(result.promotion_applied, false),
+			(SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id = $1),
+			(SELECT count(*) FROM account_inventory_provider_states WHERE instance_id = $2)
+		FROM account_inventory_poll_runs AS run
+		LEFT JOIN account_inventory_poll_provider_results AS result
+			ON result.poll_run_id = run.poll_run_id AND result.provider = $3
+		WHERE run.poll_run_id = $1`, fixture.pollRunID, fixture.instanceID, fixture.provider).
+		Scan(&status, &promotionApplied, &snapshotItemsCount, &providerStatesCount); err != nil {
+		t.Fatal(err)
+	}
+	if status != "finalized" || !promotionApplied || snapshotItemsCount < 1 || providerStatesCount < 1 {
+		t.Fatalf("historical promotion evidence incomplete: status=%s promotion_applied=%t snapshot_items=%d provider_states=%d", status, promotionApplied, snapshotItemsCount, providerStatesCount)
 	}
 	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "6"); err != nil {
 		t.Fatalf("forward compatibility down before snapshot protection: %v", err)

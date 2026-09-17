@@ -73,6 +73,19 @@ func newLifecycleSchemaFixture(
 	return fixture
 }
 
+func enableCurrentNodeMonitoring(
+	t *testing.T, ctx context.Context, database *isolatedJobDatabase, instanceID uuid.UUID,
+) {
+	t.Helper()
+	if _, err := database.owner.Exec(ctx, `WITH boundary AS (
+		SELECT clock_timestamp() AS ts
+	) INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) SELECT $1,ts,'deployment_enable','integration-test',ts FROM boundary`, instanceID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (fixture *lifecycleSchemaFixture) finalize(
 	t *testing.T, ctx context.Context, database *isolatedJobDatabase, accounts []lifecycleAccount,
 ) uuid.UUID {
@@ -405,6 +418,7 @@ func TestAccountInventoryLifecyclePermissionsAndProtectedWrites(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	enableCurrentNodeMonitoring(t, ctx, database, fixture.instanceID)
 	fixture.finalize(t, ctx, database, []lifecycleAccount{{email: "protected@example.invalid", successCount: 1}})
 
 	for _, statement := range []string{

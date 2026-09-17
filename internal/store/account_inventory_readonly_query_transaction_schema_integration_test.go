@@ -35,6 +35,7 @@ func newReadonlyQueryFixture(t *testing.T, ctx context.Context, accounts []lifec
 		lifecycle.instanceID, lifecycle.nodeType, lifecycle.contract); err != nil {
 		t.Fatal(err)
 	}
+	enableCurrentNodeMonitoring(t, ctx, database, lifecycle.instanceID)
 	actorID := uuid.New()
 	if _, err := database.owner.Exec(ctx, `INSERT INTO control_admin_users(
 		admin_id,login_name,display_name

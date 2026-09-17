@@ -22,6 +22,7 @@ func TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix(t *
 		fixture.instanceID, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
+	enableCurrentNodeMonitoring(t, ctx, database, fixture.instanceID)
 	fixture.finalize(t, ctx, database, []lifecycleAccount{{
 		email: "permission-matrix@example.invalid", successCount: 1,
 	}})
@@ -58,7 +59,6 @@ func TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix(t *
 		{name: "account_inventory_provider_states", updateColumn: "state"},
 		{name: "account_inventory_snapshot_items", updateColumn: "provider"},
 		{name: "account_inventory_poll_duplicates", updateColumn: "provider"},
-		{name: "relay_node_assets", updateColumn: "display_name"},
 	}
 	privileges := []string{
 		"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER",
@@ -87,6 +87,10 @@ func TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix(t *
 			_, err := database.runtime.Exec(ctx, statement)
 			requirePostgresCode(t, err, "42501")
 		}
+	}
+	if _, err := database.runtime.Exec(ctx,
+		`UPDATE public.relay_node_assets SET display_name=display_name WHERE false`); err != nil {
+		t.Fatalf("runtime column-level Node asset update: %v", err)
 	}
 
 	var runtimeCanReadAssetSecret bool

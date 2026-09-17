@@ -431,6 +431,23 @@ func TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope(t *tes
 				aLifecycle != "present" || zPointer != zPoll.String() || zLifecycle != "suspected_missing" {
 				t.Fatal("four-way fixture did not create the intended inverse current-pointer order")
 			}
+			baselinePage, err := fixture.repository.QueryPageAndAudit(ctx,
+				productstore.AccountInventoryQuery{InstanceID: lifecycle.instanceID, Limit: 10}, fixture.audit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(baselinePage.Items) != 2 {
+				t.Fatalf("pre-concurrency current query rows=%d, want 2", len(baselinePage.Items))
+			}
+			baselineLifecycles := map[string]productstore.AccountInventoryLifecycle{
+				"four-way-a@example.invalid": productstore.AccountInventoryPresent,
+				"four-way-z@example.invalid": productstore.AccountInventorySuspectedMissing,
+			}
+			for _, item := range baselinePage.Items {
+				if baselineLifecycles[item.Email] != item.Lifecycle {
+					t.Fatalf("pre-concurrency current query returned %s/%s", item.Email, item.Lifecycle)
+				}
+			}
 
 			retentionConnection, err := database.runtime.Acquire(ctx)
 			if err != nil {

@@ -161,6 +161,7 @@ func TestAccountInventoryLifecycleActualRolePermissionsAndControlledRead(t *test
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	enableCurrentNodeMonitoring(t, ctx, database, fixture.instanceID)
 	fixture.finalize(t, ctx, database, []lifecycleAccount{{
 		email: "permission-guardrail@example.invalid", successCount: 1,
 	}})
