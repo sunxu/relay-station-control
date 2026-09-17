@@ -4,7 +4,7 @@
 
 ## Modes
 
-`run.sh` 的 focused mode 只负责一个已批准的 Browser acceptance 场景：`upload`、`disable`、`enable-fixture`、`enable`、`replace`、`replace-discovery`、`remove`、`override` 和 `security-replay`。`auth` 只准备认证组合，`startup` 只验证启动与就绪。
+`run.sh` 的 focused mode 只负责一个已批准的 Browser acceptance 场景：`upload`、`disable`、`enable-fixture`、`enable`、`replace`、`replace-discovery`、`remove`、`override` 和 `security-replay`。其中 `security-replay` 当前只保留 duplicate-submit UI proof；安全边界及 normal/credential replay 由 API、service、store 层证明。`auth` 只准备认证组合，`startup` 只验证启动与就绪。
 
 `internal` 运行 `internal/store` 生命周期 self-check，不执行 Browser acceptance。为兼容既有调用，`all` 仍保留为 `internal` 的兼容别名，并会明确打印该语义；它不是某个 Phase 的产品 acceptance gate。当前没有内置 `core` runner；Core acceptance 是外部对已独立批准 focused modes 的组合，不能依赖跨 case 的可变业务状态。
 

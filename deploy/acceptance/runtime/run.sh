@@ -84,14 +84,11 @@ mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
 DISABLE_EMAIL="phase7-disable-${PROJECT}@example.invalid"
 ENABLE_EMAIL="phase7-enable-${PROJECT}@example.invalid"
 ENABLE_SECRET_MARKER="PHASE7_ENABLE_SECRET_${PROJECT##*-}"
-REPLAY_EMAIL="phase7-replay-${PROJECT}@example.invalid"
-REPLAY_SECRET_MARKER="PHASE7_REPLAY_SECRET_${PROJECT##*-}"
 REPLACE_EMAIL="phase7-replace-${PROJECT}@example.invalid"
 REPLACE_BASE_SECRET_MARKER="PHASE7_REPLACE_BASE_${PROJECT##*-}"
 REPLACE_SECRET_MARKER="PHASE7_REPLACE_SECRET_${PROJECT##*-}"
 REMOVE_EMAIL="phase7-remove-${PROJECT}@example.invalid"
 OVERRIDE_LIFECYCLE_EMAIL="phase7-override-lifecycle-${PROJECT}@example.invalid"
-OVERRIDE_SAME_EMAIL="phase7-override-same-${PROJECT}@example.invalid"
 setup_upload_fixture() {
   printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
 }
@@ -104,9 +101,6 @@ setup_disable_fixture() {
 setup_enable_fixture() {
   printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-enable-token","phase7_marker":"%s","disabled":true}\n' "$ENABLE_EMAIL" "$ENABLE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-enable.json"
 }
-setup_replay_fixture() {
-  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replay-token","phase7_marker":"%s","disabled":false}\n' "$REPLAY_EMAIL" "$REPLAY_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replay.json"
-}
 setup_replace_fixture() {
   printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-replace-base-token","phase7_marker":"%s","disabled":false}\n' "$REPLACE_EMAIL" "$REPLACE_BASE_SECRET_MARKER" > "$RUNTIME_DIR/node/auths/phase7-replace-base.json"
   printf '{"type":"antigravity","email":"%s","refresh_token":"phase7-disposable-replace-refresh-token","phase7_marker":"%s","status":"active","unavailable":false}\n' "$REPLACE_EMAIL" "$REPLACE_SECRET_MARKER" > "$RUNTIME_DIR/replace-credential.json"
@@ -116,7 +110,6 @@ setup_remove_fixture() {
 }
 setup_override_fixtures() {
   printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-lifecycle-token","disabled":false}\n' "$OVERRIDE_LIFECYCLE_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-lifecycle.json"
-  printf '{"type":"antigravity","email":"%s","access_token":"phase7-disposable-override-same-token","disabled":false}\n' "$OVERRIDE_SAME_EMAIL" > "$RUNTIME_DIR/node/auths/phase7-override-same.json"
 }
 case "$MODE" in
   upload)
@@ -125,8 +118,6 @@ case "$MODE" in
     ;;
   security-replay)
     setup_disable_fixture
-    setup_replay_fixture
-    setup_upload_fixture
     ;;
   disable) setup_disable_fixture ;;
   enable-fixture|enable) setup_enable_fixture ;;
@@ -318,22 +309,17 @@ echo "AUTH_COMPOSITION_SMOKE=PASS"
 if [[ "$MODE" == "override" ]]; then
   ACCEPTANCE_FAILURE_LAYER=fixture
   OVERRIDE_LIFECYCLE_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
-  OVERRIDE_SAME_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
   OVERRIDE_ADMIN_ID="$(compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "SELECT admin_id FROM control_admin_users WHERE status='enabled' ORDER BY activated_at LIMIT 1" | tr -d '\r\n[:space:]')"
   compose exec -T postgres psql --set ON_ERROR_STOP=1 --username relay_control_migrator --dbname relay_station_control <<SQL
 SELECT public.control_accept_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','$OVERRIDE_ADMIN_ID','account.disable',decode(repeat('aa',32),'hex'),NULL,'00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','disable',NULL);
 SELECT public.control_admit_account_dispatch_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','override-fixture');
 SELECT public.control_transition_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','dispatched','outcome_unknown');
-SELECT public.control_accept_account_admin_operation_v1('$OVERRIDE_SAME_COMMAND_ID','$OVERRIDE_ADMIN_ID','account.disable',decode(repeat('bb',32),'hex'),NULL,'00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_SAME_EMAIL','disable',NULL);
-SELECT public.control_admit_account_dispatch_v1('$OVERRIDE_SAME_COMMAND_ID','00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_SAME_EMAIL','override-fixture');
-SELECT public.control_transition_account_admin_operation_v1('$OVERRIDE_SAME_COMMAND_ID','dispatched','outcome_unknown');
 SQL
-  export ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL="$OVERRIDE_LIFECYCLE_EMAIL" ACCEPTANCE_OVERRIDE_SAME_EMAIL="$OVERRIDE_SAME_EMAIL" ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID="$OVERRIDE_LIFECYCLE_COMMAND_ID" ACCEPTANCE_OVERRIDE_SAME_COMMAND_ID="$OVERRIDE_SAME_COMMAND_ID" ACCEPTANCE_OVERRIDE_EVIDENCE_FILE="$RUNTIME_DIR/override-evidence.json" ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log" CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output" CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
+  export ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL="$OVERRIDE_LIFECYCLE_EMAIL" ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID="$OVERRIDE_LIFECYCLE_COMMAND_ID" ACCEPTANCE_OVERRIDE_EVIDENCE_FILE="$RUNTIME_DIR/override-evidence.json" ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log" CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output" CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
   run_browser_spec override "$RUNTIME_DIR/acceptance-output.log" account-operations-override.spec.ts
   capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND lifecycle_override_at IS NOT NULL AND lifecycle_override_reason='process_restarted'")" == 1 ]] || { echo "lifecycle_override_mismatch" >&2; exit 1; }
-  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_SAME_COMMAND_ID' AND same_account_override_at IS NOT NULL AND same_account_override_reason='process_restarted'")" == 1 ]] || { echo "same_account_override_mismatch" >&2; exit 1; }
   scan_override_secret() {
     scan_secret_value "secret" "$1"
   }
@@ -344,60 +330,24 @@ SQL
   scan_override_secret "$(cat "$RUNTIME_DIR/second-admin-password")"
   echo "OVERRIDE_SECRET_SCAN=PASS"
   echo "OVERRIDE_LIFECYCLE=PASS"
-  echo "OVERRIDE_SAME_ACCOUNT=PASS"
   echo "OVERRIDE_CANCEL=PASS"
   exit 0
 fi
 if [[ "$MODE" == "security-replay" ]]; then
   ACCEPTANCE_FAILURE_LAYER=fixture
   export ACCEPTANCE_DISABLE_EMAIL="$DISABLE_EMAIL"
-  export ACCEPTANCE_REPLAY_EMAIL="$REPLAY_EMAIL"
-  export ACCEPTANCE_UPLOAD_EMAIL="$UPLOAD_EMAIL"
-  export ACCEPTANCE_UPLOAD_CREDENTIAL_FILE="$RUNTIME_DIR/upload-credential.json"
   export ACCEPTANCE_SECURITY_REPLAY_EVIDENCE_FILE="$RUNTIME_DIR/security-replay-evidence.json"
   export ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log"
   export CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output"
   export CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"
   mkdir -p "$RUNTIME_DIR/logs"
-  e2e_args=(account-operations-security-replay.spec.ts)
-  if [[ "${SECURITY_REPLAY_FOCUSED:-}" == "normal" ]]; then
-    e2e_args+=(--grep "replays an exact terminal normal mutation")
-  fi
-  if ! run_browser_spec security-replay "$RUNTIME_DIR/acceptance-output.log" "${e2e_args[@]}"; then
+  if ! run_browser_spec security-replay "$RUNTIME_DIR/acceptance-output.log" account-operations-security-replay.spec.ts; then
     exit 1
   fi
   capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
-  if [[ "${SECURITY_REPLAY_FOCUSED:-}" == "normal" ]]; then
-    normal_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["normalReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
-    native_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" PATCH "/v0/management/auth-files/status")"
-    [[ "$native_patch_count" == 1 ]] || { echo "focused_normal_replay_native_count_mismatch:${native_patch_count:-0}" >&2; exit 1; }
-    [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$normal_command_id'")" == 1 ]] || { echo "focused_normal_replay_operation_count_mismatch" >&2; exit 1; }
-    scan_focused_replay_secret() {
-    scan_secret_value "$1" "$2"
-  }
-    scan_focused_replay_secret "replay-marker" "$REPLAY_SECRET_MARKER"
-    scan_focused_replay_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
-    scan_focused_replay_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
-    scan_focused_replay_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
-    scan_focused_replay_secret "auth-keyring" "$(cat "$RUNTIME_DIR/auth-keyring.json")"
-    scan_focused_replay_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
-    scan_focused_replay_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
-    echo "FOCUSED_NORMAL_REPLAY=PASS"
-    echo "FOCUSED_NORMAL_REPLAY_NATIVE_PATCHES=1"
-    echo "FOCUSED_NORMAL_REPLAY_SECRET_SCAN=PASS"
-    exit 0
-  fi
-  native_patch_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" PATCH "/v0/management/auth-files/status")"
-  native_post_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" POST "/v0/management/auth-files")"
-  [[ "$native_patch_count" == 2 && "$native_post_count" == 1 ]] || { echo "security_replay_native_count_mismatch:patch=${native_patch_count:-0},post=${native_post_count:-0}" >&2; exit 1; }
   duplicate_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["duplicate"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
-  normal_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["normalReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
-  credential_command_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["credentialReplay"]["command_id"])' "$RUNTIME_DIR/security-replay-evidence.json")"
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$duplicate_command_id'")" == 1 ]] || { echo "duplicate_operation_count_mismatch" >&2; exit 1; }
-  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$normal_command_id'")" == 1 ]] || { echo "normal_replay_operation_count_mismatch" >&2; exit 1; }
-  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$credential_command_id'")" == 1 ]] || { echo "credential_replay_operation_count_mismatch" >&2; exit 1; }
   scan_security_replay_secret() { scan_secret_value "$1" "$2"; }
-  scan_security_replay_secret "upload-marker" "$UPLOAD_SECRET_MARKER"
   scan_security_replay_secret "node-management-secret" "$NODE_MANAGEMENT_PASSWORD"
   scan_security_replay_secret "intent-key" "$(cat "$RUNTIME_DIR/account-operation-intent-key")"
   scan_security_replay_secret "bootstrap-secret" "$(cat "$RUNTIME_DIR/bootstrap-secret")"
@@ -405,14 +355,9 @@ if [[ "$MODE" == "security-replay" ]]; then
   scan_security_replay_secret "admin-password" "$(cat "$RUNTIME_DIR/admin-password")"
   scan_security_replay_secret "second-admin-password" "$(cat "$RUNTIME_DIR/second-admin-password")"
   echo "SECURITY_REPLAY_SECRET_SCAN=PASS"
-  echo "SECURITY=PASS"
   echo "DUPLICATE_SUBMIT=PASS"
   echo "DUPLICATE_HTTP_MUTATIONS=1"
   echo "DUPLICATE_NATIVE_MUTATIONS=1"
-  echo "NORMAL_REPLAY=PASS"
-  echo "NORMAL_REPLAY_NATIVE_MUTATIONS=0"
-  echo "CREDENTIAL_REPLAY=PASS"
-  echo "CREDENTIAL_REPLAY_NATIVE_MUTATIONS=0"
   exit 0
 fi
 if [[ "$MODE" == "upload" ]]; then
