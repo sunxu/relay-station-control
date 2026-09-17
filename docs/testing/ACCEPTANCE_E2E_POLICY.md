@@ -720,7 +720,7 @@ Never increase a timeout without answering these questions.
 
 ---
 
-## 32. Pre-Implementation Test Contract Coverage Review
+## 31. Pre-Implementation Test Contract Coverage Review
 
 Any change that introduces or changes product behavior, an OpenSpec
 contract, persistence, concurrency, security, an API contract, a shared
@@ -961,7 +961,7 @@ required API operations
 → no magic global operation count unless count itself is frozen
 ```
 
-## 33. Final Guiding Principle
+## 32. Final Guiding Principle
 
 When acceptance rigor conflicts with acceptance complexity, prefer:
 

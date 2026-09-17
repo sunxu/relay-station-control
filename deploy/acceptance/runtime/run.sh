@@ -357,7 +357,6 @@ if [[ "$MODE" == "security-replay" ]]; then
   echo "SECURITY_REPLAY_SECRET_SCAN=PASS"
   echo "DUPLICATE_SUBMIT=PASS"
   echo "DUPLICATE_HTTP_MUTATIONS=1"
-  echo "DUPLICATE_NATIVE_MUTATIONS=1"
   exit 0
 fi
 if [[ "$MODE" == "upload" ]]; then
