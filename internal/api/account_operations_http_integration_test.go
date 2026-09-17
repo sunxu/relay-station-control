@@ -344,6 +344,15 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 	}
 	assertOperation(t, id, "outcome_unknown", "remote_outcome_unknown", false, false)
 	mutationStatus.Store(0)
+	unknownReplayMutations := mutationCount.Load()
+	unknownReplaySnapshots := snapshotCount.Load()
+	unknownReplay := postUpload("/api/account-operations/upload-new", id)
+	if unknownReplay.Code != http.StatusAccepted || !strings.Contains(unknownReplay.Body.String(), `"outcome_unknown"`) {
+		t.Fatalf("outcome_unknown replay status=%d body=%s", unknownReplay.Code, unknownReplay.Body.String())
+	}
+	if mutationCount.Load() != unknownReplayMutations || snapshotCount.Load() != unknownReplaySnapshots {
+		t.Fatal("outcome_unknown replay performed native work")
+	}
 
 	// A durable same-account blocker wins before the native mutation.
 	blockedID := uuid.New()

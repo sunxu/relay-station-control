@@ -41,6 +41,7 @@ type NodeResolver interface {
 
 type operationStore interface {
 	ReplayTerminal(context.Context, store.AccountOperationAcceptance) (store.AccountCommandReceipt, error)
+	ReplayCurrent(context.Context, store.AccountOperationAcceptance) (store.AccountAdminOperation, error)
 	Operation(context.Context, uuid.UUID) (store.AccountAdminOperation, error)
 	Accept(context.Context, store.AccountOperationAcceptance) (store.AccountAdminOperation, error)
 	AcceptWithIntentKey(context.Context, string, store.AccountOperationAcceptance, []byte) (store.AccountAdminOperation, error)
@@ -140,7 +141,7 @@ func (s *Service) applyOverride(ctx context.Context, command OverrideCommand, ki
 			return store.AccountAdminOperation{}, nil
 		}
 		return s.operations.Operation(ctx, *receipt.TargetOperationCommandID)
-	} else if !errors.Is(replayErr, store.ErrCommandConflict) && !errors.Is(replayErr, store.ErrAccountOperationState) {
+	} else if !errors.Is(replayErr, store.ErrAccountOperationNotFound) && !errors.Is(replayErr, store.ErrAccountOperationState) {
 		return store.AccountAdminOperation{}, replayErr
 	}
 	override := store.AccountOperationOverride{CommandID: command.CommandID, ActorAdminID: command.ActorAdminID, TargetOperation: command.TargetOperation, Reason: command.Reason, Detail: command.Detail, RequestID: command.RequestID}
@@ -178,13 +179,34 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 		acceptance.SecretFingerprintVersion = &version
 		acceptance.UploadIntentFingerprint = fingerprint
 	}
+	resumePrepared := false
+	var operation store.AccountAdminOperation
 	if receipt, err := s.operations.ReplayTerminal(ctx, acceptance); err == nil {
 		if receipt.TargetOperationCommandID == nil {
 			return store.AccountAdminOperation{}, nil
 		}
 		return s.operations.Operation(ctx, *receipt.TargetOperationCommandID)
-	} else if !errors.Is(err, store.ErrCommandConflict) && !errors.Is(err, store.ErrAccountOperationState) {
-		return store.AccountAdminOperation{}, err
+	} else {
+		switch {
+		case errors.Is(err, store.ErrAccountOperationNotFound):
+		case errors.Is(err, store.ErrCommandConflict):
+			return store.AccountAdminOperation{}, err
+		case errors.Is(err, store.ErrAccountOperationState):
+			operation, err = s.operations.ReplayCurrent(ctx, acceptance)
+			if err != nil {
+				return store.AccountAdminOperation{}, err
+			}
+			switch operation.ExecutionState {
+			case store.AccountDispatched, store.AccountOutcomeUnknown:
+				return operation, nil
+			case store.AccountPrepared:
+				resumePrepared = true
+			default:
+				return store.AccountAdminOperation{}, store.ErrAccountOperationState
+			}
+		default:
+			return store.AccountAdminOperation{}, err
+		}
 	}
 	if err := validateCanonicalIntent(command, acceptance.UploadIntentFingerprint); err != nil {
 		return store.AccountAdminOperation{}, err
@@ -194,14 +216,13 @@ func (s *Service) Execute(ctx context.Context, command Command) (store.AccountAd
 	if err != nil {
 		return store.AccountAdminOperation{}, ErrNodeNotFound
 	}
-	var operation store.AccountAdminOperation
-	if command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting {
+	if !resumePrepared && (command.Kind == store.AccountUploadNew || command.Kind == store.AccountReplaceExisting) {
 		intentKeyPath := command.IntentKeyPath
 		if s.intentKeyBound {
 			intentKeyPath = s.intentKeyPath
 		}
 		operation, err = s.operations.AcceptWithIntentKey(ctx, intentKeyPath, acceptance, command.Credential)
-	} else {
+	} else if !resumePrepared {
 		operation, err = s.operations.Accept(ctx, acceptance)
 	}
 	if err != nil {

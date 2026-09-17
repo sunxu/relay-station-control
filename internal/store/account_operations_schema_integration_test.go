@@ -136,6 +136,70 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	if !ok || operationBody["execution_state"] != "failed" || operationBody["error_code"] != "account_target_not_found" {
 		t.Fatalf("derived terminal operation body = %#v", savedBody["operation"])
 	}
+	replayID := uuid.New()
+	replayHash := sha256.Sum256([]byte("nonterminal-replay"))
+	replayCommand := store.AccountOperationAcceptance{CommandID: replayID, ActorAdminID: admin, OperationKind: store.AccountRemove, NodeInstanceID: node, AccountKey: "antigravity:nonterminal-replay@example.invalid", CanonicalIntentHash: replayHash[:]}
+	if _, err := r.Accept(ctx, replayCommand); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ReplayTerminal(ctx, replayCommand); !errors.Is(err, store.ErrAccountOperationState) {
+		t.Fatalf("prepared terminal replay error=%v", err)
+	}
+	current, err := r.ReplayCurrent(ctx, replayCommand)
+	if err != nil || current.ExecutionState != store.AccountPrepared {
+		t.Fatalf("prepared current replay=%#v err=%v", current, err)
+	}
+	admitted, current, err := r.AdmitAccountDispatch(ctx, replayID, node, replayCommand.AccountKey, "nonterminal-replay")
+	if err != nil || !admitted || current.ExecutionState != store.AccountDispatched {
+		t.Fatalf("dispatch admission=%t operation=%#v err=%v", admitted, current, err)
+	}
+	current, err = r.ReplayCurrent(ctx, replayCommand)
+	if err != nil || current.ExecutionState != store.AccountDispatched {
+		t.Fatalf("dispatched current replay=%#v err=%v", current, err)
+	}
+	if _, err := r.TransitionAccountOperation(ctx, replayID, store.AccountDispatched, store.AccountOutcomeUnknown); err != nil {
+		t.Fatal(err)
+	}
+	current, err = r.ReplayCurrent(ctx, replayCommand)
+	if err != nil || current.ExecutionState != store.AccountOutcomeUnknown {
+		t.Fatalf("unknown current replay=%#v err=%v", current, err)
+	}
+
+	concurrentID := uuid.New()
+	concurrentHash := sha256.Sum256([]byte("concurrent-prepared"))
+	concurrentCommand := store.AccountOperationAcceptance{CommandID: concurrentID, ActorAdminID: admin, OperationKind: store.AccountDisable, NodeInstanceID: node, AccountKey: "antigravity:concurrent-prepared@example.invalid", CanonicalIntentHash: concurrentHash[:]}
+	if _, err := r.Accept(ctx, concurrentCommand); err != nil {
+		t.Fatal(err)
+	}
+	type admissionResult struct {
+		admitted bool
+		op       store.AccountAdminOperation
+		err      error
+	}
+	results := make(chan admissionResult, 2)
+	for range 2 {
+		go func() {
+			admitted, op, err := r.AdmitAccountDispatch(ctx, concurrentID, node, concurrentCommand.AccountKey, "concurrent-prepared")
+			results <- admissionResult{admitted: admitted, op: op, err: err}
+		}()
+	}
+	admittedCount := 0
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if result.admitted {
+			admittedCount++
+		}
+		if result.op.ExecutionState != store.AccountDispatched {
+			t.Fatalf("concurrent admission result=%#v", result)
+		}
+	}
+	if admittedCount != 1 {
+		t.Fatalf("concurrent admitted count=%d, want 1", admittedCount)
+	}
+
 	var forgedID = uuid.New()
 	forgedHash := sha256.Sum256([]byte("forged"))
 	if _, err := r.Accept(ctx, store.AccountOperationAcceptance{CommandID: forgedID, ActorAdminID: admin, OperationKind: store.AccountDisable, NodeInstanceID: node, AccountKey: "antigravity:forged@example.invalid", CanonicalIntentHash: forgedHash[:]}); err != nil {
@@ -156,7 +220,7 @@ func TestAccountOperationsPersistencePG18(t *testing.T) {
 	if _, err := r.Accept(ctx, store.AccountOperationAcceptance{CommandID: secondID, ActorAdminID: admin, OperationKind: store.AccountEnable, NodeInstanceID: node, AccountKey: "antigravity:other@example.invalid", CanonicalIntentHash: secondHash[:]}); err != nil {
 		t.Fatal(err)
 	}
-	admitted, _, err := r.AdmitAccountDispatch(ctx, secondID, node, "antigravity:other@example.invalid", "schema-proof")
+	admitted, _, err = r.AdmitAccountDispatch(ctx, secondID, node, "antigravity:other@example.invalid", "schema-proof")
 	if err != nil || !admitted {
 		t.Fatal(err)
 	}

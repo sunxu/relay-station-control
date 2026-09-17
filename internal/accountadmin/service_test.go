@@ -21,12 +21,33 @@ func (r fakeNodeResolver) Resolve(context.Context, uuid.UUID, string) (NodeState
 	return r.state, nil
 }
 
+type countingNodeResolver struct {
+	mu    sync.Mutex
+	state NodeState
+	calls int
+}
+
+func (r *countingNodeResolver) Resolve(context.Context, uuid.UUID, string) (NodeState, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	return r.state, nil
+}
+
+func (r *countingNodeResolver) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
+}
+
 type fakeOperationStore struct {
-	mu        sync.Mutex
-	operation store.AccountAdminOperation
-	terminal  bool
-	admitted  bool
-	receipt   store.AccountCommandReceipt
+	mu            sync.Mutex
+	operation     store.AccountAdminOperation
+	terminal      bool
+	admitted      bool
+	dispatchCalls int
+	receipt       store.AccountCommandReceipt
+	replayErr     error
 }
 
 func (s *fakeOperationStore) ReplayTerminal(context.Context, store.AccountOperationAcceptance) (store.AccountCommandReceipt, error) {
@@ -35,9 +56,19 @@ func (s *fakeOperationStore) ReplayTerminal(context.Context, store.AccountOperat
 	if s.terminal {
 		return s.receipt, nil
 	}
-	return store.AccountCommandReceipt{}, store.ErrCommandConflict
+	if s.replayErr != nil {
+		return store.AccountCommandReceipt{}, s.replayErr
+	}
+	return store.AccountCommandReceipt{}, store.ErrAccountOperationNotFound
+}
+func (s *fakeOperationStore) ReplayCurrent(context.Context, store.AccountOperationAcceptance) (store.AccountAdminOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.operation, nil
 }
 func (s *fakeOperationStore) Operation(context.Context, uuid.UUID) (store.AccountAdminOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.operation, nil
 }
 func (s *fakeOperationStore) Accept(context.Context, store.AccountOperationAcceptance) (store.AccountAdminOperation, error) {
@@ -59,12 +90,17 @@ func (s *fakeOperationStore) AdmitAccountNoop(context.Context, uuid.UUID, uuid.U
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.operation.ExecutionState, s.terminal = store.AccountRemoteNoop, true
+	s.receipt.TargetOperationCommandID = &s.operation.CommandID
 	return true, s.operation, nil
 }
 func (s *fakeOperationStore) AdmitAccountDispatch(context.Context, uuid.UUID, uuid.UUID, string, string) (bool, store.AccountAdminOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.operation.ExecutionState != store.AccountPrepared {
+		return false, s.operation, nil
+	}
 	s.admitted, s.operation.ExecutionState = true, store.AccountDispatched
+	s.dispatchCalls++
 	return true, s.operation, nil
 }
 func (s *fakeOperationStore) TransitionAccountOperation(_ context.Context, _ uuid.UUID, _, to store.AccountOperationState) (store.AccountAdminOperation, error) {
@@ -80,6 +116,7 @@ func (s *fakeOperationStore) TerminalizeApplied(context.Context, uuid.UUID, stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.operation.ExecutionState, s.terminal = store.AccountRemoteApplied, true
+	s.receipt.TargetOperationCommandID = &s.operation.CommandID
 	return s.operation, nil
 }
 func (s *fakeOperationStore) ApplyLifecycleOverride(context.Context, store.AccountOperationOverride) error {
@@ -171,5 +208,176 @@ func TestValidateCommandClassifiesRequestedProvider(t *testing.T) {
 	}
 	if err := validateCommand(command); !errors.Is(err, ErrUnsupportedProvider) {
 		t.Fatalf("validateCommand error=%v, want ErrUnsupportedProvider", err)
+	}
+}
+
+func TestExecuteDispatchedReplayDoesNotResolveNode(t *testing.T) {
+	commandID, adminID, nodeID := uuid.New(), uuid.New(), uuid.New()
+	intent, err := CanonicalIntentV1(store.AccountRemove, nodeID, "antigravity:replay@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := &fakeOperationStore{
+		operation: store.AccountAdminOperation{CommandID: commandID, NodeInstanceID: nodeID, AccountKey: "antigravity:replay@example.invalid", OperationKind: store.AccountRemove, ExecutionState: store.AccountDispatched},
+		replayErr: store.ErrAccountOperationState,
+	}
+	resolver := &countingNodeResolver{}
+	service, err := NewService(ops, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.Execute(context.Background(), Command{CommandID: commandID, ActorAdminID: adminID, NodeInstanceID: nodeID, AccountKey: "antigravity:replay@example.invalid", Kind: store.AccountRemove, CanonicalIntent: intent})
+	if err != nil || got.ExecutionState != store.AccountDispatched {
+		t.Fatalf("dispatched replay=%#v err=%v", got, err)
+	}
+	if resolver.Count() != 0 {
+		t.Fatalf("dispatched replay resolved Node %d times", resolver.Count())
+	}
+}
+
+func TestExecuteOutcomeUnknownReplayDoesNotResolveNode(t *testing.T) {
+	commandID, adminID, nodeID := uuid.New(), uuid.New(), uuid.New()
+	intent, err := CanonicalIntentV1(store.AccountRemove, nodeID, "antigravity:unknown@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := &fakeOperationStore{
+		operation: store.AccountAdminOperation{CommandID: commandID, NodeInstanceID: nodeID, AccountKey: "antigravity:unknown@example.invalid", OperationKind: store.AccountRemove, ExecutionState: store.AccountOutcomeUnknown},
+		replayErr: store.ErrAccountOperationState,
+	}
+	resolver := &countingNodeResolver{}
+	service, err := NewService(ops, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.Execute(context.Background(), Command{CommandID: commandID, ActorAdminID: adminID, NodeInstanceID: nodeID, AccountKey: "antigravity:unknown@example.invalid", Kind: store.AccountRemove, CanonicalIntent: intent})
+	if err != nil || got.ExecutionState != store.AccountOutcomeUnknown {
+		t.Fatalf("outcome_unknown replay=%#v err=%v", got, err)
+	}
+	if resolver.Count() != 0 {
+		t.Fatalf("outcome_unknown replay resolved Node %d times", resolver.Count())
+	}
+}
+
+func TestExecutePreparedReplayResumes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"resume@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	config, err := (drivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := cliproxyapi.NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandID, adminID, nodeID := uuid.New(), uuid.New(), uuid.New()
+	intent, err := CanonicalIntentV1(store.AccountRemove, nodeID, "antigravity:resume@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := &fakeOperationStore{operation: store.AccountAdminOperation{CommandID: commandID, NodeInstanceID: nodeID, AccountKey: "antigravity:resume@example.invalid", OperationKind: store.AccountRemove, ExecutionState: store.AccountPrepared}, replayErr: store.ErrAccountOperationState}
+	resolver := &countingNodeResolver{state: NodeState{Adapter: adapter, LifecycleActive: true, MonitoringEligible: true, InventoryReadAllowed: true, ProviderPolicyActive: true}}
+	service, err := NewService(ops, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.Execute(context.Background(), Command{CommandID: commandID, ActorAdminID: adminID, NodeInstanceID: nodeID, AccountKey: "antigravity:resume@example.invalid", Kind: store.AccountRemove, CanonicalIntent: intent})
+	if err != nil || got.ExecutionState != store.AccountRemoteApplied {
+		t.Fatalf("prepared resume=%#v err=%v", got, err)
+	}
+	if resolver.Count() != 1 || ops.dispatchCalls != 1 {
+		t.Fatalf("resolver=%d dispatch=%d", resolver.Count(), ops.dispatchCalls)
+	}
+}
+
+func TestExecuteConcurrentPreparedRetriesDispatchOnce(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
+		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"concurrent@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	config, err := (drivers.ManagementConfig{}).Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := cliproxyapi.NewNativeAdapter(server.URL, config, "synthetic-management-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandID, adminID, nodeID := uuid.New(), uuid.New(), uuid.New()
+	accountKey := "antigravity:concurrent@example.invalid"
+	intent, err := CanonicalIntentV1(store.AccountRemove, nodeID, accountKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := &fakeOperationStore{operation: store.AccountAdminOperation{CommandID: commandID, NodeInstanceID: nodeID, AccountKey: accountKey, OperationKind: store.AccountRemove, ExecutionState: store.AccountPrepared}, replayErr: store.ErrAccountOperationState}
+	resolver := &countingNodeResolver{state: NodeState{Adapter: adapter, LifecycleActive: true, MonitoringEligible: true, InventoryReadAllowed: true, ProviderPolicyActive: true}}
+	service, err := NewService(ops, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := Command{CommandID: commandID, ActorAdminID: adminID, NodeInstanceID: nodeID, AccountKey: accountKey, Kind: store.AccountRemove, CanonicalIntent: intent}
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := service.Execute(context.Background(), command)
+			results <- err
+		}()
+	}
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ops.dispatchCalls != 1 {
+		t.Fatalf("dispatch calls=%d, want 1", ops.dispatchCalls)
+	}
+}
+
+func TestExecuteConcurrentNonterminalRetriesDoNoNativeWork(t *testing.T) {
+	for _, state := range []store.AccountOperationState{store.AccountDispatched, store.AccountOutcomeUnknown} {
+		t.Run(string(state), func(t *testing.T) {
+			commandID, adminID, nodeID := uuid.New(), uuid.New(), uuid.New()
+			accountKey := "antigravity:nonterminal@example.invalid"
+			intent, err := CanonicalIntentV1(store.AccountRemove, nodeID, accountKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ops := &fakeOperationStore{operation: store.AccountAdminOperation{CommandID: commandID, NodeInstanceID: nodeID, AccountKey: accountKey, OperationKind: store.AccountRemove, ExecutionState: state}, replayErr: store.ErrAccountOperationState}
+			resolver := &countingNodeResolver{}
+			service, err := NewService(ops, resolver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			command := Command{CommandID: commandID, ActorAdminID: adminID, NodeInstanceID: nodeID, AccountKey: accountKey, Kind: store.AccountRemove, CanonicalIntent: intent}
+			results := make(chan error, 2)
+			for range 2 {
+				go func() {
+					_, err := service.Execute(context.Background(), command)
+					results <- err
+				}()
+			}
+			for range 2 {
+				if err := <-results; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if resolver.Count() != 0 || ops.dispatchCalls != 0 {
+				t.Fatalf("resolver=%d dispatch=%d", resolver.Count(), ops.dispatchCalls)
+			}
+		})
 	}
 }

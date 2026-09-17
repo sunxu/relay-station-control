@@ -321,6 +321,22 @@ func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, i
 	if err = lockAdminCommand(ctx, tx, id); err != nil {
 		return false, AccountAdminOperation{}, err
 	}
+	operation, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, AccountAdminOperation{}, ErrAccountOperationNotFound
+	}
+	if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
+	if operation.NodeInstanceID != nodeID || operation.AccountKey != accountKey {
+		return false, AccountAdminOperation{}, ErrAccountOperationState
+	}
+	if operation.ExecutionState != AccountPrepared {
+		if err = tx.Commit(ctx); err != nil {
+			return false, AccountAdminOperation{}, err
+		}
+		return false, operation, nil
+	}
 	if lifecycleStatus != "active" {
 		if _, err = tx.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,$2,$3)`, id, "node_retired", requestID); err != nil {
 			return false, AccountAdminOperation{}, err
@@ -332,14 +348,14 @@ func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, i
 			return false, AccountAdminOperation{}, err
 		}
 	}
-	op, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
+	operation, err = scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
 	if err != nil {
 		return false, AccountAdminOperation{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return false, AccountAdminOperation{}, err
 	}
-	return admitted, op, nil
+	return admitted, operation, nil
 }
 
 // AdmitAccountNoop atomically applies same-account admission and the
@@ -464,7 +480,10 @@ func (r *AccountOperationRepository) ReplayTerminal(ctx context.Context, command
 	if err != nil {
 		return AccountCommandReceipt{}, err
 	}
-	if !exists || !reservation.matches(command.ActorAdminID, accountCommandKind(command.OperationKind), command.CanonicalIntentHash, command.SecretFingerprintVersion) {
+	if !exists {
+		return AccountCommandReceipt{}, ErrAccountOperationNotFound
+	}
+	if !reservation.matches(command.ActorAdminID, accountCommandKind(command.OperationKind), command.CanonicalIntentHash, command.SecretFingerprintVersion) {
 		return AccountCommandReceipt{}, ErrCommandConflict
 	}
 	var receipt AccountCommandReceipt
@@ -479,6 +498,43 @@ func (r *AccountOperationRepository) ReplayTerminal(ctx context.Context, command
 		return AccountCommandReceipt{}, err
 	}
 	return receipt, nil
+}
+
+// ReplayCurrent validates command identity and returns a durable nonterminal
+// operation without resolving a Node or preparing native work.
+func (r *AccountOperationRepository) ReplayCurrent(ctx context.Context, command AccountOperationAcceptance) (AccountAdminOperation, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockAdminCommand(ctx, tx, command.CommandID); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	reservation, exists, err := lookupAccountCommandReservation(ctx, tx, command.CommandID)
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	if !exists {
+		return AccountAdminOperation{}, ErrAccountOperationNotFound
+	}
+	if !reservation.matches(command.ActorAdminID, accountCommandKind(command.OperationKind), command.CanonicalIntentHash, command.SecretFingerprintVersion) {
+		return AccountAdminOperation{}, ErrCommandConflict
+	}
+	operation, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, command.CommandID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AccountAdminOperation{}, ErrAccountOperationState
+	}
+	if err != nil {
+		return AccountAdminOperation{}, err
+	}
+	if operation.ExecutionState != AccountPrepared && operation.ExecutionState != AccountDispatched && operation.ExecutionState != AccountOutcomeUnknown {
+		return AccountAdminOperation{}, ErrAccountOperationState
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return AccountAdminOperation{}, err
+	}
+	return operation, nil
 }
 
 type AccountOperationOverride struct {
