@@ -165,7 +165,7 @@ See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
 - PostgreSQL 是 Control 持久状态的唯一真相；不得用进程内状态伪装持久成功。
 - Control 只观察、关联、快照、分析、告警和建议；不得进入请求数据面、调度请求、修改 Gateway Account/Group 或路由、修改 CLIProxyAPI 凭证状态、镜像 Gateway runtime scheduler truth 或自动修复重复归属。
 - Gateway 是一个 Sub2API deployment，Relay Node 是一个 CLIProxyAPI deployment；必须保留两者原生 routing/scheduling、Provider/Account selection、retry 和 cooldown 边界。
-- Control 不得持久化或暴露上游凭据、Node Management Key、Gateway 管理凭据或原始响应正文。
+- Control MUST NOT 持久化 plaintext upstream credentials、Node Management Keys、Gateway management credentials 或 raw response bodies。Phase 8 Stage 0 仅允许对 Relay Node management credential 与 Gateway Directory credential 持久化 approved protected-at-rest representation；K2 必须位于 PostgreSQL 外。这些 protected representations 仍是 Secret state，MUST NOT 通过 ordinary API/UI/query/log/audit/metrics/trace/business surfaces 暴露。Provider/API/OAuth/access token/refresh token/password/DingTalk secret/credential-bearing headers/raw upstream response 等既有 Secret 规则保持不变；不得泛化为通用 Secret persistence、Vault 或 Secret Manager abstraction。
 - 邮箱是普通业务身份，不是 Secret；完整值可按批准契约用于 authenticated API/UI、数据库、审计、受控业务日志与 DingTalk 消息。Prometheus/Alertmanager labels 不得使用 raw email/account_key 等高基数字段；确需指标稳定身份时使用环境隔离的不可逆 HMAC account_id。credentials、token、Management Key、webhook URL/query、signing secret、password 与 raw upstream response/body 继续严格保护，不得泄漏。
 - 默认关闭的能力必须保持关闭，除非其 Runbook 明确记录了已获批准的启用步骤。
 - 生产禁止 destructive migration down；回滚应停止新行为并保留 forward schema 和审计证据。

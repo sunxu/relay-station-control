@@ -11,7 +11,9 @@ context: |
   Architecture decisions are defined by ../ops/docs/adr/0001-control-technology-stack.md and ../ops/docs/adr/0002-use-sub2api-native-downstream-scheduling.md.
   API source of truth: api/openapi.yaml. Database source of truth: immutable forward Goose migrations.
   Generated Go and TypeScript clients must be refreshed with make generate and must not be hand-edited.
-  Control must not persist or expose upstream credentials, Node Management Keys, Gateway admin credentials, or raw response bodies.
+  Control MUST NOT persist plaintext upstream credentials, Node Management Keys, Gateway management credentials, or raw response bodies.
+  Phase 8 Stage 0 narrowly permits approved protected-at-rest representations for exactly Relay Node management credential and Gateway Directory credential. K2 remains outside PostgreSQL. These representations remain Secret state and MUST NOT be exposed through ordinary API/UI/query/log/audit/metrics/trace/business surfaces.
+  Provider/API/OAuth/access token/refresh token/password/DingTalk secret/credential-bearing headers/raw upstream response rules remain unchanged. This exception MUST NOT be generalized into generic Secret persistence, Vault, or Secret Manager abstractions.
   Email is normal business identity, not Secret. Approved authenticated API/UI, protected database state, audit, controlled business logs, durable notification payloads and DingTalk message bodies may use full email without masking or special email permissions.
   Prometheus/Alertmanager labels must not contain raw email/account_key. If stable account identity is needed in metrics, use an environment-specific irreversible HMAC account_id. This cardinality rule does not prohibit full email in approved business surfaces or DingTalk message bodies.
   Secret handling remains strict: API keys, access/refresh tokens, OAuth credentials, Management Keys, Gateway management credentials, passwords, DingTalk webhook URLs including query, signing secrets, credential-bearing headers and raw upstream responses/bodies must not leak.
