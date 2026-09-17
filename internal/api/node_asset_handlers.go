@@ -116,7 +116,7 @@ func nodeMutationMetricResult(err error) string {
 	if errors.Is(err, assetstore.ErrInvalidNode) || errors.Is(err, assetstore.ErrInvalidNodeEndpoint) || errors.Is(err, assetstore.ErrInvalidNodeSecret) {
 		return "invalid"
 	}
-	if errors.Is(err, assetstore.ErrCommandConflict) || errors.Is(err, assetstore.ErrNodeRetired) || errors.Is(err, assetstore.ErrNodeIdentityExists) || errors.Is(err, assetstore.ErrStaleAssetRevision) || errors.Is(err, assetstore.ErrAssetRevisionExhausted) {
+	if errors.Is(err, assetstore.ErrCommandConflict) || errors.Is(err, assetstore.ErrNodeRetired) || errors.Is(err, assetstore.ErrAccountOperationBlocked) || errors.Is(err, assetstore.ErrNodeIdentityExists) || errors.Is(err, assetstore.ErrStaleAssetRevision) || errors.Is(err, assetstore.ErrAssetRevisionExhausted) {
 		return "conflict"
 	}
 	return "unavailable"
@@ -146,6 +146,8 @@ func nodeError(w http.ResponseWriter, r *http.Request, s *Server, err error) {
 		writeGatewayAPIError(w, r, s, http.StatusNotFound, ErrorCodeAssetNotFound)
 	case errors.Is(err, assetstore.ErrNodeRetired):
 		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeAssetRetired)
+	case errors.Is(err, assetstore.ErrAccountOperationBlocked):
+		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeConflict)
 	case errors.Is(err, assetstore.ErrNodeIdentityExists):
 		writeGatewayAPIError(w, r, s, http.StatusConflict, ErrorCodeDuplicateIdentity)
 	case errors.Is(err, assetstore.ErrStaleAssetRevision):

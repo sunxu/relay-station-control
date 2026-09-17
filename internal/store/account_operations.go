@@ -312,12 +312,25 @@ func (r *AccountOperationRepository) AdmitAccountDispatch(ctx context.Context, i
 		return false, AccountAdminOperation{}, err
 	}
 	defer tx.Rollback(ctx)
+	var lifecycleStatus string
+	if err = tx.QueryRow(ctx, `SELECT lifecycle_status FROM relay_node_assets WHERE instance_id=$1 FOR UPDATE`, nodeID).Scan(&lifecycleStatus); errors.Is(err, pgx.ErrNoRows) {
+		return false, AccountAdminOperation{}, ErrNodeNotFound
+	} else if err != nil {
+		return false, AccountAdminOperation{}, err
+	}
 	if err = lockAdminCommand(ctx, tx, id); err != nil {
 		return false, AccountAdminOperation{}, err
 	}
+	if lifecycleStatus != "active" {
+		if _, err = tx.Exec(ctx, `SELECT control_terminalize_account_operation_failure_v1($1,$2,$3)`, id, "node_retired", requestID); err != nil {
+			return false, AccountAdminOperation{}, err
+		}
+	}
 	var admitted bool
-	if err = tx.QueryRow(ctx, `SELECT control_admit_account_dispatch_v1($1,$2,$3,$4)`, id, nodeID, accountKey, requestID).Scan(&admitted); err != nil {
-		return false, AccountAdminOperation{}, err
+	if lifecycleStatus == "active" {
+		if err = tx.QueryRow(ctx, `SELECT control_admit_account_dispatch_v1($1,$2,$3,$4)`, id, nodeID, accountKey, requestID).Scan(&admitted); err != nil {
+			return false, AccountAdminOperation{}, err
+		}
 	}
 	op, err := scanAccountOperation(tx.QueryRow(ctx, accountOperationSelect+` WHERE command_id=$1`, id))
 	if err != nil {

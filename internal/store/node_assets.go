@@ -172,7 +172,7 @@ func (r *NodeLifecycleRepository) Register(ctx context.Context, c NodeCommand) (
 		}
 		return r.intent("node.register", c, replay, kv)
 	}
-	return r.transact(ctx, c, "node.register", builder, func(tx pgx.Tx) (int, any, error) {
+	return r.transact(ctx, c, "node.register", builder, false, func(tx pgx.Tx) (int, any, error) {
 		if err := validateDriverCapabilities(ctx, tx, c.NodeType, c.DriverContractVersion, c.Capabilities); err != nil {
 			return 0, nil, err
 		}
@@ -224,7 +224,7 @@ func (r *NodeLifecycleRepository) Edit(ctx context.Context, c NodeCommand) (Node
 		}
 		return r.intent("node.edit", c, replay, kv)
 	}
-	return r.transact(ctx, c, "node.edit", builder, func(tx pgx.Tx) (int, any, error) {
+	return r.transact(ctx, c, "node.edit", builder, false, func(tx pgx.Tx) (int, any, error) {
 		n, err := lockNode(ctx, tx, c.InstanceID)
 		if err != nil {
 			return 0, nil, err
@@ -305,7 +305,7 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 		}
 		return r.intent(kind, c, replay, kv)
 	}
-	return r.transact(ctx, c, kind, builder, func(tx pgx.Tx) (int, any, error) {
+	return r.transact(ctx, c, kind, builder, true, func(tx pgx.Tx) (int, any, error) {
 		old, err := lockNode(ctx, tx, c.InstanceID)
 		if err != nil {
 			return 0, nil, err
@@ -315,6 +315,20 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 		}
 		if old.Revision != c.ExpectedRevision {
 			return 0, nil, ErrStaleAssetRevision
+		}
+		var accountOperationsPresent bool
+		if err = tx.QueryRow(ctx, `SELECT to_regclass('public.account_admin_operations') IS NOT NULL`).Scan(&accountOperationsPresent); err != nil {
+			return 0, nil, err
+		}
+		if accountOperationsPresent {
+			var blocker uuid.UUID
+			err = tx.QueryRow(ctx, `SELECT command_id FROM account_admin_operations WHERE node_instance_id=$1 AND execution_state IN ('dispatched','outcome_unknown') AND lifecycle_override_at IS NULL ORDER BY command_id LIMIT 1`, c.InstanceID).Scan(&blocker)
+			if err == nil {
+				return 0, nil, ErrAccountOperationBlocked
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return 0, nil, err
+			}
 		}
 		if old.Revision == maxAssetRevision {
 			return 0, nil, ErrAssetRevisionExhausted
@@ -411,12 +425,17 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 	})
 }
 
-func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, kind string, b nodeIntentBuilder, apply func(pgx.Tx) (int, any, error)) (NodeCommandResult, error) {
+func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, kind string, b nodeIntentBuilder, nodeFirst bool, apply func(pgx.Tx) (int, any, error)) (NodeCommandResult, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return NodeCommandResult{}, err
 	}
 	defer tx.Rollback(ctx)
+	if nodeFirst {
+		if _, err = lockNode(ctx, tx, c.InstanceID); err != nil {
+			return NodeCommandResult{}, err
+		}
+	}
 	if err = lockAdminCommand(ctx, tx, c.CommandID); err != nil {
 		return NodeCommandResult{}, err
 	}

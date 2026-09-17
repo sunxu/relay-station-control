@@ -454,3 +454,206 @@ func mustFailure(t *testing.T, code string) store.AccountFailure {
 	}
 	return failure
 }
+
+func TestAccountDispatchDoesNotCrossNodeLifecycleBoundaryPG18(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
+	defer cleanup()
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "45"); err != nil {
+		t.Fatal(err)
+	}
+	admin, node, otherNode := uuid.New(), uuid.New(), uuid.New()
+	if _, err := owner.Exec(ctx, `INSERT INTO control_admin_users(admin_id,login_name,display_name,status,activated_at) VALUES($1,'dispatch-boundary-admin','Dispatch Boundary Admin','enabled',clock_timestamp())`, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `INSERT INTO node_drivers(node_type,driver_contract_version,display_name) VALUES('cliproxyapi','v1','CLIProxyAPI')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint) VALUES($1,'Dispatch Boundary Node','cliproxyapi','v1','http://node.example/')`, node); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint) VALUES($1,'Independent Dispatch Node','cliproxyapi','v1','http://other-node.example/')`, otherNode); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, `SET ROLE relay_control_runtime`)
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	repository, err := store.NewAccountOperationRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherAccountKey := "antigravity:independent-dispatch@example.invalid"
+	otherHash := sha256.Sum256([]byte(otherAccountKey))
+	otherCommandID := uuid.New()
+	if _, err := repository.Accept(ctx, store.AccountOperationAcceptance{
+		CommandID: otherCommandID, ActorAdminID: admin, OperationKind: store.AccountDisable,
+		NodeInstanceID: otherNode, AccountKey: otherAccountKey, CanonicalIntentHash: otherHash[:],
+	}); err != nil {
+		t.Fatal(err)
+	}
+	accountKey := "antigravity:dispatch-boundary@example.invalid"
+	hash := sha256.Sum256([]byte(accountKey))
+	commandID := uuid.New()
+	operation, err := repository.Accept(ctx, store.AccountOperationAcceptance{
+		CommandID: commandID, ActorAdminID: admin, OperationKind: store.AccountDisable,
+		NodeInstanceID: node, AccountKey: accountKey, CanonicalIntentHash: hash[:],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.ExecutionState != store.AccountPrepared {
+		t.Fatalf("initial operation state=%q", operation.ExecutionState)
+	}
+
+	lifecycleTx, err := owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lifecycleTx.Rollback(ctx)
+	var lifecycleStatus string
+	if err := lifecycleTx.QueryRow(ctx, `SELECT lifecycle_status FROM relay_node_assets WHERE instance_id=$1 FOR UPDATE`, node).Scan(&lifecycleStatus); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleStatus != "active" {
+		t.Fatalf("initial lifecycle status=%q", lifecycleStatus)
+	}
+
+	type dispatchResult struct {
+		admitted  bool
+		operation store.AccountAdminOperation
+		err       error
+	}
+	dispatchDone := make(chan dispatchResult, 1)
+	go func() {
+		admitted, dispatched, dispatchErr := repository.AdmitAccountDispatch(ctx, commandID, node, accountKey, "dispatch-boundary")
+		dispatchDone <- dispatchResult{admitted: admitted, operation: dispatched, err: dispatchErr}
+	}()
+	otherDone := make(chan dispatchResult, 1)
+	go func() {
+		admitted, dispatched, dispatchErr := repository.AdmitAccountDispatch(ctx, otherCommandID, otherNode, otherAccountKey, "independent-dispatch")
+		otherDone <- dispatchResult{admitted: admitted, operation: dispatched, err: dispatchErr}
+	}()
+	select {
+	case result := <-otherDone:
+		if result.err != nil || !result.admitted {
+			t.Fatalf("unrelated Node dispatch=%#v", result)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("unrelated Node dispatch was serialized behind the held Node lock")
+	}
+
+	select {
+	case result := <-dispatchDone:
+		t.Fatalf("dispatch crossed a held Node lifecycle lock: admitted=%t operation=%#v err=%v", result.admitted, result.operation, result.err)
+	case <-time.After(250 * time.Millisecond):
+	}
+	if _, err := lifecycleTx.Exec(ctx, `UPDATE relay_node_assets SET lifecycle_status='retired',revision=revision+1,retired_at=clock_timestamp(),retired_by=$2,retire_reason='administrator_retire',updated_at=clock_timestamp() WHERE instance_id=$1`, node, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := lifecycleTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	result := <-dispatchDone
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if result.admitted {
+		t.Fatalf("dispatch admitted after lifecycle retirement: admitted=%t operation=%#v", result.admitted, result.operation)
+	}
+	if result.operation.ExecutionState != store.AccountFailed || result.operation.RemoteResultCode == nil || *result.operation.RemoteResultCode != "node_retired" {
+		t.Fatalf("retired-node dispatch result=%#v", result.operation)
+	}
+}
+
+func TestNodeLifecycleRejectsUnresolvedAccountOperationPG18(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
+	defer cleanup()
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "45"); err != nil {
+		t.Fatal(err)
+	}
+	admin, retireNode, replaceNode := uuid.New(), uuid.New(), uuid.New()
+	if _, err := owner.Exec(ctx, `INSERT INTO control_admin_users(admin_id,login_name,display_name,status,activated_at) VALUES($1,'lifecycle-block-admin','Lifecycle Block Admin','enabled',clock_timestamp())`, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `INSERT INTO node_drivers(node_type,driver_contract_version,display_name) VALUES('cliproxyapi','v1','CLIProxyAPI')`); err != nil {
+		t.Fatal(err)
+	}
+	for id, name := range map[uuid.UUID]string{retireNode: "Blocked Retire Node", replaceNode: "Blocked Replace Node"} {
+		if _, err := owner.Exec(ctx, `INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint) VALUES($1,$2,'cliproxyapi','v1','http://node.example/')`, id, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, `SET ROLE relay_control_runtime`)
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	accountRepository, err := store.NewAccountOperationRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeRepository, err := store.NewNodeLifecycleRepository(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptAndDispatch := func(node uuid.UUID, accountKey string) {
+		t.Helper()
+		commandID := uuid.New()
+		hash := sha256.Sum256([]byte(commandID.String()))
+		if _, err := accountRepository.Accept(ctx, store.AccountOperationAcceptance{CommandID: commandID, ActorAdminID: admin, OperationKind: store.AccountDisable, NodeInstanceID: node, AccountKey: accountKey, CanonicalIntentHash: hash[:]}); err != nil {
+			t.Fatal(err)
+		}
+		if admitted, _, err := accountRepository.AdmitAccountDispatch(ctx, commandID, node, accountKey, "lifecycle-block"); err != nil || !admitted {
+			t.Fatalf("dispatch admission=%t err=%v", admitted, err)
+		}
+	}
+
+	acceptAndDispatch(retireNode, "antigravity:retire-block@example.invalid")
+	if _, err := nodeRepository.Retire(ctx, store.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "blocked-retire", InstanceID: retireNode, ExpectedRevision: 1, Secret: store.SecretPatch{Operation: store.SecretAbsent}}); !errors.Is(err, store.ErrAccountOperationBlocked) {
+		t.Fatalf("retire blocker error=%v", err)
+	}
+	var lifecycleStatus string
+	if err := owner.QueryRow(ctx, `SELECT lifecycle_status FROM relay_node_assets WHERE instance_id=$1`, retireNode).Scan(&lifecycleStatus); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycleStatus != "active" {
+		t.Fatalf("blocked retire changed lifecycle=%q", lifecycleStatus)
+	}
+
+	acceptAndDispatch(replaceNode, "antigravity:replace-block@example.invalid")
+	newNode := uuid.New()
+	if _, err := nodeRepository.Replace(ctx, store.NodeCommand{CommandID: uuid.New(), ActorAdminID: admin, RequestID: "blocked-replace", InstanceID: replaceNode, ExpectedRevision: 1, NewInstanceID: newNode, DisplayName: store.StringPatch{Present: true, Value: "Replacement"}, ManagementEndpoint: store.StringPatch{Present: true, Value: "http://replacement.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"management_account_inventory_read"}, Secret: store.SecretPatch{Operation: store.SecretAbsent}}); !errors.Is(err, store.ErrAccountOperationBlocked) {
+		t.Fatalf("replace blocker error=%v", err)
+	}
+	var newNodeCount int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FROM relay_node_assets WHERE instance_id=$1`, newNode).Scan(&newNodeCount); err != nil {
+		t.Fatal(err)
+	}
+	if newNodeCount != 0 {
+		t.Fatalf("blocked replace created new node=%d", newNodeCount)
+	}
+}
