@@ -343,3 +343,25 @@ HTTP-only admission policy MUST 只约束 receipt 不存在的新 command。对 
 #### Scenario: 历史 HTTPS intent 不授权新命令
 - **WHEN** 请求使用新的 command ID 提交相同 HTTPS endpoint
 - **THEN** 系统按当前 HTTP-only admission 返回 `400 invalid_endpoint` 且零 side effect
+
+### Requirement: Node Retire and Replace SHALL honor durable account-operation blockers
+
+Retire/Replace MUST acquire the existing Node lifecycle row first and then inspect same-Node account operations using the shared Node-first lock order. Any `dispatched` or unresolved `outcome_unknown` operation MUST return `account_operation_in_progress` with zero lifecycle mutation unless that exact operation has a valid durable lifecycle override. No database lock may be held across native HTTP.
+
+A lifecycle override MUST persist `lifecycle_override_at`, `lifecycle_override_by` and reason `process_restarted|node_stopped|risk_accepted`. It releases only the Retire/Replace lifecycle block: it MUST NOT change execution state, manufacture success/failure evidence, authorize redispatch, or allow another same-account mutation past the durable serialization blocker. `risk_accepted` explicitly records that the administrator waives the strict guarantee that a previously dispatched request can never mutate the old Node after lifecycle proceeds. Each override is an independent globally reserved `account.lifecycle_override` command with its own immutable receipt and MUST NOT reuse the target operation's command identity or receipt. A separate `account.same_account_override` command is required to release the same-account blocker; neither override implicitly grants the other permission.
+
+#### Scenario: Account dispatch commits first
+- **WHEN** an account operation commits `prepared -> dispatched` before Retire or Replace locks the Node
+- **THEN** lifecycle observes the durable blocker and rejects unless a valid override exists
+
+#### Scenario: Retire commits first
+- **WHEN** Retire locks and commits the Node before account dispatch authorization
+- **THEN** later dispatch sees the terminal lifecycle and sends zero native request
+
+#### Scenario: Control restarts with unresolved operation
+- **WHEN** Control restarts while an operation is `dispatched` or `outcome_unknown`
+- **THEN** the durable blocker remains effective without relying on an in-memory mutex
+
+#### Scenario: Risk is explicitly accepted
+- **WHEN** a super_admin submits the typed high-risk confirmation and `risk_accepted` override
+- **THEN** lifecycle may proceed while the operation remains unresolved and no automatic redispatch occurs
