@@ -10,21 +10,31 @@ Corrective rounds: COMPLETE
 Consolidated Regression: PASS
 Runtime Acceptance: PASS
 Final Stability: 3/3 PASS
-Final disposition: PHASE7_FINAL_APPROVED
+Final disposition: PHASE7_FINAL_REAPPROVED
 P0 / P1 / P2: 0 / 0 / 0
 ```
 
 ## Validated implementation and runtime identity
 
 ```text
-Validated implementation candidate:
+Historical initial validated implementation:
 20e48709ffad0012135fff2c31a88116b6ff4315
 
+Historical initial Control closeout docs:
+57f23ea8496dc3ff37777a4aed69647c35710cc5
+
+Post-closeout corrective implementation:
+fab6aadc36a9f8ebe1309e5db457dcbac0136880
+
+Validated implementation candidate:
+fab6aadc36a9f8ebe1309e5db457dcbac0136880
+
 Control image ID:
-sha256:a81ddffa70eef1a882e0eb69aa2381a807a64663a25ecff138cea9a34364eee1
+sha256:b3bb0eefd5a28c25bc152dae1a6efe16ba852ed704b183a1ec5ca13c4034def8
 Control RepoDigest: NONE
 Control OCI revision:
-20e48709ffad0012135fff2c31a88116b6ff4315
+fab6aadc36a9f8ebe1309e5db457dcbac0136880
+Control platform: linux/arm64
 
 Gateway revision:
 b2512a314dbeae7d3dfbb05c5253d214a7f32102
@@ -35,6 +45,29 @@ Node version: 7.3.2
 Source ↔ artifact: MATCH
 Artifact ↔ running container: MATCH
 ```
+
+## Post-closeout corrective
+
+The post-closeout corrective tightened transactional account-operation admission:
+durable lifecycle, monitoring, capability, Provider policy, and same-account
+eligibility are rechecked before dispatch or no-op terminalization. Concurrent
+prepared no-op retries converge to one terminal operation, receipt, and audit;
+Retire and Replace use the exact `409 account_operation_in_progress` contract.
+
+D5–D10 were regression-fixture maintenance corrections. They preserved the
+production revision and HTTP-only invariants, made current-eligibility fixtures
+explicit and deterministic, and kept historical migration tests on compatible
+schema-era SQL. No product migration or historical migration was changed.
+
+The corrective OpenSpec change is:
+`fix-phase7-account-operation-admission-contract-gaps`.
+
+Focused admission, race, migration 0→50 and 49→50, store, accountadmin, API,
+`make test`, vet, and strict OpenSpec evidence remained PASS. The production-like
+runtime startup gate passed 3/3 using the same immutable Control image; its
+running container ID matched the image ID on every run. Browser UI behavior did
+not change, so the retained six-flow Browser evidence was reused as historical
+UI evidence and Browser was not rerun for this backend corrective.
 
 ## Corrective and regression evidence
 
@@ -102,6 +135,11 @@ The Test Contract Coverage Review policy at `8ac72f1` requires future behavior a
 ## Disposition
 
 ```text
-Phase 7 implementation validated and closed.
+Historical initial Phase 7 closeout remains preserved as evidence.
+Post-closeout corrective is complete and reapproved:
+`PHASE7_FINAL_REAPPROVED`.
+The corrective candidate and artifact above are the current implementation
+source of truth; this docs-only closeout commit must not be treated as the
+runtime-validated implementation SHA.
 OpenSpec change is complete and eligible for archive under repository convention.
 ```
