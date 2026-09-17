@@ -144,6 +144,8 @@ See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
 ## Acceptance & E2E Rules
 
 - Follow `docs/testing/ACCEPTANCE_E2E_POLICY.md` for the detailed workflow.
+- Before implementing behavior or contract changes, complete the policy's Test Contract Coverage Review: every frozen MUST/MUST NOT needs an owning test layer and concrete proof; a `TEST_COVERAGE_CONTRACT_GAP` blocks implementation authorization.
+- Browser E2E must not compensate for missing DB/store/service/API proof; map concurrency, classification, durable-boundary, parser, migration, and artifact requirements to their lowest owning layer first.
 - Prove behavior at the lowest owning layer; keep Browser E2E focused on real user paths and unique cross-layer evidence.
 - Check the frozen contract before asserting or waiting for a state. Keep execution truth separate from Inventory observation.
 - Build and verify the production-like stack and runtime/artifact provenance before debugging behavior.

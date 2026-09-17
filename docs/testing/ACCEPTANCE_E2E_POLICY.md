@@ -720,7 +720,248 @@ Never increase a timeout without answering these questions.
 
 ---
 
-## 31. Final Guiding Principle
+## 32. Pre-Implementation Test Contract Coverage Review
+
+Any change that introduces or changes product behavior, an OpenSpec
+contract, persistence, concurrency, security, an API contract, a shared
+schema, a native/runtime integration, artifact provenance, or an
+architecture-level corrective MUST pass a **Test Contract Coverage Review**
+before implementation begins.
+
+The required sequence is:
+
+```text
+freeze requirements and architecture
+→ map each normative requirement to an owning test layer and concrete proof
+→ pass Test Contract Coverage Review
+→ authorize implementation
+→ run focused proof
+→ run consolidated regression
+→ run representative Browser E2E where required
+→ reconcile contract, coverage, tests, and implementation
+```
+
+The review prevents implementation from starting with an unowned frozen
+requirement. A `MUST`, `MUST NOT`, `SHALL`, exact external result, ordering
+requirement, or compatibility invariant without an adequate proof owner is a
+`TEST_COVERAGE_CONTRACT_GAP`. It is an implementation-readiness blocker, not
+a product failure or a test execution failure:
+
+```text
+TEST_COVERAGE_CONTRACT_GAP
+→ Test Contract Coverage Review: CHANGES_REQUIRED
+→ implementation authorization: NOT AUTHORIZED
+```
+
+For each requirement, record enough information for an independent reviewer
+to reproduce the proof:
+
+| Contract / Requirement | Risk | Owning Layer | Concrete Proof | Negative / Race Cases | Browser Required |
+|---|---|---|---|---|---|
+| exact normative behavior | affected failure mode | unit/domain, store, service, adapter, API, artifact, or Browser | existing or planned test, setup, and expected result | applicable boundary or competing order | YES/NO with reason |
+
+Do not describe coverage only as “integration tested” or “covered by E2E”.
+The matrix must identify the input or state setup, observable result, and the
+layer that owns the fact.
+
+### State-space and concurrency review
+
+When behavior depends on independent classification dimensions, review the
+decision matrix before reducing it to a few examples. For example, identity
+cardinality and physical mutation eligibility require at least:
+
+```text
+0 identities
+1 identity + safe physical evidence
+1 identity + unsafe physical evidence
+>1 identities
+```
+
+Apply the same review to identity versus physical eligibility, operation state
+versus lifecycle state, authentication versus command identity, execution
+state versus replay state, and producer values versus schema-allowed values.
+
+For every contract involving serialization, ordering, races, locks,
+at-most-once behavior, concurrent retry, or lifecycle interaction, record the
+competing orderings before implementation:
+
+```text
+A before B
+B before A
+concurrent arrival
+restart while unresolved
+```
+
+Concurrency truth belongs primarily to the transaction or serialization layer
+that owns it. PostgreSQL/store integration should prove locking, atomicity,
+durable state, and restart behavior. Browser E2E MUST NOT compensate for
+missing database or service concurrency proof.
+
+### Durable-boundary review
+
+For flows with `pre-acceptance`, `prepared`, `dispatched`,
+`outcome_unknown`, or `terminal` states, the coverage review MUST state:
+
+- which durable records may already exist;
+- which registry, operation, receipt, audit, and remote effects must remain zero;
+- which remote work may execute;
+- which states are replayable and what replay returns.
+
+A deterministic pre-acceptance rejection MUST have explicit zero-side-effect
+evidence at the lowest owning layer. Do not duplicate every durable assertion
+in Browser tests.
+
+### Exact contracts and parser boundaries
+
+For bounded protocol or error taxonomies, reconcile OpenSpec, OpenAPI,
+domain/service mappings, store or database mappings, handlers, and tests.
+When the contract specifies one result, tests MUST assert that exact result;
+acceptance such as `404 || 409` or `200 || 202` is invalid.
+
+For JSON, multipart, file, size-limit, and optional-field inputs, the review
+must identify applicable boundaries among:
+
+```text
+absent
+present-empty
+valid
+malformed
+oversized
+trailing data
+extra or duplicate input
+boundary-1 / boundary / boundary+1
+```
+
+This is an applicability review, not a demand for every mechanical
+combination on every endpoint.
+
+### Migration and historical fixtures
+
+Historical migration tests own bounded historical schema intervals. A test for
+migration `N` should use `N-1` prerequisites, apply `N`, verify `N`, and run
+`Down N` only when that migration explicitly supports Down. It MUST NOT
+migrate to latest and walk Down through arbitrary future migrations. A future
+forward-only migration must not invalidate an unrelated historical test.
+
+Historical migration verification must use historical-schema-compatible SQL
+and fixtures. Current generated queries belong to current-schema integration
+tests. If one test mixes historical migration assertions with current query
+behavior, split the ownership.
+
+Shared schema changes require realistic previous-version upgrade coverage in
+addition to fresh installation. For bounded values, verify
+`CURRENT_PRODUCED_VALUES ⊆ DB_ALLOWED_VALUES`, and for constraint replacement
+review `OLD_ALLOWED_SET - NEW_ALLOWED_SET`, `CURRENT_PRODUCER_SET -
+NEW_ALLOWED_SET`, and `NEW_ALLOWED_SET - OLD_ALLOWED_SET`. Preserve the
+existing forward-only and historical-migration immutability policy.
+
+Migration or fixture tests MUST use a disposable database/schema or a
+deterministic recreation of their required baseline. A failed test must not
+leave shared schema state that changes later test meaning. Cleanup MUST NOT
+depend solely on Down from the latest migration.
+
+### Semantic inventories and artifact provenance
+
+When identity matters, prefer semantic set membership or exact set equality to
+magic counts. Required API operations should assert exact METHOD, PATH, and
+`operationId` membership. An exact public allowlist is a separate contract and
+must have an authoritative inventory; a count alone proves neither membership
+nor identity.
+
+For exact-pinned runtime or artifact dependencies, the coverage owner must
+prove the complete handoff:
+
+```text
+source commit/reference
+→ build input
+→ immutable artifact identity
+→ execution identity
+→ post-start verification
+```
+
+Use the existing Artifact / Identity Handoff Review rules. Do not defer
+provenance proof until a final Browser test.
+
+### Browser admission and runtime discipline
+
+Before adding a Browser scenario, answer: **What browser-owned fact does this
+prove?** Valid examples include real frontend-to-API wiring, result rendering,
+destructive confirmation, credential/file UX, duplicate-submit UI prevention,
+and representative full-chain behavior. SQL locking, migration compatibility,
+JSON parsing, HTTP status mapping, native classification, and replay matrices
+belong to their lower owning layers.
+
+Browser coverage MUST remain representative and minimal. A phase may set a
+reviewed scenario budget, but this repository policy does not impose one
+global count. Removing a Browser case requires a named lower-layer owner and
+concrete replacement evidence.
+
+During diagnosis, use focused, fail-fast, bounded-time runs. Do not wait for a
+full expensive suite merely to discover the first blocker, and do not reduce
+coverage or add parallelism to hide shared-state races. Reuse fresh PASS
+evidence when later changes do not touch its owner or dependencies; rerun a
+gate when risk or changed ownership requires it.
+
+### Feedback and final reconciliation
+
+If implementation reveals a new state, error class, race, persistence
+boundary, artifact assumption, or schema compatibility requirement, stop and
+decide whether the frozen contract changed or the coverage plan was
+incomplete. Update the contract or coverage matrix and re-review before
+continuing.
+
+Before final implementation review, reconcile:
+
+```text
+Frozen Contract
+↔ Coverage Matrix
+↔ Actual Tests
+↔ Implementation
+```
+
+Every planned proof must exist at its owning layer, every frozen normative
+requirement must have evidence, and no Browser scenario may compensate for a
+lower-layer proof gap.
+
+### Readiness checklist
+
+```text
+[ ] Every normative requirement has an owning layer.
+[ ] Every normative requirement has a concrete proof.
+[ ] Concurrency invariants include competing orderings.
+[ ] Durable boundaries define allowed and forbidden side effects.
+[ ] Independent classification dimensions were reviewed as a matrix.
+[ ] Exact protocol results are consistent across authoritative layers.
+[ ] Applicable parser boundaries are covered.
+[ ] Shared-schema migration compatibility is planned.
+[ ] Historical migration tests are version-bounded.
+[ ] Artifact provenance has an owning verification step where applicable.
+[ ] Browser cases prove browser-owned or cross-layer facts.
+[ ] No MUST depends on an unspecified “future test”.
+```
+
+Examples:
+
+```text
+Node lifecycle vs account dispatch
+→ PostgreSQL/store owner
+→ A-before-B and B-before-A race tests
+→ Browser: NO
+
+identity cardinality × physical eligibility
+→ adapter/service owner
+→ 0, 1-safe, 1-unsafe, and >1 matrix
+
+Migration N
+→ historical test owns N-1 → N
+→ future forward-only migration must not break it
+
+required API operations
+→ exact METHOD/PATH/operationId membership
+→ no magic global operation count unless count itself is frozen
+```
+
+## 33. Final Guiding Principle
 
 When acceptance rigor conflicts with acceptance complexity, prefer:
 
