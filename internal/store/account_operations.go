@@ -61,7 +61,7 @@ var accountFailureHTTPStatus = map[string]int{
 	"invalid_request": 400, "upload_too_large": 413, "upload_invalid": 400,
 	"identity_mismatch": 400, "node_not_found": 404,
 	"unsupported_provider": 409, "node_retired": 409,
-	"node_monitoring_ineligible": 409, "account_target_not_found": 409,
+	"node_monitoring_ineligible": 409, "account_target_not_found": 404,
 	"account_target_ambiguous": 409, "account_target_exists": 409,
 	"account_filename_conflict": 409, "account_operation_in_progress": 409,
 	"unsupported_node_version": 503, "node_management_unavailable": 503,

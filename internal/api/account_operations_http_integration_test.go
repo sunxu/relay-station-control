@@ -153,13 +153,17 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
+	var postUploadCredential func(path string, commandID uuid.UUID, sessionToken, csrfToken, credentialBody string) *httptest.ResponseRecorder
 	postUploadAs := func(path string, commandID uuid.UUID, sessionToken, csrfToken string) *httptest.ResponseRecorder {
+		return postUploadCredential(path, commandID, sessionToken, csrfToken, `{"type":"antigravity","email":"user@example.invalid","refresh_token":"synthetic"}`)
+	}
+	postUploadCredential = func(path string, commandID uuid.UUID, sessionToken, csrfToken, credentialBody string) *httptest.ResponseRecorder {
 		var body strings.Builder
 		mw := multipart.NewWriter(&body)
 		requestPart, _ := mw.CreateFormField("request")
 		_, _ = io.WriteString(requestPart, `{"command_id":"`+commandID.String()+`","node_instance_id":"`+nodeID.String()+`","account_key":"antigravity:user@example.invalid"}`)
 		credential, _ := mw.CreateFormFile("credential", "credential.json")
-		_, _ = io.WriteString(credential, `{"type":"antigravity","email":"user@example.invalid","refresh_token":"synthetic"}`)
+		_, _ = io.WriteString(credential, credentialBody)
 		_ = mw.Close()
 		r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18080"+path, strings.NewReader(body.String()))
 		r.Header.Set("Origin", "http://127.0.0.1:18080")
@@ -331,7 +335,11 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 			snapshot.Store(tc.files)
 			before := mutationCount.Load()
 			response := post("/api/account-operations/remove", `{"command_id":"`+id.String()+`","node_instance_id":"`+nodeID.String()+`","account_key":"antigravity:user@example.invalid","confirmation":"REMOVE"}`)
-			if response.Code != http.StatusNotFound && response.Code != http.StatusConflict {
+			wantStatus := http.StatusNotFound
+			if tc.code == "account_target_ambiguous" {
+				wantStatus = http.StatusConflict
+			}
+			if response.Code != wantStatus {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
 			assertOperation(t, id, "failed", tc.code, true, true)
@@ -339,6 +347,24 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 				t.Fatal("pre-dispatch failure mutated native state")
 			}
 		})
+	}
+
+	// Multipart size failures are classified before durable acceptance or native work.
+	oversizedID := uuid.New()
+	beforeMutation := mutationCount.Load()
+	oversized := postUploadCredential("/api/account-operations/upload-new", oversizedID, token, csrf, strings.Repeat("x", 1<<20+1))
+	if oversized.Code != http.StatusRequestEntityTooLarge || !strings.Contains(oversized.Body.String(), `"upload_too_large"`) {
+		t.Fatalf("oversized upload status=%d body=%s", oversized.Code, oversized.Body.String())
+	}
+	if mutationCount.Load() != beforeMutation {
+		t.Fatal("oversized upload reached native mutation")
+	}
+	var oversizedReservations int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FROM admin_command_registry WHERE command_id=$1`, oversizedID).Scan(&oversizedReservations); err != nil {
+		t.Fatal(err)
+	}
+	if oversizedReservations != 0 {
+		t.Fatalf("oversized upload reserved command=%d times", oversizedReservations)
 	}
 
 	// Invalid artifact is also pre-dispatch.

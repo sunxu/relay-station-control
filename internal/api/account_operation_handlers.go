@@ -15,6 +15,13 @@ import (
 
 const accountMultipartLimit int64 = 1073152
 
+type accountMultipartFailure string
+
+const (
+	accountMultipartInvalid  accountMultipartFailure = "invalid_request"
+	accountMultipartTooLarge accountMultipartFailure = "upload_too_large"
+)
+
 type accountCommandRequest struct {
 	CommandID      uuid.UUID
 	NodeInstanceID uuid.UUID
@@ -85,9 +92,13 @@ func (s *Server) executeAccountUpload(w http.ResponseWriter, r *http.Request, cs
 		s.writeAccountError(w, r, "service_unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	request, credential, ok := parseAccountMultipart(w, r)
-	if !ok {
-		s.writeAccountError(w, r, "invalid_request", http.StatusBadRequest)
+	request, credential, failure := parseAccountMultipart(w, r)
+	if failure != "" {
+		status := http.StatusBadRequest
+		if failure == accountMultipartTooLarge {
+			status = http.StatusRequestEntityTooLarge
+		}
+		s.writeAccountError(w, r, string(failure), status)
 		return
 	}
 	command, ok := parseAccountCommand(request, kind, false)
@@ -156,7 +167,7 @@ func (s *Server) executeAccountOverride(w http.ResponseWriter, r *http.Request, 
 	}
 	command := accountadmin.OverrideCommand{CommandID: commandID, ActorAdminID: session.AdminID, TargetOperation: target, Reason: reason, Confirmation: confirmation, RequestID: s.requestID(r)}
 	if detail != nil {
-		command.Detail = *detail
+		command.Detail, command.DetailPresent = *detail, true
 	}
 	var op assetstore.AccountAdminOperation
 	var err error
@@ -171,16 +182,22 @@ func (s *Server) executeAccountOverride(w http.ResponseWriter, r *http.Request, 
 	s.writeAccountOperationResult(w, r, op, err)
 }
 
-func parseAccountMultipart(w http.ResponseWriter, r *http.Request) (map[string]json.RawMessage, []byte, bool) {
+func parseAccountMultipart(w http.ResponseWriter, r *http.Request) (map[string]json.RawMessage, []byte, accountMultipartFailure) {
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data;") {
-		return nil, nil, false
+		return nil, nil, accountMultipartInvalid
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, accountMultipartLimit)
 	if err := r.ParseMultipartForm(accountMultipartLimit); err != nil || r.MultipartForm == nil {
-		return nil, nil, false
+		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				return nil, nil, accountMultipartTooLarge
+			}
+		}
+		return nil, nil, accountMultipartInvalid
 	}
 	if len(r.MultipartForm.Value)+len(r.MultipartForm.File) != 2 || len(r.MultipartForm.File["credential"]) != 1 || len(r.MultipartForm.Value["request"])+len(r.MultipartForm.File["request"]) != 1 {
-		return nil, nil, false
+		return nil, nil, accountMultipartInvalid
 	}
 	var requestRaw []byte
 	if values := r.MultipartForm.Value["request"]; len(values) == 1 {
@@ -188,36 +205,39 @@ func parseAccountMultipart(w http.ResponseWriter, r *http.Request) (map[string]j
 	} else {
 		file, err := r.MultipartForm.File["request"][0].Open()
 		if err != nil {
-			return nil, nil, false
+			return nil, nil, accountMultipartInvalid
 		}
 		requestRaw, err = io.ReadAll(io.LimitReader(file, 8193))
 		file.Close()
 		if err != nil {
-			return nil, nil, false
+			return nil, nil, accountMultipartInvalid
 		}
 	}
 	if len(requestRaw) > 8192 {
-		return nil, nil, false
+		return nil, nil, accountMultipartInvalid
 	}
 	var request map[string]json.RawMessage
 	if json.Unmarshal(requestRaw, &request) != nil || request == nil {
-		return nil, nil, false
+		return nil, nil, accountMultipartInvalid
 	}
 	for field := range request {
 		if field != "command_id" && field != "node_instance_id" && field != "account_key" {
-			return nil, nil, false
+			return nil, nil, accountMultipartInvalid
 		}
 	}
 	file, err := r.MultipartForm.File["credential"][0].Open()
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, accountMultipartInvalid
 	}
 	defer file.Close()
 	credential, err := io.ReadAll(io.LimitReader(file, 1<<20+1))
 	if err != nil || len(credential) > 1<<20 {
-		return nil, nil, false
+		if len(credential) > 1<<20 {
+			return nil, nil, accountMultipartTooLarge
+		}
+		return nil, nil, accountMultipartInvalid
 	}
-	return request, credential, true
+	return request, credential, ""
 }
 
 func decodeAccountObject(w http.ResponseWriter, r *http.Request, limit int64, allowed ...string) (map[string]json.RawMessage, bool) {

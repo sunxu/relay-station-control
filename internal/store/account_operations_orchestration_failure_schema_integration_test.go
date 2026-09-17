@@ -44,7 +44,7 @@ func TestAccountCommandFailureMatrixPG18(t *testing.T) {
 		{name: "connection loss", kind: store.AccountDisable, email: "connection-loss@example.invalid", setup: failureConnectionLoss, wantState: store.AccountOutcomeUnknown, wantMutate: 1},
 		{name: "generic 500", kind: store.AccountDisable, email: "generic-500@example.invalid", setup: failureGeneric500, wantState: store.AccountOutcomeUnknown, wantMutate: 1},
 		{name: "unsupported runtime", kind: store.AccountDisable, email: "bad-runtime@example.invalid", setup: failureUnsupportedRuntime, wantState: store.AccountFailed, wantCode: "unsupported_node_version", wantHTTP: 503, wantMutate: 0},
-		{name: "target not found", kind: store.AccountDisable, email: "missing@example.invalid", setup: failureTargetNotFound, wantState: store.AccountFailed, wantCode: "account_target_not_found", wantHTTP: 409, wantMutate: 0},
+		{name: "target not found", kind: store.AccountDisable, email: "missing@example.invalid", setup: failureTargetNotFound, wantState: store.AccountFailed, wantCode: "account_target_not_found", wantHTTP: 404, wantMutate: 0},
 		{name: "target ambiguous", kind: store.AccountDisable, email: "ambiguous@example.invalid", setup: failureTargetAmbiguous, wantState: store.AccountFailed, wantCode: "account_target_ambiguous", wantHTTP: 409, wantMutate: 0},
 	}
 	for _, tc := range cases {
@@ -105,7 +105,7 @@ func runFailureMatrixCase(t *testing.T, tc struct {
 		t.Fatal(err)
 	}
 	owner.Close(ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "45"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "49"); err != nil {
 		t.Fatal(err)
 	}
 	p, err := runtimePool(ctx, databaseURL)

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/sunxu/relay-station-control/internal/drivers/cliproxyapi"
@@ -70,6 +71,7 @@ type Command struct {
 type OverrideCommand struct {
 	CommandID, ActorAdminID, TargetOperation uuid.UUID
 	Reason, Detail, Confirmation, RequestID  string
+	DetailPresent                            bool
 }
 
 type Service struct {
@@ -128,7 +130,8 @@ func (s *Service) SameAccountOverride(ctx context.Context, command OverrideComma
 }
 
 func (s *Service) applyOverride(ctx context.Context, command OverrideCommand, kind store.AccountOperationKind, confirmation string, lifecycle bool) (store.AccountAdminOperation, error) {
-	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil || command.TargetOperation == uuid.Nil || command.Reason == "" || command.Confirmation != confirmation || len(command.Detail) > 512 || (command.Reason != "process_restarted" && command.Reason != "node_stopped" && command.Reason != "risk_accepted") {
+	detailPresent := command.DetailPresent || command.Detail != ""
+	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil || command.TargetOperation == uuid.Nil || command.Reason == "" || command.Confirmation != confirmation || (detailPresent && !validOverrideDetail(command.Detail)) || (command.Reason != "process_restarted" && command.Reason != "node_stopped" && command.Reason != "risk_accepted") {
 		return store.AccountAdminOperation{}, ErrInvalidCommand
 	}
 	intent, err := CanonicalOverrideIntentV1(kind, command.TargetOperation, command.Reason, command.Detail)
@@ -365,8 +368,7 @@ func validateCredential(raw []byte, expectedEmail string) error {
 		return ErrInvalidCommand
 	}
 	var fields map[string]json.RawMessage
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	if err := decoder.Decode(&fields); err != nil || fields == nil {
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return ErrInvalidCommand
 	}
 	var kind, email string
@@ -386,6 +388,18 @@ func validateCredential(raw []byte, expectedEmail string) error {
 		}
 	}
 	return nil
+}
+
+func validOverrideDetail(detail string) bool {
+	if len(detail) < 1 || len(detail) > 512 {
+		return false
+	}
+	for _, r := range detail {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func prepareMutation(adapter *cliproxyapi.NativeAdapter, ctx context.Context, command Command) (*cliproxyapi.PreparedNativeMutation, error) {

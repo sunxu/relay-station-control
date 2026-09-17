@@ -494,3 +494,53 @@ func TestReplaceUnsafeBasenameIsPhysicalFailureAfterAcceptance(t *testing.T) {
 		t.Fatalf("accept_with_key=%d resolve=%d dispatch=%d", ops.acceptWithIntentKeyCalls, resolver.Count(), ops.dispatchCalls)
 	}
 }
+
+func TestCredentialRequiresOneCompleteJSONDocument(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "object", raw: `{"type":"antigravity","email":"user@example.invalid"}`, want: true},
+		{name: "trailing whitespace", raw: "{\"type\":\"antigravity\",\"email\":\"user@example.invalid\"} \n\t", want: true},
+		{name: "trailing garbage", raw: `{"type":"antigravity","email":"user@example.invalid"} garbage`},
+		{name: "second value", raw: `{"type":"antigravity","email":"user@example.invalid"}{}`},
+		{name: "array", raw: `[{"type":"antigravity","email":"user@example.invalid"}]`},
+		{name: "null", raw: `null`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := validateCredential([]byte(test.raw), "user@example.invalid") == nil; got != test.want {
+				t.Fatalf("valid=%v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestOverrideDetailPresenceIsValidatedWithoutChangingCanonicalForms(t *testing.T) {
+	target := uuid.New()
+	absent, err := CanonicalOverrideIntentV1(store.AccountLifecycleOverride, target, "risk_accepted", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonEmpty, err := CanonicalOverrideIntentV1(store.AccountLifecycleOverride, target, "risk_accepted", "reviewed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(absent) == string(nonEmpty) || !strings.Contains(string(absent), "null") {
+		t.Fatalf("absent=%s non_empty=%s", absent, nonEmpty)
+	}
+	if !validOverrideDetail("reviewed") || validOverrideDetail("") || validOverrideDetail("line\nbreak") {
+		t.Fatal("override detail validation did not preserve absent/non-empty/control semantics")
+	}
+	service, err := NewService(&fakeOperationStore{}, &countingNodeResolver{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.LifecycleOverride(context.Background(), OverrideCommand{
+		CommandID: uuid.New(), ActorAdminID: uuid.New(), TargetOperation: target,
+		Reason: "risk_accepted", Confirmation: "OVERRIDE UNKNOWN OPERATION LIFECYCLE BLOCK", DetailPresent: true,
+	})
+	if !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("present empty detail error=%v, want invalid command", err)
+	}
+}
