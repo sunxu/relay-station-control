@@ -199,7 +199,7 @@ func TestAdminCommandRegistryExistingWritersAndGlobalRacesPG18(t *testing.T) {
 	defer cancel()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
 	defer cleanup()
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "51"); err != nil {
 		t.Fatal(err)
 	}
 	adminA, adminB := uuid.New(), uuid.New()
@@ -215,11 +215,11 @@ func TestAdminCommandRegistryExistingWritersAndGlobalRacesPG18(t *testing.T) {
 	runtime := runtimePoolForRegistry(t, ctx, databaseURL)
 	defer runtime.Close()
 	key := []byte("01234567890123456789012345678901")
-	gatewayRepository, err := assetstore.NewGatewayLifecycleRepository(runtime, key)
+	gatewayRepository, err := assetstore.NewGatewayLifecycleRepositoryWithSealer(runtime, key, newAvailableTestSealer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodeRepository, err := assetstore.NewNodeLifecycleRepository(runtime, key)
+	nodeRepository, err := assetstore.NewNodeLifecycleRepositoryWithSealer(runtime, key, newAvailableTestSealer())
 	if err != nil {
 		t.Fatal(err)
 	}

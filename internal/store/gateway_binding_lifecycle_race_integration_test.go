@@ -114,7 +114,7 @@ func newGatewayBindingRaceFixture(
 	database := newIsolatedJobDatabase(t)
 	fixture := newRelayBindingSchemaFixture(t, ctx, database)
 	insertGatewayDirectoryCurrentState(t, ctx, database, fixture.gatewayID, fixture.snapshotID, time.Now().UTC().Add(-10*time.Second))
-	assets, err := store.NewGatewayLifecycleRepository(database.runtime, []byte("01234567890123456789012345678901"))
+	assets, err := store.NewGatewayLifecycleRepositoryWithSealer(database.runtime, []byte("01234567890123456789012345678901"), newAvailableTestSealer())
 	if err != nil {
 		t.Fatal(err)
 	}

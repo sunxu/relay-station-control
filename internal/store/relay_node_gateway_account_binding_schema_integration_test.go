@@ -68,7 +68,7 @@ func (fixture relayBindingSchemaFixture) insertNode(
 		instance_id, display_name, node_type, driver_contract_version,
 		management_endpoint, reader_secret_ref
 	) VALUES ($1,'Binding Node','binding-node','v1',$2,NULL)`,
-		nodeID, "https://node-"+nodeID.String()+".test"); err != nil {
+		nodeID, "http://node-"+nodeID.String()+".test"); err != nil {
 		t.Fatal(err)
 	}
 	return nodeID
@@ -226,10 +226,9 @@ func TestRelayNodeGatewayAccountBindingSchema(t *testing.T) {
 	t.Run("node gateway and admin deletes are restricted", func(t *testing.T) {
 		nodeID := fixture.insertNode(t, ctx, database)
 		fixture.insertBinding(t, ctx, database, nodeID, fixture.accountIDs[8], "administrator_bind")
-		// ON DELETE RESTRICT raises restrict_violation (23001), not
-		// foreign_key_violation (23503).
+		// The current lifecycle guard rejects asset-history mutation first.
 		_, err := database.owner.Exec(ctx, `DELETE FROM relay_node_assets WHERE instance_id=$1`, nodeID)
-		requireGatewayDirectorySQLState(t, err, "23001")
+		requireGatewayDirectorySQLState(t, err, "42501")
 		_, err = database.owner.Exec(ctx, `DELETE FROM gateway_instances WHERE instance_id=$1`, fixture.gatewayID)
 		requireGatewayDirectorySQLState(t, err, "23001")
 		_, err = database.owner.Exec(ctx, `DELETE FROM control_admin_users WHERE admin_id=$1`, fixture.adminID)

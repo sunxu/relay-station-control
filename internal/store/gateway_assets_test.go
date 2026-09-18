@@ -6,7 +6,27 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+func TestTranslateGatewayLifecycleSQLStates(t *testing.T) {
+	tests := []struct {
+		code string
+		want error
+	}{
+		{"P0002", ErrGatewayNotFound},
+		{"P0003", ErrGatewayRetired},
+		{"P0004", ErrAssetRevisionExhausted},
+		{"P0005", ErrStaleAssetRevision},
+	}
+	for _, test := range tests {
+		t.Run(test.code, func(t *testing.T) {
+			if got := translateGatewayDBError(&pgconn.PgError{Code: test.code, Message: "unrelated text"}); got != test.want {
+				t.Fatalf("translated %s to %v, want %v", test.code, got, test.want)
+			}
+		})
+	}
+}
 
 func TestGatewayCanonicalIntentV1Fixtures(t *testing.T) {
 	key := []byte("01234567890123456789012345678901")
@@ -46,5 +66,17 @@ func TestGatewayCanonicalIntentSecretKeyFailsClosed(t *testing.T) {
 	_, version, err = repository.intent("gateway.edit", GatewayCommand{InstanceID: uuid.New(), ExpectedRevision: 1, Secret: SecretPatch{Operation: SecretClear}}, false, nil)
 	if err != nil || version != nil {
 		t.Fatalf("secret clear command: version=%v error=%v", version, err)
+	}
+}
+
+func TestGatewayNewAssetIntentUsesV2(t *testing.T) {
+	repository := &GatewayLifecycleRepository{key: []byte("01234567890123456789012345678901")}
+	command := GatewayCommand{NewInstanceID: uuid.New(), DisplayName: StringPatch{Present: true, Value: "Gateway"}, ManagementEndpoint: StringPatch{Present: true, Value: "http://gateway.example"}, Secret: SecretPatch{Operation: SecretAbsent}}
+	intent, keyVersion, err := repository.intentForEncoding("gateway.register", command, false, nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(intent[:2]) != "[2" || keyVersion != nil {
+		t.Fatalf("v2 intent = %s, keyVersion=%v", intent, keyVersion)
 	}
 }

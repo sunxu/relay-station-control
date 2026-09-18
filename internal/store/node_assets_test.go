@@ -4,7 +4,27 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+func TestTranslateNodeLifecycleSQLStates(t *testing.T) {
+	tests := []struct {
+		code string
+		want error
+	}{
+		{"P0002", ErrNodeNotFound},
+		{"P0003", ErrNodeRetired},
+		{"P0004", ErrAssetRevisionExhausted},
+		{"P0005", ErrStaleAssetRevision},
+	}
+	for _, test := range tests {
+		t.Run(test.code, func(t *testing.T) {
+			if got := translateNodeDBError(&pgconn.PgError{Code: test.code, Message: "unrelated text"}); got != test.want {
+				t.Fatalf("translated %s to %v, want %v", test.code, got, test.want)
+			}
+		})
+	}
+}
 
 func TestNodeCanonicalIntentV1Fixtures(t *testing.T) {
 	repository := &NodeLifecycleRepository{key: []byte("01234567890123456789012345678901")}
@@ -101,5 +121,21 @@ func TestNodeSecretSetRequiresK1OnlyWhenUsed(t *testing.T) {
 	}
 	if _, _, err := repository.intent("node.edit", NodeCommand{InstanceID: id, ExpectedRevision: 1, Secret: SecretPatch{Operation: SecretSet, Value: "vault://node/reader"}}, false, nil); err != ErrReceiptKeyUnavailable {
 		t.Fatalf("SecretSet without K1 error=%v", err)
+	}
+}
+
+func TestNodeNewAssetIntentUsesV2AndHistoricalWrapperStaysV1(t *testing.T) {
+	repository := &NodeLifecycleRepository{key: []byte("01234567890123456789012345678901")}
+	command := NodeCommand{NewInstanceID: uuid.New(), DisplayName: StringPatch{Present: true, Value: "Node"}, ManagementEndpoint: StringPatch{Present: true, Value: "http://node.example"}, NodeType: "cliproxyapi", DriverContractVersion: "v1", Capabilities: []string{"a"}, Secret: SecretPatch{Operation: SecretAbsent}}
+	v1, _, err := repository.intent("node.register", command, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, keyVersion, err := repository.intentForEncoding("node.register", command, false, nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(v1) == string(v2) || string(v2[:2]) != "[2" || keyVersion != nil {
+		t.Fatalf("v1/v2 intent separation failed: v1=%s v2=%s keyVersion=%v", v1, v2, keyVersion)
 	}
 }

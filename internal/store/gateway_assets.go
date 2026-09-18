@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	"github.com/sunxu/relay-station-control/internal/drivers/gatewaymanagement"
 )
 
@@ -39,6 +40,7 @@ const (
 	gatewayLifecycleActive  = "active"
 	gatewayLifecycleRetired = "retired"
 	assetIntentDomain       = "relay-station/asset-admin-intent/v1/"
+	assetIntentV2Domain     = "relay-station/asset-admin-intent/v2/"
 	maxAssetRevision        = int64(^uint64(0) >> 1)
 )
 
@@ -68,9 +70,11 @@ type GatewayCounts struct{ Active, Retired, Total int64 }
 type SecretOperation string
 
 const (
-	SecretAbsent SecretOperation = "absent"
-	SecretClear  SecretOperation = "clear"
-	SecretSet    SecretOperation = "set"
+	SecretAbsent       SecretOperation = "absent"
+	SecretKeep         SecretOperation = "keep"
+	SecretClear        SecretOperation = "clear"
+	SecretSet          SecretOperation = "set"
+	SecretExplicitNull SecretOperation = "explicit_null"
 )
 
 type SecretPatch struct {
@@ -102,11 +106,12 @@ type GatewayCommandResult struct {
 }
 
 type GatewayLifecycleRepository struct {
-	pool *pgxpool.Pool
-	key  []byte
+	pool   *pgxpool.Pool
+	key    []byte
+	sealer AssetCredentialSealer
 }
 
-type gatewayIntentBuilder func(replay bool, receiptKeyVersion *int16) ([]byte, *int16, error)
+type gatewayIntentBuilder func(replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error)
 
 type GatewayLifecycleManager interface {
 	Current(context.Context) (*GatewayAsset, error)
@@ -119,6 +124,20 @@ type GatewayLifecycleManager interface {
 	Replace(context.Context, GatewayCommand) (GatewayCommandResult, error)
 	ProbeTarget(context.Context, uuid.UUID) (string, error)
 	RecordProbe(context.Context, uuid.UUID, uuid.UUID, string, string, string) error
+}
+
+func (r *GatewayLifecycleRepository) sealedCredential(id uuid.UUID, patch SecretPatch) ([]byte, error) {
+	if patch.Operation != SecretSet {
+		return nil, nil
+	}
+	if !validateCredentialPlaintext(patch.Value) || !r.sealer.Available() {
+		return nil, ErrInvalidGatewaySecret
+	}
+	sealed, err := r.sealer.Seal(assetcredential.GatewayCredential, id, []byte(patch.Value))
+	if err != nil {
+		return nil, ErrInvalidGatewaySecret
+	}
+	return sealed, nil
 }
 
 func (r *GatewayLifecycleRepository) Current(ctx context.Context) (*GatewayAsset, error) {
@@ -214,13 +233,20 @@ func (r *GatewayLifecycleRepository) List(ctx context.Context, lifecycle string,
 }
 
 func NewGatewayLifecycleRepository(pool *pgxpool.Pool, key []byte) (*GatewayLifecycleRepository, error) {
+	return NewGatewayLifecycleRepositoryWithSealer(pool, key, unavailableCredentialSealer{})
+}
+
+func NewGatewayLifecycleRepositoryWithSealer(pool *pgxpool.Pool, key []byte, sealer AssetCredentialSealer) (*GatewayLifecycleRepository, error) {
 	if pool == nil {
 		return nil, errors.New("store: gateway lifecycle database unavailable")
 	}
 	if len(key) != 0 && len(key) != 32 {
 		return nil, ErrReceiptKeyUnavailable
 	}
-	return &GatewayLifecycleRepository{pool: pool, key: append([]byte(nil), key...)}, nil
+	if sealer == nil {
+		sealer = unavailableCredentialSealer{}
+	}
+	return &GatewayLifecycleRepository{pool: pool, key: append([]byte(nil), key...), sealer: sealer}, nil
 }
 
 func NormalizeGatewayManagementEndpoint(raw string) (string, error) {
@@ -235,7 +261,7 @@ func (r *GatewayLifecycleRepository) Register(ctx context.Context, command Gatew
 	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil {
 		return GatewayCommandResult{}, ErrInvalidGateway
 	}
-	buildIntent := func(replay bool, receiptKeyVersion *int16) ([]byte, *int16, error) {
+	buildIntent := func(replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if command.NewInstanceID == uuid.Nil || !validGatewayDisplayName(command.DisplayName) || !command.ManagementEndpoint.Present {
 			return nil, nil, ErrInvalidGateway
 		}
@@ -244,7 +270,7 @@ func (r *GatewayLifecycleRepository) Register(ctx context.Context, command Gatew
 			return nil, nil, err
 		}
 		command.ManagementEndpoint.Value = endpoint
-		return r.intent("gateway.register", command, replay, receiptKeyVersion)
+		return r.intentForEncoding("gateway.register", command, replay, receiptKeyVersion, encodingVersion)
 	}
 	return r.transact(ctx, command, "gateway.register", buildIntent, func(tx pgx.Tx) (int, any, error) {
 		var occupied bool
@@ -261,12 +287,20 @@ func (r *GatewayLifecycleRepository) Register(ctx context.Context, command Gatew
 		if exists {
 			return 0, nil, ErrGatewayIdentityExists
 		}
-		row := GatewayAsset{}
-		err := tx.QueryRow(ctx, `INSERT INTO gateway_instances(singleton_id,instance_id,display_name,management_endpoint,reader_secret_ref,lifecycle_status,revision) VALUES(1,$1,$2,$3,$4,'active',1) RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`, command.NewInstanceID, command.DisplayName.Value, command.ManagementEndpoint.Value, secretValue(command.Secret)).Scan(gatewayScan(&row)...)
+		sealed, err := r.sealedCredential(command.NewInstanceID, command.Secret)
+		if err != nil {
+			return 0, nil, err
+		}
+		var created uuid.UUID
+		err = tx.QueryRow(ctx, `SELECT public.control_register_gateway_asset_stage0_v1($1::uuid,$2::text,$3::text,$4::bytea)`, command.NewInstanceID, command.DisplayName.Value, command.ManagementEndpoint.Value, sealed).Scan(&created)
 		if err != nil {
 			if uniqueViolation(err) {
 				return 0, nil, ErrCurrentGatewayExists
 			}
+			return 0, nil, err
+		}
+		var row GatewayAsset
+		if err = tx.QueryRow(ctx, `SELECT instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason FROM gateway_instances WHERE instance_id=$1`, created).Scan(gatewayScan(&row)...); err != nil {
 			return 0, nil, err
 		}
 		body := map[string]any{"result": "registered", "asset": row}
@@ -278,7 +312,7 @@ func (r *GatewayLifecycleRepository) Edit(ctx context.Context, command GatewayCo
 	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil {
 		return GatewayCommandResult{}, ErrInvalidGateway
 	}
-	buildIntent := func(replay bool, receiptKeyVersion *int16) ([]byte, *int16, error) {
+	buildIntent := func(replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if command.InstanceID == uuid.Nil || command.ExpectedRevision < 1 || (!command.DisplayName.Present && !command.ManagementEndpoint.Present && command.Secret.Operation == SecretAbsent) {
 			return nil, nil, ErrInvalidGateway
 		}
@@ -292,7 +326,7 @@ func (r *GatewayLifecycleRepository) Edit(ctx context.Context, command GatewayCo
 			}
 			command.ManagementEndpoint.Value = endpoint
 		}
-		return r.intent("gateway.edit", command, replay, receiptKeyVersion)
+		return r.intentForEncoding("gateway.edit", command, replay, receiptKeyVersion, encodingVersion)
 	}
 	return r.transact(ctx, command, "gateway.edit", buildIntent, func(tx pgx.Tx) (int, any, error) {
 		current, err := lockGateway(ctx, tx, command.InstanceID)
@@ -316,17 +350,19 @@ func (r *GatewayLifecycleRepository) Edit(ctx context.Context, command GatewayCo
 		if command.ManagementEndpoint.Present {
 			endpoint = command.ManagementEndpoint.Value
 		}
-		var row GatewayAsset
-		query := `UPDATE gateway_instances SET display_name=$2,management_endpoint=$3,revision=revision+1,updated_at=clock_timestamp() WHERE instance_id=$1 RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`
-		arguments := []any{command.InstanceID, display, endpoint}
-		if command.Secret.Operation == SecretClear {
-			query = `UPDATE gateway_instances SET display_name=$2,management_endpoint=$3,reader_secret_ref=NULL,revision=revision+1,updated_at=clock_timestamp() WHERE instance_id=$1 RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`
-		} else if command.Secret.Operation == SecretSet {
-			query = `UPDATE gateway_instances SET display_name=$2,management_endpoint=$3,reader_secret_ref=$4,revision=revision+1,updated_at=clock_timestamp() WHERE instance_id=$1 RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`
-			arguments = append(arguments, command.Secret.Value)
-		}
-		err = tx.QueryRow(ctx, query, arguments...).Scan(gatewayScan(&row)...)
+		sealed, err := r.sealedCredential(command.InstanceID, command.Secret)
 		if err != nil {
+			return 0, nil, err
+		}
+		action := string(command.Secret.Operation)
+		if command.Secret.Operation == SecretAbsent {
+			action = string(SecretKeep)
+		}
+		if _, err = tx.Exec(ctx, `SELECT public.control_edit_gateway_asset_stage0_v1($1::uuid,$2::bigint,$3::text,$4::text,$5::text,$6::bytea)`, command.InstanceID, command.ExpectedRevision, display, endpoint, action, sealed); err != nil {
+			return 0, nil, err
+		}
+		var row GatewayAsset
+		if err = tx.QueryRow(ctx, `SELECT instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason FROM gateway_instances WHERE instance_id=$1`, command.InstanceID).Scan(gatewayScan(&row)...); err != nil {
 			return 0, nil, err
 		}
 		body := map[string]any{"result": "updated", "asset": row}
@@ -338,11 +374,11 @@ func (r *GatewayLifecycleRepository) Retire(ctx context.Context, command Gateway
 	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil {
 		return GatewayCommandResult{}, ErrInvalidGateway
 	}
-	buildIntent := func(replay bool, receiptKeyVersion *int16) ([]byte, *int16, error) {
+	buildIntent := func(replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if command.InstanceID == uuid.Nil || command.ExpectedRevision < 1 {
 			return nil, nil, ErrInvalidGateway
 		}
-		return r.intent("gateway.retire", command, replay, receiptKeyVersion)
+		return r.intentForEncoding("gateway.retire", command, replay, receiptKeyVersion, encodingVersion)
 	}
 	return r.transact(ctx, command, "gateway.retire", buildIntent, func(tx pgx.Tx) (int, any, error) {
 		current, err := lockGateway(ctx, tx, command.InstanceID)
@@ -377,8 +413,13 @@ func (r *GatewayLifecycleRepository) Retire(ctx context.Context, command Gateway
 		if err != nil {
 			return 0, nil, err
 		}
+		if _, err = tx.Exec(ctx, `SELECT public.control_retire_gateway_asset_stage0_v1($1::uuid,$2::bigint,$3::timestamptz,$4::uuid,$5::text)`, command.InstanceID, command.ExpectedRevision, boundary, command.ActorAdminID, "administrator_retire"); err != nil {
+			return 0, nil, err
+		}
 		var row GatewayAsset
-		err = tx.QueryRow(ctx, `UPDATE gateway_instances SET singleton_id=NULL,lifecycle_status='retired',retired_at=$2,retired_by=$3,retire_reason='administrator_retire',revision=revision+1,updated_at=$2 WHERE instance_id=$1 RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`, command.InstanceID, boundary, command.ActorAdminID).Scan(gatewayScan(&row)...)
+		if err = tx.QueryRow(ctx, `SELECT instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason FROM gateway_instances WHERE instance_id=$1`, command.InstanceID).Scan(gatewayScan(&row)...); err != nil {
+			return 0, nil, err
+		}
 		if err != nil {
 			return 0, nil, err
 		}
@@ -392,7 +433,7 @@ func (r *GatewayLifecycleRepository) Replace(ctx context.Context, command Gatewa
 	if command.CommandID == uuid.Nil || command.ActorAdminID == uuid.Nil {
 		return GatewayCommandResult{}, ErrInvalidGateway
 	}
-	buildIntent := func(replay bool, receiptKeyVersion *int16) ([]byte, *int16, error) {
+	buildIntent := func(replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if command.InstanceID == uuid.Nil || command.NewInstanceID == uuid.Nil || command.ExpectedRevision < 1 || !validGatewayDisplayName(command.DisplayName) || !command.ManagementEndpoint.Present {
 			return nil, nil, ErrInvalidGateway
 		}
@@ -401,7 +442,7 @@ func (r *GatewayLifecycleRepository) Replace(ctx context.Context, command Gatewa
 			return nil, nil, err
 		}
 		command.ManagementEndpoint.Value = endpoint
-		return r.intent("gateway.replace", command, replay, receiptKeyVersion)
+		return r.intentForEncoding("gateway.replace", command, replay, receiptKeyVersion, encodingVersion)
 	}
 	return r.transact(ctx, command, "gateway.replace", buildIntent, func(tx pgx.Tx) (int, any, error) {
 		old, err := lockGateway(ctx, tx, command.InstanceID)
@@ -439,18 +480,25 @@ func (r *GatewayLifecycleRepository) Replace(ctx context.Context, command Gatewa
 		if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&boundary); err != nil {
 			return 0, nil, err
 		}
+		replacementSealed, sealErr := r.sealedCredential(command.NewInstanceID, command.Secret)
+		if sealErr != nil {
+			return 0, nil, sealErr
+		}
 		closed, err := tx.Exec(ctx, `UPDATE relay_node_gateway_account_bindings SET ended_at=$2,ended_by=$3,end_reason='gateway_replaced' WHERE gateway_instance_id=$1 AND ended_at IS NULL`, command.InstanceID, boundary, command.ActorAdminID)
 		if err != nil {
 			return 0, nil, err
 		}
-		var oldRow GatewayAsset
-		err = tx.QueryRow(ctx, `UPDATE gateway_instances SET singleton_id=NULL,lifecycle_status='retired',retired_at=$2,retired_by=$3,retire_reason='replacement',revision=revision+1,updated_at=$2 WHERE instance_id=$1 RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`, command.InstanceID, boundary, command.ActorAdminID).Scan(gatewayScan(&oldRow)...)
+		var created uuid.UUID
+		err = tx.QueryRow(ctx, `SELECT public.control_replace_gateway_asset_stage0_v1($1::uuid,$2::bigint,$3::timestamptz,$4::uuid,$5::uuid,$6::text,$7::text,$8::bytea)`, command.InstanceID, command.ExpectedRevision, boundary, command.ActorAdminID, command.NewInstanceID, command.DisplayName.Value, command.ManagementEndpoint.Value, replacementSealed).Scan(&created)
 		if err != nil {
 			return 0, nil, err
 		}
+		var oldRow GatewayAsset
+		if err = tx.QueryRow(ctx, `SELECT instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason FROM gateway_instances WHERE instance_id=$1`, command.InstanceID).Scan(gatewayScan(&oldRow)...); err != nil {
+			return 0, nil, err
+		}
 		var newRow GatewayAsset
-		err = tx.QueryRow(ctx, `INSERT INTO gateway_instances(singleton_id,instance_id,display_name,management_endpoint,reader_secret_ref,lifecycle_status,revision) VALUES(1,$1,$2,$3,$4,'active',1) RETURNING instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason`, command.NewInstanceID, command.DisplayName.Value, command.ManagementEndpoint.Value, secretValue(command.Secret)).Scan(gatewayScan(&newRow)...)
-		if err != nil {
+		if err = tx.QueryRow(ctx, `SELECT instance_id,display_name,management_endpoint,reader_secret_configured,lifecycle_status,revision,created_at,updated_at,retired_at,retired_by,retire_reason FROM gateway_instances WHERE instance_id=$1`, created).Scan(gatewayScan(&newRow)...); err != nil {
 			return 0, nil, err
 		}
 		lineage := GatewayReplacement{OldInstanceID: command.InstanceID, NewInstanceID: command.NewInstanceID, ReplacedAt: boundary.UTC(), ReplacedBy: command.ActorAdminID, CommandID: command.CommandID}
@@ -500,7 +548,7 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 		if storedKind != kind {
 			return GatewayCommandResult{}, ErrCommandConflict
 		}
-		if storedEncoding != 1 {
+		if storedEncoding != 1 && storedEncoding != 2 {
 			return GatewayCommandResult{}, ErrReceiptEncodingUnknown
 		}
 		if storedKeyVersion != nil {
@@ -508,8 +556,11 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 				return GatewayCommandResult{}, ErrReceiptKeyUnavailable
 			}
 		}
-		intent, _, buildErr := buildIntent(true, storedKeyVersion)
+		intent, _, buildErr := buildIntent(true, storedKeyVersion, storedEncoding)
 		if buildErr != nil {
+			if errors.Is(buildErr, ErrInvalidGatewaySecret) || errors.Is(buildErr, ErrInvalidGateway) {
+				return GatewayCommandResult{}, ErrCommandConflict
+			}
 			return GatewayCommandResult{}, buildErr
 		}
 		hash := sha256.Sum256(intent)
@@ -526,24 +577,25 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 	if reserved {
 		return GatewayCommandResult{}, ErrCommandRegistryInconsistent
 	}
-	intent, keyVersion, err := buildIntent(false, nil)
+	const newIntentEncodingVersion int16 = 2
+	intent, keyVersion, err := buildIntent(false, nil, newIntentEncodingVersion)
 	if err != nil {
 		return GatewayCommandResult{}, err
 	}
 	hash := sha256.Sum256(intent)
-	if err = reserveAdminCommand(ctx, tx, command.CommandID, command.ActorAdminID, kind, hash[:], keyVersion); err != nil {
+	if err = reserveAdminCommand(ctx, tx, command.CommandID, command.ActorAdminID, kind, newIntentEncodingVersion, hash[:], keyVersion); err != nil {
 		return GatewayCommandResult{}, err
 	}
 	status, body, err := apply(tx)
 	if err != nil {
-		return GatewayCommandResult{}, err
+		return GatewayCommandResult{}, translateGatewayDBError(err)
 	}
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return GatewayCommandResult{}, err
 	}
 	saved := GatewayCommandResult{HTTPStatus: status, Body: bodyBytes}
-	err = insertControlledAssetAdminCommandReceipt(ctx, tx, command.CommandID, command.ActorAdminID, kind, hash[:], bodyBytes, status, nil, keyVersion)
+	err = insertControlledAssetAdminCommandReceipt(ctx, tx, command.CommandID, command.ActorAdminID, kind, newIntentEncodingVersion, hash[:], bodyBytes, status, nil, keyVersion)
 	if err != nil {
 		return GatewayCommandResult{}, err
 	}
@@ -554,6 +606,10 @@ func (r *GatewayLifecycleRepository) transact(ctx context.Context, command Gatew
 }
 
 func (r *GatewayLifecycleRepository) intent(kind string, c GatewayCommand, replay bool, receiptKeyVersion *int16) ([]byte, *int16, error) {
+	return r.intentForEncoding(kind, c, replay, receiptKeyVersion, 1)
+}
+
+func (r *GatewayLifecycleRepository) intentForEncoding(kind string, c GatewayCommand, replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error) {
 	triplet := []any{"absent", nil, nil}
 	var keyVersion *int16
 	switch c.Secret.Operation {
@@ -561,7 +617,7 @@ func (r *GatewayLifecycleRepository) intent(kind string, c GatewayCommand, repla
 	case SecretClear:
 		triplet = []any{"clear", nil, nil}
 	case SecretSet:
-		if !validGatewaySecretReference(c.Secret.Value) {
+		if !validateCredentialPlaintext(c.Secret.Value) {
 			return nil, nil, ErrInvalidGatewaySecret
 		}
 		if replay && receiptKeyVersion == nil {
@@ -573,7 +629,11 @@ func (r *GatewayLifecycleRepository) intent(kind string, c GatewayCommand, repla
 		v := int16(1)
 		keyVersion = &v
 		mac := hmac.New(sha256.New, r.key)
-		mac.Write([]byte(assetIntentDomain))
+		if encodingVersion == 2 {
+			mac.Write([]byte(assetIntentV2Domain))
+		} else {
+			mac.Write([]byte(assetIntentDomain))
+		}
 		mac.Write([]byte(kind))
 		mac.Write([]byte{0})
 		mac.Write([]byte(c.Secret.Value))
@@ -587,22 +647,18 @@ func (r *GatewayLifecycleRepository) intent(kind string, c GatewayCommand, repla
 	var value any
 	switch kind {
 	case "gateway.register":
-		value = []any{1, kind, c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, triplet}
+		value = []any{encodingVersion, kind, c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, triplet}
 	case "gateway.edit":
-		value = []any{1, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), patchPair(c.DisplayName), patchPair(c.ManagementEndpoint), triplet}
+		value = []any{encodingVersion, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), patchPair(c.DisplayName), patchPair(c.ManagementEndpoint), triplet}
 	case "gateway.retire":
-		value = []any{1, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), "administrator_retire"}
+		value = []any{encodingVersion, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), "administrator_retire"}
 	case "gateway.replace":
-		value = []any{1, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, triplet, "replacement"}
+		value = []any{encodingVersion, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, triplet, "replacement"}
 	default:
 		return nil, nil, ErrInvalidGateway
 	}
 	b, err := encodeCanonicalIntent(value)
 	return b, keyVersion, err
-}
-
-func validGatewaySecretReference(value string) bool {
-	return ValidAssetSecretReference(value)
 }
 
 func encodeCanonicalIntent(value any) ([]byte, error) {
@@ -634,6 +690,8 @@ func encodeCanonicalIntent(value any) ([]byte, error) {
 			appendString(typed)
 		case int:
 			builder.WriteString(strconv.Itoa(typed))
+		case int16:
+			builder.WriteString(strconv.FormatInt(int64(typed), 10))
 		case []any:
 			builder.WriteByte('[')
 			for index, item := range typed {
@@ -665,12 +723,28 @@ func patchPair(p StringPatch) []any {
 func validGatewayDisplayName(p StringPatch) bool {
 	return p.Present && p.Value != "" && strings.TrimSpace(p.Value) == p.Value && len(p.Value) <= 100
 }
-func secretValue(p SecretPatch) any {
-	if p.Operation == SecretSet {
-		return p.Value
+
+func translateGatewayDBError(err error) error {
+	var p *pgconn.PgError
+	if errors.As(err, &p) {
+		switch p.Code {
+		case "23505":
+			return ErrGatewayIdentityExists
+		case "23514":
+			return ErrInvalidGateway
+		case "P0002":
+			return ErrGatewayNotFound
+		case "P0003":
+			return ErrGatewayRetired
+		case "P0004":
+			return ErrAssetRevisionExhausted
+		case "P0005":
+			return ErrStaleAssetRevision
+		}
 	}
-	return nil
+	return err
 }
+
 func uniqueViolation(err error) bool {
 	var p *pgconn.PgError
 	return errors.As(err, &p) && p.Code == "23505"

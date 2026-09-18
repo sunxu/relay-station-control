@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 )
 
 var (
@@ -61,19 +62,41 @@ type NodeCommand struct {
 type NodeCommandResult = GatewayCommandResult
 
 type NodeLifecycleRepository struct {
-	pool *pgxpool.Pool
-	key  []byte
+	pool   *pgxpool.Pool
+	key    []byte
+	sealer AssetCredentialSealer
 }
-type nodeIntentBuilder func(replay bool, receiptKeyVersion *int16) ([]byte, *int16, error)
+type nodeIntentBuilder func(replay bool, receiptKeyVersion *int16, encodingVersion int16) ([]byte, *int16, error)
+
+func (r *NodeLifecycleRepository) sealedCredential(kind assetcredential.CredentialKind, id uuid.UUID, patch SecretPatch) ([]byte, error) {
+	if patch.Operation != SecretSet {
+		return nil, nil
+	}
+	if !validateCredentialPlaintext(patch.Value) || !r.sealer.Available() {
+		return nil, ErrInvalidNodeSecret
+	}
+	sealed, err := r.sealer.Seal(kind, id, []byte(patch.Value))
+	if err != nil {
+		return nil, ErrInvalidNodeSecret
+	}
+	return sealed, nil
+}
 
 func NewNodeLifecycleRepository(pool *pgxpool.Pool, key []byte) (*NodeLifecycleRepository, error) {
+	return NewNodeLifecycleRepositoryWithSealer(pool, key, unavailableCredentialSealer{})
+}
+
+func NewNodeLifecycleRepositoryWithSealer(pool *pgxpool.Pool, key []byte, sealer AssetCredentialSealer) (*NodeLifecycleRepository, error) {
 	if pool == nil {
 		return nil, errors.New("store: node lifecycle database unavailable")
 	}
 	if len(key) != 0 && len(key) != 32 {
 		return nil, ErrReceiptKeyUnavailable
 	}
-	return &NodeLifecycleRepository{pool: pool, key: append([]byte(nil), key...)}, nil
+	if sealer == nil {
+		sealer = unavailableCredentialSealer{}
+	}
+	return &NodeLifecycleRepository{pool: pool, key: append([]byte(nil), key...), sealer: sealer}, nil
 }
 
 func (r *NodeLifecycleRepository) Detail(ctx context.Context, id uuid.UUID) (NodeAssetDetail, error) {
@@ -156,7 +179,7 @@ func rRows(ctx context.Context, q nodeQuerier, id uuid.UUID) ([]string, error) {
 }
 
 func (r *NodeLifecycleRepository) Register(ctx context.Context, c NodeCommand) (NodeCommandResult, error) {
-	builder := func(replay bool, kv *int16) ([]byte, *int16, error) {
+	builder := func(replay bool, kv *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if c.CommandID == uuid.Nil || c.ActorAdminID == uuid.Nil || c.NewInstanceID == uuid.Nil || !validNodeDisplay(c.DisplayName) || !c.ManagementEndpoint.Present || !validNodeIdentifier(c.NodeType) || !validNodeIdentifier(c.DriverContractVersion) {
 			return nil, nil, ErrInvalidNode
 		}
@@ -170,7 +193,7 @@ func (r *NodeLifecycleRepository) Register(ctx context.Context, c NodeCommand) (
 		if capabilitiesErr != nil {
 			return nil, nil, ErrInvalidNode
 		}
-		return r.intent("node.register", c, replay, kv)
+		return r.intentForEncoding("node.register", c, replay, kv, encodingVersion)
 	}
 	return r.transact(ctx, c, "node.register", builder, false, func(tx pgx.Tx) (int, any, error) {
 		if err := validateDriverCapabilities(ctx, tx, c.NodeType, c.DriverContractVersion, c.Capabilities); err != nil {
@@ -184,7 +207,12 @@ func (r *NodeLifecycleRepository) Register(ctx context.Context, c NodeCommand) (
 			return 0, nil, ErrNodeIdentityExists
 		}
 		var created uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT control_create_relay_node_asset($1,$2,$3,$4,$5,$6,$7)`, c.NewInstanceID, c.DisplayName.Value, c.NodeType, c.DriverContractVersion, c.ManagementEndpoint.Value, secretValue(c.Secret), c.Capabilities).Scan(&created)
+		sealed, sealErr := r.sealedCredential(assetcredential.NodeCredential, c.NewInstanceID, c.Secret)
+		if sealErr != nil {
+			return 0, nil, sealErr
+		}
+		var err error
+		err = tx.QueryRow(ctx, `SELECT public.control_register_relay_node_asset_stage0_v1($1::uuid,$2::text,$3::text,$4::text,$5::text,$6::bytea,$7::text[])`, c.NewInstanceID, c.DisplayName.Value, c.NodeType, c.DriverContractVersion, c.ManagementEndpoint.Value, sealed, c.Capabilities).Scan(&created)
 		if err != nil {
 			if uniqueViolation(err) {
 				return 0, nil, ErrNodeIdentityExists
@@ -208,7 +236,7 @@ func (r *NodeLifecycleRepository) Register(ctx context.Context, c NodeCommand) (
 }
 
 func (r *NodeLifecycleRepository) Edit(ctx context.Context, c NodeCommand) (NodeCommandResult, error) {
-	builder := func(replay bool, kv *int16) ([]byte, *int16, error) {
+	builder := func(replay bool, kv *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if c.CommandID == uuid.Nil || c.ActorAdminID == uuid.Nil || c.InstanceID == uuid.Nil || c.ExpectedRevision < 1 || (!c.DisplayName.Present && !c.ManagementEndpoint.Present && c.Secret.Operation == SecretAbsent) {
 			return nil, nil, ErrInvalidNode
 		}
@@ -222,7 +250,7 @@ func (r *NodeLifecycleRepository) Edit(ctx context.Context, c NodeCommand) (Node
 			}
 			c.ManagementEndpoint.Value = v
 		}
-		return r.intent("node.edit", c, replay, kv)
+		return r.intentForEncoding("node.edit", c, replay, kv, encodingVersion)
 	}
 	return r.transact(ctx, c, "node.edit", builder, false, func(tx pgx.Tx) (int, any, error) {
 		n, err := lockNode(ctx, tx, c.InstanceID)
@@ -245,15 +273,15 @@ func (r *NodeLifecycleRepository) Edit(ctx context.Context, c NodeCommand) (Node
 		if c.ManagementEndpoint.Present {
 			endpoint = c.ManagementEndpoint.Value
 		}
-		query := `UPDATE relay_node_assets SET display_name=$2,management_endpoint=$3,revision=revision+1,updated_at=clock_timestamp() WHERE instance_id=$1`
-		args := []any{c.InstanceID, display, endpoint}
-		if c.Secret.Operation == SecretClear {
-			query = strings.Replace(query, "revision=revision+1", "reader_secret_ref=NULL,revision=revision+1", 1)
-		} else if c.Secret.Operation == SecretSet {
-			query = strings.Replace(query, "revision=revision+1", "reader_secret_ref=$4,revision=revision+1", 1)
-			args = append(args, c.Secret.Value)
+		sealed, err := r.sealedCredential(assetcredential.NodeCredential, c.InstanceID, c.Secret)
+		if err != nil {
+			return 0, nil, err
 		}
-		if _, err = tx.Exec(ctx, query, args...); err != nil {
+		action := string(c.Secret.Operation)
+		if c.Secret.Operation == SecretAbsent {
+			action = string(SecretKeep)
+		}
+		if _, err = tx.Exec(ctx, `SELECT public.control_edit_relay_node_asset_stage0_v1($1::uuid,$2::bigint,$3::text,$4::text,$5::text,$6::bytea)`, c.InstanceID, c.ExpectedRevision, display, endpoint, action, sealed); err != nil {
 			return 0, nil, err
 		}
 		if err = bumpNodeGeneration(ctx, tx); err != nil {
@@ -284,7 +312,7 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 	if replace {
 		kind = "node.replace"
 	}
-	builder := func(replay bool, kv *int16) ([]byte, *int16, error) {
+	builder := func(replay bool, kv *int16, encodingVersion int16) ([]byte, *int16, error) {
 		if c.CommandID == uuid.Nil || c.ActorAdminID == uuid.Nil || c.InstanceID == uuid.Nil || c.ExpectedRevision < 1 {
 			return nil, nil, ErrInvalidNode
 		}
@@ -303,7 +331,7 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 				return nil, nil, ErrInvalidNode
 			}
 		}
-		return r.intent(kind, c, replay, kv)
+		return r.intentForEncoding(kind, c, replay, kv, encodingVersion)
 	}
 	return r.transact(ctx, c, kind, builder, true, func(tx pgx.Tx) (int, any, error) {
 		old, err := lockNode(ctx, tx, c.InstanceID)
@@ -371,6 +399,13 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 		if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&boundary); err != nil {
 			return 0, nil, err
 		}
+		var replacementSealed []byte
+		if replace {
+			replacementSealed, err = r.sealedCredential(assetcredential.NodeCredential, c.NewInstanceID, c.Secret)
+			if err != nil {
+				return 0, nil, err
+			}
+		}
 		reason := "node_retired"
 		retireReason := "administrator_retire"
 		if replace {
@@ -393,7 +428,13 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 		if err != nil {
 			return 0, nil, err
 		}
-		if _, err = tx.Exec(ctx, `UPDATE relay_node_assets SET lifecycle_status='retired',revision=revision+1,retired_at=$2,retired_by=$3,retire_reason=$4,updated_at=$2 WHERE instance_id=$1`, c.InstanceID, boundary, c.ActorAdminID, retireReason); err != nil {
+		var created uuid.UUID
+		if replace {
+			err = tx.QueryRow(ctx, `SELECT public.control_replace_relay_node_asset_stage0_v1($1::uuid,$2::bigint,$3::timestamptz,$4::uuid,$5::uuid,$6::text,$7::text,$8::text,$9::text,$10::bytea,$11::text[])`, c.InstanceID, c.ExpectedRevision, boundary, c.ActorAdminID, c.NewInstanceID, c.DisplayName.Value, c.NodeType, c.DriverContractVersion, c.ManagementEndpoint.Value, replacementSealed, c.Capabilities).Scan(&created)
+		} else {
+			_, err = tx.Exec(ctx, `SELECT public.control_retire_relay_node_asset_stage0_v1($1::uuid,$2::bigint,$3::timestamptz,$4::uuid,$5::text,$6::timestamptz)`, c.InstanceID, c.ExpectedRevision, boundary, c.ActorAdminID, retireReason, boundary)
+		}
+		if err != nil {
 			return 0, nil, err
 		}
 		if err = bumpNodeGeneration(ctx, tx); err != nil {
@@ -407,10 +448,6 @@ func (r *NodeLifecycleRepository) retireOrReplace(ctx context.Context, c NodeCom
 		if !replace {
 			body := nodeMutationBody("retired", retired, bc, mc, fc)
 			return 200, body, r.insertAudit(ctx, tx, c, kind, map[string]any{"command_id": c.CommandID, "instance_id": retired.InstanceID, "reason_code": "administrator_retire", "old_revision": old.Revision, "new_revision": retired.Revision, "closed_binding_count": bc, "closed_monitoring_count": mc, "cancelled_future_monitoring_count": fc})
-		}
-		var created uuid.UUID
-		if err = tx.QueryRow(ctx, `SELECT control_create_relay_node_asset($1,$2,$3,$4,$5,$6,$7)`, c.NewInstanceID, c.DisplayName.Value, c.NodeType, c.DriverContractVersion, c.ManagementEndpoint.Value, secretValue(c.Secret), c.Capabilities).Scan(&created); err != nil {
-			return 0, nil, err
 		}
 		fresh, err := loadNodeMutationProjection(ctx, tx, created, boundary)
 		if err != nil {
@@ -431,11 +468,6 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 		return NodeCommandResult{}, err
 	}
 	defer tx.Rollback(ctx)
-	if nodeFirst {
-		if _, err = lockNode(ctx, tx, c.InstanceID); err != nil {
-			return NodeCommandResult{}, err
-		}
-	}
 	if err = lockAdminCommand(ctx, tx, c.CommandID); err != nil {
 		return NodeCommandResult{}, err
 	}
@@ -462,14 +494,17 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 		if actor != c.ActorAdminID || sk != kind {
 			return NodeCommandResult{}, ErrCommandConflict
 		}
-		if enc != 1 {
+		if enc != 1 && enc != 2 {
 			return NodeCommandResult{}, ErrReceiptEncodingUnknown
 		}
 		if kv != nil && (*kv != 1 || len(r.key) != 32) {
 			return NodeCommandResult{}, ErrReceiptKeyUnavailable
 		}
-		intent, _, e := b(true, kv)
+		intent, _, e := b(true, kv, enc)
 		if e != nil {
+			if errors.Is(e, ErrInvalidNodeSecret) || errors.Is(e, ErrInvalidNode) {
+				return NodeCommandResult{}, ErrCommandConflict
+			}
 			return NodeCommandResult{}, e
 		}
 		sum := sha256.Sum256(intent)
@@ -484,13 +519,19 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 	if reserved {
 		return NodeCommandResult{}, ErrCommandRegistryInconsistent
 	}
-	intent, keyVersion, err := b(false, nil)
+	const newIntentEncodingVersion int16 = 2
+	intent, keyVersion, err := b(false, nil, newIntentEncodingVersion)
 	if err != nil {
 		return NodeCommandResult{}, err
 	}
 	sum := sha256.Sum256(intent)
-	if err = reserveAdminCommand(ctx, tx, c.CommandID, c.ActorAdminID, kind, sum[:], keyVersion); err != nil {
+	if err = reserveAdminCommand(ctx, tx, c.CommandID, c.ActorAdminID, kind, newIntentEncodingVersion, sum[:], keyVersion); err != nil {
 		return NodeCommandResult{}, err
+	}
+	if nodeFirst {
+		if _, err = lockNode(ctx, tx, c.InstanceID); err != nil {
+			return NodeCommandResult{}, err
+		}
 	}
 	statusCode, body, err := apply(tx)
 	if err != nil {
@@ -500,7 +541,7 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 	if err != nil {
 		return NodeCommandResult{}, err
 	}
-	err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, sum[:], bodyBytes, statusCode, nil, keyVersion)
+	err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, newIntentEncodingVersion, sum[:], bodyBytes, statusCode, nil, keyVersion)
 	if err != nil {
 		return NodeCommandResult{}, err
 	}
@@ -511,6 +552,10 @@ func (r *NodeLifecycleRepository) transact(ctx context.Context, c NodeCommand, k
 }
 
 func (r *NodeLifecycleRepository) intent(kind string, c NodeCommand, replay bool, receiptKV *int16) ([]byte, *int16, error) {
+	return r.intentForEncoding(kind, c, replay, receiptKV, 1)
+}
+
+func (r *NodeLifecycleRepository) intentForEncoding(kind string, c NodeCommand, replay bool, receiptKV *int16, encodingVersion int16) ([]byte, *int16, error) {
 	triplet := []any{"absent", nil, nil}
 	var kv *int16
 	switch c.Secret.Operation {
@@ -518,7 +563,7 @@ func (r *NodeLifecycleRepository) intent(kind string, c NodeCommand, replay bool
 	case SecretClear:
 		triplet = []any{"clear", nil, nil}
 	case SecretSet:
-		if !ValidAssetSecretReference(c.Secret.Value) {
+		if !validateCredentialPlaintext(c.Secret.Value) {
 			return nil, nil, ErrInvalidNodeSecret
 		}
 		if replay && receiptKV == nil {
@@ -530,7 +575,11 @@ func (r *NodeLifecycleRepository) intent(kind string, c NodeCommand, replay bool
 		v := int16(1)
 		kv = &v
 		mac := hmac.New(sha256.New, r.key)
-		mac.Write([]byte(assetIntentDomain))
+		if encodingVersion == 2 {
+			mac.Write([]byte(assetIntentV2Domain))
+		} else {
+			mac.Write([]byte(assetIntentDomain))
+		}
 		mac.Write([]byte(kind))
 		mac.Write([]byte{0})
 		mac.Write([]byte(c.Secret.Value))
@@ -548,13 +597,13 @@ func (r *NodeLifecycleRepository) intent(kind string, c NodeCommand, replay bool
 	var value any
 	switch kind {
 	case "node.register":
-		value = []any{1, kind, c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, c.NodeType, c.DriverContractVersion, caps, triplet}
+		value = []any{encodingVersion, kind, c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, c.NodeType, c.DriverContractVersion, caps, triplet}
 	case "node.edit":
-		value = []any{1, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), patchPair(c.DisplayName), patchPair(c.ManagementEndpoint), triplet}
+		value = []any{encodingVersion, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), patchPair(c.DisplayName), patchPair(c.ManagementEndpoint), triplet}
 	case "node.retire":
-		value = []any{1, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), "administrator_retire"}
+		value = []any{encodingVersion, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), "administrator_retire"}
 	case "node.replace":
-		value = []any{1, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, c.NodeType, c.DriverContractVersion, caps, triplet, "replacement"}
+		value = []any{encodingVersion, kind, c.InstanceID.String(), fmt.Sprint(c.ExpectedRevision), c.NewInstanceID.String(), c.DisplayName.Value, c.ManagementEndpoint.Value, c.NodeType, c.DriverContractVersion, caps, triplet, "replacement"}
 	default:
 		return nil, nil, ErrInvalidNode
 	}
@@ -739,6 +788,16 @@ func translateNodeDBError(err error) error {
 		}
 		if p.Code == "23514" {
 			return ErrInvalidNode
+		}
+		switch p.Code {
+		case "P0002":
+			return ErrNodeNotFound
+		case "P0003":
+			return ErrNodeRetired
+		case "P0004":
+			return ErrAssetRevisionExhausted
+		case "P0005":
+			return ErrStaleAssetRevision
 		}
 	}
 	return err

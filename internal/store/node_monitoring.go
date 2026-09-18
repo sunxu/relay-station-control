@@ -231,7 +231,7 @@ func (r *NodeMonitoringRepository) mutate(ctx context.Context, c NodeMonitoringC
 		return NodeCommandResult{}, intentErr
 	}
 	intentHash := sha256.Sum256(intent)
-	if err = reserveAdminCommand(ctx, tx, c.CommandID, c.ActorAdminID, kind, intentHash[:], nil); err != nil {
+	if err = reserveAdminCommand(ctx, tx, c.CommandID, c.ActorAdminID, kind, 1, intentHash[:], nil); err != nil {
 		return NodeCommandResult{}, err
 	}
 	node, err := lockNode(ctx, tx, c.InstanceID)
@@ -309,13 +309,13 @@ func (r *NodeMonitoringRepository) mutate(ctx context.Context, c NodeMonitoringC
 		}
 	}
 	if enable {
-		err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, intentHash[:], body, 200, nil, nil)
+		err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, 1, intentHash[:], body, 200, nil, nil)
 	} else {
 		committedAt, timestampErr := nextDisableFenceTimestamp(ctx, tx, fence)
 		if timestampErr != nil {
 			return NodeCommandResult{}, timestampErr
 		}
-		err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, intentHash[:], body, 200, &committedAt, nil)
+		err = insertControlledAssetAdminCommandReceipt(ctx, tx, c.CommandID, c.ActorAdminID, kind, 1, intentHash[:], body, 200, &committedAt, nil)
 	}
 	if err != nil {
 		return NodeCommandResult{}, err

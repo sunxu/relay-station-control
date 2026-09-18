@@ -72,20 +72,20 @@ func lookupAdminCommandReservation(ctx context.Context, tx pgx.Tx, commandID uui
 	return reservation, true, nil
 }
 
-func reserveAdminCommand(ctx context.Context, tx pgx.Tx, commandID, actorAdminID uuid.UUID, kind string, intentHash []byte, keyVersion *int16) error {
+func reserveAdminCommand(ctx context.Context, tx pgx.Tx, commandID, actorAdminID uuid.UUID, kind string, encodingVersion int16, intentHash []byte, keyVersion *int16) error {
 	_, err := generated.New(tx).ReserveAdminCommand(ctx, generated.ReserveAdminCommandParams{
 		CommandID:                   nullableUUID(commandID),
 		ActorAdminID:                nullableUUID(actorAdminID),
 		CommandDomain:               adminCommandDomainAsset,
 		CommandKind:                 kind,
-		IntentEncodingVersion:       1,
+		IntentEncodingVersion:       encodingVersion,
 		CanonicalIntentHash:         intentHash,
 		SecretFingerprintKeyVersion: nullableInt2(keyVersion),
 	})
 	return err
 }
 
-func insertControlledAssetAdminCommandReceipt(ctx context.Context, tx pgx.Tx, commandID, actorAdminID uuid.UUID, kind string, intentHash, result []byte, status int, committedAt *time.Time, keyVersion *int16) error {
+func insertControlledAssetAdminCommandReceipt(ctx context.Context, tx pgx.Tx, commandID, actorAdminID uuid.UUID, kind string, encodingVersion int16, intentHash, result []byte, status int, committedAt *time.Time, keyVersion *int16) error {
 	var timestamp pgtype.Timestamptz
 	if committedAt != nil {
 		timestamp = pgtype.Timestamptz{Time: *committedAt, Valid: true}
@@ -93,7 +93,7 @@ func insertControlledAssetAdminCommandReceipt(ctx context.Context, tx pgx.Tx, co
 	return generated.New(tx).InsertControlledAssetAdminCommandReceipt(ctx, generated.InsertControlledAssetAdminCommandReceiptParams{
 		CommandID:                   nullableUUID(commandID),
 		CommandKind:                 kind,
-		IntentEncodingVersion:       1,
+		IntentEncodingVersion:       encodingVersion,
 		CanonicalIntentHash:         intentHash,
 		SanitizedResult:             result,
 		ResponseStatus:              int16(status),
