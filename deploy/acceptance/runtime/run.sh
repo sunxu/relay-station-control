@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONTROL_DIR="$(cd -- "$ROOT/../../.." && pwd)"
 COMPOSE_FILE="$CONTROL_DIR/deploy/acceptance/compose.yaml"
+GOLANG_IMAGE='golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc'
 RUNTIME_DIR="${ACCEPTANCE_RUNTIME_DIR:-}"
 ACCEPTANCE_FAILURE_LAYER=source
 OVERRIDE_FILE=""
@@ -33,6 +34,7 @@ CONTROL_E2E_NODE_COMMIT="${CONTROL_E2E_NODE_COMMIT:-}"
 [[ "$CONTROL_E2E_NODE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "ACCEPTANCE_FAILURE_LAYER=artifact" >&2; echo "NODE_ARTIFACT_MISSING: set full CONTROL_E2E_NODE_COMMIT" >&2; exit 1; }
 CONTROL_CONTAINER="${PROJECT}-control-1"
 NODE_MANAGEMENT_PASSWORD="$(openssl rand -hex 32)"
+NODE_INSTANCE_ID="00000000-0000-4000-8000-000000000047"
 COMPOSE=(docker compose -p "$PROJECT" -f "$COMPOSE_FILE")
 [[ -n "$RUNTIME_DIR" && "$RUNTIME_DIR" == /* && "$RUNTIME_DIR" != "$CONTROL_DIR"/* ]] || { echo "ACCEPTANCE_FAILURE_LAYER=source" >&2; echo "ACCEPTANCE_RUNTIME_DIR must be repo-external" >&2; exit 2; }
 [[ -z "${DINGTALK_WEBHOOK_URL:-}" && -z "${DINGTALK_SIGNING_SECRET:-}" ]] || { echo "ACCEPTANCE_FAILURE_LAYER=source" >&2; echo "real DingTalk configuration must be absent" >&2; exit 2; }
@@ -176,6 +178,12 @@ INVENTORY_POLL_START_GRACE="299s"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_POLL_ENABLED="true"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 [[ "$MODE" == "security-replay" ]] && { INVENTORY_POLL_ENABLED="true"; INVENTORY_LIFECYCLE_ENABLED="true"; INVENTORY_POLL_START_GRACE="299s"; }
+if [[ "$MODE" == "disable" || "$MODE" == "security-replay" ]]; then
+  # The one-shot acceptance bootstrap owns this poll. Keep the production
+  # Control scheduler disabled so two workers cannot claim the same run.
+  INVENTORY_POLL_ENABLED="false"
+  INVENTORY_LIFECYCLE_ENABLED="true"
+fi
 export INVENTORY_POLL_ENABLED INVENTORY_LIFECYCLE_ENABLED INVENTORY_POLL_START_GRACE
 cat > "$OVERRIDE_FILE" <<'YAML'
 services:
@@ -241,16 +249,6 @@ VALUES ('cliproxyapi','cliproxyapi.auth-files.v1','00000000-0000-4000-8000-00000
         to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300),
         'acceptance-harness',
         to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
-INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref)
-VALUES ('00000000-0000-4000-8000-000000000047','Acceptance Node','cliproxyapi','cliproxyapi.auth-files.v1','http://node-counter:8318','file://phase7/node-management');
-INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES
-  ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_health_read'),
-  ('00000000-0000-4000-8000-000000000047','cliproxyapi','cliproxyapi.auth-files.v1','management_account_inventory_read');
-INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at)
-VALUES ('00000000-0000-4000-8000-000000000047',
-        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300),
-        'deployment_enable','acceptance-harness',
-        to_timestamp(floor(extract(epoch FROM statement_timestamp()) / 300) * 300));
 SQL
 if [[ "$MODE" == "all" || "$MODE" == "internal" ]]; then
   ACCEPTANCE_FAILURE_LAYER=internal
@@ -296,6 +294,33 @@ if [[ "$MODE" == "startup" ]]; then
   exit 0
 fi
 ACCEPTANCE_FAILURE_LAYER=control
+run_inventory_bootstrap() {
+  local network module_cache
+  network="$(docker network ls --filter "label=com.docker.compose.project=${PROJECT}" --format '{{.Name}}' | head -n 1)"
+  [[ -n "$network" ]] || { echo "INVENTORY_BOOTSTRAP_NETWORK_MISSING" >&2; return 1; }
+  module_cache="$(go env GOMODCACHE)"
+  docker run --rm \
+    --network "$network" \
+    --user 65532:65532 \
+    --read-only \
+    --tmpfs /tmp:rw,exec,nosuid,size=512m,uid=65532,gid=65532 \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --workdir /src \
+    -v "$CONTROL_DIR:/src:ro" \
+    -v "$module_cache:/go/pkg/mod:ro" \
+    -v "$RUNTIME_DIR/asset-credential-key:/run/control-secrets/asset-credential-key:ro" \
+    -e HTTP_PROXY= -e HTTPS_PROXY= -e ALL_PROXY= \
+    -e http_proxy= -e https_proxy= -e all_proxy= \
+    -e NO_PROXY='*' -e no_proxy='*' -e GOPROXY=off -e GOCACHE=/tmp/go-build \
+    -e DATABASE_URL='postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable' \
+    -e CONTROL_ASSET_CREDENTIAL_KEY_FILE=/run/control-secrets/asset-credential-key \
+    -e ACCOUNT_INVENTORY_TARGET_EMAIL="$DISABLE_EMAIL" \
+    "$GOLANG_IMAGE" go run ./deploy/acceptance/stage0-inventory-bootstrap
+}
+if [[ "$MODE" == "disable" || "$MODE" == "security-replay" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
+fi
 compose up -d tls
 wait_for_http HTTP_READINESS "https://127.0.0.1:${TLS_PORT}/api/healthz" 60
 export ACCEPTANCE_RUNTIME_DIR="$RUNTIME_DIR" ACCEPTANCE_BASE_URL="https://127.0.0.1:${TLS_PORT}" ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json"
@@ -304,13 +329,30 @@ ACCEPTANCE_FAILURE_LAYER=auth
 CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" node "$ROOT/auth-session.mjs"
 chmod 600 "$RUNTIME_DIR/storage-state.json"
 echo "AUTH_COMPOSITION_SMOKE=PASS"
+if [[ "$MODE" != "auth" ]]; then
+  ACCEPTANCE_FAILURE_LAYER=fixture
+  ACCEPTANCE_BASE_URL="$ACCEPTANCE_BASE_URL" \
+    ACCEPTANCE_STORAGE_STATE="$RUNTIME_DIR/storage-state.json" \
+    ACCEPTANCE_NODE_INSTANCE_ID="$NODE_INSTANCE_ID" \
+    ACCEPTANCE_NODE_MANAGEMENT_PASSWORD="$NODE_MANAGEMENT_PASSWORD" \
+    ACCEPTANCE_NODE_ENDPOINT="http://node-counter:8318" \
+    CONTROL_E2E_BROWSER_CHANNEL="${CONTROL_E2E_BROWSER_CHANNEL:-chromium}" \
+    node "$ROOT/register-node.mjs"
+  [[ "$(psql_count "SELECT count(*) FROM relay_node_assets WHERE instance_id='$NODE_INSTANCE_ID' AND management_credential_sealed IS NOT NULL AND reader_secret_ref IS NULL")" == 1 ]] || { echo "stage0_node_credential_sealed_missing" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM relay_node_inventory_monitoring_activations WHERE instance_id='$NODE_INSTANCE_ID'")" == 1 ]] || { echo "node_monitoring_activation_missing" >&2; exit 1; }
+  echo "STAGE0_NODE_SEALED_PRESENCE=PASS"
+  if [[ "$MODE" == "disable" || "$MODE" == "security-replay" ]]; then
+    ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
+    run_inventory_bootstrap
+  fi
+fi
 if [[ "$MODE" == "override" ]]; then
   ACCEPTANCE_FAILURE_LAYER=fixture
   OVERRIDE_LIFECYCLE_COMMAND_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
   OVERRIDE_ADMIN_ID="$(compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control --tuples-only --no-align --command "SELECT admin_id FROM control_admin_users WHERE status='enabled' ORDER BY activated_at LIMIT 1" | tr -d '\r\n[:space:]')"
   compose exec -T postgres psql --set ON_ERROR_STOP=1 --username relay_control_migrator --dbname relay_station_control <<SQL
-SELECT public.control_accept_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','$OVERRIDE_ADMIN_ID','account.disable',decode(repeat('aa',32),'hex'),NULL,'00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','disable',NULL);
-SELECT public.control_admit_account_dispatch_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','00000000-0000-4000-8000-000000000047','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','override-fixture');
+SELECT public.control_accept_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','$OVERRIDE_ADMIN_ID','account.disable',decode(repeat('aa',32),'hex'),NULL,'$NODE_INSTANCE_ID','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','disable',NULL);
+SELECT public.control_admit_account_dispatch_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','$NODE_INSTANCE_ID','antigravity:$OVERRIDE_LIFECYCLE_EMAIL','override-fixture');
 SELECT public.control_transition_account_admin_operation_v1('$OVERRIDE_LIFECYCLE_COMMAND_ID','dispatched','outcome_unknown');
 SQL
   export ACCEPTANCE_OVERRIDE_LIFECYCLE_EMAIL="$OVERRIDE_LIFECYCLE_EMAIL" ACCEPTANCE_OVERRIDE_LIFECYCLE_COMMAND_ID="$OVERRIDE_LIFECYCLE_COMMAND_ID" ACCEPTANCE_OVERRIDE_EVIDENCE_FILE="$RUNTIME_DIR/override-evidence.json" ACCEPTANCE_BROWSER_CONSOLE_FILE="$RUNTIME_DIR/browser-console.log" CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$RUNTIME_DIR/playwright-output" CONTROL_E2E_BASE_URL="$ACCEPTANCE_BASE_URL"

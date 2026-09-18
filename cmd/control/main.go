@@ -206,7 +206,7 @@ func main() {
 		logger.Error("asset credential identity initialization failed", "component", "asset_credential")
 		os.Exit(1)
 	}
-	assetCredentialResolver := stage0AssetCredentialResolver{pool: pool, opener: assetCredentialSealer.(stage0AssetCredentialOpener)}
+	assetCredentialResolver := newStage0AssetCredentialResolver(pool, assetCredentialSealer.(stage0AssetCredentialOpener))
 	nodeDrivers, err := loadNodeDriverRuntime(logger, assetCredentialResolver)
 	if err != nil {
 		logger.Error("invalid control configuration", "component", "node_driver", "reason", "invalid_runtime_config")

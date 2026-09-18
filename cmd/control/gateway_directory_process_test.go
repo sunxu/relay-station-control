@@ -70,7 +70,7 @@ func TestGatewayDirectoryRuntimeProcessHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver := stage0AssetCredentialResolver{pool: pool, opener: sealer.(stage0AssetCredentialOpener)}
+	resolver := newStage0AssetCredentialResolver(pool, sealer.(stage0AssetCredentialOpener))
 	runtime, err := newGatewayDirectoryRuntime(prometheus.NewRegistry(), pool, cfg, resolver)
 	if err != nil {
 		t.Fatal(err)

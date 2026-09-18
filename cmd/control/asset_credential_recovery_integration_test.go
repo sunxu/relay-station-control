@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sunxu/relay-station-control/internal/assetcredential"
+	assetcredentialruntime "github.com/sunxu/relay-station-control/internal/assetcredentialruntime"
 	controlnodes "github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/drivers/gatewaydirectory"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
@@ -124,7 +125,7 @@ func TestStage0CredentialBackupRestoreSameK2PG(t *testing.T) {
 	}
 	defer productionRuntime.Close()
 	runtime.Close()
-	sealer := stage0AssetCredentialSealer{key: keyA, available: true}
+	sealer := assetcredentialruntime.NewTestSealer(keyA, true)
 	nodeRepository, err := assetstore.NewNodeLifecycleRepositoryWithSealer(productionRuntime, bytes.Repeat([]byte{0x61}, 32), sealer)
 	if err != nil {
 		t.Fatal(err)
@@ -164,8 +165,8 @@ func TestStage0CredentialBackupRestoreSameK2PG(t *testing.T) {
 	if err != nil || gatewayResult.HTTPStatus != http.StatusCreated {
 		t.Fatalf("source Gateway registration failed: status=%d err=%v", gatewayResult.HTTPStatus, err)
 	}
-	sourceResolver := stage0AssetCredentialResolver{pool: productionRuntime, opener: sealer}
-	assertRecoveredSecret := func(resolver stage0AssetCredentialResolver, kind assetcredential.CredentialKind, id uuid.UUID, expected string) {
+	sourceResolver := newStage0AssetCredentialResolver(productionRuntime, sealer)
+	assertRecoveredSecret := func(resolver *stage0AssetCredentialResolver, kind assetcredential.CredentialKind, id uuid.UUID, expected string) {
 		t.Helper()
 		secret, resolveErr := resolver.ResolveAssetCredential(ctx, kind, id)
 		if resolveErr != nil || secret == nil {
@@ -198,7 +199,7 @@ func TestStage0CredentialBackupRestoreSameK2PG(t *testing.T) {
 		t.Fatalf("same-K2 restored composition unavailable: err=%v", err)
 	}
 	restoredSealer := restoredSealerValue.(stage0AssetCredentialOpener)
-	restoredResolver := stage0AssetCredentialResolver{pool: restoredRuntime, opener: restoredSealer}
+	restoredResolver := newStage0AssetCredentialResolver(restoredRuntime, restoredSealer)
 	assertRecoveredSecret(restoredResolver, assetcredential.NodeCredential, nodeID, "node-recovery-credential")
 	assertRecoveredSecret(restoredResolver, assetcredential.GatewayCredential, gatewayID, "gateway-recovery-credential")
 
@@ -233,7 +234,7 @@ func TestStage0CredentialBackupRestoreSameK2PG(t *testing.T) {
 		if loadErr != nil || unavailable == nil || unavailable.Available() {
 			t.Fatalf("unavailable K2 composition unexpectedly available: err=%v", loadErr)
 		}
-		resolver := stage0AssetCredentialResolver{pool: restoredRuntime, opener: unavailable.(stage0AssetCredentialOpener)}
+		resolver := newStage0AssetCredentialResolver(restoredRuntime, unavailable.(stage0AssetCredentialOpener))
 		if _, resolveErr := resolver.ResolveAssetCredential(ctx, assetcredential.NodeCredential, nodeID); !errors.Is(resolveErr, controlnodes.ErrSecretUnavailable) {
 			t.Fatalf("unavailable Node resolve error=%v", resolveErr)
 		}

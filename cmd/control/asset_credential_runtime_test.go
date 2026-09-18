@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sunxu/relay-station-control/internal/assetcredential"
+	assetcredentialruntime "github.com/sunxu/relay-station-control/internal/assetcredentialruntime"
 )
 
 func TestLoadStage0AssetCredentialSealerMissingPathIsUnavailable(t *testing.T) {
@@ -51,7 +52,7 @@ func TestLoadStage0AssetCredentialSealerRepresentativeFileFailureIsUnavailable(t
 
 func TestStage0AssetCredentialSealerUsesFrozenAAD(t *testing.T) {
 	key := bytes.Repeat([]byte{0x42}, 32)
-	sealer := stage0AssetCredentialSealer{key: key, available: true}
+	sealer := assetcredentialruntime.NewTestSealer(key, true)
 	id := uuid.New()
 	plaintext := []byte("test credential")
 	blob, err := sealer.Seal(assetcredential.NodeCredential, id, plaintext)
@@ -68,7 +69,7 @@ func TestStage0AssetCredentialSealerUsesFrozenAAD(t *testing.T) {
 }
 
 func TestStage0AssetCredentialSealerDoesNotGenerateWhenUnavailable(t *testing.T) {
-	sealer := stage0AssetCredentialSealer{}
+	sealer := assetcredentialruntime.NewTestSealer(nil, false)
 	if _, err := sealer.Seal(assetcredential.NodeCredential, uuid.New(), []byte("credential")); err == nil {
 		t.Fatal("unavailable sealer generated or sealed a credential")
 	}

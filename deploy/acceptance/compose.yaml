@@ -119,6 +119,7 @@ services:
       CONTROL_BOOTSTRAP_SECRET_FILE: /run/control-secrets/bootstrap-secret
       CONTROL_AUTH_KEYRING_FILE: /run/control-secrets/auth-keyring.json
       CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE: /run/control-secrets/account-operation-intent-key
+      CONTROL_ASSET_INTENT_KEY_FILE: /run/control-secrets/account-operation-intent-key
       CONTROL_ASSET_CREDENTIAL_KEY_FILE: /run/control-secrets/asset-credential-key
       CONTROL_CLIPROXYAPI_DRIVER_ENABLED: "true"
       DATABASE_URL: postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable
