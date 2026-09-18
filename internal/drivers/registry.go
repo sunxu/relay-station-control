@@ -83,7 +83,7 @@ func validateRegistration(registration Registration) error {
 // ValidateTargetCompatibility compares persisted asset strings with the fixed
 // code registry. It neither mutates the target nor registers a database value.
 func (registry *Registry) ValidateTargetCompatibility(target NodeTarget) error {
-	if registry == nil || target.InstanceID == [16]byte{} || target.ManagementEndpoint == "" || target.ReaderSecretReference.value == "" {
+	if registry == nil || target.InstanceID == [16]byte{} || target.ManagementEndpoint == "" {
 		return ErrTargetIncompatible
 	}
 	driver, exists := registry.drivers[target.NodeType]

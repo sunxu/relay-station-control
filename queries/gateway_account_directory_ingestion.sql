@@ -1,11 +1,16 @@
 -- name: GetGatewayDirectoryReadTarget :one
-SELECT (to_jsonb(target)->>'instance_id')::uuid AS instance_id,
-       (to_jsonb(target)->>'management_endpoint')::text AS management_endpoint,
-       (to_jsonb(target)->>'reader_secret_ref')::text AS reader_secret_ref
-FROM control_query_gateway_directory_target_v1(
-    sqlc.arg(ingestion_run_id)::uuid,
-    sqlc.arg(gateway_instance_id)::uuid,
-    sqlc.arg(lease_fencing_token)::uuid
+SELECT target.instance_id,
+       target.management_endpoint,
+       coalesce(target.reader_secret_ref, '') AS reader_secret_ref
+FROM (
+    SELECT (to_jsonb(source)->>'instance_id')::uuid AS instance_id,
+           (to_jsonb(source)->>'management_endpoint')::text AS management_endpoint,
+           (to_jsonb(source)->>'reader_secret_ref')::text AS reader_secret_ref
+    FROM control_query_gateway_directory_target_v1(
+        sqlc.arg(ingestion_run_id)::uuid,
+        sqlc.arg(gateway_instance_id)::uuid,
+        sqlc.arg(lease_fencing_token)::uuid
+    ) AS source
 ) AS target;
 
 -- name: GetGatewayDirectoryLifecycleFailure :one
@@ -28,7 +33,7 @@ WITH locked_gateway AS (
       AND singleton_id = 1
     FOR UPDATE
 ), db_now AS (
-    SELECT clock_timestamp() AS db_now
+    SELECT COALESCE(NULLIF(current_setting('control.test_gateway_directory_now', true), '')::timestamptz, clock_timestamp()) AS db_now
 ), current_slot AS (
     SELECT to_timestamp(floor(extract(epoch FROM db_now.db_now) / 180) * 180)::timestamptz AS scheduled_at
     FROM db_now
@@ -67,6 +72,12 @@ SELECT clock_timestamp()::timestamptz AS db_now;
 
 -- name: ClaimGatewayDirectoryIngestionRun :one
 WITH db_now AS (
+    SELECT COALESCE(
+        NULLIF(current_setting('control.test_gateway_directory_reconcile_now', true), '')::timestamptz,
+        NULLIF(current_setting('control.test_gateway_directory_now', true), '')::timestamptz,
+        clock_timestamp()
+    ) AS db_now
+), actual_now AS (
     SELECT clock_timestamp() AS db_now
 ), candidate AS (
     SELECT run.ingestion_run_id
@@ -82,11 +93,11 @@ WITH db_now AS (
     UPDATE gateway_directory_ingestion_runs AS run
     SET status = 'running',
         attempt_count = run.attempt_count + 1,
-        first_started_at = COALESCE(run.first_started_at, db_now.db_now),
-        last_started_at = db_now.db_now,
-        lease_expires_at = db_now.db_now + interval '15 seconds',
+        first_started_at = COALESCE(run.first_started_at, actual_now.db_now),
+        last_started_at = actual_now.db_now,
+        lease_expires_at = actual_now.db_now + interval '15 seconds',
         lease_fencing_token = sqlc.arg(lease_fencing_token)::uuid
-    FROM candidate, db_now
+    FROM candidate, actual_now
     WHERE run.ingestion_run_id = candidate.ingestion_run_id
     RETURNING run.*
 )
@@ -166,7 +177,11 @@ WHERE gateway_instance_id = sqlc.arg(gateway_instance_id)::uuid;
 
 -- name: ReconcileGatewayDirectoryIngestionRun :one
 WITH db_now AS (
-    SELECT clock_timestamp() AS db_now
+    SELECT COALESCE(
+        NULLIF(current_setting('control.test_gateway_directory_reconcile_now', true), '')::timestamptz,
+        NULLIF(current_setting('control.test_gateway_directory_now', true), '')::timestamptz,
+        clock_timestamp()
+    ) AS db_now
 ), candidate AS (
     SELECT
         run.ingestion_run_id,

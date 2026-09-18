@@ -21,6 +21,17 @@ const (
 type GatewayDirectoryIngestionService struct {
 	repository     *GatewayDirectoryIngestionRepository
 	secretResolver drivers.SecretResolver
+	assetResolver  drivers.GatewayDirectoryCredentialResolver
+}
+
+func NewGatewayDirectoryIngestionServiceWithGatewayDirectoryCredentialResolver(
+	repository *GatewayDirectoryIngestionRepository,
+	resolver drivers.GatewayDirectoryCredentialResolver,
+) (*GatewayDirectoryIngestionService, error) {
+	if repository == nil || resolver == nil {
+		return nil, ErrInvalidGatewayDirectoryIngestionQuery
+	}
+	return &GatewayDirectoryIngestionService{repository: repository, assetResolver: resolver}, nil
 }
 
 type GatewayDirectoryWorkResult struct {
@@ -55,7 +66,7 @@ func (service *GatewayDirectoryIngestionService) RunGatewayOnce(
 	ctx context.Context,
 	gatewayInstanceID uuid.UUID,
 ) (GatewayDirectoryWorkResult, error) {
-	if service == nil || service.repository == nil || service.secretResolver == nil || gatewayInstanceID == uuid.Nil {
+	if service == nil || service.repository == nil || (service.secretResolver == nil && service.assetResolver == nil) || gatewayInstanceID == uuid.Nil {
 		return GatewayDirectoryWorkResult{}, ErrInvalidGatewayDirectoryIngestionQuery
 	}
 	if _, _, _, err := service.repository.ScheduleCurrent(ctx, gatewayInstanceID); err != nil {
@@ -71,11 +82,11 @@ func (service *GatewayDirectoryIngestionService) RunGatewayOnce(
 
 	attemptCtx, cancelAttempt := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelAttempt()
-	attempt, err := service.repository.executeAttempt(attemptCtx, ctx, GatewayDirectoryAttemptRequest{
+	attempt, err := service.repository.executeAttemptWithCredentialSource(attemptCtx, ctx, GatewayDirectoryAttemptRequest{
 		IngestionRunID:    uuidFromPG(claimed.IngestionRunID),
 		GatewayInstanceID: uuidFromPG(claimed.GatewayInstanceID),
 		LeaseFencingToken: uuidFromPG(claimed.LeaseFencingToken),
-	}, service.secretResolver)
+	}, service.secretResolver, service.assetResolver)
 	if err != nil {
 		return GatewayDirectoryWorkResult{}, err
 	}

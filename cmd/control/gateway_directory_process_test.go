@@ -20,7 +20,31 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 )
+
+func provisionProcessGatewayCredential(t *testing.T, ctx context.Context, pool *pgxpool.Pool, gatewayID uuid.UUID, plaintext string) string {
+	t.Helper()
+	directory := t.TempDir()
+	keyPath := filepath.Join(directory, "asset-credential-key")
+	key := bytes.Repeat([]byte{0x41}, 32)
+	if err := os.WriteFile(keyPath, key, 0600); err != nil {
+		t.Fatal(err)
+	}
+	commitment := assetcredential.IdentityCommitment(key)
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT public.control_initialize_asset_credential_key_v1($1)`, commitment[:]).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := assetcredential.Seal(bytes.NewReader(bytes.Repeat([]byte{0x12}, assetcredential.NonceSize)), key, assetcredential.GatewayCredential, gatewayID, []byte(plaintext))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE gateway_instances SET reader_secret_ref=NULL,directory_credential_sealed=$1 WHERE instance_id=$2`, sealed, gatewayID); err != nil {
+		t.Fatal(err)
+	}
+	return keyPath
+}
 
 func TestGatewayDirectoryRuntimeProcessHelper(t *testing.T) {
 	if os.Getenv("CONTROL_DIRECTORY_TEST_HELPER") != "1" {
@@ -30,19 +54,31 @@ func TestGatewayDirectoryRuntimeProcessHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, err := pgxpool.New(context.Background(), os.Getenv("CONTROL_DIRECTORY_TEST_DATABASE"))
+	poolConfig, err := pgxpool.ParseConfig(os.Getenv("CONTROL_DIRECTORY_TEST_DATABASE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logicalNow := os.Getenv("CONTROL_DIRECTORY_TEST_NOW"); logicalNow != "" {
+		poolConfig.ConnConfig.RuntimeParams["control.test_gateway_directory_now"] = logicalNow
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	runtime, err := newGatewayDirectoryRuntime(prometheus.NewRegistry(), pool, cfg)
+	sealer, err := loadStage0AssetCredentialSealer(context.Background(), pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := stage0AssetCredentialResolver{pool: pool, opener: sealer.(stage0AssetCredentialOpener)}
+	runtime, err := newGatewayDirectoryRuntime(prometheus.NewRegistry(), pool, cfg, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer cancel()
 	if marker := os.Getenv("CONTROL_DIRECTORY_TEST_TICK_MARKER"); marker != "" {
-		runtime.tick(ctx, nil)
+		runtime.tick(ctx, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 		if err := os.WriteFile(marker, []byte("tick\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -88,17 +124,13 @@ func TestGatewayDirectoryRuntimeProcessRecovery(t *testing.T) {
 		}
 		dir := t.TempDir()
 		token := filepath.Join(dir, "token")
-		mapping := filepath.Join(dir, "mapping.json")
 		if err := os.WriteFile(token, []byte("process-test"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		document, _ := json.Marshal(map[string]any{"provider": "file", "references": []map[string]string{{"reference": "file://process/reader", "path": token}}})
-		if err := os.WriteFile(mapping, document, 0600); err != nil {
-			t.Fatal(err)
-		}
+		keyPath := provisionProcessGatewayCredential(t, ctx, owner, id, "process-test")
 		start := func(enabled string) (*exec.Cmd, chan error) {
 			command := exec.Command(os.Args[0], "-test.run=^TestGatewayDirectoryRuntimeProcessHelper$")
-			command.Env = append(os.Environ(), "CONTROL_DIRECTORY_TEST_HELPER=1", "CONTROL_DIRECTORY_TEST_DATABASE="+runtimePool.Config().ConnString(), "CONTROL_GATEWAY_DIRECTORY_ENABLED="+enabled, "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE="+mapping)
+			command.Env = append(os.Environ(), "CONTROL_DIRECTORY_TEST_HELPER=1", "CONTROL_DIRECTORY_TEST_DATABASE="+runtimePool.Config().ConnString(), "CONTROL_GATEWAY_DIRECTORY_ENABLED="+enabled, "CONTROL_ASSET_CREDENTIAL_KEY_FILE="+keyPath)
 			var output bytes.Buffer
 			command.Stdout = &output
 			command.Stderr = &output
@@ -184,16 +216,10 @@ func TestGatewayDirectoryRuntimeProcessRecovery(t *testing.T) {
 func TestGatewayDirectoryRuntimeProcessSameSlotCompetition(t *testing.T) {
 	owner, runtimePool := isolatedCrossNodeDuplicateOwnershipDatabase(t)
 	ctx := context.Background()
-	for {
-		var remaining float64
-		if err := owner.QueryRow(ctx, `SELECT 120-extract(epoch FROM clock_timestamp()-to_timestamp(floor(extract(epoch FROM clock_timestamp())/180)*180))`).Scan(&remaining); err != nil {
-			t.Fatal(err)
-		}
-		if remaining > 45 {
-			break
-		}
-		time.Sleep(time.Second)
-	}
+	// Use a deterministic logical time inside the current production slot so
+	// both child processes compete immediately without waiting for wall-clock
+	// slot rollover. The stored scheduled_at remains aligned to 180 seconds.
+	logicalNow := time.Unix((time.Now().Unix()/180)*180+1, 0).UTC().Format(time.RFC3339Nano)
 	var requests atomic.Int32
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -211,30 +237,29 @@ func TestGatewayDirectoryRuntimeProcessSameSlotCompetition(t *testing.T) {
 	}
 	directory := t.TempDir()
 	token := filepath.Join(directory, "token")
-	mapping := filepath.Join(directory, "mapping.json")
 	if err := os.WriteFile(token, []byte("competition-reader"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	document, _ := json.Marshal(map[string]any{"provider": "file", "references": []map[string]string{{"reference": "file://competition/reader", "path": token}}})
-	if err := os.WriteFile(mapping, document, 0600); err != nil {
-		t.Fatal(err)
-	}
-	start := func(marker string) (*exec.Cmd, chan error) {
+	keyPath := provisionProcessGatewayCredential(t, ctx, owner, id, "competition-reader")
+	start := func(marker string) (*exec.Cmd, chan error, *bytes.Buffer) {
 		command := exec.Command(os.Args[0], "-test.run=^TestGatewayDirectoryRuntimeProcessHelper$")
-		command.Env = append(os.Environ(), "CONTROL_DIRECTORY_TEST_HELPER=1", "CONTROL_DIRECTORY_TEST_DATABASE="+runtimePool.Config().ConnString(), "CONTROL_GATEWAY_DIRECTORY_ENABLED=true", "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE="+mapping, "CONTROL_DIRECTORY_TEST_TICK_MARKER="+marker)
+		command.Env = append(os.Environ(), "CONTROL_DIRECTORY_TEST_HELPER=1", "CONTROL_DIRECTORY_TEST_DATABASE="+runtimePool.Config().ConnString(), "CONTROL_GATEWAY_DIRECTORY_ENABLED=true", "CONTROL_ASSET_CREDENTIAL_KEY_FILE="+keyPath, "CONTROL_DIRECTORY_TEST_TICK_MARKER="+marker, "CONTROL_DIRECTORY_TEST_NOW="+logicalNow)
+		var output bytes.Buffer
+		command.Stdout = &output
+		command.Stderr = &output
 		if err := command.Start(); err != nil {
 			t.Fatal(err)
 		}
 		done := make(chan error, 1)
 		go func() { done <- command.Wait() }()
 		t.Cleanup(func() { _ = command.Process.Kill() })
-		return command, done
+		return command, done, &output
 	}
 	firstMarker := filepath.Join(directory, "first.tick")
 	secondMarker := filepath.Join(directory, "second.tick")
-	first, firstDone := start(firstMarker)
-	second, secondDone := start(secondMarker)
-	deadline := time.Now().Add(25 * time.Second)
+	first, firstDone, firstOutput := start(firstMarker)
+	second, secondDone, secondOutput := start(secondMarker)
+	deadline := time.Now().Add(12 * time.Second)
 	for {
 		_, firstErr := os.Stat(firstMarker)
 		_, secondErr := os.Stat(secondMarker)
@@ -248,7 +273,7 @@ func TestGatewayDirectoryRuntimeProcessSameSlotCompetition(t *testing.T) {
 			t.Fatal(secondErr)
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("both runtime processes did not complete their marked tick")
+			t.Fatalf("both runtime processes did not complete their marked tick; first=%s; second=%s", firstOutput.String(), secondOutput.String())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -261,7 +286,11 @@ func TestGatewayDirectoryRuntimeProcessSameSlotCompetition(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("competing processes did not finalize one current state; requests=%d", requests.Load())
+			var diagnostics string
+			if err := owner.QueryRow(ctx, `SELECT format('runs=%s current=%s statuses=%s', (SELECT count(*) FROM gateway_directory_ingestion_runs WHERE gateway_instance_id=$1)::text, (SELECT count(*) FROM gateway_directory_current_state WHERE gateway_instance_id=$1)::text, COALESCE((SELECT string_agg(status || ':' || scheduled_at::text, ',' ORDER BY scheduled_at) FROM gateway_directory_ingestion_runs WHERE gateway_instance_id=$1), 'none'))`, id).Scan(&diagnostics); err != nil {
+				diagnostics = err.Error()
+			}
+			t.Fatalf("competing processes did not finalize one current state; requests=%d; %s; first=%s; second=%s", requests.Load(), diagnostics, firstOutput.String(), secondOutput.String())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

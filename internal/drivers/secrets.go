@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	"github.com/sunxu/relay-station-control/internal/drivers/internal/protectedfile"
 	"golang.org/x/sys/unix"
 )
@@ -37,6 +39,10 @@ type Secret struct {
 	value     []byte
 	destroyed bool
 }
+
+// NewSecretFromBytes creates an ephemeral secret for a protected credential
+// resolver. The returned value must be destroyed by its caller.
+func NewSecretFromBytes(value []byte) *Secret { return newSecret(value) }
 
 func newSecret(value []byte) *Secret {
 	return &Secret{value: append([]byte(nil), value...)}
@@ -73,6 +79,19 @@ func (*Secret) Format(state fmt.State, _ rune) {
 
 type SecretResolver interface {
 	Resolve(context.Context, SecretReference) (*Secret, error)
+}
+
+// AssetCredentialResolver resolves a Stage 0 protected credential for one
+// concrete asset. Implementations own the protected database read and the
+// K2-backed Open operation; callers never receive a legacy reference.
+type AssetCredentialResolver interface {
+	ResolveAssetCredential(context.Context, assetcredential.CredentialKind, uuid.UUID) (*Secret, error)
+}
+
+// GatewayDirectoryCredentialResolver binds the protected read to the same
+// run/lease fence that selected the Directory target.
+type GatewayDirectoryCredentialResolver interface {
+	ResolveGatewayDirectoryCredential(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*Secret, error)
 }
 
 // FileSecretResolverConfig points to a protected JSON mapping file. The file

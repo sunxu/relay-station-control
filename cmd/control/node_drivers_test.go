@@ -2,21 +2,26 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	controlnodes "github.com/sunxu/relay-station-control/internal/drivers"
 )
+
+type unavailableNodeAssetResolver struct{}
+
+func (unavailableNodeAssetResolver) ResolveAssetCredential(context.Context, assetcredential.CredentialKind, uuid.UUID) (*controlnodes.Secret, error) {
+	return nil, controlnodes.ErrSecretUnavailable
+}
 
 func TestNodeDriverRuntimeDisabledHasNoDynamicRegistration(t *testing.T) {
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "false")
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", "invalid configuration ignored while disabled")
-	runtime, err := loadNodeDriverRuntime(nil)
+	runtime, err := loadNodeDriverRuntime(nil, unavailableNodeAssetResolver{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,36 +40,25 @@ func TestNodeDriverRuntimeDisabledHasNoDynamicRegistration(t *testing.T) {
 
 func TestNodeDriverRuntimeEnabledConstructsWithoutSecretOrNetworkAccess(t *testing.T) {
 	directory := t.TempDir()
-	mappingPath := filepath.Join(directory, "mapping.json")
-	missingSecretPath := filepath.Join(directory, "must-not-be-read")
-	mapping := fmt.Sprintf(`{"provider":"file","references":[{"reference":"file://node/test","path":%q}]}`, missingSecretPath)
-	if err := os.WriteFile(mappingPath, []byte(mapping), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "true")
 	// Retired target and CA policy must be ignored, including malformed values
 	// and a path that does not exist.
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", "not a hostname")
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS", "not-a-cidr")
 	t.Setenv("CONTROL_CLIPROXYAPI_PLAIN_HTTP_CIDRS", "not-a-cidr")
-	t.Setenv("CONTROL_CLIPROXYAPI_SECRET_MAPPING_FILE", mappingPath)
 	t.Setenv("CONTROL_CLIPROXYAPI_CA_FILE", filepath.Join(directory, "missing-ca.pem"))
 
-	runtime, err := loadNodeDriverRuntime(nil)
+	runtime, err := loadNodeDriverRuntime(nil, unavailableNodeAssetResolver{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !runtime.enabled || runtime.registry == nil || runtime.metrics == nil {
 		t.Fatalf("unexpected enabled runtime: %#v", runtime)
 	}
-	if _, err = os.Stat(missingSecretPath); !os.IsNotExist(err) {
-		t.Fatalf("constructor accessed or created target Secret: %v", err)
-	}
 	target := controlnodes.NodeTarget{
 		InstanceID: uuid.New(), NodeType: controlnodes.NodeTypeCLIProxyAPI,
 		DriverContractVersion: controlnodes.DriverContractCLIProxyAPIAuthFilesV1,
 		ManagementEndpoint:    "https://node.example.invalid",
-		ReaderSecretReference: controlnodes.NewSecretReference("file://node/test"),
 		Capabilities: []controlnodes.Capability{
 			controlnodes.CapabilityManagementHealthRead,
 			controlnodes.CapabilityManagementAccountInventoryRead,
@@ -80,16 +74,8 @@ func TestNodeDriverRuntimeFailsClosedWithoutLeakingConfiguration(t *testing.T) {
 	canary := "management-config-canary.example.invalid"
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", canary)
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_CIDRS", "")
-	_, err := loadNodeDriverRuntime(nil)
-	if err == nil {
-		t.Fatal("missing management CIDR accepted")
-	}
-	if strings.Contains(err.Error(), canary) {
-		t.Fatalf("configuration error leaked value: %v", err)
-	}
-
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "not-a-boolean-canary")
-	_, err = loadNodeDriverRuntime(nil)
+	_, err := loadNodeDriverRuntime(nil, unavailableNodeAssetResolver{})
 	if err == nil || strings.Contains(err.Error(), "not-a-boolean-canary") {
 		t.Fatalf("boolean configuration did not fail safely: %v", err)
 	}
@@ -97,7 +83,7 @@ func TestNodeDriverRuntimeFailsClosedWithoutLeakingConfiguration(t *testing.T) {
 
 func TestDisabledNodeDriverRegistryCannotIssueRequests(t *testing.T) {
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "false")
-	runtime, err := loadNodeDriverRuntime(nil)
+	runtime, err := loadNodeDriverRuntime(nil, unavailableNodeAssetResolver{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -95,14 +95,32 @@ func (repository *GatewayDirectoryIngestionRepository) ExecuteAttempt(
 	return repository.executeAttempt(ctx, ctx, request, secretResolver)
 }
 
+func (repository *GatewayDirectoryIngestionRepository) executeAttemptWithCredentialSource(
+	ctx, failureParent context.Context,
+	request GatewayDirectoryAttemptRequest,
+	secretResolver drivers.SecretResolver,
+	assetResolver drivers.GatewayDirectoryCredentialResolver,
+) (GatewayDirectoryAttemptResult, error) {
+	return repository.executeAttemptSource(ctx, failureParent, request, secretResolver, assetResolver)
+}
+
 // executeAttempt keeps the attempt deadline separate from bounded failure bookkeeping.
 func (repository *GatewayDirectoryIngestionRepository) executeAttempt(
 	ctx, failureParent context.Context,
 	request GatewayDirectoryAttemptRequest,
 	secretResolver drivers.SecretResolver,
 ) (GatewayDirectoryAttemptResult, error) {
+	return repository.executeAttemptSource(ctx, failureParent, request, secretResolver, nil)
+}
+
+func (repository *GatewayDirectoryIngestionRepository) executeAttemptSource(
+	ctx, failureParent context.Context,
+	request GatewayDirectoryAttemptRequest,
+	secretResolver drivers.SecretResolver,
+	assetResolver drivers.GatewayDirectoryCredentialResolver,
+) (GatewayDirectoryAttemptResult, error) {
 	if request.IngestionRunID == uuid.Nil || request.GatewayInstanceID == uuid.Nil ||
-		request.LeaseFencingToken == uuid.Nil || secretResolver == nil {
+		request.LeaseFencingToken == uuid.Nil || (secretResolver == nil && assetResolver == nil) {
 		return GatewayDirectoryAttemptResult{}, ErrInvalidGatewayDirectoryIngestionQuery
 	}
 	lease, err := repository.queries.GetGatewayDirectoryIngestionRunLease(ctx,
@@ -147,15 +165,26 @@ func (repository *GatewayDirectoryIngestionRepository) executeAttempt(
 	if err != nil {
 		return GatewayDirectoryAttemptResult{}, err
 	}
-	if target.ReaderSecretRef == "" || target.ManagementEndpoint == "" {
+	if target.ManagementEndpoint == "" || (assetResolver == nil && secretResolver == nil) {
 		return GatewayDirectoryAttemptResult{}, ErrGatewayDirectoryIngestionInconsistent
 	}
 
-	client, err := gatewaydirectory.NewClient(target.ManagementEndpoint, secretResolver)
+	var client *gatewaydirectory.Client
+	if assetResolver != nil {
+		client, err = gatewaydirectory.NewClientWithGatewayDirectoryCredentialResolver(target.ManagementEndpoint, assetResolver)
+	} else {
+		client, err = gatewaydirectory.NewClient(target.ManagementEndpoint, secretResolver)
+	}
 	if err != nil {
 		return GatewayDirectoryAttemptResult{}, err
 	}
-	directory, fingerprint, err := client.Fetch(ctx, drivers.NewSecretReference(target.ReaderSecretRef))
+	var directory gatewaydirectory.DirectoryResponse
+	var fingerprint [sha256.Size]byte
+	if assetResolver != nil {
+		directory, fingerprint, err = client.FetchAssetFenced(ctx, request.IngestionRunID, uuidFromPG(target.InstanceID), request.LeaseFencingToken)
+	} else {
+		directory, fingerprint, err = client.Fetch(ctx, drivers.NewSecretReference(target.ReaderSecretRef))
+	}
 	if err != nil {
 		class, retryable, classifyErr := classifyGatewayDirectoryAttemptFailure(err)
 		if classifyErr != nil {

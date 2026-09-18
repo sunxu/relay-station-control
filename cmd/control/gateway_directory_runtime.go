@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	gatewayDirectoryEnabledEnvironment       = "CONTROL_GATEWAY_DIRECTORY_ENABLED"
-	gatewayDirectorySecretMappingEnvironment = "CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE"
-	gatewayDirectoryTickInterval             = 5 * time.Second
+	gatewayDirectoryEnabledEnvironment = "CONTROL_GATEWAY_DIRECTORY_ENABLED"
+	gatewayDirectoryTickInterval       = 5 * time.Second
 )
 
 type gatewayDirectoryRuntimeConfig struct {
-	enabled     bool
+	enabled bool
+	// mappingFile is retained only for legacy test fixtures; production wiring
+	// supplies the Stage 0 asset resolver directly.
 	mappingFile string
 }
 
@@ -39,20 +40,14 @@ func loadGatewayDirectoryRuntimeConfig() (gatewayDirectoryRuntimeConfig, error) 
 	if err != nil {
 		return gatewayDirectoryRuntimeConfig{}, errors.New("gateway directory configuration is invalid")
 	}
-	mappingFile := ""
-	if enabled {
-		mappingFile = envOrDefault(gatewayDirectorySecretMappingEnvironment, "")
-		if mappingFile == "" {
-			return gatewayDirectoryRuntimeConfig{}, errors.New("gateway directory configuration is invalid")
-		}
-	}
-	return gatewayDirectoryRuntimeConfig{enabled: enabled, mappingFile: mappingFile}, nil
+	return gatewayDirectoryRuntimeConfig{enabled: enabled}, nil
 }
 
 func newGatewayDirectoryRuntime(
 	prometheusRegisterer prometheus.Registerer,
 	pool *pgxpool.Pool,
 	configuration gatewayDirectoryRuntimeConfig,
+	assetResolver controlnodes.GatewayDirectoryCredentialResolver,
 ) (gatewayDirectoryRuntime, error) {
 	repository, err := controlstore.NewGatewayDirectoryIngestionRepository(pool)
 	if err != nil {
@@ -71,16 +66,10 @@ func newGatewayDirectoryRuntime(
 	if !configuration.enabled {
 		return runtime, nil
 	}
-	resolver, err := controlnodes.NewFileSecretResolver(controlnodes.FileSecretResolverConfig{
-		MappingFile:     configuration.mappingFile,
-		Provider:        controlnodes.FileSecretProvider,
-		MaxMappingBytes: controlnodes.DefaultSecretMappingBytes,
-		MaxSecretBytes:  controlnodes.DefaultSecretBytes,
-	})
-	if err != nil {
-		return gatewayDirectoryRuntime{}, errors.New("gateway directory secret configuration is invalid")
+	if assetResolver == nil {
+		return gatewayDirectoryRuntime{}, errors.New("gateway directory credential capability unavailable")
 	}
-	service, err := controlstore.NewGatewayDirectoryIngestionService(repository, resolver)
+	service, err := controlstore.NewGatewayDirectoryIngestionServiceWithGatewayDirectoryCredentialResolver(repository, assetResolver)
 	if err != nil {
 		return gatewayDirectoryRuntime{}, errors.New("gateway directory service initialization failed")
 	}

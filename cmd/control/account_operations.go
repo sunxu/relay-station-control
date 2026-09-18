@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	accountadmin "github.com/sunxu/relay-station-control/internal/accountadmin"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	controlnodes "github.com/sunxu/relay-station-control/internal/drivers"
 	controlcliproxy "github.com/sunxu/relay-station-control/internal/drivers/cliproxyapi"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
@@ -23,32 +24,35 @@ func contains(values []string, want string) bool {
 	return false
 }
 
-func newAccountOperationService(pool *pgxpool.Pool, management controlnodes.ValidatedManagementConfig, secrets controlnodes.SecretResolver, policies interface {
+func newAccountOperationService(pool *pgxpool.Pool, management controlnodes.ValidatedManagementConfig, secrets controlnodes.AssetCredentialResolver, policies interface {
 	CurrentProviderPolicy(context.Context, string, string) (*assetstore.ProviderInventoryPolicy, error)
 }) (*accountadmin.Service, *assetstore.AccountOperationRepository, error) {
 	repo, err := assetstore.NewAccountOperationRepository(pool)
 	if err != nil {
 		return nil, nil, err
 	}
-	resolver := productionAccountNodeResolverWithPolicy{pool: pool, management: management, secrets: secrets, policies: policies}
+	if secrets == nil {
+		return nil, nil, errors.New("account operation credential resolver unavailable")
+	}
+	resolver := productionAccountNodeResolverWithPolicy{pool: pool, management: management, assetSecrets: secrets, policies: policies}
 	service, err := accountadmin.NewServiceWithIntentKeyPath(repo, resolver, os.Getenv("CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE"))
 	return service, repo, err
 }
 
 type productionAccountNodeResolverWithPolicy struct {
-	pool       *pgxpool.Pool
-	management controlnodes.ValidatedManagementConfig
-	secrets    controlnodes.SecretResolver
-	policies   interface {
+	pool         *pgxpool.Pool
+	management   controlnodes.ValidatedManagementConfig
+	assetSecrets controlnodes.AssetCredentialResolver
+	policies     interface {
 		CurrentProviderPolicy(context.Context, string, string) (*assetstore.ProviderInventoryPolicy, error)
 	}
 }
 
 func (r productionAccountNodeResolverWithPolicy) Resolve(ctx context.Context, nodeID uuid.UUID, provider string) (accountadmin.NodeState, error) {
-	if r.pool == nil || r.policies == nil || r.secrets == nil {
+	if r.pool == nil || r.policies == nil || r.assetSecrets == nil {
 		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
 	}
-	var lifecycle, nodeType, contract, endpoint, secretRef string
+	var lifecycle, nodeType, contract, endpoint string
 	var inventoryReadAllowed, monitoring bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT lifecycle_status,node_type,driver_contract_version,management_endpoint,
@@ -87,12 +91,7 @@ func (r productionAccountNodeResolverWithPolicy) Resolve(ctx context.Context, no
 	if !providerActive {
 		return state, nil
 	}
-	if err = r.pool.QueryRow(ctx, `SELECT COALESCE(reader_secret_ref,'') FROM public.control_query_account_request_quality_targets_v1() WHERE instance_id=$1`, nodeID).Scan(&secretRef); errors.Is(err, pgx.ErrNoRows) {
-		return accountadmin.NodeState{}, accountadmin.ErrNodeNotFound
-	} else if err != nil {
-		return accountadmin.NodeState{}, err
-	}
-	secret, err := r.secrets.Resolve(ctx, controlnodes.NewSecretReference(secretRef))
+	secret, err := r.assetSecrets.ResolveAssetCredential(ctx, assetcredential.NodeCredential, nodeID)
 	if err != nil {
 		return accountadmin.NodeState{}, err
 	}

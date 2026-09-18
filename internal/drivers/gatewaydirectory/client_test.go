@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	rootdrivers "github.com/sunxu/relay-station-control/internal/drivers"
 )
 
@@ -73,6 +75,24 @@ func (reader *partialReadCloser) Read(buffer []byte) (int, error) {
 func (reader *partialReadCloser) Close() error { return nil }
 
 func TestClientFetchAndTransportGuards(t *testing.T) {
+	t.Run("fenced fetch without fenced resolver fails closed", func(t *testing.T) {
+		var requests int
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			requests++
+			writer.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+		client, err := NewClient(server.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = client.FetchAssetFenced(context.Background(), uuid.New(), uuid.New(), uuid.New())
+		requireFetchReason(t, err, rootdrivers.ReasonSecretUnavailable)
+		if requests != 0 {
+			t.Fatalf("fenced fetch made %d authenticated requests without a fenced resolver", requests)
+		}
+	})
+
 	t.Run("unsupported scheme", func(t *testing.T) {
 		_, err := NewClient("ftp://gateway.example.invalid", nil)
 		requireFetchReason(t, err, rootdrivers.ReasonTLSRejected)

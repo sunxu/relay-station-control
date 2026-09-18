@@ -3,7 +3,6 @@ package cliproxyapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -56,28 +53,6 @@ func TestDriverProbeAndInventoryProjectFixedContract(t *testing.T) {
 	}))
 	defer server.Close()
 
-	directory := t.TempDir()
-	secretPath := filepath.Join(directory, "management-key")
-	if err := os.WriteFile(secretPath, []byte(secretCanary+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mappingPath := filepath.Join(directory, "mapping.json")
-	mapping, err := json.Marshal(map[string]any{
-		"provider": "file",
-		"references": []map[string]string{{
-			"reference": "file://node/test", "path": secretPath,
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(mappingPath, mapping, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	secretResolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{MappingFile: mappingPath})
-	if err != nil {
-		t.Fatal(err)
-	}
 	resolver := &sequenceResolver{results: []resolverResult{{addresses: []netip.Addr{authorizedTestIP}}}}
 	dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
 	metrics := NewDriverMetrics()
@@ -88,9 +63,9 @@ func TestDriverProbeAndInventoryProjectFixedContract(t *testing.T) {
 			AllowedManagementCIDRs: []string{"10.42.0.0/16"},
 			AllowedPlainHTTPCIDRs:  []string{"10.42.0.0/24"},
 		},
-		SecretResolver: secretResolver,
-		Observer:       NewObserver(metrics, slog.New(slog.NewJSONHandler(&logs, nil))),
-		Now:            func() time.Time { return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC) },
+		AssetResolver: assetCredentialTestResolver{value: secretCanary},
+		Observer:      NewObserver(metrics, slog.New(slog.NewJSONHandler(&logs, nil))),
+		Now:           func() time.Time { return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC) },
 	}, dialer)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +90,6 @@ func TestDriverProbeAndInventoryProjectFixedContract(t *testing.T) {
 		InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI,
 		DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1,
 		ManagementEndpoint:    "http://node.example.invalid:" + port + "/base",
-		ReaderSecretReference: drivers.NewSecretReference("file://node/test"),
 		Capabilities: []drivers.Capability{
 			drivers.CapabilityManagementHealthRead,
 			drivers.CapabilityManagementAccountInventoryRead,
@@ -143,7 +117,7 @@ func TestDriverProbeAndInventoryProjectFixedContract(t *testing.T) {
 	if requests.Load() != 2 || resolver.callCount() != 0 || dialer.callCount() != 2 {
 		t.Fatalf("request boundary = requests=%d dns=%d dial=%d", requests.Load(), resolver.callCount(), dialer.callCount())
 	}
-	for _, forbidden := range []string{secretCanary, emailCanary, secretPath, "status_message", "token"} {
+	for _, forbidden := range []string{secretCanary, emailCanary, "status_message", "token"} {
 		if strings.Contains(logs.String(), forbidden) {
 			t.Fatalf("observability leaked %q: %s", forbidden, logs.String())
 		}

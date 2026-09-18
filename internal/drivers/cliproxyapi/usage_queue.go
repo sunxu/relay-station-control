@@ -31,7 +31,7 @@ func (driver *Driver) PopUsage(ctx context.Context, target drivers.NodeTarget) (
 	if err != nil {
 		return nil, err
 	}
-	secret, err := driver.secretResolver.Resolve(ctx, target.ReaderSecretReference)
+	secret, err := driver.resolveCredential(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (driver *Driver) CurrentIdentities(ctx context.Context, target drivers.Node
 	if err != nil {
 		return nil, err
 	}
-	secret, err := driver.secretResolver.Resolve(ctx, target.ReaderSecretReference)
+	secret, err := driver.resolveCredential(ctx, target)
 	if err != nil {
 		return nil, err
 	}

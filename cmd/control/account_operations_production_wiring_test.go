@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,9 +9,16 @@ import (
 	"github.com/google/uuid"
 
 	accountadmin "github.com/sunxu/relay-station-control/internal/accountadmin"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	"github.com/sunxu/relay-station-control/internal/drivers"
 	assetstore "github.com/sunxu/relay-station-control/internal/store"
 )
+
+type testAccountAssetResolver struct{}
+
+func (testAccountAssetResolver) ResolveAssetCredential(context.Context, assetcredential.CredentialKind, uuid.UUID) (*drivers.Secret, error) {
+	return drivers.NewSecretFromBytes([]byte("synthetic-resolver-management-key")), nil
+}
 
 func TestProductionAccountNodeResolverUsesMigratedCapabilitySchema(t *testing.T) {
 	owner, runtime := isolatedCrossNodeDuplicateOwnershipDatabase(t)
@@ -55,18 +61,6 @@ func TestProductionAccountNodeResolverUsesMigratedCapabilitySchema(t *testing.T)
 	}
 
 	secretDirectory := t.TempDir()
-	secretPath := filepath.Join(secretDirectory, "node-management-key")
-	if err := os.WriteFile(secretPath, []byte("synthetic-resolver-management-key"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mappingPath := filepath.Join(secretDirectory, "mapping.json")
-	if err := os.WriteFile(mappingPath, []byte(fmt.Sprintf(`{"provider":"file","references":[{"reference":"file://resolver/node-management","path":%q}]}`, secretPath)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	secretResolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{MappingFile: mappingPath})
-	if err != nil {
-		t.Fatal(err)
-	}
 	management, err := (drivers.ManagementConfig{}).Validate()
 	if err != nil {
 		t.Fatal(err)
@@ -75,13 +69,14 @@ func TestProductionAccountNodeResolverUsesMigratedCapabilitySchema(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver := productionAccountNodeResolverWithPolicy{pool: runtime, management: management, secrets: secretResolver, policies: policies}
+	assetResolver := testAccountAssetResolver{}
+	resolver := productionAccountNodeResolverWithPolicy{pool: runtime, management: management, assetSecrets: assetResolver, policies: policies}
 	intentKeyPath := filepath.Join(secretDirectory, "account-operation-intent-key")
 	if err := os.WriteFile(intentKeyPath, []byte("01234567890123456789012345678901"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE", intentKeyPath)
-	service, _, err := newAccountOperationService(runtime, management, secretResolver, policies)
+	service, _, err := newAccountOperationService(runtime, management, assetResolver, policies)
 	if err != nil {
 		t.Fatal(err)
 	}

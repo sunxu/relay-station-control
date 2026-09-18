@@ -14,9 +14,15 @@ import (
 // This deliberately uses a real owner transaction to hold the target row
 // lock while failure bookkeeping tries to finish a 401 attempt.
 func TestGatewayDirectoryFailureBookkeepingIsBoundedAndReconciles(t *testing.T) {
+	now := time.Now()
+	logicalNow := time.Unix((now.Unix()/180)*180+1, 0).UTC()
+	t.Setenv("CONTROL_TEST_GATEWAY_DIRECTORY_NOW", logicalNow.Format(time.RFC3339Nano))
+	if elapsed := time.Since(logicalNow); elapsed < 0 || elapsed >= 90*time.Second {
+		t.Skip("current DB slot does not leave enough time for the deterministic reconciliation boundary")
+	}
+	t.Setenv("CONTROL_TEST_GATEWAY_DIRECTORY_RECONCILE_NOW", now.UTC().Add(30*time.Second).Format(time.RFC3339Nano))
 	db := newIsolatedJobDatabase(t)
 	ctx := context.Background()
-	waitDirectoryRuntimeClaimWindow(t, db)
 	id := uuid.New()
 	ref := "file://failure-bookkeeping/reader"
 	fetched := make(chan struct{})
@@ -82,14 +88,14 @@ func TestGatewayDirectoryFailureBookkeepingIsBoundedAndReconciles(t *testing.T) 
 	}
 	var status string
 	var failure *string
-	if err := db.owner.QueryRow(ctx, `SELECT status,last_failure_class FROM gateway_directory_ingestion_runs WHERE ingestion_run_id=$1`, runID).Scan(&status, &failure); err != nil {
+	if err := lock.QueryRow(ctx, `SELECT status,last_failure_class FROM gateway_directory_ingestion_runs WHERE ingestion_run_id=$1`, runID).Scan(&status, &failure); err != nil {
 		t.Fatal(err)
 	}
 	if status != "running" || failure != nil {
 		t.Fatalf("blocked run changed: status=%s failure=%v", status, failure)
 	}
 	var current int
-	if err := db.owner.QueryRow(ctx, `SELECT count(*) FROM gateway_directory_current_state WHERE gateway_instance_id=$1`, id).Scan(&current); err != nil {
+	if err := lock.QueryRow(ctx, `SELECT count(*) FROM gateway_directory_current_state WHERE gateway_instance_id=$1`, id).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
 	if current != 0 {
@@ -97,18 +103,6 @@ func TestGatewayDirectoryFailureBookkeepingIsBoundedAndReconciles(t *testing.T) 
 	}
 	if err := lock.Rollback(ctx); err != nil {
 		t.Fatal(err)
-	}
-
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		var expired bool
-		if err := db.owner.QueryRow(ctx, `SELECT lease_expires_at <= clock_timestamp() FROM gateway_directory_ingestion_runs WHERE gateway_instance_id=$1 AND status='running'`, id).Scan(&expired); err != nil {
-			t.Fatal(err)
-		}
-		if expired {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
 	}
 	results, err := service.ReconcileTick(ctx)
 	if err != nil {
@@ -120,10 +114,11 @@ func TestGatewayDirectoryFailureBookkeepingIsBoundedAndReconciles(t *testing.T) 
 }
 
 func TestGatewayDirectoryFailureBookkeepingHonorsParentCancellation(t *testing.T) {
+	now := time.Now()
+	t.Setenv("CONTROL_TEST_GATEWAY_DIRECTORY_NOW", time.Unix((now.Unix()/180)*180+1, 0).UTC().Format(time.RFC3339Nano))
 	db := newIsolatedJobDatabase(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	waitDirectoryRuntimeClaimWindow(t, db)
 	id := uuid.New()
 	ref := "file://failure-cancellation/reader"
 	fetched := make(chan struct{})

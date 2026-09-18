@@ -11,10 +11,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/store"
 )
 
 const gatewayLifecycleTestKey = "01234567890123456789012345678901"
+
+type lifecycleGatewayCredentialResolver struct{}
+
+func (lifecycleGatewayCredentialResolver) Resolve(context.Context, drivers.SecretReference) (*drivers.Secret, error) {
+	return drivers.NewSecretFromBytes([]byte("reader-token")), nil
+}
 
 func insertLifecycleGateway(t *testing.T, ctx context.Context, pool *pgxpool.Pool, gatewayID uuid.UUID, endpoint, secretRef string) {
 	t.Helper()
@@ -35,7 +42,7 @@ type gatewayDirectoryLifecycleFixture struct {
 func newGatewayDirectoryLifecycleFixture(t *testing.T, ctx context.Context) *gatewayDirectoryLifecycleFixture {
 	t.Helper()
 	databaseURL, connection, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
-	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "37"); err != nil {
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "51"); err != nil {
 		cleanup()
 		t.Fatal(err)
 	}
@@ -58,7 +65,7 @@ func newGatewayDirectoryLifecycleFixture(t *testing.T, ctx context.Context) *gat
 	if err != nil {
 		t.Fatal(err)
 	}
-	assets, err := store.NewGatewayLifecycleRepository(pool, []byte(gatewayLifecycleTestKey))
+	assets, err := store.NewGatewayLifecycleRepositoryWithSealer(pool, []byte(gatewayLifecycleTestKey), newAvailableTestSealer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +147,7 @@ func TestGatewayDirectoryLifecycleFenceAcceptancePG18(t *testing.T) {
 
 				attempt, err := fixture.repository.ExecuteAttempt(ctx, store.GatewayDirectoryAttemptRequest{
 					IngestionRunID: runID, GatewayInstanceID: gatewayID, LeaseFencingToken: lease,
-				}, writeGatewayDirectorySecretResolver(t, secretRef, "reader-token"))
+				}, lifecycleGatewayCredentialResolver{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -183,7 +190,7 @@ func TestGatewayDirectoryLifecycleFenceAcceptancePG18(t *testing.T) {
 				}
 				attempt, err := fixture.repository.ExecuteAttempt(ctx, store.GatewayDirectoryAttemptRequest{
 					IngestionRunID: runID, GatewayInstanceID: gatewayID, LeaseFencingToken: lease,
-				}, writeGatewayDirectorySecretResolver(t, secretRef, "reader-token"))
+				}, lifecycleGatewayCredentialResolver{})
 				if err != nil || attempt.Success == nil {
 					t.Fatalf("attempt = %#v, err=%v", attempt, err)
 				}
@@ -248,7 +255,7 @@ func TestGatewayDirectoryLifecycleFenceAcceptancePG18(t *testing.T) {
 		oldSlot := gatewayDirectoryCurrentSlot(t, ctx, fixture.database)
 		oldStartedAt := gatewayDirectoryDatabaseNow(t, ctx, fixture.database)
 		insertGatewayDirectoryRunningRun(t, ctx, fixture.database, oldRun, oldID, oldLease, oldSlot, oldStartedAt, 1, "")
-		resolver := writeGatewayDirectorySecretResolver(t, secretRef, "reader-token")
+		resolver := lifecycleGatewayCredentialResolver{}
 		oldAttempt, err := fixture.repository.ExecuteAttempt(ctx, store.GatewayDirectoryAttemptRequest{IngestionRunID: oldRun, GatewayInstanceID: oldID, LeaseFencingToken: oldLease}, resolver)
 		if err != nil || oldAttempt.Success == nil {
 			t.Fatalf("old attempt = %#v, err=%v", oldAttempt, err)

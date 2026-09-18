@@ -2,21 +2,43 @@ package cliproxyapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	"github.com/sunxu/relay-station-control/internal/drivers"
 )
+
+type assetCredentialTestResolver struct{ value string }
+
+func (r assetCredentialTestResolver) ResolveAssetCredential(context.Context, assetcredential.CredentialKind, uuid.UUID) (*drivers.Secret, error) {
+	return drivers.NewSecretFromBytes([]byte(r.value)), nil
+}
+
+func TestUsageQueueUsesStage0AssetCredentialResolver(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer stage0-key" {
+			t.Fatalf("authorization=%q", r.Header.Get("Authorization"))
+		}
+		_, _ = io.WriteString(w, "[]")
+	}))
+	defer server.Close()
+	driver, err := NewDriver(DriverConfig{Management: drivers.ManagementConfig{}, AssetResolver: assetCredentialTestResolver{value: "stage0-key"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
+	if _, err := driver.PopUsage(context.Background(), target); err != nil {
+		t.Fatalf("stage0 usage request failed: %v", err)
+	}
+}
 
 func TestUsageQueueTransportContract(t *testing.T) {
 	cases := []struct {
@@ -44,7 +66,7 @@ func TestUsageQueueTransportContract(t *testing.T) {
 			}))
 			defer server.Close()
 			driver := queueTestDriver(t, server.URL)
-			target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL + "/base", ReaderSecretReference: drivers.NewSecretReference("file://queue-test"), Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
+			target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL + "/base", Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
 			items, err := driver.PopUsage(context.Background(), target)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err=%v wantErr=%t", err, tc.wantErr)
@@ -61,21 +83,7 @@ func TestUsageQueueTransportContract(t *testing.T) {
 
 func queueTestDriver(t *testing.T, endpoint string) *Driver {
 	t.Helper()
-	dir := t.TempDir()
-	secretPath := filepath.Join(dir, "key")
-	if err := os.WriteFile(secretPath, []byte("queue-key\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mapping, _ := json.Marshal(map[string]any{"provider": "file", "references": []map[string]string{{"reference": "file://queue-test", "path": secretPath}}})
-	mappingPath := filepath.Join(dir, "mapping.json")
-	if err := os.WriteFile(mappingPath, mapping, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	resolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{MappingFile: mappingPath})
-	if err != nil {
-		t.Fatal(err)
-	}
-	driver, err := NewDriver(DriverConfig{Management: drivers.ManagementConfig{}, SecretResolver: resolver})
+	driver, err := NewDriver(DriverConfig{Management: drivers.ManagementConfig{}, AssetResolver: assetCredentialTestResolver{value: "queue-key"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +147,7 @@ func TestCurrentIdentitiesHTTPProjection(t *testing.T) {
 			if tc.maxBytes > 0 {
 				driver.inventoryLimits.MaxBodyBytes = tc.maxBytes
 			}
-			target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, ReaderSecretReference: drivers.NewSecretReference("file://queue-test"), Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
+			target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
 			got, err := driver.CurrentIdentities(context.Background(), target)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err=%v wantError=%v", err, tc.wantErr)
@@ -161,7 +169,7 @@ func TestUsageQueueDriverCancellationAndRejections(t *testing.T) {
 			defer server.Close()
 			driver := queueTestDriver(t, server.URL)
 			driver.inventoryLimits.MaxBodyBytes = 64
-			target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, ReaderSecretReference: drivers.NewSecretReference("file://queue-test"), Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
+			target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
 			if _, err := driver.PopUsage(context.Background(), target); err == nil {
 				t.Fatal("status/oversize accepted")
 			}
@@ -179,7 +187,7 @@ func TestUsageQueueInFlightCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-r.Context().Done() }))
 	defer server.Close()
 	driver := queueTestDriver(t, server.URL)
-	target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, ReaderSecretReference: drivers.NewSecretReference("file://queue-test"), Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
+	target := drivers.NodeTarget{InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI, DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1, ManagementEndpoint: server.URL, Capabilities: []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead}}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	done := make(chan error, 1)

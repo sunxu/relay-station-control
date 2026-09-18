@@ -2,13 +2,10 @@ package cliproxyapi
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -194,34 +191,14 @@ func syntheticWorkerDriver(t *testing.T, body string) (*Driver, drivers.NodeTarg
 	}))
 	t.Cleanup(server.Close)
 
-	directory := t.TempDir()
-	secretPath := filepath.Join(directory, "management-key")
-	if err := os.WriteFile(secretPath, []byte("synthetic-management-key\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mappingPath := filepath.Join(directory, "mapping.json")
-	mapping, err := json.Marshal(map[string]any{
-		"provider":   "file",
-		"references": []map[string]string{{"reference": "file://snapshot/worker", "path": secretPath}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(mappingPath, mapping, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	secretResolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{MappingFile: mappingPath})
-	if err != nil {
-		t.Fatal(err)
-	}
 	dialer := &mappedDialer{actual: server.Listener.Addr().String(), advertised: authorizedTestIP}
 	driver, err := newDriver(DriverConfig{
 		Management: drivers.ManagementConfig{
 			AllowedDNSNames: []string{"node.example.invalid"}, AllowedManagementCIDRs: []string{"10.42.0.0/16"},
 			AllowedPlainHTTPCIDRs: []string{"10.42.0.0/24"},
 		},
-		SecretResolver: secretResolver,
-		Now:            func() time.Time { return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC) },
+		AssetResolver: assetCredentialTestResolver{value: "synthetic-management-key"},
+		Now:           func() time.Time { return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC) },
 	}, dialer)
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +211,6 @@ func syntheticWorkerDriver(t *testing.T, body string) (*Driver, drivers.NodeTarg
 		InstanceID: uuid.New(), NodeType: drivers.NodeTypeCLIProxyAPI,
 		DriverContractVersion: drivers.DriverContractCLIProxyAPIAuthFilesV1,
 		ManagementEndpoint:    "http://node.example.invalid:" + port,
-		ReaderSecretReference: drivers.NewSecretReference("file://snapshot/worker"),
 		Capabilities:          []drivers.Capability{drivers.CapabilityManagementAccountInventoryRead},
 	}
 	return driver, target, requests

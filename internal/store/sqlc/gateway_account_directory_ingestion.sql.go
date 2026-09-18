@@ -13,6 +13,12 @@ import (
 
 const claimGatewayDirectoryIngestionRun = `-- name: ClaimGatewayDirectoryIngestionRun :one
 WITH db_now AS (
+    SELECT COALESCE(
+        NULLIF(current_setting('control.test_gateway_directory_reconcile_now', true), '')::timestamptz,
+        NULLIF(current_setting('control.test_gateway_directory_now', true), '')::timestamptz,
+        clock_timestamp()
+    ) AS db_now
+), actual_now AS (
     SELECT clock_timestamp() AS db_now
 ), candidate AS (
     SELECT run.ingestion_run_id
@@ -28,11 +34,11 @@ WITH db_now AS (
     UPDATE gateway_directory_ingestion_runs AS run
     SET status = 'running',
         attempt_count = run.attempt_count + 1,
-        first_started_at = COALESCE(run.first_started_at, db_now.db_now),
-        last_started_at = db_now.db_now,
-        lease_expires_at = db_now.db_now + interval '15 seconds',
+        first_started_at = COALESCE(run.first_started_at, actual_now.db_now),
+        last_started_at = actual_now.db_now,
+        lease_expires_at = actual_now.db_now + interval '15 seconds',
         lease_fencing_token = $2::uuid
-    FROM candidate, db_now
+    FROM candidate, actual_now
     WHERE run.ingestion_run_id = candidate.ingestion_run_id
     RETURNING run.ingestion_run_id, run.gateway_instance_id, run.scheduled_at, run.status, run.attempt_count, run.created_at, run.first_started_at, run.last_started_at, run.lease_expires_at, run.lease_fencing_token, run.terminal_at, run.outcome, run.last_failure_class, run.source_generated_at, run.received_at, run.content_fingerprint, run.snapshot_id, run.account_count
 )
@@ -100,7 +106,7 @@ WITH locked_gateway AS (
       AND singleton_id = 1
     FOR UPDATE
 ), db_now AS (
-    SELECT clock_timestamp() AS db_now
+    SELECT COALESCE(NULLIF(current_setting('control.test_gateway_directory_now', true), '')::timestamptz, clock_timestamp()) AS db_now
 ), current_slot AS (
     SELECT to_timestamp(floor(extract(epoch FROM db_now.db_now) / 180) * 180)::timestamptz AS scheduled_at
     FROM db_now
@@ -512,13 +518,18 @@ func (q *Queries) GetGatewayDirectoryLifecycleFailure(ctx context.Context, gatew
 }
 
 const getGatewayDirectoryReadTarget = `-- name: GetGatewayDirectoryReadTarget :one
-SELECT (to_jsonb(target)->>'instance_id')::uuid AS instance_id,
-       (to_jsonb(target)->>'management_endpoint')::text AS management_endpoint,
-       (to_jsonb(target)->>'reader_secret_ref')::text AS reader_secret_ref
-FROM control_query_gateway_directory_target_v1(
-    $1::uuid,
-    $2::uuid,
-    $3::uuid
+SELECT target.instance_id,
+       target.management_endpoint,
+       coalesce(target.reader_secret_ref, '') AS reader_secret_ref
+FROM (
+    SELECT (to_jsonb(source)->>'instance_id')::uuid AS instance_id,
+           (to_jsonb(source)->>'management_endpoint')::text AS management_endpoint,
+           (to_jsonb(source)->>'reader_secret_ref')::text AS reader_secret_ref
+    FROM control_query_gateway_directory_target_v1(
+        $1::uuid,
+        $2::uuid,
+        $3::uuid
+    ) AS source
 ) AS target
 `
 
@@ -826,7 +837,11 @@ func (q *Queries) LockGatewayDirectoryLifecycleFailure(ctx context.Context, gate
 
 const reconcileGatewayDirectoryIngestionRun = `-- name: ReconcileGatewayDirectoryIngestionRun :one
 WITH db_now AS (
-    SELECT clock_timestamp() AS db_now
+    SELECT COALESCE(
+        NULLIF(current_setting('control.test_gateway_directory_reconcile_now', true), '')::timestamptz,
+        NULLIF(current_setting('control.test_gateway_directory_now', true), '')::timestamptz,
+        clock_timestamp()
+    ) AS db_now
 ), candidate AS (
     SELECT
         run.ingestion_run_id,

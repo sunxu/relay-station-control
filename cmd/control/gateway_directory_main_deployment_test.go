@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 )
 
 type deploymentTestBuffer struct {
@@ -83,13 +84,21 @@ func TestGatewayDirectoryMainDeploymentHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory := t.TempDir()
-	tokenPath := filepath.Join(directory, "reader-token")
-	mappingPath := filepath.Join(directory, "mapping.json")
-	if err := os.WriteFile(tokenPath, []byte("main-deployment-reader"), 0600); err != nil {
+	credentialKey := bytes.Repeat([]byte{0x37}, 32)
+	credentialKeyPath := filepath.Join(directory, "asset-credential-key")
+	if err := os.WriteFile(credentialKeyPath, credentialKey, 0600); err != nil {
 		t.Fatal(err)
 	}
-	document, _ := json.Marshal(map[string]any{"provider": "file", "references": []map[string]string{{"reference": "file://main-deployment/reader", "path": tokenPath}}})
-	if err := os.WriteFile(mappingPath, document, 0600); err != nil {
+	commitment := assetcredential.IdentityCommitment(credentialKey)
+	var commitmentStatus string
+	if err := owner.QueryRow(ctx, `SELECT public.control_initialize_asset_credential_key_v1($1)`, commitment[:]).Scan(&commitmentStatus); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := assetcredential.Seal(bytes.NewReader(bytes.Repeat([]byte{0x19}, assetcredential.NonceSize)), credentialKey, assetcredential.GatewayCredential, gatewayID, []byte("main-deployment-reader"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `UPDATE gateway_instances SET reader_secret_ref=NULL,directory_credential_sealed=$1 WHERE instance_id=$2`, sealed, gatewayID); err != nil {
 		t.Fatal(err)
 	}
 	keyringPath := filepath.Join(directory, "keyring.json")
@@ -118,7 +127,7 @@ func TestGatewayDirectoryMainDeploymentHTTP(t *testing.T) {
 			"CONTROL_BOOTSTRAP_SECRET_FILE=" + bootstrapPath,
 			"CONTROL_HTTP_ADDR=127.0.0.1:" + port,
 			"CONTROL_GATEWAY_DIRECTORY_ENABLED=" + enabled,
-			"CONTROL_GATEWAY_DIRECTORY_SECRET_MAPPING_FILE=" + mappingPath,
+			"CONTROL_ASSET_CREDENTIAL_KEY_FILE=" + credentialKeyPath,
 		}
 		output := &deploymentTestBuffer{}
 		command.Stdout = output
@@ -238,7 +247,7 @@ func TestGatewayDirectoryMainDeploymentHTTP(t *testing.T) {
 	if err := owner.QueryRow(ctx, `SELECT current_snapshot_id,last_success_received_at FROM gateway_directory_current_state WHERE gateway_instance_id=$1`, gatewayID).Scan(&snapshotID, &receivedAt); err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", mappingPath, source.URL, "9007199254740993"} {
+	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", source.URL, "9007199254740993"} {
 		if strings.Contains(output.String()+disabledOutput.String()+string(metrics), forbidden) {
 			t.Fatal("main logs or metrics leaked a synthetic canary")
 		}
@@ -290,7 +299,7 @@ func TestGatewayDirectoryMainDeploymentHTTP(t *testing.T) {
 	if restartedSnapshotID != snapshotID || !restartedReceivedAt.Equal(receivedAt) || accountID != 9007199254740993 {
 		t.Fatal("restart changed the persisted current snapshot, successful observation or exact account identity")
 	}
-	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", mappingPath, source.URL, "9007199254740993"} {
+	for _, forbidden := range []string{"main-deployment-reader", "file://main-deployment/reader", source.URL, "9007199254740993"} {
 		if strings.Contains(restartedOutput.String(), forbidden) {
 			t.Fatal("restarted main log leaked a synthetic canary")
 		}

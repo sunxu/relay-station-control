@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/google/uuid"
 	rootdrivers "github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/drivers/gatewaymanagement"
 )
@@ -49,6 +50,16 @@ type Client struct {
 	baseURL        gatewaymanagement.Origin
 	httpClient     *http.Client
 	secretResolver rootdrivers.SecretResolver
+	fencedResolver rootdrivers.GatewayDirectoryCredentialResolver
+}
+
+func NewClientWithGatewayDirectoryCredentialResolver(managementOrigin string, resolver rootdrivers.GatewayDirectoryCredentialResolver) (*Client, error) {
+	client, err := NewClient(managementOrigin, nil)
+	if err != nil {
+		return nil, err
+	}
+	client.fencedResolver = resolver
+	return client, nil
 }
 
 func NewClient(managementOrigin string, secretResolver rootdrivers.SecretResolver) (*Client, error) {
@@ -83,6 +94,18 @@ func (c *Client) Fetch(ctx context.Context, reference rootdrivers.SecretReferenc
 		}
 	}
 	secret, err := c.secretResolver.Resolve(ctx, reference)
+	return c.fetchWithSecret(ctx, secret, err)
+}
+
+func (c *Client) FetchAssetFenced(ctx context.Context, runID, gatewayID, fencing uuid.UUID) (DirectoryResponse, [sha256.Size]byte, error) {
+	if c == nil || c.httpClient == nil || c.fencedResolver == nil || runID == uuid.Nil || gatewayID == uuid.Nil || fencing == uuid.Nil {
+		return DirectoryResponse{}, [sha256.Size]byte{}, &FetchError{Reason: rootdrivers.ReasonSecretUnavailable, Retryable: false}
+	}
+	secret, err := c.fencedResolver.ResolveGatewayDirectoryCredential(ctx, runID, gatewayID, fencing)
+	return c.fetchWithSecret(ctx, secret, err)
+}
+
+func (c *Client) fetchWithSecret(ctx context.Context, secret *rootdrivers.Secret, err error) (DirectoryResponse, [sha256.Size]byte, error) {
 	if err != nil {
 		return DirectoryResponse{}, [sha256.Size]byte{}, classifySecretResolveError(err)
 	}

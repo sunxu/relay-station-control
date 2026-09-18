@@ -182,11 +182,6 @@ func main() {
 		logger.Error("invalid control configuration", "component", "auth")
 		os.Exit(1)
 	}
-	nodeDrivers, err := loadNodeDriverRuntime(logger)
-	if err != nil {
-		logger.Error("invalid control configuration", "component", "node_driver", "reason", "invalid_runtime_config")
-		os.Exit(1)
-	}
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		logger.Error("database configuration is required", "component", "auth")
@@ -204,6 +199,17 @@ func main() {
 	}
 	if err = controlenv.Verify(context.Background(), generatedstore.New(pool), environmentIdentity); err != nil {
 		logger.Error("environment identity verification failed", "component", "environment", "reason", controlenv.ReasonOf(err))
+		os.Exit(1)
+	}
+	assetCredentialSealer, err := loadStage0AssetCredentialSealer(context.Background(), pool, logger)
+	if err != nil {
+		logger.Error("asset credential identity initialization failed", "component", "asset_credential")
+		os.Exit(1)
+	}
+	assetCredentialResolver := stage0AssetCredentialResolver{pool: pool, opener: assetCredentialSealer.(stage0AssetCredentialOpener)}
+	nodeDrivers, err := loadNodeDriverRuntime(logger, assetCredentialResolver)
+	if err != nil {
+		logger.Error("invalid control configuration", "component", "node_driver", "reason", "invalid_runtime_config")
 		os.Exit(1)
 	}
 	requestQualityRuntime, err := newAccountRequestQualityRuntime(pool, nodeDrivers, logger)
@@ -227,12 +233,12 @@ func main() {
 		logger.Warn("asset command intent key unavailable", "component", "assets", "reason", "invalid_key_file")
 		intentKey = nil
 	}
-	gatewayLifecycleRepository, err := assetstore.NewGatewayLifecycleRepository(pool, intentKey)
+	gatewayLifecycleRepository, err := assetstore.NewGatewayLifecycleRepositoryWithSealer(pool, intentKey, assetCredentialSealer)
 	if err != nil {
 		logger.Error("gateway lifecycle initialization failed", "component", "assets")
 		os.Exit(1)
 	}
-	nodeLifecycleRepository, err := assetstore.NewNodeLifecycleRepository(pool, intentKey)
+	nodeLifecycleRepository, err := assetstore.NewNodeLifecycleRepositoryWithSealer(pool, intentKey, assetCredentialSealer)
 	if err != nil {
 		logger.Error("node lifecycle initialization failed", "component", "assets")
 		os.Exit(1)
@@ -357,7 +363,7 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.Timeout(30 * time.Second))
 	metricsRegistry := prometheus.NewRegistry()
-	gatewayDirectoryRuntime, err := newGatewayDirectoryRuntime(metricsRegistry, pool, gatewayDirectoryConfig)
+	gatewayDirectoryRuntime, err := newGatewayDirectoryRuntime(metricsRegistry, pool, gatewayDirectoryConfig, assetCredentialResolver)
 	if err != nil {
 		logger.Error("gateway directory runtime initialization failed", "component", "gateway_directory", "reason", "initialization_failed")
 		os.Exit(1)
@@ -393,7 +399,7 @@ func main() {
 		logger.Error("asset API initialization failed", "component", "assets")
 		os.Exit(1)
 	}
-	accountOperationService, accountOperationRepository, err := newAccountOperationService(pool, nodeDrivers.management, nodeDrivers.secrets, assetRepository)
+	accountOperationService, accountOperationRepository, err := newAccountOperationService(pool, nodeDrivers.management, nodeDrivers.assetSecret, assetRepository)
 	if err != nil {
 		logger.Error("account operation initialization failed", "component", "account_operations")
 		os.Exit(1)

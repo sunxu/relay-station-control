@@ -2,8 +2,8 @@ package store_test
 
 import (
 	"context"
-	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -32,55 +32,71 @@ func gatewayDirectoryCurrentSlot(t *testing.T, ctx context.Context, query interf
 
 func insertGatewayInstance(t *testing.T, ctx context.Context, pool *pgxpool.Pool, gatewayID uuid.UUID, endpoint, secretRef string) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, `INSERT INTO gateway_instances(
-		singleton_id, instance_id, display_name, management_endpoint, reader_secret_ref,
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var currentID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT instance_id FROM gateway_instances WHERE singleton_id = 1 FOR UPDATE`).Scan(&currentID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatal(err)
+	}
+	if err == nil && currentID != gatewayID {
+		const fixtureAdminID = "00000000-0000-4000-8000-00000000a901"
+		if _, err := tx.Exec(ctx, `INSERT INTO control_admin_users(
+			admin_id, login_name, display_name, status, activated_at
+		) VALUES ($1, 'gateway-directory-fixture-admin', 'Gateway Directory Fixture Admin', 'enabled', clock_timestamp())
+		ON CONFLICT (admin_id) DO NOTHING`, fixtureAdminID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE gateway_instances
+			SET singleton_id = NULL,
+				lifecycle_status = 'retired',
+				retired_at = clock_timestamp(),
+				retired_by = $1,
+				retire_reason = 'replacement',
+				revision = revision + 1,
+				updated_at = clock_timestamp()
+			WHERE instance_id = $2`, fixtureAdminID, currentID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `INSERT INTO gateway_instances(
+		singleton_id, instance_id, display_name, management_endpoint, reader_secret_ref, directory_credential_sealed,
 		created_at, updated_at
 	) VALUES (
-		1, $1, 'Gateway Directory Test', $2, $3,
+		1, $1, 'Gateway Directory Test', $2, $3, $4,
 		clock_timestamp(), clock_timestamp()
 	)
-	ON CONFLICT (singleton_id) WHERE singleton_id = 1 DO UPDATE SET
+	ON CONFLICT (instance_id) DO UPDATE SET
+		singleton_id = EXCLUDED.singleton_id,
 		instance_id = EXCLUDED.instance_id,
 		display_name = EXCLUDED.display_name,
 		management_endpoint = EXCLUDED.management_endpoint,
 		reader_secret_ref = EXCLUDED.reader_secret_ref,
+		directory_credential_sealed = EXCLUDED.directory_credential_sealed,
 		updated_at = EXCLUDED.updated_at`,
-		gatewayID, endpoint, secretRef); err != nil {
+		gatewayID, endpoint, nil, make([]byte, 29)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func writeGatewayDirectorySecretResolver(t *testing.T, reference, token string) drivers.SecretResolver {
-	resolver, _ := writeGatewayDirectorySecretResolverWithPath(t, reference, token)
-	return resolver
+	t.Helper()
+	_ = reference
+	return staticGatewayDirectorySecretResolver{token: token}
 }
 
-func writeGatewayDirectorySecretResolverWithPath(t *testing.T, reference, token string) (drivers.SecretResolver, string) {
-	t.Helper()
-	directory := t.TempDir()
-	secretPath := filepath.Join(directory, "reader-token")
-	if err := os.WriteFile(secretPath, []byte(token+"\n"), 0o600); err != nil {
-		t.Fatalf("write secret file: %v", err)
-	}
-	mapping := filepath.Join(directory, "mapping.json")
-	encoded, err := json.Marshal(map[string]any{
-		"provider": "file",
-		"references": []map[string]string{{
-			"reference": reference,
-			"path":      secretPath,
-		}},
-	})
-	if err != nil {
-		t.Fatalf("marshal secret mapping: %v", err)
-	}
-	if err := os.WriteFile(mapping, encoded, 0o600); err != nil {
-		t.Fatalf("write secret mapping: %v", err)
-	}
-	resolver, err := drivers.NewFileSecretResolver(drivers.FileSecretResolverConfig{MappingFile: mapping})
-	if err != nil {
-		t.Fatalf("construct secret resolver: %v", err)
-	}
-	return resolver, secretPath
+type staticGatewayDirectorySecretResolver struct{ token string }
+
+func (resolver staticGatewayDirectorySecretResolver) Resolve(context.Context, drivers.SecretReference) (*drivers.Secret, error) {
+	return drivers.NewSecretFromBytes([]byte(resolver.token)), nil
 }
 
 func trustServerCertificate(t *testing.T, server *httptest.Server) {

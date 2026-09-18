@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"log/slog"
-	"os"
 	"time"
 
 	controlnodes "github.com/sunxu/relay-station-control/internal/drivers"
@@ -17,12 +16,13 @@ type nodeDriverRuntime struct {
 	metrics     *controlcliproxy.DriverMetrics
 	management  controlnodes.ValidatedManagementConfig
 	secrets     controlnodes.SecretResolver
+	assetSecret controlnodes.AssetCredentialResolver
 }
 
 // loadNodeDriverRuntime constructs only the fixed registry and its immutable
 // dependencies. It does not resolve a target, read a target Secret, open a
 // network connection, start a goroutine, or register a durable job.
-func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
+func loadNodeDriverRuntime(logger *slog.Logger, assetResolver controlnodes.AssetCredentialResolver) (nodeDriverRuntime, error) {
 	enabled, err := envBool("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", false)
 	if err != nil {
 		return nodeDriverRuntime{}, errors.New("node driver configuration is invalid")
@@ -33,7 +33,7 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 		if registryErr != nil {
 			return nodeDriverRuntime{}, errors.New("node driver registry is invalid")
 		}
-		return nodeDriverRuntime{registry: registry, metrics: metrics}, nil
+		return nodeDriverRuntime{registry: registry, metrics: metrics, assetSecret: assetResolver}, nil
 	}
 
 	connectTimeout, err := envDurationBounded(
@@ -90,13 +90,7 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 	if err != nil {
 		return nodeDriverRuntime{}, errors.New("node driver configuration is invalid")
 	}
-	mappingBytes, err := envIntBounded(
-		"CONTROL_CLIPROXYAPI_SECRET_MAPPING_MAX_BYTES",
-		int(controlnodes.DefaultSecretMappingBytes),
-		1,
-		1<<20,
-	)
-	if err != nil || mappingBytes < secretBytes {
+	if assetResolver == nil {
 		return nodeDriverRuntime{}, errors.New("node driver configuration is invalid")
 	}
 
@@ -108,24 +102,17 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 		MaxInventoryResponseBytes: int64(inventoryBytes),
 		MaxInventoryRecords:       inventoryRecords,
 		MaxSecretBytes:            int64(secretBytes),
-		MaxSecretMappingBytes:     int64(mappingBytes),
+		MaxSecretMappingBytes:     int64(controlnodes.DefaultSecretMappingBytes),
 	}
 	if _, err = management.Validate(); err != nil {
 		return nodeDriverRuntime{}, errors.New("node driver configuration is invalid")
 	}
-	secretResolver, err := controlnodes.NewFileSecretResolver(controlnodes.FileSecretResolverConfig{
-		MappingFile:     os.Getenv("CONTROL_CLIPROXYAPI_SECRET_MAPPING_FILE"),
-		Provider:        controlnodes.FileSecretProvider,
-		MaxMappingBytes: int64(mappingBytes),
-		MaxSecretBytes:  int64(secretBytes),
-	})
-	if err != nil {
-		return nodeDriverRuntime{}, errors.New("node driver secret configuration is invalid")
-	}
+	var secretResolver controlnodes.SecretResolver
 	observer := controlcliproxy.NewObserver(metrics, logger)
 	driver, err := controlcliproxy.NewDriver(controlcliproxy.DriverConfig{
 		Management:     management,
 		SecretResolver: secretResolver,
+		AssetResolver:  assetResolver,
 		Observer:       observer,
 	})
 	if err != nil {
@@ -144,5 +131,5 @@ func loadNodeDriverRuntime(logger *slog.Logger) (nodeDriverRuntime, error) {
 		return nodeDriverRuntime{}, errors.New("node driver registry is invalid")
 	}
 	validatedManagement, _ := management.Validate()
-	return nodeDriverRuntime{enabled: true, registry: registry, metrics: metrics, usageSource: driver, management: validatedManagement, secrets: secretResolver}, nil
+	return nodeDriverRuntime{enabled: true, registry: registry, metrics: metrics, usageSource: driver, management: validatedManagement, secrets: secretResolver, assetSecret: assetResolver}, nil
 }

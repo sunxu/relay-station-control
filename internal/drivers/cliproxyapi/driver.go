@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
 	"github.com/sunxu/relay-station-control/internal/drivers"
 )
 
@@ -16,6 +17,7 @@ import (
 type DriverConfig struct {
 	Management     drivers.ManagementConfig
 	SecretResolver drivers.SecretResolver
+	AssetResolver  drivers.AssetCredentialResolver
 	Observer       *Observer
 	Now            func() time.Time
 }
@@ -24,6 +26,7 @@ type DriverConfig struct {
 type Driver struct {
 	management      drivers.ValidatedManagementConfig
 	secretResolver  drivers.SecretResolver
+	assetResolver   drivers.AssetCredentialResolver
 	dialer          ContextDialer
 	healthBodyLimit int64
 	inventoryLimits InventoryLimits
@@ -57,7 +60,7 @@ func NewDriver(configuration DriverConfig) (*Driver, error) {
 // use the standard network dialer.
 func newDriver(configuration DriverConfig, dialer ContextDialer) (*Driver, error) {
 	validated, err := configuration.Management.Validate()
-	if err != nil || configuration.SecretResolver == nil {
+	if err != nil || (configuration.SecretResolver == nil && configuration.AssetResolver == nil) {
 		return nil, drivers.ErrInvalidManagementConfig
 	}
 	now := configuration.Now
@@ -65,7 +68,7 @@ func newDriver(configuration DriverConfig, dialer ContextDialer) (*Driver, error
 		now = time.Now
 	}
 	return &Driver{
-		management: validated, secretResolver: configuration.SecretResolver,
+		management: validated, secretResolver: configuration.SecretResolver, assetResolver: configuration.AssetResolver,
 		dialer:          dialer,
 		healthBodyLimit: validated.MaxHealthResponseBytes,
 		inventoryLimits: InventoryLimits{
@@ -140,7 +143,7 @@ func (driver *Driver) ListAccountInventory(ctx context.Context, request drivers.
 	if err != nil {
 		return finish(failedInventory(drivers.ReasonContractInvalid), newDriverError(operation, drivers.ReasonContractInvalid))
 	}
-	secret, err := driver.secretResolver.Resolve(ctx, request.Target.ReaderSecretReference)
+	secret, err := driver.resolveCredential(ctx, request.Target)
 	if err != nil {
 		reason := contextReason(ctx)
 		if reason == drivers.ReasonNone {
@@ -178,6 +181,16 @@ func (driver *Driver) ListAccountInventory(ctx context.Context, request drivers.
 		return finish(observation, newDriverError(operation, observation.Reason))
 	}
 	return finish(observation, nil)
+}
+
+func (driver *Driver) resolveCredential(ctx context.Context, target drivers.NodeTarget) (*drivers.Secret, error) {
+	if driver.assetResolver != nil {
+		return driver.assetResolver.ResolveAssetCredential(ctx, assetcredential.NodeCredential, target.InstanceID)
+	}
+	if driver.secretResolver == nil {
+		return nil, drivers.ErrSecretUnavailable
+	}
+	return driver.secretResolver.Resolve(ctx, target.ReaderSecretReference)
 }
 
 func (driver *Driver) transport(endpoint string) (*safeTransport, error) {

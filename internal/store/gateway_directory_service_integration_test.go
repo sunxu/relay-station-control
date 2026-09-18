@@ -10,9 +10,55 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sunxu/relay-station-control/internal/assetcredential"
+	"github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/drivers/gatewaydirectory"
 	jobstore "github.com/sunxu/relay-station-control/internal/store"
 )
+
+type stage0GatewayDirectoryTestResolver struct{}
+
+func (stage0GatewayDirectoryTestResolver) ResolveAssetCredential(context.Context, assetcredential.CredentialKind, uuid.UUID) (*drivers.Secret, error) {
+	return drivers.NewSecretFromBytes([]byte("reader-token")), nil
+}
+
+func (stage0GatewayDirectoryTestResolver) ResolveGatewayDirectoryCredential(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*drivers.Secret, error) {
+	return drivers.NewSecretFromBytes([]byte("reader-token")), nil
+}
+
+func TestGatewayDirectoryCoordinatorUsesStage0FencedCredential(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
+	ctx := context.Background()
+	gatewayID := uuid.New()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer reader-token" {
+			t.Fatalf("authorization=%q", request.Header.Get("Authorization"))
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(gatewayDirectoryJSON(t, time.Now().UTC(), "Stage0"))
+	}))
+	defer server.Close()
+	insertGatewayInstance(t, ctx, database.owner, gatewayID, server.URL, "file://stage0/unused")
+	if _, err := database.owner.Exec(ctx, `UPDATE gateway_instances SET directory_credential_sealed=$1 WHERE instance_id=$2`, make([]byte, 29), gatewayID); err != nil {
+		t.Fatal(err)
+	}
+	requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
+	repository, err := jobstore.NewGatewayDirectoryIngestionRepository(database.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := jobstore.NewGatewayDirectoryIngestionServiceWithGatewayDirectoryCredentialResolver(repository, stage0GatewayDirectoryTestResolver{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.RunGatewayOnce(ctx, gatewayID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != jobstore.GatewayDirectoryWorkStatusSucceeded {
+		t.Fatalf("result=%#v", result)
+	}
+}
 
 func gatewayDirectoryJSON(t *testing.T, generatedAt time.Time, name string) []byte {
 	t.Helper()
@@ -81,12 +127,14 @@ func TestGatewayDirectoryCoordinatorSuccessChangedAndUnchanged(t *testing.T) {
 		requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
 		fixedAt := time.Now().UTC().Add(-time.Minute)
 		body := gatewayDirectoryJSON(t, fixedAt, "Alpha")
-		server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write(body)
 		}))
 		defer server.Close()
-		trustServerCertificate(t, server)
+		if _, err := database.owner.Exec(ctx, `UPDATE gateway_instances SET management_endpoint=$1 WHERE instance_id=$2`, server.URL, gatewayID); err != nil {
+			t.Fatal(err)
+		}
 		service, err := jobstore.NewGatewayDirectoryIngestionService(repository, writeGatewayDirectorySecretResolver(t, secretRef, "reader-token"))
 		if err != nil {
 			t.Fatal(err)
@@ -152,12 +200,14 @@ func TestGatewayDirectoryCoordinatorSuccessChangedAndUnchanged(t *testing.T) {
 			t.Fatalf("seed finalize = %#v, %v", failure, err)
 		}
 
-		server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write(gatewayDirectoryJSON(t, fixedAt, "Alpha"))
 		}))
 		defer server.Close()
-		trustServerCertificate(t, server)
+		if _, err := database.owner.Exec(ctx, `UPDATE gateway_instances SET management_endpoint=$1 WHERE instance_id=$2`, server.URL, gatewayID); err != nil {
+			t.Fatal(err)
+		}
 		service, err := jobstore.NewGatewayDirectoryIngestionService(repository, writeGatewayDirectorySecretResolver(t, secretRef, "reader-token"))
 		if err != nil {
 			t.Fatal(err)
@@ -183,12 +233,14 @@ func TestGatewayDirectoryCoordinatorSourceTimeInvalid(t *testing.T) {
 	secretRef := "file://gateway-directory/reader"
 	insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://gateway-directory.test", secretRef)
 	requireClaimWindow(t, gatewayDirectoryCurrentSlot(t, ctx, database.owner))
-	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(gatewayDirectoryJSON(t, time.Now().UTC().Add(-25*time.Hour), "Alpha"))
 	}))
 	defer server.Close()
-	trustServerCertificate(t, server)
+	if _, err := database.owner.Exec(ctx, `UPDATE gateway_instances SET management_endpoint=$1 WHERE instance_id=$2`, server.URL, gatewayID); err != nil {
+		t.Fatal(err)
+	}
 	service, err := jobstore.NewGatewayDirectoryIngestionService(repository, writeGatewayDirectorySecretResolver(t, secretRef, "reader-token"))
 	if err != nil {
 		t.Fatal(err)
