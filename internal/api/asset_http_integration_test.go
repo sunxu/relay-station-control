@@ -61,8 +61,8 @@ func TestAssetRegistryHTTPRuntimeReadsPaginationSecurityAndRecovery(t *testing.T
 		t.Fatal(err)
 	}
 	gatewayID, firstNodeID, secondNodeID := uuid.New(), uuid.MustParse("018f80d8-2017-7b3e-93ec-10f4b3672f2a"), uuid.MustParse("018f80d8-2017-7b3e-93ec-10f4b3672f2b")
-	if _, err = owner.Exec(ctx, `INSERT INTO gateway_instances(instance_id,display_name,management_endpoint,reader_secret_ref)
-		VALUES($1,'Gateway','http://gateway.example',$2)`, gatewayID, secretCanary); err != nil {
+	if _, err = owner.Exec(ctx, `INSERT INTO gateway_instances(instance_id,display_name,management_endpoint,reader_secret_ref,directory_credential_sealed)
+		VALUES($1,'Gateway','http://gateway.example',NULL,$2)`, gatewayID, make([]byte, 29)); err != nil {
 		t.Fatal(err)
 	}
 	for id, name := range map[uuid.UUID]string{firstNodeID: "Node A", secondNodeID: "Node B"} {
@@ -76,7 +76,7 @@ func TestAssetRegistryHTTPRuntimeReadsPaginationSecurityAndRecovery(t *testing.T
 			t.Fatal(err)
 		}
 	}
-	if _, err = owner.Exec(ctx, `WITH boundary AS (SELECT clock_timestamp() AS at)
+	if _, err = owner.Exec(ctx, `WITH boundary AS (SELECT clock_timestamp() - interval '1 second' AS at)
 		INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at)
 		SELECT $1,at,'deployment_enable','asset-test',at FROM boundary`, firstNodeID); err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestAssetRegistryHTTPRuntimeReadsPaginationSecurityAndRecovery(t *testing.T
 	// and verifies that every current-state read independently fails closed.
 	dropAssetExclusionConstraint(t, ctx, owner, "relay_node_inventory_monitoring_activations")
 	dropAssetExclusionConstraint(t, ctx, owner, "provider_inventory_policy_activations")
-	if _, err = owner.Exec(ctx, `WITH boundary AS (SELECT clock_timestamp() AS at)
+	if _, err = owner.Exec(ctx, `WITH boundary AS (SELECT clock_timestamp() - interval '1 second' AS at)
 		INSERT INTO relay_node_inventory_monitoring_activations
 		(instance_id,effective_from,reason,actor,created_at)
 		SELECT $1,at,'deployment_enable','damaged-fixture',at FROM boundary`, firstNodeID); err != nil {
@@ -277,13 +277,12 @@ func TestAssetRegistryHTTPRuntimeReadsPaginationSecurityAndRecovery(t *testing.T
 		SELECT 'cliproxy.api','v1',$1,at,'damaged-fixture',at FROM boundary`, overlappingPolicyID); err != nil {
 		t.Fatalf("insert overlapping policy activation fixture: %v", err)
 	}
-
 	if _, err = repository.Node(ctx, firstNodeID); !errors.Is(err, assetstore.ErrAssetRegistryInconsistent) {
 		t.Fatalf("damaged node detail error = %v, want fixed consistency error", err)
 	}
 	for _, monitoringActive := range []bool{true, false} {
 		filter := monitoringActive
-		if _, err = repository.ListNodes(ctx, assetstore.NodeListFilters{MonitoringActive: &filter}, uuid.Nil, 200); !errors.Is(err, assetstore.ErrAssetRegistryInconsistent) {
+		if _, err = repository.ListNodes(ctx, assetstore.NodeListFilters{Lifecycle: "active", MonitoringActive: &filter}, uuid.Nil, 200); !errors.Is(err, assetstore.ErrAssetRegistryInconsistent) {
 			t.Fatalf("damaged node list monitoring_active=%v error = %v, want fixed consistency error", monitoringActive, err)
 		}
 	}

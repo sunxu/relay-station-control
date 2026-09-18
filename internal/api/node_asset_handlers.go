@@ -17,11 +17,11 @@ func (s *Server) RegisterNodeAsset(w http.ResponseWriter, r *http.Request, p Reg
 	if !ok {
 		return
 	}
-	body, ok := decodeGatewayObject(w, r, "command_id", "new_instance_id", "display_name", "management_endpoint", "node_type", "driver_contract_version", "capabilities", "reader_secret_ref")
+	body, ok := decodeGatewayObject(w, r, "command_id", "new_instance_id", "display_name", "management_endpoint", "node_type", "driver_contract_version", "capabilities", "management_credential")
 	if !ok {
 		return
 	}
-	c := assetstore.NodeCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), Secret: secretPatch(body, "reader_secret_ref")}
+	c := assetstore.NodeCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), Secret: secretPatch(body, "management_credential")}
 	if !requiredUUID(body, "command_id", &c.CommandID) || !requiredUUID(body, "new_instance_id", &c.NewInstanceID) || !requiredString(body, "display_name", &c.DisplayName) || !requiredString(body, "management_endpoint", &c.ManagementEndpoint) || !rawString(body, "node_type", &c.NodeType) || !rawString(body, "driver_contract_version", &c.DriverContractVersion) || !rawStrings(body, "capabilities", &c.Capabilities) {
 		nodeError(w, r, s, assetstore.ErrInvalidNode)
 		return
@@ -34,11 +34,15 @@ func (s *Server) EditNodeAsset(w http.ResponseWriter, r *http.Request, id NodeIn
 	if !ok {
 		return
 	}
-	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "display_name", "management_endpoint", "reader_secret_ref")
+	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "display_name", "management_endpoint", "management_credential")
 	if !ok {
 		return
 	}
-	c := assetstore.NodeCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(id), DisplayName: optionalString(body, "display_name"), ManagementEndpoint: optionalString(body, "management_endpoint"), Secret: secretPatch(body, "reader_secret_ref")}
+	secret := secretPatch(body, "management_credential")
+	if secret.Operation == assetstore.SecretExplicitNull {
+		secret.Operation = assetstore.SecretClear
+	}
+	c := assetstore.NodeCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(id), DisplayName: optionalString(body, "display_name"), ManagementEndpoint: optionalString(body, "management_endpoint"), Secret: secret}
 	if !requiredUUID(body, "command_id", &c.CommandID) || !requiredRevision(body, "expected_revision", &c.ExpectedRevision) {
 		nodeError(w, r, s, assetstore.ErrInvalidNode)
 		return
@@ -68,11 +72,11 @@ func (s *Server) ReplaceNodeAsset(w http.ResponseWriter, r *http.Request, id Nod
 	if !ok {
 		return
 	}
-	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "new_instance_id", "display_name", "management_endpoint", "node_type", "driver_contract_version", "capabilities", "reader_secret_ref")
+	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "new_instance_id", "display_name", "management_endpoint", "node_type", "driver_contract_version", "capabilities", "management_credential")
 	if !ok {
 		return
 	}
-	c := assetstore.NodeCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(id), Secret: secretPatch(body, "reader_secret_ref")}
+	c := assetstore.NodeCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(id), Secret: secretPatch(body, "management_credential")}
 	if !requiredUUID(body, "command_id", &c.CommandID) || !requiredRevision(body, "expected_revision", &c.ExpectedRevision) || !requiredUUID(body, "new_instance_id", &c.NewInstanceID) || !requiredString(body, "display_name", &c.DisplayName) || !requiredString(body, "management_endpoint", &c.ManagementEndpoint) || !rawString(body, "node_type", &c.NodeType) || !rawString(body, "driver_contract_version", &c.DriverContractVersion) || !rawStrings(body, "capabilities", &c.Capabilities) {
 		nodeError(w, r, s, assetstore.ErrInvalidNode)
 		return
@@ -86,6 +90,10 @@ func rawString(m map[string]json.RawMessage, k string, out *string) bool {
 func rawStrings(m map[string]json.RawMessage, k string, out *[]string) bool {
 	v, ok := m[k]
 	return ok && json.Unmarshal(v, out) == nil && len(*out) > 0
+}
+func explicitNull(m map[string]json.RawMessage, key string) bool {
+	raw, ok := m[key]
+	return ok && string(raw) == "null"
 }
 func (s *Server) runNodeCommand(w http.ResponseWriter, r *http.Request, c assetstore.NodeCommand, fn func(context.Context, assetstore.NodeCommand) (assetstore.NodeCommandResult, error)) {
 	if s.nodeAssets == nil {

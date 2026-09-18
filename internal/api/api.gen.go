@@ -2702,11 +2702,11 @@ type GatewayCounts struct {
 
 // GatewayEditRequest defines model for GatewayEditRequest.
 type GatewayEditRequest struct {
-	CommandId          openapi_types.UUID  `json:"command_id"`
-	DisplayName        *DisplayName        `json:"display_name,omitempty"`
-	ExpectedRevision   AssetRevision       `json:"expected_revision"`
-	ManagementEndpoint *ManagementEndpoint `json:"management_endpoint,omitempty"`
-	ReaderSecretRef    *string             `json:"reader_secret_ref,omitempty"`
+	CommandId           openapi_types.UUID  `json:"command_id"`
+	DirectoryCredential *string             `json:"directory_credential,omitempty"`
+	DisplayName         *DisplayName        `json:"display_name,omitempty"`
+	ExpectedRevision    AssetRevision       `json:"expected_revision"`
+	ManagementEndpoint  *ManagementEndpoint `json:"management_endpoint,omitempty"`
 }
 
 // GatewayEditResult defines model for GatewayEditResult.
@@ -2730,11 +2730,11 @@ type GatewayProbeResultResult string
 
 // GatewayRegisterRequest defines model for GatewayRegisterRequest.
 type GatewayRegisterRequest struct {
-	CommandId          openapi_types.UUID `json:"command_id"`
-	DisplayName        DisplayName        `json:"display_name"`
-	ManagementEndpoint ManagementEndpoint `json:"management_endpoint"`
-	NewInstanceId      openapi_types.UUID `json:"new_instance_id"`
-	ReaderSecretRef    *string            `json:"reader_secret_ref,omitempty"`
+	CommandId           openapi_types.UUID `json:"command_id"`
+	DirectoryCredential *string            `json:"directory_credential,omitempty"`
+	DisplayName         DisplayName        `json:"display_name"`
+	ManagementEndpoint  ManagementEndpoint `json:"management_endpoint"`
+	NewInstanceId       openapi_types.UUID `json:"new_instance_id"`
 }
 
 // GatewayRegisterResult defines model for GatewayRegisterResult.
@@ -2748,12 +2748,12 @@ type GatewayRegisterResultResult string
 
 // GatewayReplaceRequest defines model for GatewayReplaceRequest.
 type GatewayReplaceRequest struct {
-	CommandId          openapi_types.UUID `json:"command_id"`
-	DisplayName        DisplayName        `json:"display_name"`
-	ExpectedRevision   AssetRevision      `json:"expected_revision"`
-	ManagementEndpoint ManagementEndpoint `json:"management_endpoint"`
-	NewInstanceId      openapi_types.UUID `json:"new_instance_id"`
-	ReaderSecretRef    *string            `json:"reader_secret_ref,omitempty"`
+	CommandId           openapi_types.UUID `json:"command_id"`
+	DirectoryCredential *string            `json:"directory_credential,omitempty"`
+	DisplayName         DisplayName        `json:"display_name"`
+	ExpectedRevision    AssetRevision      `json:"expected_revision"`
+	ManagementEndpoint  ManagementEndpoint `json:"management_endpoint"`
+	NewInstanceId       openapi_types.UUID `json:"new_instance_id"`
 }
 
 // GatewayReplaceResult defines model for GatewayReplaceResult.
@@ -3156,11 +3156,11 @@ type NodeDuplicateHistoryResponseInvolvement string
 
 // NodeEditRequest defines model for NodeEditRequest.
 type NodeEditRequest struct {
-	CommandId          openapi_types.UUID  `json:"command_id"`
-	DisplayName        *DisplayName        `json:"display_name,omitempty"`
-	ExpectedRevision   AssetRevision       `json:"expected_revision"`
-	ManagementEndpoint *ManagementEndpoint `json:"management_endpoint,omitempty"`
-	ReaderSecretRef    *string             `json:"reader_secret_ref,omitempty"`
+	CommandId            openapi_types.UUID  `json:"command_id"`
+	DisplayName          *DisplayName        `json:"display_name,omitempty"`
+	ExpectedRevision     AssetRevision       `json:"expected_revision"`
+	ManagementCredential *string             `json:"management_credential,omitempty"`
+	ManagementEndpoint   *ManagementEndpoint `json:"management_endpoint,omitempty"`
 }
 
 // NodeInventoryProviderState defines model for NodeInventoryProviderState.
@@ -3255,10 +3255,10 @@ type NodeRegisterRequest struct {
 	CommandId             openapi_types.UUID    `json:"command_id"`
 	DisplayName           DisplayName           `json:"display_name"`
 	DriverContractVersion DriverContractVersion `json:"driver_contract_version"`
+	ManagementCredential  *string               `json:"management_credential,omitempty"`
 	ManagementEndpoint    ManagementEndpoint    `json:"management_endpoint"`
 	NewInstanceId         openapi_types.UUID    `json:"new_instance_id"`
 	NodeType              NodeType              `json:"node_type"`
-	ReaderSecretRef       *string               `json:"reader_secret_ref,omitempty"`
 }
 
 // NodeRelayBindingResponse defines model for NodeRelayBindingResponse.
@@ -3284,10 +3284,10 @@ type NodeReplaceRequest struct {
 	DisplayName           DisplayName           `json:"display_name"`
 	DriverContractVersion DriverContractVersion `json:"driver_contract_version"`
 	ExpectedRevision      AssetRevision         `json:"expected_revision"`
+	ManagementCredential  *string               `json:"management_credential,omitempty"`
 	ManagementEndpoint    ManagementEndpoint    `json:"management_endpoint"`
 	NewInstanceId         openapi_types.UUID    `json:"new_instance_id"`
 	NodeType              NodeType              `json:"node_type"`
-	ReaderSecretRef       *string               `json:"reader_secret_ref,omitempty"`
 }
 
 // NodeReplaceResult defines model for NodeReplaceResult.

@@ -104,11 +104,11 @@ func (s *Server) RegisterGatewayAsset(w http.ResponseWriter, r *http.Request, pa
 	if !ok {
 		return
 	}
-	body, ok := decodeGatewayObject(w, r, "command_id", "new_instance_id", "display_name", "management_endpoint", "reader_secret_ref")
+	body, ok := decodeGatewayObject(w, r, "command_id", "new_instance_id", "display_name", "management_endpoint", "directory_credential")
 	if !ok {
 		return
 	}
-	command := assetstore.GatewayCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), Secret: secretPatch(body, "reader_secret_ref")}
+	command := assetstore.GatewayCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), Secret: secretPatch(body, "directory_credential")}
 	if !requiredUUID(body, "command_id", &command.CommandID) || !requiredUUID(body, "new_instance_id", &command.NewInstanceID) || !requiredString(body, "display_name", &command.DisplayName) || !requiredString(body, "management_endpoint", &command.ManagementEndpoint) {
 		gatewayError(w, r, s, assetstore.ErrInvalidGateway)
 		return
@@ -122,11 +122,15 @@ func (s *Server) EditGatewayAsset(w http.ResponseWriter, r *http.Request, instan
 	if !ok {
 		return
 	}
-	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "display_name", "management_endpoint", "reader_secret_ref")
+	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "display_name", "management_endpoint", "directory_credential")
 	if !ok {
 		return
 	}
-	command := assetstore.GatewayCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(instanceID), DisplayName: optionalString(body, "display_name"), ManagementEndpoint: optionalString(body, "management_endpoint"), Secret: secretPatch(body, "reader_secret_ref")}
+	secret := secretPatch(body, "directory_credential")
+	if secret.Operation == assetstore.SecretExplicitNull {
+		secret.Operation = assetstore.SecretClear
+	}
+	command := assetstore.GatewayCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(instanceID), DisplayName: optionalString(body, "display_name"), ManagementEndpoint: optionalString(body, "management_endpoint"), Secret: secret}
 	if !requiredUUID(body, "command_id", &command.CommandID) || !requiredRevision(body, "expected_revision", &command.ExpectedRevision) {
 		gatewayError(w, r, s, assetstore.ErrInvalidGateway)
 		return
@@ -158,11 +162,11 @@ func (s *Server) ReplaceGatewayAsset(w http.ResponseWriter, r *http.Request, ins
 	if !ok {
 		return
 	}
-	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "new_instance_id", "display_name", "management_endpoint", "reader_secret_ref")
+	body, ok := decodeGatewayObject(w, r, "command_id", "expected_revision", "new_instance_id", "display_name", "management_endpoint", "directory_credential")
 	if !ok {
 		return
 	}
-	command := assetstore.GatewayCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(instanceID), Secret: secretPatch(body, "reader_secret_ref")}
+	command := assetstore.GatewayCommand{ActorAdminID: session.AdminID, RequestID: s.requestID(r), InstanceID: uuid.UUID(instanceID), Secret: secretPatch(body, "directory_credential")}
 	if !requiredUUID(body, "command_id", &command.CommandID) || !requiredUUID(body, "new_instance_id", &command.NewInstanceID) || !requiredRevision(body, "expected_revision", &command.ExpectedRevision) || !requiredString(body, "display_name", &command.DisplayName) || !requiredString(body, "management_endpoint", &command.ManagementEndpoint) {
 		gatewayError(w, r, s, assetstore.ErrInvalidGateway)
 		return
@@ -355,10 +359,10 @@ func secretPatch(body map[string]json.RawMessage, key string) assetstore.SecretP
 		return assetstore.SecretPatch{Operation: assetstore.SecretAbsent}
 	}
 	if string(raw) == "null" {
-		return assetstore.SecretPatch{Operation: assetstore.SecretClear}
+		return assetstore.SecretPatch{Operation: assetstore.SecretExplicitNull}
 	}
 	var value string
-	if json.Unmarshal(raw, &value) != nil || value == "" || len(value) > 1024 {
+	if json.Unmarshal(raw, &value) != nil {
 		return assetstore.SecretPatch{Operation: "invalid"}
 	}
 	return assetstore.SecretPatch{Operation: assetstore.SecretSet, Value: value}

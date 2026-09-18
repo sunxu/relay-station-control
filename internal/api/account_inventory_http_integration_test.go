@@ -358,6 +358,10 @@ func TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrent
 		'docker-secret://synthetic/retention-reader');
 		INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability)
 		VALUES($1,'cliproxy.api','v1','management_account_inventory_read');
+		WITH boundary AS (SELECT clock_timestamp() AS at)
+		INSERT INTO relay_node_inventory_monitoring_activations(
+			instance_id,effective_from,reason,actor,created_at
+		) SELECT $1,at,'deployment_enable','account-retention-http',at FROM boundary;
 		INSERT INTO provider_inventory_policy_versions(
 		policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by
 	) VALUES($2,'cliproxy.api','v1',ARRAY['openai'],ARRAY[]::text[],'account-retention-http');

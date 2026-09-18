@@ -4,7 +4,6 @@ import {
   Alert,
   Button,
   Card,
-  Checkbox,
   Form,
   Descriptions,
   Input,
@@ -41,9 +40,9 @@ const pageSize = 50;
 type GatewayFormValues = {
   display_name: string;
   management_endpoint: string;
-  reader_secret_ref?: string;
+  credential?: string;
   new_instance_id?: string;
-  clear_secret?: boolean;
+  credential_action?: "keep" | "set" | "clear";
 };
 
 type NodeFormValues = {
@@ -53,9 +52,17 @@ type NodeFormValues = {
   node_type: string;
   driver_contract_version: string;
   capabilities: NodeCapability[];
-  reader_secret_ref?: string;
-  clear_secret?: boolean;
+  credential?: string;
+  credential_action?: "keep" | "set" | "clear";
 };
+
+type CredentialAction = "keep" | "set" | "clear" | undefined;
+
+export function buildCredentialPatch(field: "management_credential" | "directory_credential", action: CredentialAction, credential?: string): Record<string, string | null> {
+  if (action === "clear") return { [field]: null };
+  if (action === "set") return { [field]: credential ?? "" };
+  return {};
+}
 
 function commandId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -129,9 +136,9 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
       display_name: asset.display_name,
       management_endpoint: asset.management_endpoint,
       new_instance_id: undefined,
-      reader_secret_ref: undefined,
-      clear_secret: false,
-    } : { display_name: "", management_endpoint: "http://", new_instance_id: "", reader_secret_ref: undefined, clear_secret: false });
+      credential: undefined,
+      credential_action: "keep",
+    } : { display_name: "", management_endpoint: "http://", new_instance_id: "", credential: undefined, credential_action: "set" });
   };
 
   const submit = async (values: GatewayFormValues) => {
@@ -139,11 +146,11 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
     setBusy(true);
     try {
       if (modal === "register") {
-        await api.register({ command_id: commandId(), new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, reader_secret_ref: values.reader_secret_ref || null }, csrfToken);
+        await api.register({ command_id: commandId(), new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, ...(values.credential ? { directory_credential: values.credential } : {}) }, csrfToken);
       } else if (modal === "edit" && selected) {
-        await api.edit(selected.instance_id, { command_id: commandId(), expected_revision: selected.revision, display_name: values.display_name, management_endpoint: values.management_endpoint, ...(values.clear_secret ? { reader_secret_ref: null } : values.reader_secret_ref ? { reader_secret_ref: values.reader_secret_ref } : {}) }, csrfToken);
+        await api.edit(selected.instance_id, { command_id: commandId(), expected_revision: selected.revision, display_name: values.display_name, management_endpoint: values.management_endpoint, ...buildCredentialPatch("directory_credential", values.credential_action, values.credential) }, csrfToken);
       } else if (modal === "replace" && selected) {
-        await api.replace(selected.instance_id, { command_id: commandId(), expected_revision: selected.revision, new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, reader_secret_ref: values.reader_secret_ref || null }, csrfToken);
+        await api.replace(selected.instance_id, { command_id: commandId(), expected_revision: selected.revision, new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, ...(values.credential ? { directory_credential: values.credential } : {}) }, csrfToken);
       }
       setModal(undefined);
       await refresh();
@@ -209,8 +216,8 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
         {modal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" rules={[{ required: true, message: "请输入 UUID" }]}><Input placeholder="UUID" /></Form.Item>}
         <Form.Item name="display_name" label="显示名称" rules={[{ required: true, message: "请输入显示名称" }]}><Input maxLength={100} /></Form.Item>
         <Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://gateway:8317" /></Form.Item>
-        <Form.Item name="reader_secret_ref" label="Reader Secret reference（可选）" extra="仅提交引用；页面不会回显已保存的 Secret reference。"><Input.Password autoComplete="new-password" placeholder={modal === "edit" ? "留空表示不修改" : "可选"} /></Form.Item>
-        {modal === "edit" && <Form.Item name="clear_secret" valuePropName="checked"><Checkbox>清除已保存的 Secret reference</Checkbox></Form.Item>}
+        <Form.Item name="credential" label="Directory credential（可选）" dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (modal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error("请输入新的 credential"); } })]} extra="不会回显已保存的 credential。"><Input.Password autoComplete="new-password" placeholder={modal === "edit" ? "按操作选择" : "可选"} /></Form.Item>
+        {modal === "edit" && <Form.Item name="credential_action" label="Credential 操作"><Select options={[{ value: "keep", label: "Keep existing" }, { value: "set", label: "Set new credential" }, { value: "clear", label: "Clear credential" }]} /></Form.Item>}
       </Form>
     </Modal>
     <Modal open={Boolean(detail)} title="Gateway 详情" footer={null} onCancel={() => setDetail(undefined)}>
@@ -327,8 +334,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			driver_contract_version: node.driverContractVersion,
 			capabilities: node.capabilities as NodeCapability[],
 			new_instance_id: undefined,
-			reader_secret_ref: undefined,
-			clear_secret: false,
+      credential: undefined,
+      credential_action: "keep",
 		} : {
 			display_name: node?.displayName ?? "",
 			management_endpoint: node?.managementEndpoint ?? "http://",
@@ -336,8 +343,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			driver_contract_version: initialDriver?.driverContractVersion ?? "",
 			capabilities: (initialDriver?.capabilities ?? []) as NodeCapability[],
 			new_instance_id: instanceId(),
-			reader_secret_ref: undefined,
-			clear_secret: false,
+      credential: undefined,
+      credential_action: "set",
 		});
 	};
 	const submitNode = async (values: NodeFormValues) => {
@@ -346,11 +353,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 		try {
 			const capabilities = values.capabilities;
 			if (nodeModal === "register" && api.registerNode) {
-				await api.registerNode({ command_id: commandId(), new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, node_type: values.node_type, driver_contract_version: values.driver_contract_version, capabilities, ...(values.reader_secret_ref ? { reader_secret_ref: values.reader_secret_ref } : {}) }, csrfToken);
+        await api.registerNode({ command_id: commandId(), new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, node_type: values.node_type, driver_contract_version: values.driver_contract_version, capabilities, ...(values.credential ? { management_credential: values.credential } : {}) }, csrfToken);
 			} else if (nodeModal === "edit" && selectedNode && api.editNode) {
-				await api.editNode(selectedNode.instanceId, { command_id: commandId(), expected_revision: selectedNode.revision, display_name: values.display_name, management_endpoint: values.management_endpoint, ...(values.clear_secret ? { reader_secret_ref: null } : values.reader_secret_ref ? { reader_secret_ref: values.reader_secret_ref } : {}) }, csrfToken);
+        await api.editNode(selectedNode.instanceId, { command_id: commandId(), expected_revision: selectedNode.revision, display_name: values.display_name, management_endpoint: values.management_endpoint, ...buildCredentialPatch("management_credential", values.credential_action, values.credential) }, csrfToken);
 			} else if (nodeModal === "replace" && selectedNode && api.replaceNode) {
-				await api.replaceNode(selectedNode.instanceId, { command_id: commandId(), expected_revision: selectedNode.revision, new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, node_type: values.node_type, driver_contract_version: values.driver_contract_version, capabilities, ...(values.reader_secret_ref ? { reader_secret_ref: values.reader_secret_ref } : {}) }, csrfToken);
+        await api.replaceNode(selectedNode.instanceId, { command_id: commandId(), expected_revision: selectedNode.revision, new_instance_id: values.new_instance_id!, display_name: values.display_name, management_endpoint: values.management_endpoint, node_type: values.node_type, driver_contract_version: values.driver_contract_version, capabilities, ...(values.credential ? { management_credential: values.credential } : {}) }, csrfToken);
 			}
 			setNodeModal(undefined);
 			await nodes.refetch();
@@ -505,7 +512,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
                 <Descriptions.Item label="名称">{gateway.data.gateway.displayName}</Descriptions.Item>
                 <Descriptions.Item label="Instance ID"><Text code>{gateway.data.gateway.instanceId}</Text></Descriptions.Item>
                 <Descriptions.Item label="Endpoint"><Text code className="asset-endpoint">{gateway.data.gateway.managementEndpoint}</Text></Descriptions.Item>
-                <Descriptions.Item label="Reader Secret">{gateway.data.gateway.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
+                <Descriptions.Item label="Credential">{gateway.data.gateway.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
                 <Descriptions.Item label="更新时间">{formatDateTime(gateway.data.gateway.updatedAt)}</Descriptions.Item>
               </Descriptions>
             ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未登记 Gateway" />}
@@ -622,8 +629,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 					<Form.Item name="driver_contract_version" label="Driver 合约" rules={[{ required: true }]}><Select data-testid="node-register-driver-contract" options={contractOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === nodeTypeValue && driver.driverContractVersion === value); nodeForm.setFieldsValue({ capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
 					<Form.Item name="capabilities" label="Capabilities" rules={[{ required: true }]}><Select data-testid="node-register-capabilities" mode="multiple" options={(selectedDriver?.capabilities ?? []).map((value) => ({ value, label: value }))} /></Form.Item>
 				</>}
-				<Form.Item name="reader_secret_ref" label="Reader Secret reference（可选）"><Input.Password autoComplete="new-password" /></Form.Item>
-				{nodeModal === "edit" && <Form.Item name="clear_secret" valuePropName="checked"><Checkbox>清除已保存的 Secret reference</Checkbox></Form.Item>}
+                <Form.Item name="credential" label="Management credential（可选）" dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (nodeModal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error("请输入新的 credential"); } })]}><Input.Password autoComplete="new-password" /></Form.Item>
+				{nodeModal === "edit" && <Form.Item name="credential_action" label="Credential 操作"><Select options={[{ value: "keep", label: "Keep existing" }, { value: "set", label: "Set new credential" }, { value: "clear", label: "Clear credential" }]} /></Form.Item>}
 			</Form>
 		</Modal>
 		<Modal open={Boolean(nodeDetail)} title="Node 详情" footer={null} onCancel={() => { nodeDetailRequestRef.current += 1; setNodeDetail(undefined); setProbeObservation(undefined); setMonitoringResult(undefined); setNodeOperationBusy(undefined); setNodeMessage(undefined); }}>

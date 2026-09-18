@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { AssetApi, DriverAsset, GatewayState, NodeAsset, NodeMonitoringResult, NodeProbeResult, ProviderPolicyState } from "../api/asset-types";
 import { AssetApiError } from "../api/asset-types";
-import { AssetRegistryView } from "./AssetRegistryView";
+import { AssetRegistryView, buildCredentialPatch } from "./AssetRegistryView";
 
 const drivers: DriverAsset[] = [{
   nodeType: "cliproxyapi",
@@ -102,6 +102,17 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("asset registry read-only view", () => {
+	it("builds explicit credential tri-state without truthiness coercion", () => {
+		expect(buildCredentialPatch("management_credential", "keep", "stale-secret")).toEqual({});
+		expect(buildCredentialPatch("management_credential", "set", "new-secret")).toEqual({ management_credential: "new-secret" });
+		expect(buildCredentialPatch("management_credential", "set", "")).toEqual({ management_credential: "" });
+		expect(buildCredentialPatch("management_credential", "clear")).toEqual({ management_credential: null });
+		expect(buildCredentialPatch("directory_credential", "keep", "stale-secret")).toEqual({});
+		expect(buildCredentialPatch("directory_credential", "set", "new-secret")).toEqual({ directory_credential: "new-secret" });
+		expect(buildCredentialPatch("directory_credential", "set", "")).toEqual({ directory_credential: "" });
+		expect(buildCredentialPatch("directory_credential", "clear")).toEqual({ directory_credential: null });
+	});
+
   it("renders independent empty states without editing controls", async () => {
     const api = makeApi();
     vi.mocked(api.gateway).mockResolvedValue({ status: "not_configured", gateway: null });
@@ -126,14 +137,14 @@ describe("asset registry read-only view", () => {
     expect(api.currentProviderPolicy).toHaveBeenCalledWith({ nodeType: "cliproxyapi", driverContractVersion: "v1" });
   });
 
-  it("renders normalized cards, local times and non-clickable endpoints without secret references", async () => {
+	it("renders normalized cards, local times and non-clickable endpoints without credentials", async () => {
     const api = makeApi();
     vi.mocked(api.gateway).mockResolvedValue({
       ...gateway,
-      gateway: { ...gateway.gateway!, reader_secret_ref: "vault://CANARY-GATEWAY-SECRET" },
+      gateway: { ...gateway.gateway! },
     } as GatewayState);
     vi.mocked(api.nodes).mockResolvedValue({
-      items: [{ ...firstNode, reader_secret_ref: "vault://CANARY-NODE-SECRET" } as NodeAsset],
+      items: [{ ...firstNode }],
       nextCursor: null,
     });
 

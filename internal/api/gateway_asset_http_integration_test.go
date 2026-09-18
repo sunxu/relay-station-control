@@ -75,7 +75,7 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := assetstore.NewGatewayLifecycleRepository(runtime, []byte("01234567890123456789012345678901"))
+	manager, err := assetstore.NewGatewayLifecycleRepositoryWithSealer(runtime, []byte("01234567890123456789012345678901"), apiTestCredentialSealer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,15 +120,18 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 	}
 
 	for _, invalidSecret := range []string{
-		"http://secret", "https://secret", "vault://has space", "vault://has\tcontrol",
-		"vault://has?query", "vault://has#fragment", "vault://has@identity",
+		"", "has\nnewline", "has\rreturn", "has\x00nul",
 	} {
-		body := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Invalid Secret","management_endpoint":"http://invalid-secret.example","reader_secret_ref":%q}`,
+		body := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Invalid Secret","management_endpoint":"http://invalid-secret.example","directory_credential":%q}`,
 			uuid.New(), uuid.New(), invalidSecret)
 		response := do(http.MethodPost, "/api/assets/gateways", body, csrf)
-		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		if response.Code != http.StatusBadRequest || (!strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) && !strings.Contains(response.Body.String(), `"code":"validation_failed"`)) {
 			t.Fatalf("invalid secret %q status=%d body=%s", invalidSecret, response.Code, response.Body.String())
 		}
+	}
+	nullRegister := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Null Secret","management_endpoint":"http://null-secret.example","directory_credential":null}`, uuid.New(), uuid.New())
+	if response := do(http.MethodPost, "/api/assets/gateways", nullRegister, csrf); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		t.Fatalf("null register credential status=%d body=%s", response.Code, response.Body.String())
 	}
 	var rejectedRows, rejectedReceipts, rejectedAudits int
 	if err := owner.QueryRow(ctx, `SELECT count(*) FROM gateway_instances`).Scan(&rejectedRows); err != nil {
@@ -146,10 +149,10 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 
 	firstID := uuid.New()
 	registerCommandID := uuid.New()
-	registerBody := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Gateway A","management_endpoint":%q,"reader_secret_ref":"vault://valid/reference"}`,
+	registerBody := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Gateway A","management_endpoint":%q,"directory_credential":"gateway-secret-alpha"}`,
 		registerCommandID, firstID, probeServer.URL)
 	registered := do(http.MethodPost, "/api/assets/gateways", registerBody, csrf)
-	if registered.Code != http.StatusCreated || strings.Contains(registered.Body.String(), "reader_secret_ref") {
+	if registered.Code != http.StatusCreated || strings.Contains(registered.Body.String(), "directory_credential") {
 		t.Fatalf("register status=%d body=%s", registered.Code, registered.Body.String())
 	}
 	registerReplay := do(http.MethodPost, "/api/assets/gateways", registerBody, csrf)
@@ -188,9 +191,9 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 	actorMismatchRequests := []struct {
 		name, method, path, body string
 	}{
-		{"invalid endpoint", http.MethodPost, "/api/assets/gateways", fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Actor mismatch","management_endpoint":"https://invalid.example","reader_secret_ref":"vault://valid/reference"}`, registerCommandID, uuid.New())},
-		{"invalid secret", http.MethodPost, "/api/assets/gateways", fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Actor mismatch","management_endpoint":"http://valid.example","reader_secret_ref":"http://invalid-secret"}`, registerCommandID, uuid.New())},
-		{"missing K1", http.MethodPost, "/api/assets/gateways", fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Actor mismatch","management_endpoint":"http://valid.example","reader_secret_ref":"vault://valid/reference"}`, registerCommandID, uuid.New())},
+		{"invalid endpoint", http.MethodPost, "/api/assets/gateways", fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Actor mismatch","management_endpoint":"https://invalid.example","directory_credential":"gateway-secret-alpha"}`, registerCommandID, uuid.New())},
+		{"invalid secret", http.MethodPost, "/api/assets/gateways", fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Actor mismatch","management_endpoint":"http://valid.example","directory_credential":""}`, registerCommandID, uuid.New())},
+		{"missing K1", http.MethodPost, "/api/assets/gateways", fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Actor mismatch","management_endpoint":"http://valid.example","directory_credential":"gateway-secret-alpha"}`, registerCommandID, uuid.New())},
 		{"stale revision", http.MethodPatch, "/api/assets/gateways/" + firstID.String(), fmt.Sprintf(`{"command_id":"%s","expected_revision":"999","display_name":"Actor mismatch"}`, registerCommandID)},
 		{"retired target", http.MethodPost, "/api/assets/gateways/" + uuid.NewString() + "/retire", fmt.Sprintf(`{"command_id":"%s","expected_revision":"1"}`, registerCommandID)},
 	}
@@ -254,20 +257,44 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 	if edited.Code != http.StatusOK || !strings.Contains(edited.Body.String(), `"revision":"2"`) {
 		t.Fatalf("edit status=%d body=%s", edited.Code, edited.Body.String())
 	}
+	setBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"2","directory_credential":"gateway-secret-beta"}`, uuid.New())
+	set := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), setBody, csrf)
+	if set.Code != http.StatusOK || !strings.Contains(set.Body.String(), `"revision":"3"`) || !strings.Contains(set.Body.String(), `"secret_configured":true`) || strings.Contains(set.Body.String(), "gateway-secret-beta") {
+		t.Fatalf("credential set status=%d body=%s", set.Code, set.Body.String())
+	}
+	clearBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"3","directory_credential":null}`, uuid.New())
+	cleared := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), clearBody, csrf)
+	if cleared.Code != http.StatusOK || !strings.Contains(cleared.Body.String(), `"revision":"4"`) || !strings.Contains(cleared.Body.String(), `"secret_configured":false`) {
+		t.Fatalf("credential clear status=%d body=%s", cleared.Code, cleared.Body.String())
+	}
+	boundary4096 := strings.Repeat("a", 4093) + "€"
+	set4096 := fmt.Sprintf(`{"command_id":"%s","expected_revision":"4","directory_credential":%q}`, uuid.New(), boundary4096)
+	if response := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), set4096, csrf); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"revision":"5"`) {
+		t.Fatalf("4096-byte credential status=%d body=%s", response.Code, response.Body.String())
+	}
+	over4096 := strings.Repeat("a", 4094) + "€"
+	set4097 := fmt.Sprintf(`{"command_id":"%s","expected_revision":"5","directory_credential":%q}`, uuid.New(), over4096)
+	if response := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), set4097, csrf); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		t.Fatalf("4097-byte credential status=%d body=%s", response.Code, response.Body.String())
+	}
 	stale := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), fmt.Sprintf(`{"command_id":"%s","expected_revision":"1","display_name":"stale"}`, uuid.New()), csrf)
 	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), `"code":"stale_revision"`) {
 		t.Fatalf("stale edit status=%d body=%s", stale.Code, stale.Body.String())
 	}
-	invalidHTTPS := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), fmt.Sprintf(`{"command_id":"%s","expected_revision":"2","management_endpoint":"https://gateway.example"}`, uuid.New()), csrf)
+	invalidHTTPS := do(http.MethodPatch, "/api/assets/gateways/"+firstID.String(), fmt.Sprintf(`{"command_id":"%s","expected_revision":"4","management_endpoint":"https://gateway.example"}`, uuid.New()), csrf)
 	if invalidHTTPS.Code != http.StatusBadRequest || !strings.Contains(invalidHTTPS.Body.String(), `"code":"invalid_endpoint"`) || strings.Contains(invalidHTTPS.Body.String(), "https://") {
 		t.Fatalf("https edit status=%d body=%s", invalidHTTPS.Code, invalidHTTPS.Body.String())
 	}
+	nullReplace := fmt.Sprintf(`{"command_id":"%s","expected_revision":"5","new_instance_id":"%s","display_name":"Invalid replacement","management_endpoint":"http://invalid-replacement.example","directory_credential":null}`, uuid.New(), uuid.New())
+	if response := do(http.MethodPost, "/api/assets/gateways/"+firstID.String()+"/replace", nullReplace, csrf); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		t.Fatalf("null replace credential status=%d body=%s", response.Code, response.Body.String())
+	}
 
 	secondID := uuid.New()
-	replaceBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"2","new_instance_id":"%s","display_name":"Gateway B","management_endpoint":"http://gateway-b.example"}`,
+	replaceBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"5","new_instance_id":"%s","display_name":"Gateway B","management_endpoint":"http://gateway-b.example","directory_credential":"gateway-secret-replacement"}`,
 		uuid.New(), secondID)
 	replaced := do(http.MethodPost, "/api/assets/gateways/"+firstID.String()+"/replace", replaceBody, csrf)
-	if replaced.Code != http.StatusOK || !strings.Contains(replaced.Body.String(), secondID.String()) {
+	if replaced.Code != http.StatusOK || !strings.Contains(replaced.Body.String(), secondID.String()) || !strings.Contains(replaced.Body.String(), `"secret_configured":true`) || strings.Contains(replaced.Body.String(), "gateway-secret-replacement") {
 		t.Fatalf("replace status=%d body=%s", replaced.Code, replaced.Body.String())
 	}
 	replaceReplay := do(http.MethodPost, "/api/assets/gateways/"+firstID.String()+"/replace", replaceBody, csrf)
@@ -300,8 +327,8 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 	if err = owner.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE category='asset_gateway' AND action IN ('gateway.register','gateway.edit','gateway.retire','gateway.replace') AND result='success'`).Scan(&auditCount); err != nil {
 		t.Fatal(err)
 	}
-	if receiptCount != 4 || auditCount != 4 {
-		t.Fatalf("receipt/audit count=%d/%d, want 4/4", receiptCount, auditCount)
+	if receiptCount != 7 || auditCount != 7 {
+		t.Fatalf("receipt/audit count=%d/%d, want 7/7", receiptCount, auditCount)
 	}
 	if _, err = owner.Exec(ctx, `ALTER TABLE asset_admin_command_receipts DISABLE TRIGGER asset_admin_command_receipts_immutable`); err != nil {
 		t.Fatal(err)
@@ -309,7 +336,7 @@ func TestGatewayAssetHTTPRoutesAndMutationSecurityPG(t *testing.T) {
 	if _, err = owner.Exec(ctx, `ALTER TABLE asset_admin_command_receipts DROP CONSTRAINT asset_admin_command_receipts_encoding_check`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = owner.Exec(ctx, `UPDATE asset_admin_command_receipts SET intent_encoding_version=2 WHERE command_id=$1`, registerCommandID); err != nil {
+	if _, err = owner.Exec(ctx, `UPDATE asset_admin_command_receipts SET intent_encoding_version=99 WHERE command_id=$1`, registerCommandID); err != nil {
 		t.Fatal(err)
 	}
 	unknownEncoding := do(http.MethodPost, "/api/assets/gateways", registerBody, csrf)

@@ -644,11 +644,11 @@ export interface GatewayRegisterRequest {
   display_name: DisplayName;
   management_endpoint: ManagementEndpoint;
   /**
-     * @minLength 6
-     * @maxLength 512
+     * @minLength 1
+     * @maxLength 4096
      * @nullable
      */
-  reader_secret_ref?: string | null;
+  directory_credential?: string | null;
 }
 
 export interface GatewayEditRequest {
@@ -657,11 +657,11 @@ export interface GatewayEditRequest {
   display_name?: DisplayName;
   management_endpoint?: ManagementEndpoint;
   /**
-     * @minLength 6
-     * @maxLength 512
+     * @minLength 1
+     * @maxLength 4096
      * @nullable
      */
-  reader_secret_ref?: string | null;
+  directory_credential?: string | null;
 }
 
 export interface GatewayRetireRequest {
@@ -676,11 +676,11 @@ export interface GatewayReplaceRequest {
   display_name: DisplayName;
   management_endpoint: ManagementEndpoint;
   /**
-     * @minLength 6
-     * @maxLength 512
+     * @minLength 1
+     * @maxLength 4096
      * @nullable
      */
-  reader_secret_ref?: string | null;
+  directory_credential?: string | null;
 }
 
 export type GatewayRegisterResultResult = typeof GatewayRegisterResultResult[keyof typeof GatewayRegisterResultResult];
@@ -926,11 +926,11 @@ export interface NodeRegisterRequest {
   /** @minItems 1 */
   capabilities: NodeCapability[];
   /**
-     * @minLength 6
-     * @maxLength 512
+     * @minLength 1
+     * @maxLength 4096
      * @nullable
      */
-  reader_secret_ref?: string | null;
+  management_credential?: string | null;
 }
 
 export interface NodeEditRequest {
@@ -939,11 +939,11 @@ export interface NodeEditRequest {
   display_name?: DisplayName;
   management_endpoint?: ManagementEndpoint;
   /**
-     * @minLength 6
-     * @maxLength 512
+     * @minLength 1
+     * @maxLength 4096
      * @nullable
      */
-  reader_secret_ref?: string | null;
+  management_credential?: string | null;
 }
 
 export interface NodeRetireRequest {

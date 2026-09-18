@@ -75,7 +75,7 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := assetstore.NewNodeLifecycleRepository(runtime, []byte("01234567890123456789012345678901"))
+	manager, err := assetstore.NewNodeLifecycleRepositoryWithSealer(runtime, []byte("01234567890123456789012345678901"), apiTestCredentialSealer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +120,10 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 	}
 	registerBodies := make([]string, len(ids))
 	for index, id := range ids {
-		registerBodies[index] = fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Node %d","management_endpoint":"http://node-%d.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read","management_health_read"],"reader_secret_ref":"vault://node/%d"}`,
+		registerBodies[index] = fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Node %d","management_endpoint":"http://node-%d.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read","management_health_read"],"management_credential":"node-secret-%d"}`,
 			uuid.New(), id, index+1, index+1, index+1)
 		response := do(http.MethodPost, "/api/assets/nodes", registerBodies[index], csrf)
-		if response.Code != http.StatusCreated || strings.Contains(response.Body.String(), "reader_secret_ref") || !strings.Contains(response.Body.String(), `"revision":"1"`) {
+		if response.Code != http.StatusCreated || strings.Contains(response.Body.String(), "management_credential") || !strings.Contains(response.Body.String(), `"revision":"1"`) {
 			t.Fatalf("register %d status=%d body=%s", index, response.Code, response.Body.String())
 		}
 		if index == 0 {
@@ -132,6 +132,10 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 				t.Fatalf("register replay status=%d body=%s", replay.Code, replay.Body.String())
 			}
 		}
+	}
+	nullRegister := fmt.Sprintf(`{"command_id":"%s","new_instance_id":"%s","display_name":"Null Secret","management_endpoint":"http://null-secret.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_health_read"],"management_credential":null}`, uuid.New(), uuid.New())
+	if response := do(http.MethodPost, "/api/assets/nodes", nullRegister, csrf); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		t.Fatalf("null register credential status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	var beforeInvalidNodes, beforeInvalidReceipts, beforeInvalidAudits int
@@ -206,15 +210,39 @@ func TestNodeAssetHTTPRoutesLifecycleReplayAndCursorPG18(t *testing.T) {
 	if edited.Code != http.StatusOK || !strings.Contains(edited.Body.String(), `"revision":"2"`) {
 		t.Fatalf("edit status=%d body=%s", edited.Code, edited.Body.String())
 	}
+	setBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"2","management_credential":"node-secret-edited"}`, uuid.New())
+	set := do(http.MethodPatch, "/api/assets/nodes/"+ids[2].String(), setBody, csrf)
+	if set.Code != http.StatusOK || !strings.Contains(set.Body.String(), `"revision":"3"`) || !strings.Contains(set.Body.String(), `"secret_configured":true`) || strings.Contains(set.Body.String(), "node-secret-edited") {
+		t.Fatalf("credential set status=%d body=%s", set.Code, set.Body.String())
+	}
+	clearBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"3","management_credential":null}`, uuid.New())
+	cleared := do(http.MethodPatch, "/api/assets/nodes/"+ids[2].String(), clearBody, csrf)
+	if cleared.Code != http.StatusOK || !strings.Contains(cleared.Body.String(), `"revision":"4"`) || !strings.Contains(cleared.Body.String(), `"secret_configured":false`) {
+		t.Fatalf("credential clear status=%d body=%s", cleared.Code, cleared.Body.String())
+	}
+	boundary4096 := strings.Repeat("a", 4093) + "€"
+	set4096 := fmt.Sprintf(`{"command_id":"%s","expected_revision":"4","management_credential":%q}`, uuid.New(), boundary4096)
+	if response := do(http.MethodPatch, "/api/assets/nodes/"+ids[2].String(), set4096, csrf); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"revision":"5"`) {
+		t.Fatalf("4096-byte credential status=%d body=%s", response.Code, response.Body.String())
+	}
+	over4096 := strings.Repeat("a", 4094) + "€"
+	set4097 := fmt.Sprintf(`{"command_id":"%s","expected_revision":"5","management_credential":%q}`, uuid.New(), over4096)
+	if response := do(http.MethodPatch, "/api/assets/nodes/"+ids[2].String(), set4097, csrf); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		t.Fatalf("4097-byte credential status=%d body=%s", response.Code, response.Body.String())
+	}
 	staleCursor := do(http.MethodGet, "/api/assets/nodes?lifecycle=active&monitoring_active=false&limit=1&cursor="+url.QueryEscape(*page.NextCursor), "", "")
 	if staleCursor.Code != http.StatusConflict || !strings.Contains(staleCursor.Body.String(), `"code":"cursor_stale"`) {
 		t.Fatalf("stale cursor status=%d body=%s", staleCursor.Code, staleCursor.Body.String())
 	}
 
 	replacementID := uuid.MustParse("00000000-0000-4000-8000-000000000104")
-	replaceBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"1","new_instance_id":"%s","display_name":"Node replacement","management_endpoint":"http://replacement.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read"]}`, uuid.New(), replacementID)
+	nullReplace := fmt.Sprintf(`{"command_id":"%s","expected_revision":"1","new_instance_id":"%s","display_name":"Invalid replacement","management_endpoint":"http://invalid-replacement.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read"],"management_credential":null}`, uuid.New(), uuid.New())
+	if response := do(http.MethodPost, "/api/assets/nodes/"+ids[0].String()+"/replace", nullReplace, csrf); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"secret_configuration_invalid"`) {
+		t.Fatalf("null replace credential status=%d body=%s", response.Code, response.Body.String())
+	}
+	replaceBody := fmt.Sprintf(`{"command_id":"%s","expected_revision":"1","new_instance_id":"%s","display_name":"Node replacement","management_endpoint":"http://replacement.example","node_type":"cliproxyapi","driver_contract_version":"v1","capabilities":["management_account_inventory_read"],"management_credential":"node-secret-replacement"}`, uuid.New(), replacementID)
 	replaced := do(http.MethodPost, "/api/assets/nodes/"+ids[0].String()+"/replace", replaceBody, csrf)
-	if replaced.Code != http.StatusOK || !strings.Contains(replaced.Body.String(), replacementID.String()) {
+	if replaced.Code != http.StatusOK || !strings.Contains(replaced.Body.String(), replacementID.String()) || !strings.Contains(replaced.Body.String(), `"secret_configured":true`) || strings.Contains(replaced.Body.String(), "node-secret-replacement") {
 		t.Fatalf("replace status=%d body=%s", replaced.Code, replaced.Body.String())
 	}
 	detail := do(http.MethodGet, "/api/assets/nodes/"+ids[0].String(), "", "")

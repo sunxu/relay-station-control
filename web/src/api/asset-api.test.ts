@@ -23,7 +23,6 @@ describe("generated asset client adapter", () => {
           display_name: "Gateway",
           management_endpoint: "https://gateway.invalid:8443",
           secret_configured: true,
-          reader_secret_ref: "vault://CANARY-GATEWAY-SECRET",
           created_at: "2026-08-25T00:00:00Z",
           updated_at: "2026-08-25T00:00:00Z",
         },

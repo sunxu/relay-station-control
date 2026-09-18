@@ -2997,10 +2997,10 @@ components:
         new_instance_id: { type: string, format: uuid }
         display_name: { $ref: "#/components/schemas/DisplayName" }
         management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
-        reader_secret_ref:
+        directory_credential:
           type: [string, "null"]
-          minLength: 6
-          maxLength: 512
+          minLength: 1
+          maxLength: 4096
 
     GatewayEditRequest:
       type: object
@@ -3014,10 +3014,10 @@ components:
           $ref: "#/components/schemas/DisplayName"
         management_endpoint:
           $ref: "#/components/schemas/ManagementEndpoint"
-        reader_secret_ref:
+        directory_credential:
           type: [string, "null"]
-          minLength: 6
-          maxLength: 512
+          minLength: 1
+          maxLength: 4096
 
     GatewayRetireRequest:
       type: object
@@ -3037,10 +3037,10 @@ components:
         new_instance_id: { type: string, format: uuid }
         display_name: { $ref: "#/components/schemas/DisplayName" }
         management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
-        reader_secret_ref:
+        directory_credential:
           type: [string, "null"]
-          minLength: 6
-          maxLength: 512
+          minLength: 1
+          maxLength: 4096
 
     GatewayRegisterResult:
       type: object
@@ -3254,7 +3254,7 @@ components:
           minItems: 1
           uniqueItems: true
           items: { $ref: "#/components/schemas/NodeCapability" }
-        reader_secret_ref: { type: [string, "null"], minLength: 6, maxLength: 512 }
+        management_credential: { type: [string, "null"], minLength: 1, maxLength: 4096 }
 
     NodeEditRequest:
       type: object
@@ -3266,7 +3266,7 @@ components:
         expected_revision: { $ref: "#/components/schemas/AssetRevision" }
         display_name: { $ref: "#/components/schemas/DisplayName" }
         management_endpoint: { $ref: "#/components/schemas/ManagementEndpoint" }
-        reader_secret_ref: { type: [string, "null"], minLength: 6, maxLength: 512 }
+        management_credential: { type: [string, "null"], minLength: 1, maxLength: 4096 }
 
     NodeRetireRequest:
       type: object
