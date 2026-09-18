@@ -580,6 +580,12 @@ type ControlAdminUser struct {
 	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
 }
 
+type ControlAssetCredentialKeyIdentity struct {
+	SingletonID          int16              `json:"singleton_id"`
+	K2IdentityCommitment []byte             `json:"k2_identity_commitment"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+}
+
 type ControlAuthChallenge struct {
 	ChallengeID       pgtype.UUID        `json:"challenge_id"`
 	AdminID           pgtype.UUID        `json:"admin_id"`
@@ -737,19 +743,20 @@ type GatewayDirectorySnapshotItem struct {
 }
 
 type GatewayInstance struct {
-	SingletonID            pgtype.Int2        `json:"singleton_id"`
-	InstanceID             pgtype.UUID        `json:"instance_id"`
-	DisplayName            string             `json:"display_name"`
-	ManagementEndpoint     string             `json:"management_endpoint"`
-	ReaderSecretRef        pgtype.Text        `json:"reader_secret_ref"`
-	ReaderSecretConfigured pgtype.Bool        `json:"reader_secret_configured"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	LifecycleStatus        string             `json:"lifecycle_status"`
-	RetiredAt              pgtype.Timestamptz `json:"retired_at"`
-	RetiredBy              pgtype.UUID        `json:"retired_by"`
-	RetireReason           pgtype.Text        `json:"retire_reason"`
-	Revision               int64              `json:"revision"`
+	SingletonID               pgtype.Int2        `json:"singleton_id"`
+	InstanceID                pgtype.UUID        `json:"instance_id"`
+	DisplayName               string             `json:"display_name"`
+	ManagementEndpoint        string             `json:"management_endpoint"`
+	ReaderSecretRef           pgtype.Text        `json:"reader_secret_ref"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	LifecycleStatus           string             `json:"lifecycle_status"`
+	RetiredAt                 pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy                 pgtype.UUID        `json:"retired_by"`
+	RetireReason              pgtype.Text        `json:"retire_reason"`
+	Revision                  int64              `json:"revision"`
+	DirectoryCredentialSealed []byte             `json:"directory_credential_sealed"`
+	ReaderSecretConfigured    pgtype.Bool        `json:"reader_secret_configured"`
 }
 
 type NodeCapability struct {
@@ -820,20 +827,21 @@ type ProviderInventoryPolicyVersion struct {
 }
 
 type RelayNodeAsset struct {
-	InstanceID             pgtype.UUID        `json:"instance_id"`
-	DisplayName            string             `json:"display_name"`
-	NodeType               string             `json:"node_type"`
-	DriverContractVersion  string             `json:"driver_contract_version"`
-	ManagementEndpoint     string             `json:"management_endpoint"`
-	ReaderSecretRef        pgtype.Text        `json:"reader_secret_ref"`
-	ReaderSecretConfigured pgtype.Bool        `json:"reader_secret_configured"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	LifecycleStatus        string             `json:"lifecycle_status"`
-	Revision               int64              `json:"revision"`
-	RetiredAt              pgtype.Timestamptz `json:"retired_at"`
-	RetiredBy              pgtype.UUID        `json:"retired_by"`
-	RetireReason           pgtype.Text        `json:"retire_reason"`
+	InstanceID                 pgtype.UUID        `json:"instance_id"`
+	DisplayName                string             `json:"display_name"`
+	NodeType                   string             `json:"node_type"`
+	DriverContractVersion      string             `json:"driver_contract_version"`
+	ManagementEndpoint         string             `json:"management_endpoint"`
+	ReaderSecretRef            pgtype.Text        `json:"reader_secret_ref"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	LifecycleStatus            string             `json:"lifecycle_status"`
+	Revision                   int64              `json:"revision"`
+	RetiredAt                  pgtype.Timestamptz `json:"retired_at"`
+	RetiredBy                  pgtype.UUID        `json:"retired_by"`
+	RetireReason               pgtype.Text        `json:"retire_reason"`
+	ManagementCredentialSealed []byte             `json:"management_credential_sealed"`
+	ReaderSecretConfigured     pgtype.Bool        `json:"reader_secret_configured"`
 }
 
 type RelayNodeAssetReplacement struct {
