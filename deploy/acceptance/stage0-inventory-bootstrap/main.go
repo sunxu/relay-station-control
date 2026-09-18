@@ -134,29 +134,39 @@ func run() error {
 		return errors.New("inventory worker did not stop")
 	}
 
-	var snapshots, providers int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM account_inventory_snapshot_items WHERE poll_run_id=$1`, pollID).Scan(&snapshots); err != nil {
-		return fmt.Errorf("snapshot verification: %w", err)
-	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM account_inventory_provider_states WHERE current_poll_run_id=$1`, pollID).Scan(&providers); err != nil {
-		return fmt.Errorf("provider source verification: %w", err)
-	}
-	if snapshots == 0 || providers == 0 {
-		return fmt.Errorf("finalized poll produced no current snapshot linkage")
-	}
 	targetEmail := os.Getenv("ACCOUNT_INVENTORY_TARGET_EMAIL")
 	if targetEmail == "" {
 		return errors.New("ACCOUNT_INVENTORY_TARGET_EMAIL is required")
 	}
-	var targetCount int
-	if err := pool.QueryRow(ctx, `
-		SELECT count(*)
-		FROM account_inventory_snapshot_items
-		WHERE poll_run_id=$1 AND normalized_email=$2`, pollID, targetEmail).Scan(&targetCount); err != nil {
-		return fmt.Errorf("target account verification: %w", err)
+	rows, err := pool.Query(ctx, `
+		SELECT normalized_email,current_poll_run_id
+		FROM public.control_list_current_account_inventory_lifecycle($1,'','','',500)`, nodeID)
+	if err != nil {
+		return fmt.Errorf("current inventory verification: %w", err)
 	}
-	if targetCount == 0 {
+	defer rows.Close()
+	targetFound := false
+	sourceLinked := false
+	for rows.Next() {
+		var normalizedEmail string
+		var sourcePollID uuid.UUID
+		if err := rows.Scan(&normalizedEmail, &sourcePollID); err != nil {
+			return fmt.Errorf("current inventory row verification: %w", err)
+		}
+		if normalizedEmail == targetEmail {
+			targetFound = true
+			sourceLinked = sourcePollID == pollID
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("current inventory rows: %w", err)
+	}
+	if !targetFound {
 		return errors.New("target account was not present in the real poll snapshot")
+	}
+	if !sourceLinked {
+		return errors.New("target account current inventory source was not linked to the real poll")
 	}
 	fmt.Println("POLL_RUN_STATUS=finalized")
 	fmt.Println("ACCOUNT_INVENTORY_SOURCE_POLL=PASS")
