@@ -24,40 +24,40 @@
 
 ## 3. Asset Command Semantics
 
-- [ ] 3.1 为Node/Gateway Register/Edit/Replace建立tri-state及exact credential validation matrix，覆盖missing/string/null、Replace不继承、0/1/4096/4097 UTF-8 bytes、multibyte boundary、NUL/CR/LF、leading/trailing spaces与no trim/no normalization，再实现API到command intent v2的表达。
-- [ ] 3.2 为actor-first增加different-actor malformed credential，以及same-actor existing command + syntactically parseable但semantically invalid credential的Node/Gateway各一例；证明existing command/canonical intent classification先决定replay/conflict，genuinely-new command才进入credential/K2/lifecycle/revision/remote阶段。
-- [ ] 3.3 实现`secret_fingerprint_key_version=1`、Set contribution `["set", version, commitment]`与`HMAC-SHA-256(existing K1, v2 domain || command_kind || exact credential bytes)`，验证其他tri-state deterministic、同actor replay不读取K2、不重新Seal、不新增receipt/audit，且v1 durable command不可变、raw/sealed/K2不进入semantic evidence。
-- [ ] 3.4 将credential set/clear纳入Node/Gateway asset command transaction，故障注入验证asset revision、sealed state、registry、receipt与audit全体提交或回滚。
-- [ ] 3.5 实现Node/Gateway Retire及Replace predecessor原子erase，覆盖blocker/override、并发Edit/Retire/Replace、lineage/monitoring/binding closure，验证不存在orphan或提前清除。
-- [ ] 3.6 增加K2-unavailable operation matrix：keep、clear、Retire erase、unconfigured Replace、credential-independent reads/health及无需credential的terminal replay继续成功且零Open/Seal；Set、credential-bearing Replace及authenticated outbound fail closed。
+- [x] 3.1 为Node/Gateway Register/Edit/Replace建立tri-state及exact credential validation matrix，覆盖missing/string/null、Replace不继承、0/1/4096/4097 UTF-8 bytes、multibyte boundary、NUL/CR/LF、leading/trailing spaces与no trim/no normalization，再实现API到command intent v2的表达。证据：Node/Gateway HTTP integration boundary tests、`internal/store/asset_credential_validation_test.go`、intent/replay focused tests。
+- [x] 3.2 为actor-first增加different-actor malformed credential，以及same-actor existing command + syntactically parseable但semantically invalid credential的Node/Gateway各一例；证明existing command/canonical intent classification先决定replay/conflict，genuinely-new command才进入credential/K2/lifecycle/revision/remote阶段。新 Register/Edit/Retire/Replace commands统一使用v2；HTTP explicit null仅在新命令语义验证阶段拒绝，Edit null仍为Clear。
+- [x] 3.3 实现`secret_fingerprint_key_version=1`、Set contribution `["set", version, commitment]`与`HMAC-SHA-256(existing K1, v2 domain || command_kind || exact credential bytes)`，验证其他tri-state deterministic、同actor replay不读取K2、不重新Seal、不新增receipt/audit，且v1 durable command不可变、raw/sealed/K2不进入semantic evidence。v2 domain冻结为`relay-station/asset-admin-intent/v2/`；v1 replay按stored encoding保留。
+- [x] 3.4 将credential set/clear纳入Node/Gateway asset command transaction，故障注入验证asset revision、sealed state、registry、receipt与audit全体提交或回滚。证据：`internal/store/asset_command_atomicity_integration_test.go` 使用真实PostgreSQL audit trigger故障，验证Gateway Set失败后的asset/sealed/registry/receipt/audit全体回滚。
+- [x] 3.5 实现Node/Gateway Retire及Replace predecessor原子erase，覆盖blocker/override、并发Edit/Retire/Replace、lineage/monitoring/binding closure，验证不存在orphan或提前清除。证据：`internal/store/node_asset_lifecycle_schema_integration_test.go`、`internal/store/gateway_assets_integration_test.go`、`internal/store/gateway_binding_lifecycle_race_integration_test.go`。
+- [x] 3.6 增加K2-unavailable operation matrix：keep、clear、Retire erase、unconfigured Replace、credential-independent reads/health及无需credential的terminal replay继续成功且零Open/Seal；Set、credential-bearing Replace及authenticated outbound fail closed。证据：`internal/store/asset_command_atomicity_integration_test.go` 的Node/Gateway repository matrix、`cmd/control/asset_credential_recovery_integration_test.go` 的zero-outbound recovery proof、`internal/store/asset_credential_validation_test.go` 的sealer call guard。
 
 ## 4. Runtime Credential Consumers
 
-- [ ] 4.1 实现窄Node protected credential resolver与ACL-backed read，切换CLIProxyAPI readonly/Inventory authenticated calls；验证endpoint/protocol/timeout/parser不变及unconfigured/corrupt/wrongK2零fallback。
-- [ ] 4.2 将Phase 7 account operations全部authenticated Node consumer接入同一resolver；复用并运行Node-first admission、same-account、remote_noop、terminal replay、outcome_unknown与override回归，证明credential source外语义不变。
-- [ ] 4.3 实现Gateway Directory protected resolver并绑定既有Gateway/run/lease/fencing条件；覆盖credential race、retired/replaced target、stale fencing、wrong/missing K2且不改变Directory protocol/snapshot/freshness。
-- [ ] 4.4 静态与运行时证明production不存在`FileSecretResolver`/`reader_secret_ref` fallback，并验证credential-free health/list/detail/terminal replay在K2 unavailable时仍可用。
+- [x] 4.1 实现窄Node protected credential resolver与ACL-backed read，切换CLIProxyAPI readonly/Inventory authenticated calls；验证endpoint/protocol/timeout/parser不变及unconfigured/corrupt/wrongK2零fallback。
+- [x] 4.2 将Phase 7 account operations全部authenticated Node consumer接入同一resolver；复用并运行Node-first admission、same-account、remote_noop、terminal replay、outcome_unknown与override回归，证明credential source外语义不变。
+- [x] 4.3 实现Gateway Directory protected resolver并绑定既有Gateway/run/lease/fencing条件；覆盖credential race、retired/replaced target、stale fencing、wrong/missing K2且不改变Directory protocol/snapshot/freshness。
+- [x] 4.4 静态与运行时证明production不存在`FileSecretResolver`/`reader_secret_ref` fallback，并验证credential-free health/list/detail/terminal replay在K2 unavailable时仍可用。
 
 ## 5. API / Generated / Frontend
 
-- [ ] 5.1 修改`api/openapi.yaml`：移除write-side `reader_secret_ref`，增加Node `management_credential`、Gateway `directory_credential` tri-state，read-side仅保留`secret_configured`；以OpenAPI strict/contract tests验证。
-- [ ] 5.2 运行`make generate`刷新Go/sqlc/TypeScript生成物，验证无手工生成代码编辑且生成链可重复。
-- [ ] 5.3 更新API handler/service映射与HTTP tests，覆盖Register/Edit/Replace tri-state、actor-first error precedence、authorization/CSRF、no-reflection与exact bounded errors。
-- [ ] 5.3a 验证K2 unavailable/Open failure仅使用现有批准的validation/unavailable family，且不存在`k2_*`、`aes_*`、`decrypt_*`、`cipher_*` public error code或crypto detail泄漏。
-- [ ] 5.4 最小适配Asset Registry Node/Gateway表单与状态，使用稳定`data-testid`，以unit/component/typecheck证明set/keep/clear/configured/unavailable且无Secret DOM/browser-storage reflection。
-- [ ] 5.5 仅实现Base TCCR批准的代表性Browser场景：Node credential UX、Gateway credential UX、Replace+unavailable；验证Browser不重复crypto/ACL/migration/race/compatgate矩阵。
+- [x] 5.1 修改`api/openapi.yaml`：移除write-side `reader_secret_ref`，增加Node `management_credential`、Gateway `directory_credential` tri-state，read-side仅保留`secret_configured`；以OpenAPI strict/contract tests验证。
+- [x] 5.2 运行`make generate`刷新Go/sqlc/TypeScript生成物，验证无手工生成代码编辑且生成链可重复。
+- [x] 5.3 更新API handler/service映射与HTTP tests，覆盖Register/Edit/Replace tri-state、actor-first error precedence、authorization/CSRF、no-reflection与exact bounded errors。
+- [x] 5.3a 验证K2 unavailable/Open failure仅使用现有批准的validation/unavailable family，且不存在`k2_*`、`aes_*`、`decrypt_*`、`cipher_*` public error code或crypto detail泄漏。证据：`cmd/control/asset_credential_runtime_test.go`、`cmd/control/asset_credential_recovery_integration_test.go`、Node/Gateway HTTP unavailable and redaction tests。
+- [x] 5.4 最小适配Asset Registry Node/Gateway表单与状态，使用稳定`data-testid`，以unit/component/typecheck证明set/keep/clear/configured/unavailable且无Secret DOM/browser-storage reflection。
+- [x] 5.5 仅实现Base TCCR批准的代表性Browser场景：Node credential UX、Gateway credential UX、Replace+unavailable；验证Browser不重复crypto/ACL/migration/race/compatgate矩阵。证据：`web/e2e/node-lifecycle.spec.ts`、`web/e2e/gateway-management.spec.ts`，使用 Playwright bundled Chromium / host execution；Problems 为 baseline evidence，Topology readonly 与 Authentication 为非 Gate 5 owning failures。
 
 ## 6. Ops / Recovery
 
-- [ ] 6.1 更新devctl/deployment provisioning生成或安装32-byte OS-CSPRNG K2文件、受限权限与启动配置；验证K2不进入镜像、Git、DB或普通日志。
-- [ ] 6.2 更新backup/restore Runbook与harness，把PostgreSQL+K2作为恢复集；分别验证Node与Gateway credential在正确K2 restore后可用。
-- [ ] 6.3 增加missing/wrong K2 restore与no-hot-reload测试，证明feature-level fail closed、sealed state/commitment不变且修改K2后必须restart。
-- [ ] 6.4 更新host migration和fresh local DB/re-register流程，验证不需要per-asset Secret重建且不存在legacy importer/backfill/dual-read/dual-write。
+- [x] 6.1 更新devctl/deployment provisioning生成或安装32-byte OS-CSPRNG K2文件、受限权限与启动配置；验证K2不进入镜像、Git、DB或普通日志。证据：`cmd/relay-control-asset-credential-key`、Makefile target、acceptance runtime/Compose wiring与provisioning tests。
+- [x] 6.2 更新backup/restore Runbook与harness，把PostgreSQL+K2作为恢复集；使用真实 PostgreSQL `pg_dump`/`pg_restore` 恢复到新数据库，验证同 K2（不同路径）下 Node/Gateway credential 可 Open，并完成 Gateway Directory fenced authenticated outbound。证据：`docs/runbooks/asset-credential-key.md`、`TestStage0CredentialBackupRestoreSameK2PG`；Node authenticated outbound 由 Gate 4 owning proof 覆盖。
+- [x] 6.3 增加missing/wrong K2 restore与no-hot-reload测试，证明feature-level fail closed、sealed state/commitment不变且修改K2后必须restart。证据：`TestStage0CredentialRecoveryK2MatrixPG`、Stage C startup capability tests与runbook。
+- [x] 6.4 更新host migration和fresh local DB/re-register流程，验证不需要per-asset Secret重建且不存在legacy importer/backfill/dual-read/dual-write。证据：active K2 runbook与acceptance path-only wiring。
 
 ## 7. Verification / Acceptance
 
 - [ ] 7.1 依次运行crypto、store/migration/ACL、asset command、runtime resolver、API/frontend focused groups；每组首个真实blocker fail-fast，全部通过后运行full store/accountadmin/API与focused race。
-- [ ] 7.2 运行`make test build`、`go vet ./...`、frontend unit/typecheck、`openspec validate simplify-node-gateway-management-credentials --strict`与`openspec validate --all --strict`，记录命令、runtime和结果。
+- [x] 7.2 运行`make test build`、`go vet ./...`、frontend unit/typecheck、`openspec validate simplify-node-gateway-management-credentials --strict`与`openspec validate --all --strict`，记录命令、runtime和结果。Gate 6 final run全部通过。
 - [ ] 7.3 从clean exact candidate构建immutable class-4 Control artifact，验证source→manifest→image→running identity及Migration51/floor4 provenance，不重建Gateway/Node。
 - [ ] 7.4 在production-like stack执行O01–O05与最小Node/Gateway/Phase7/recovery runtime acceptance，记录最长business wait、zero data-plane dependency与zero Inventory-as-execution-truth。
 - [ ] 7.5 运行一次可复用shared secret scan，证明plaintext credential、raw K2、sealed credential blob、K2 identity commitment value、credential-bearing headers与raw native body在API/DOM/log/audit/metrics/trace/Browser state/test evidence/acceptance artifact为零泄漏，并完成独立P0/P1/P2 review。

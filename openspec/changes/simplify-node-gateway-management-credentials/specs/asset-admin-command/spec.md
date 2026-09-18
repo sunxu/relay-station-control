@@ -54,7 +54,7 @@ Same actor existing command MUST 先完成existing command/canonical intent clas
 
 Historical v1 `canonical_intent_hash` MUST继续等于SHA-256(canonical_intent_v1_bytes)。Historical v1使用design的fixed-order UTF-8 JSON arrays，区分absent/clear/set，revision string与endpoint normalization一致；Secret只贡献HMAC-SHA-256 fingerprint与key version，raw reference不得进入canonical bytes或receipt。Historical receipt.secret_fingerprint_key_version set时为1，无secret set intent时NULL；replay MUST使用历史receipt version。既有v1 durable command bytes、receipt、hash与commitment MUST immutable且不得重写。
 
-Stage 0 genuinely new credential-bearing commands MUST使用reviewed intent encoding v2，同时保持`secret_fingerprint_key_version=1`。Set contribution MUST精确为`["set", secret_fingerprint_key_version, credential_commitment]`，其中：
+Stage 0 genuinely new Node/Gateway asset commands MUST使用reviewed intent encoding v2，同时保持`secret_fingerprint_key_version=1`；Retire及Absent/Clear commands也必须写入v2，只是其fingerprint key version为NULL。v2 domain精确冻结为`relay-station/asset-admin-intent/v2/`。Set contribution MUST精确为`["set", secret_fingerprint_key_version, credential_commitment]`，其中：
 
 ```text
 credential_commitment = HMAC-SHA-256(
@@ -67,7 +67,7 @@ V2 domain与command_kind MUST沿用canonical encoder的无歧义编码，其他t
 
 K1是由`CONTROL_ASSET_INTENT_KEY_FILE`提供的稳定独立32-byte deployment Secret。文件 MUST 是regular file、不得是symlink、权限安全且内容exactly 32 raw bytes；missing、path/read failure、unsafe permissions、symlink或wrong length均表示K1 unavailable。K1 MUST 保持稳定、备份并跨restart/upgrade恢复，不得自动生成、记录或写入receipt。Stage 0不认证K1 identity，不使用signed digest、identity anchor、额外trust metadata或deployment identity file；未来rotation属于独立change。
 
-K1只在canonical intent包含SecretSet时使用：SecretSet记录key version 1并计算HMAC commitment；SecretAbsent、SecretClear和其它non-SecretSet intent的receipt key version为NULL且 MUST NOT读取K1。receipt schema保持既有encoding/hash/key-version字段，不增加key digest/id/table。Historical算法、field order与每action fields保持design Canonical intent v1 bytes；Stage 0 v2只改变新credential-bearing command，不重定义现有v1 encoding。
+K1只在canonical intent包含SecretSet时使用：SecretSet记录key version 1并计算HMAC commitment；SecretAbsent、SecretClear和其它non-SecretSet intent的receipt key version为NULL且 MUST NOT读取K1。receipt schema保持既有encoding/hash/key-version字段，不增加key digest/id/table。Historical算法、field order与每action fields保持design Canonical intent v1 bytes；Stage 0 v2只用于新Node/Gateway asset command，不重定义现有v1 encoding。
 
 #### Scenario: 跨restart与upgrade重放
 - **WHEN** 重启或支持的升级后请求同一credential intent

@@ -10,6 +10,8 @@
 bin/
 **/node_modules/
 internal/webui/dist/
+/web/test-results/
+/web/playwright-report/
 **/__pycache__/
 **/*.tsbuildinfo
 deploy/acceptance/runtime/.runtime/

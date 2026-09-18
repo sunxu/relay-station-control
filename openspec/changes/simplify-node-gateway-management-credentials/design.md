@@ -80,7 +80,7 @@ Migration `00051` 是 forward-only fresh-install target，计划：
 
 ### 4. Actor-first command pipeline 与 intent v2
 
-Credential-bearing Register/Edit/Replace 的阶段顺序固定为：
+Node/Gateway asset Register/Edit/Retire/Replace 的阶段顺序固定为：
 
 ```text
 command identity lookup
@@ -103,6 +103,8 @@ Tri-state：Register missing=unconfigured、string=set、null invalid；Edit mis
 Stage 0 保持 `secret_fingerprint_key_version=1`。Set 的 secret contribution 固定为 `["set", secret_fingerprint_key_version, credential_commitment]`，其中 commitment 是 `HMAC-SHA-256(existing K1, v2 domain || command_kind || exact credential bytes)`，沿用既有 canonical encoder 的无歧义编码。Raw credential 与 recoverable sealed ciphertext 不进入 intent/registry/receipt/audit；K2 永不参与 semantic equivalence；其他 tri-state contribution 使用冻结的 deterministic representation。
 
 同 actor existing command 即使携带 syntactically parseable 但 semantically invalid credential，也必须先完成 existing command/canonical intent classification，再返回 replay 或 command conflict；不得提前返回 validation error。Node 与 Gateway 各有 owning test。Different actor malformed case仍在 credential parsing 前返回 actor ownership error。
+
+Stage 0 所有新 Node/Gateway asset command 使用 `intent_encoding_version=2`；历史 durable v1 command 保持原始 bytes、hash、receipt 与 replay 语义不变。v2 domain 冻结为 `relay-station/asset-admin-intent/v2/`。Stage 0 保持 `secret_fingerprint_key_version=1`；Absent、Keep、Clear 使用确定性的 v2 contribution，Set 使用 `[`"set", 1, credential_commitment`]`。
 
 ### 5. 生命周期原子性
 

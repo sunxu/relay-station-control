@@ -172,11 +172,41 @@ The acceptance stack should expose missing dependencies early, including:
 
 ## 6.1 Shared Schema and Migration Compatibility
 
-Fresh-install migration success does not prove upgrade compatibility. Any migration
-that changes a shared schema contract, including a `CHECK`, enum, `NOT NULL`,
-`UNIQUE`, foreign key, bounded taxonomy, lookup domain, role/grant, function, or
-trigger, must consider all active producers and consumers and representative data
-from the previous schema version.
+Fresh-install migration success does not prove upgrade compatibility. For a
+product with a supported deployed database baseline, any migration that changes
+a shared schema contract, including a `CHECK`, enum, `NOT NULL`, `UNIQUE`, foreign
+key, bounded taxonomy, lookup domain, role/grant, function, or trigger, must
+consider all active producers and consumers and representative data from the
+previous schema version.
+
+#### Fresh-Install-Only Exception
+
+A change may use fresh-install-only schema acceptance only when all of the
+following are true:
+
+1. The affected product or database has never had a supported deployed version
+   requiring an upgrade into the candidate schema.
+2. The active design or OpenSpec explicitly declares `EMPTY DB → latest` and
+   forward-only support.
+3. The exception is reviewed and approved as part of that change.
+4. Fresh installation executes the complete retained migration chain from an
+   empty database to the latest schema.
+5. Historical migration files and provenance identities are retained and are not
+   rewritten, squashed, renumbered, or deleted to obtain the exception.
+6. Current-schema ACL, security, compatibility-floor, and other current
+   invariants remain covered.
+
+Under this exception, historical deployed-version upgrade, `Down`, rollback,
+round-trip, and old-binary compatibility coverage are not required unless the
+active change separately requires them. Once a schema version becomes a
+supported deployed baseline, later changes follow the normal upgrade policy
+unless a separately reviewed policy says otherwise.
+
+For the current Phase 8 Stage 0 change, the reviewed support policy is
+`EMPTY DB → latest` / forward-only. The exception does not authorize a
+historical migration rewrite or removal of current-schema security proofs.
+
+For the normal deployed-schema path, review and validate at minimum:
 
 At minimum, review and validate:
 
@@ -404,6 +434,14 @@ Failures such as these are environment/harness failures:
 Do not modify product semantics to work around environment failures.
 
 Fix the environment first, then rerun the product diagnostic.
+
+### Browser Execution Provenance
+
+Official Browser E2E and acceptance evidence MUST use the Playwright bundled Chromium unless an explicitly reviewed testing-policy change says otherwise. System-installed Chrome is diagnostic only and cannot replace official acceptance evidence.
+
+A system-Chrome PASS does not close a bundled-Chromium environment failure. If bundled Chromium cannot launch because of `EPERM`, sandbox restrictions, host execution permissions, a missing browser binary, or another launch restriction, classify the result as `ENVIRONMENT_OR_SANDBOX_FAILURE` (or `BROWSER_HOST_EXECUTION_PERMISSION` where applicable). Official Browser acceptance remains blocked until the approved bundled Chromium path executes successfully.
+
+The approved remedy is host execution of the same repository Playwright command while preserving the bundled Chromium, repository configuration, test source, and normal security settings. Do not use a system-Chrome channel or executable path, a temporary external Playwright configuration, modified tests, unsafe Chromium flags, or reduced sandbox/security settings as an acceptance workaround.
 
 ---
 
@@ -849,7 +887,9 @@ tests. If one test mixes historical migration assertions with current query
 behavior, split the ownership.
 
 Shared schema changes require realistic previous-version upgrade coverage in
-addition to fresh installation. For bounded values, verify
+addition to fresh installation when a supported deployed baseline exists. A
+reviewed fresh-install-only exception follows the conditions above. For bounded
+values, verify
 `CURRENT_PRODUCED_VALUES ⊆ DB_ALLOWED_VALUES`, and for constraint replacement
 review `OLD_ALLOWED_SET - NEW_ALLOWED_SET`, `CURRENT_PRODUCER_SET -
 NEW_ALLOWED_SET`, and `NEW_ALLOWED_SET - OLD_ALLOWED_SET`. Preserve the

@@ -6,6 +6,26 @@ Mandatory repository-wide policy.
 
 Applies to Phase 7 and every subsequent phase unless changed through an explicit architecture/testing-policy review.
 
+## Browser Execution Provenance
+
+Official repository Browser E2E and acceptance evidence MUST use the Playwright bundled Chromium, unless an explicitly reviewed testing-policy change says otherwise.
+
+System-installed Chrome is diagnostic only. A system-Chrome PASS MUST NOT replace official acceptance evidence. If system Chrome passes while bundled Chromium cannot launch, the result may indicate that the page or scenario is healthy while the bundled Chromium execution environment remains blocked; Browser acceptance is still blocked.
+
+Bundled Chromium launch failures, including Chromium `EPERM`, browser launch permission failures, sandbox restrictions, host execution restrictions, and a missing Playwright Chromium binary, are classified as `ENVIRONMENT_OR_SANDBOX_FAILURE`. Where applicable, use the more specific `BROWSER_HOST_EXECUTION_PERMISSION` classification. These are not product or Browser-scenario failures unless the browser successfully launches and executes the page test.
+
+When the sandbox blocks bundled Chromium, the approved remedy is to run the same repository Playwright command in the host execution environment while preserving the bundled Chromium, repository Playwright configuration, test source, and normal Chromium security settings. Do not switch to system Chrome to bypass the block.
+
+The following are forbidden for official Browser evidence:
+
+- `CONTROL_E2E_BROWSER_CHANNEL=chrome` or another system-Chrome channel.
+- A system Chrome `executablePath`.
+- A temporary external Playwright configuration that selects system Chrome.
+- Modifying Playwright tests to select system Chrome.
+- Unsafe Chromium flags or reduced sandbox/security settings.
+
+Official Browser evidence records the browser engine as Playwright bundled Chromium, the launch result, whether execution used the sandbox or host, the repository Playwright configuration, and that Playwright/test source was unchanged. If host execution was required, record that fact and the environment restriction without retaining sensitive local binary paths.
+
 ## Goals
 
 - stable E2E selectors

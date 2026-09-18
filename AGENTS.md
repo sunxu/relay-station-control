@@ -69,6 +69,13 @@ Do not use the following for interaction locators:
 
 Do not use `force: true`, large arbitrary `waitForTimeout(...)`, or increased retry counts to hide locator or synchronization problems.
 
+### Browser execution provenance
+
+- 正式 Browser E2E / acceptance evidence 必须使用 Playwright bundled Chromium。
+- system Chrome 仅可作为诊断对照，不得替代正式 PASS evidence。
+- bundled Chromium 因 sandbox 或 host permission 无法启动时，分类为环境执行失败，并使用批准的宿主执行方式重跑。
+- 不得通过切换 browser channel、system executablePath、临时外部 Playwright config 或 unsafe Chromium flags 绕过。
+
 ### Assertions
 
 Semantic locators such as `getByText()` or `getByRole()` may be used for read-only assertions when the visible content itself is part of the behavior being verified.
@@ -151,8 +158,9 @@ See `docs/testing/PLAYWRIGHT_E2E_POLICY.md` for the complete policy.
 - Build and verify the production-like stack and runtime/artifact provenance before debugging behavior.
 - For artifact or identity handoffs, distinguish mutable references from immutable identities; resolve references once, pass the immutable identity downstream, and verify execution consumed that identity.
 - Review check-then-use handoffs for TOCTOU drift; when identity drift could affect correctness or reproducibility, prove immutable execution or fail-closed behavior with a negative handoff test.
-- For shared schema constraints and bounded taxonomies, verify fresh installation, previous-version realistic data, and that current producers remain within the allowed set.
+- For shared schema constraints and bounded taxonomies, verify fresh installation and, when a supported deployed baseline exists, previous-version realistic data; a separately reviewed never-deployed fresh-install-only change still verifies that current producers remain within the allowed set.
 - Treat shipped forward migrations as immutable; do not use historical Down bodies as a production rollback path unless the migration explicitly supports that contract.
+- The default shared-schema rule is fresh-install plus applicable supported deployed-version upgrade coverage. A separately reviewed never-deployed, fresh-install-only change may omit historical upgrade, Down, rollback, and round-trip coverage only when the complete retained migration chain, current-schema security invariants, and migration provenance remain covered; this exception never authorizes rewriting, squashing, renumbering, or deleting historical migrations.
 - Diagnose failures layer-by-layer, classify them before changing production code, and stop at the earliest blocker.
 - Keep waits bounded (normally no more than 30 seconds per async business layer); never hide failures with sleeps, blind retries, or timeout increases.
 - Keep corrective rounds narrow and reuse proven harness infrastructure, real observers, real mutation evidence, and one shared secret scanner.
