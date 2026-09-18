@@ -315,6 +315,7 @@ run_inventory_bootstrap() {
     -e NO_PROXY='*' -e no_proxy='*' -e GOPROXY=off -e GOCACHE=/tmp/go-build \
     -e DATABASE_URL='postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable' \
     -e CONTROL_ASSET_CREDENTIAL_KEY_FILE=/run/control-secrets/asset-credential-key \
+    -e ACCOUNT_INVENTORY_NODE_ID="$NODE_INSTANCE_ID" \
     -e ACCOUNT_INVENTORY_TARGET_EMAIL="$DISABLE_EMAIL" \
     "$GOLANG_IMAGE" go run ./deploy/acceptance/stage0-inventory-bootstrap
 }

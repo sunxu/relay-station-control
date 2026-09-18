@@ -105,7 +105,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("schedule current poll: %w", err)
 	}
-	pollID, err := pollRunID(ctx, pool, scheduled.ScheduledAt)
+	fmt.Printf("POLL_SCHEDULE_ELIGIBLE=%d\nPOLL_SCHEDULE_CREATED=%d\nPOLL_SCHEDULE_EXISTING=%d\n", scheduled.Eligible, scheduled.Created, scheduled.Existing)
+	nodeID, err := uuid.Parse(os.Getenv("ACCOUNT_INVENTORY_NODE_ID"))
+	if err != nil || nodeID == uuid.Nil {
+		return errors.New("ACCOUNT_INVENTORY_NODE_ID is required")
+	}
+	pollID, err := pollRunID(ctx, pool, nodeID, scheduled.ScheduledAt)
 	if err != nil {
 		return err
 	}
@@ -159,14 +164,14 @@ func run() error {
 	return nil
 }
 
-func pollRunID(ctx context.Context, pool *pgxpool.Pool, scheduledAt time.Time) (uuid.UUID, error) {
+func pollRunID(ctx context.Context, pool *pgxpool.Pool, nodeID uuid.UUID, scheduledAt time.Time) (uuid.UUID, error) {
 	var id uuid.UUID
 	err := pool.QueryRow(ctx, `
 		SELECT poll_run_id
 		FROM account_inventory_poll_runs
-		WHERE scheduled_at=$1
+		WHERE instance_id=$1 AND scheduled_at=$2
 		ORDER BY created_at DESC, poll_run_id DESC
-		LIMIT 1`, scheduledAt).Scan(&id)
+		LIMIT 1`, nodeID, scheduledAt).Scan(&id)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("poll run lookup: %w", err)
 	}
