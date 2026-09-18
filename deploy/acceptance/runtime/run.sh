@@ -78,6 +78,7 @@ port_available NODE "$NODE_PORT"
 openssl rand -hex 32 > "$RUNTIME_DIR/bootstrap-secret"
 openssl rand -out "$RUNTIME_DIR/account-operation-intent-key" 32
 printf '%s' "$NODE_MANAGEMENT_PASSWORD" > "$RUNTIME_DIR/node-management-key"
+(cd "$CONTROL_DIR" && go run ./cmd/relay-control-asset-credential-key --path "$RUNTIME_DIR/asset-credential-key" >/dev/null)
 UPLOAD_EMAIL="phase7-${PROJECT##*-}@example.invalid"
 UPLOAD_SECRET_MARKER="PHASE7_E2E_SECRET_${PROJECT##*-}"
 mkdir -p "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/node/logs"
@@ -160,16 +161,13 @@ http {
   }
 }
 NGINX
-cat > "$RUNTIME_DIR/cliproxyapi-secret-map.json" <<'JSON'
-{"provider":"file","references":[{"reference":"file://phase7/node-management","path":"/run/control-secrets/node-management-key"}]}
-JSON
 key="$(openssl rand -base64 32 | tr -d '\r\n=')"
 printf '{"format_version":1,"environment":"production","current":1,"keys":[{"version":1,"key":"%s"}]}\n' "$key" > "$RUNTIME_DIR/auth-keyring.json"
 unset key
 openssl rand -base64 36 | tr -d '\r\n' > "$RUNTIME_DIR/admin-password"
 openssl rand -base64 36 | tr -d '\r\n' > "$RUNTIME_DIR/second-admin-password"
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost' -addext 'basicConstraints=critical,CA:FALSE' -addext 'keyUsage=critical,digitalSignature,keyEncipherment' -addext 'extendedKeyUsage=serverAuth' -keyout "$RUNTIME_DIR/tls.key" -out "$RUNTIME_DIR/tls.crt" >/dev/null 2>&1
-chmod 400 "$RUNTIME_DIR/bootstrap-secret" "$RUNTIME_DIR/account-operation-intent-key" "$RUNTIME_DIR/node-management-key" "$RUNTIME_DIR/cliproxyapi-secret-map.json" "$RUNTIME_DIR/auth-keyring.json" "$RUNTIME_DIR/admin-password" "$RUNTIME_DIR/second-admin-password" "$RUNTIME_DIR/tls.key"
+chmod 400 "$RUNTIME_DIR/bootstrap-secret" "$RUNTIME_DIR/account-operation-intent-key" "$RUNTIME_DIR/node-management-key" "$RUNTIME_DIR/asset-credential-key" "$RUNTIME_DIR/auth-keyring.json" "$RUNTIME_DIR/admin-password" "$RUNTIME_DIR/second-admin-password" "$RUNTIME_DIR/tls.key"
 chmod 444 "$RUNTIME_DIR/tls.crt"
 OVERRIDE_FILE="$RUNTIME_DIR/compose.override.yaml"
 INVENTORY_POLL_ENABLED="false"

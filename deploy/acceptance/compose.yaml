@@ -31,8 +31,8 @@ services:
         install -o 65532 -g 65532 -m 0400 /input/bootstrap-secret /run/control-secrets/bootstrap-secret
         install -o 65532 -g 65532 -m 0400 /input/auth-keyring.json /run/control-secrets/auth-keyring.json
         install -o 65532 -g 65532 -m 0600 /input/account-operation-intent-key /run/control-secrets/account-operation-intent-key
-        install -o 65532 -g 65532 -m 0400 /input/cliproxyapi-secret-map.json /run/control-secrets/cliproxyapi-secret-map.json
         install -o 65532 -g 65532 -m 0400 /input/node-management-key /run/control-secrets/node-management-key
+        install -o 65532 -g 65532 -m 0400 /input/asset-credential-key /run/control-secrets/asset-credential-key
     read_only: true
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
@@ -119,8 +119,8 @@ services:
       CONTROL_BOOTSTRAP_SECRET_FILE: /run/control-secrets/bootstrap-secret
       CONTROL_AUTH_KEYRING_FILE: /run/control-secrets/auth-keyring.json
       CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE: /run/control-secrets/account-operation-intent-key
+      CONTROL_ASSET_CREDENTIAL_KEY_FILE: /run/control-secrets/asset-credential-key
       CONTROL_CLIPROXYAPI_DRIVER_ENABLED: "true"
-      CONTROL_CLIPROXYAPI_SECRET_MAPPING_FILE: /run/control-secrets/cliproxyapi-secret-map.json
       DATABASE_URL: postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable
     depends_on:
       postgres:

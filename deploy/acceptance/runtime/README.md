@@ -28,6 +28,8 @@ runner 生成或导出的 runtime 目录、端口、认证材料、fixture ident
 
 先由现有 acceptance composition 生成 runtime secrets，再运行 `run.sh auth`。bootstrap secret、password、TOTP URI、cookie、CSRF 和 storage-state 都是 Secret；storage-state 只写到 `ACCEPTANCE_STORAGE_STATE` 指定的 repo-external 文件，权限必须为 `0600`。完成后删除 ephemeral runtime；不要删除无关目录。
 
+Acceptance runtime 同时由项目 provisioning command create-once 生成 `asset-credential-key`，并通过 `secret-init` 以 UID/GID `65532:65532`、`0400`、read-only 的路径注入 Control。它只用于本次 isolated run；raw K2 不写入日志、evidence 或镜像。正式部署的 K2 恢复语义见 `docs/runbooks/asset-credential-key.md`。
+
 ## Lifecycle
 
 `tools/acceptance/lifecycle-fixture/run.sh` 只包装 test-only fixture 流程。Availability 必须经 production `Reconcile()`，Duplicate 必须经 production `Evaluate()`；fixture 禁止直接调用 `EnqueueTx`。fixture DB、job IDs、payload/hash 和 evidence 不能写入仓库。

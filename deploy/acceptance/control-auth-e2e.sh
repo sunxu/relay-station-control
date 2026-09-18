@@ -55,6 +55,9 @@ init_runtime() {
     printf '{"format_version":1,"environment":"production","current":1,"keys":[{"version":1,"key":"%s"}]}\n' "$key" > "$root/auth-keyring.json"
     unset key
   fi
+  if [[ ! -e "$root/asset-credential-key" ]]; then
+    (cd "$CONTROL_DIR" && go run ./cmd/relay-control-asset-credential-key --path "$root/asset-credential-key" >/dev/null)
+  fi
   if [[ ! -e "$root/admin-password" ]]; then
     openssl rand -base64 36 | tr -d '\r\n' > "$root/admin-password"
   fi
@@ -70,7 +73,7 @@ init_runtime() {
       -addext 'extendedKeyUsage=serverAuth' \
       -keyout "$root/tls.key" -out "$root/tls.crt" >/dev/null 2>&1
   fi
-  chmod 400 "$root/bootstrap-secret" "$root/auth-keyring.json" "$root/admin-password" "$root/second-admin-password" "$root/tls.key"
+  chmod 400 "$root/bootstrap-secret" "$root/auth-keyring.json" "$root/asset-credential-key" "$root/admin-password" "$root/second-admin-password" "$root/tls.key"
   chmod 444 "$root/tls.crt"
 }
 
