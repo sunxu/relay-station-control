@@ -42,7 +42,7 @@ try {
   if (registration.status() !== 201) throw new Error(`node registration failed: ${registration.status()}`);
   const monitoring = await context.request.post(`/api/assets/nodes/${instanceID}/monitoring-enable`, {
     headers,
-    data: { command_id: randomUUID(), expected_revision: "1" },
+    data: { command_id: randomUUID() },
   });
   if (monitoring.status() !== 200) throw new Error(`node monitoring enable failed: ${monitoring.status()}`);
   console.log("NODE_REGISTRATION=PASS");
