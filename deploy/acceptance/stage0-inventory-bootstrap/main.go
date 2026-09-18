@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	bootstrapTimeout = 50 * time.Second
+	bootstrapTimeout = 6 * time.Minute
 	pollGrace        = 299 * time.Second
+	pollPeriod       = 5 * time.Minute
 )
 
 func main() {
@@ -101,7 +102,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("inventory worker: %w", err)
 	}
-	scheduled, err := scheduler.ScheduleOnce(ctx)
+	scheduled, err := scheduleAfterCurrentSlot(ctx, pool, scheduler)
 	if err != nil {
 		return fmt.Errorf("schedule current poll: %w", err)
 	}
@@ -162,6 +163,44 @@ func run() error {
 	fmt.Println("TARGET_ACCOUNT_DISCOVERED=PASS")
 	fmt.Println("BOOTSTRAP_PROCESS_EXITED=PASS")
 	return nil
+}
+
+func scheduleAfterCurrentSlot(ctx context.Context, pool *pgxpool.Pool, scheduler *inventorypoll.Scheduler) (inventorypoll.ScheduleResult, error) {
+	result, err := scheduler.ScheduleOnce(ctx)
+	if err != nil {
+		return inventorypoll.ScheduleResult{}, err
+	}
+	if result.Eligible > 0 {
+		return result, nil
+	}
+
+	var databaseNow, currentSlot time.Time
+	if err := pool.QueryRow(ctx, `
+		SELECT clock_timestamp(), to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 300) * 300)`).Scan(&databaseNow, &currentSlot); err != nil {
+		return inventorypoll.ScheduleResult{}, fmt.Errorf("inventory slot clock: %w", err)
+	}
+	nextSlot := currentSlot.Add(pollPeriod)
+	wait := time.Until(nextSlot) + 250*time.Millisecond
+	if wait <= 0 {
+		return inventorypoll.ScheduleResult{}, errors.New("inventory slot boundary calculation was not in the future")
+	}
+	fmt.Printf("POLL_WAITING_FOR_NEXT_SLOT=%s\n", nextSlot.UTC().Format(time.RFC3339))
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return inventorypoll.ScheduleResult{}, fmt.Errorf("waiting for inventory slot: %w", ctx.Err())
+	case <-timer.C:
+	}
+
+	result, err = scheduler.ScheduleOnce(ctx)
+	if err != nil {
+		return inventorypoll.ScheduleResult{}, err
+	}
+	if result.Eligible == 0 {
+		return inventorypoll.ScheduleResult{}, fmt.Errorf("no eligible nodes after next inventory slot (database_now=%s)", databaseNow.UTC().Format(time.RFC3339))
+	}
+	return result, nil
 }
 
 func pollRunID(ctx context.Context, pool *pgxpool.Pool, nodeID uuid.UUID, scheduledAt time.Time) (uuid.UUID, error) {
