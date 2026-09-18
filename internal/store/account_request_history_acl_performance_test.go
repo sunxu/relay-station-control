@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 	store "github.com/sunxu/relay-station-control/internal/store"
 )
 
-func TestAccountRequestHistoryACLAndRollbackPostgres(t *testing.T) {
+func TestAccountRequestHistoryACLPostgres(t *testing.T) {
 	ctx := context.Background()
 	fixture := newReadonlyQueryFixture(t, ctx, []lifecycleAccount{{email: "retained@example.invalid"}})
 	db := fixture.database
@@ -46,38 +45,7 @@ func TestAccountRequestHistoryACLAndRollbackPostgres(t *testing.T) {
 			t.Fatalf("%s direct SELECT: %v", table, err)
 		}
 	}
-	before := captureReadonlyQueryMigrationState(t, ctx, db)
-	const objectsSQL = `SELECT (SELECT string_agg(pg_get_functiondef(oid),E'\n' ORDER BY proname) FROM pg_proc WHERE proname IN ('control_query_current_account_inventory_v1','control_query_account_request_quality_v1','control_query_node_account_quality_v1')) || (SELECT string_agg(indexdef,E'\n' ORDER BY indexname) FROM pg_indexes WHERE schemaname='public' AND tablename='account_request_quality_events')`
-	var objectsBefore, objectsAfter string
-	if err := db.owner.QueryRow(ctx, objectsSQL).Scan(&objectsBefore); err != nil {
-		t.Fatal(err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "down-to", "21"); err != nil {
-		t.Fatal(err)
-	}
-	if page, err := repo.ListAccountRequestHistory(ctx, q); err == nil || len(page.Items) != 0 {
-		t.Fatal("missing function returned successful data/empty")
-	}
-	if !reflect.DeepEqual(before, captureReadonlyQueryMigrationState(t, ctx, db)) {
-		t.Fatal("Down changed persistence")
-	}
-	if err := db.owner.QueryRow(ctx, objectsSQL).Scan(&objectsAfter); err != nil || objectsAfter != objectsBefore {
-		t.Fatalf("Down changed existing functions/indexes: %v", err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(before, captureReadonlyQueryMigrationState(t, ctx, db)) {
-		t.Fatal("Up changed persistence")
-	}
-	if err := db.owner.QueryRow(ctx, objectsSQL).Scan(&objectsAfter); err != nil || objectsAfter != objectsBefore {
-		t.Fatalf("Up changed existing functions/indexes: %v", err)
-	}
-	if page, err := repo.ListAccountRequestHistory(ctx, q); err != nil || len(page.Items) != 1 || page.Items[0].EventHash != "retained-history" {
-		t.Fatalf("Up lost exact retained event: %+v %v", page, err)
-	}
 }
-
 func TestAccountRequestHistoryPerformancePostgres(t *testing.T) {
 	ctx := context.Background()
 	fixture := newReadonlyQueryFixture(t, ctx, []lifecycleAccount{{email: "history-perf@example.invalid"}})

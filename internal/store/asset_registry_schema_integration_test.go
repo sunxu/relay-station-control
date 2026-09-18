@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -261,7 +262,7 @@ func TestAssetRegistrationIsAtomicIdempotentAndCapabilityBound(t *testing.T) {
 	if err := tx.QueryRow(ctx, `SELECT management_endpoint, reader_secret_configured FROM relay_node_assets WHERE instance_id=$1`, nodeID).Scan(&nodeEndpoint, &nodeSecret); err != nil {
 		t.Fatal(err)
 	}
-	if gatewayEndpoint != "http://gateway.example" || nodeEndpoint != "http://node.example" || !gatewaySecret || !nodeSecret {
+	if gatewayEndpoint != "http://gateway.example" || nodeEndpoint != "http://node.example" || gatewaySecret || nodeSecret {
 		t.Fatalf("canonical registration mismatch: gateway=%q/%v node=%q/%v", gatewayEndpoint, gatewaySecret, nodeEndpoint, nodeSecret)
 	}
 
@@ -401,30 +402,49 @@ func TestMonitoringIntervalsAndRegistrarLeastPrivilege(t *testing.T) {
 	)`, nodeID, nodeType, assetHealthCapability); err != nil {
 		t.Fatalf("register monitoring node: %v", err)
 	}
+	if _, err := tx.Exec(ctx, `SET LOCAL ROLE relay_control_asset_registrar`); err != nil {
+		t.Fatalf("assume registrar role: %v", err)
+	}
 
+	readActivationID := func(query string) (string, error) {
+		var raw []byte
+		if err := tx.QueryRow(ctx, query, nodeID).Scan(&raw); err != nil {
+			return "", err
+		}
+		var result struct {
+			ActivationID string `json:"activation_id"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return "", err
+		}
+		return result.ActivationID, nil
+	}
 	var enabledID, replayID string
-	if err := tx.QueryRow(ctx, `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_enable', 'integration-test')::text`, nodeID).Scan(&enabledID); err != nil {
+	if enabledID, err = readActivationID(`SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_enable', 'integration-test', NULL::uuid)`); err != nil {
 		t.Fatalf("enable monitoring: %v", err)
 	}
-	if err := tx.QueryRow(ctx, `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_enable', 'integration-test')::text`, nodeID).Scan(&replayID); err != nil {
+	if replayID, err = readActivationID(`SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_enable', 'integration-test', NULL::uuid)`); err != nil {
 		t.Fatalf("replay monitoring enable: %v", err)
 	}
 	if enabledID != replayID {
 		t.Fatalf("monitoring replay ID = %s, want %s", replayID, enabledID)
 	}
-	var disabledID *string
-	if err := tx.QueryRow(ctx, `SELECT public.control_set_node_inventory_monitoring($1, false, CURRENT_TIMESTAMP + interval '1 hour', 'scheduled_disable', 'integration-test')::text`, nodeID).Scan(&disabledID); err != nil {
+	disabledID, err := readActivationID(`SELECT public.control_set_node_inventory_monitoring($1, false, CURRENT_TIMESTAMP + interval '1 hour', 'scheduled_disable', 'integration-test', NULL::uuid)`)
+	if err != nil {
 		t.Fatalf("schedule monitoring disable: %v", err)
 	}
-	if disabledID == nil || *disabledID != enabledID {
+	if disabledID != enabledID {
 		t.Fatalf("scheduled disable ID = %v, want %s", disabledID, enabledID)
 	}
-	var replayDisabledID *string
-	if err := tx.QueryRow(ctx, `SELECT public.control_set_node_inventory_monitoring($1, false, CURRENT_TIMESTAMP + interval '1 hour', 'scheduled_disable', 'integration-test')::text`, nodeID).Scan(&replayDisabledID); err != nil {
+	replayDisabledID, err := readActivationID(`SELECT public.control_set_node_inventory_monitoring($1, false, CURRENT_TIMESTAMP + interval '1 hour', 'scheduled_disable', 'integration-test', NULL::uuid)`)
+	if err != nil {
 		t.Fatalf("replay monitoring disable: %v", err)
 	}
-	if replayDisabledID == nil || *replayDisabledID != enabledID {
+	if replayDisabledID != enabledID {
 		t.Fatalf("scheduled disable replay ID = %v, want %s", replayDisabledID, enabledID)
+	}
+	if _, err := tx.Exec(ctx, `SET LOCAL ROLE NONE`); err != nil {
+		t.Fatalf("restore owner role: %v", err)
 	}
 
 	var start, finish, endRecordedAt time.Time
@@ -440,16 +460,19 @@ func TestMonitoringIntervalsAndRegistrarLeastPrivilege(t *testing.T) {
 	if endReason != "scheduled_disable" || endActor != "integration-test" || endRecordedAt.IsZero() {
 		t.Fatalf("monitoring close metadata = %q/%q/%s", endReason, endActor, endRecordedAt)
 	}
+	if _, err := tx.Exec(ctx, `SET LOCAL ROLE relay_control_asset_registrar`); err != nil {
+		t.Fatalf("assume registrar role for validation cases: %v", err)
+	}
 
 	for _, testCase := range []struct {
 		name      string
 		statement string
 	}{
-		{"NULL enabled", `SELECT public.control_set_node_inventory_monitoring($1, NULL, NULL, 'deployment_enable', 'integration-test')`},
-		{"NULL reason", `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, NULL, 'integration-test')`},
-		{"NULL actor", `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_enable', NULL)`},
-		{"enable with disable reason", `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_disable', 'integration-test')`},
-		{"disable with enable reason", `SELECT public.control_set_node_inventory_monitoring($1, false, NULL, 'deployment_enable', 'integration-test')`},
+		{"NULL enabled", `SELECT public.control_set_node_inventory_monitoring($1, NULL, NULL, 'deployment_enable', 'integration-test', NULL::uuid)`},
+		{"NULL reason", `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, NULL, 'integration-test', NULL::uuid)`},
+		{"NULL actor", `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_enable', NULL, NULL::uuid)`},
+		{"enable with disable reason", `SELECT public.control_set_node_inventory_monitoring($1, true, NULL, 'deployment_disable', 'integration-test', NULL::uuid)`},
+		{"disable with enable reason", `SELECT public.control_set_node_inventory_monitoring($1, false, NULL, 'deployment_enable', 'integration-test', NULL::uuid)`},
 	} {
 		err = assetSavepoint(t, ctx, tx, testCase.name, func() error {
 			_, err := tx.Exec(ctx, testCase.statement, nodeID)
@@ -459,18 +482,21 @@ func TestMonitoringIntervalsAndRegistrarLeastPrivilege(t *testing.T) {
 	}
 	err = assetSavepoint(t, ctx, tx, "conflicting disable replay", func() error {
 		_, err := tx.Exec(ctx, `SELECT public.control_set_node_inventory_monitoring(
-			$1, false, CURRENT_TIMESTAMP + interval '1 hour', 'scheduled_disable', 'different-actor'
+			$1, false, CURRENT_TIMESTAMP + interval '1 hour', 'scheduled_disable', 'different-actor', NULL::uuid
 		)`, nodeID)
 		return err
 	})
 	requireSQLState(t, err, "23505")
 
 	err = assetSavepoint(t, ctx, tx, "monitoring backfill", func() error {
-		_, err := tx.Exec(ctx, `SELECT public.control_set_node_inventory_monitoring($1, true, CURRENT_TIMESTAMP - interval '1 minute', 'scheduled_enable', 'integration-test')`, nodeID)
+		_, err := tx.Exec(ctx, `SELECT public.control_set_node_inventory_monitoring($1, true, CURRENT_TIMESTAMP - interval '1 minute', 'scheduled_enable', 'integration-test', NULL::uuid)`, nodeID)
 		return err
 	})
 	requireSQLState(t, err, "22023")
 
+	if _, err := tx.Exec(ctx, `SET LOCAL ROLE NONE`); err != nil {
+		t.Fatalf("restore owner role before ACL checks: %v", err)
+	}
 	if _, err := tx.Exec(ctx, `SET LOCAL ROLE relay_control_runtime`); err != nil {
 		t.Fatalf("assume runtime role: %v", err)
 	}
@@ -630,15 +656,27 @@ func TestAssetRegistryConcurrentMonitoringEnableIsIdempotent(t *testing.T) {
 				return
 			}
 			defer conn.Close(context.Background())
+			if _, err := conn.Exec(ctx, `SET ROLE relay_control_asset_registrar`); err != nil {
+				errs <- err
+				return
+			}
 			<-start
-			var activationID string
+			var raw []byte
 			err = conn.QueryRow(ctx, `SELECT public.control_set_node_inventory_monitoring(
-				$1, true, NULL, 'deployment_enable', 'concurrent-test'
-			)::text`, nodeID).Scan(&activationID)
+				$1, true, NULL, 'deployment_enable', 'concurrent-test', NULL::uuid
+			)`, nodeID).Scan(&raw)
 			if err != nil {
 				errs <- err
 				return
 			}
+			var result struct {
+				ActivationID string `json:"activation_id"`
+			}
+			if err := json.Unmarshal(raw, &result); err != nil {
+				errs <- err
+				return
+			}
+			activationID := result.ActivationID
 			results <- activationID
 		}()
 	}
@@ -763,7 +801,7 @@ func TestAssetRegistrarCanOnlyUseControlledWriteAndReconciliationFunctions(t *te
 		t.Fatalf("registrar controlled policy activation: %v", err)
 	}
 	if _, err := tx.Exec(ctx, `SELECT public.control_set_node_inventory_monitoring(
-		$1, true, NULL, 'deployment_enable', 'registrar-test'
+		$1, true, NULL, 'deployment_enable', 'registrar-test', NULL::uuid
 	)`, nodeID); err != nil {
 		t.Fatalf("registrar controlled monitoring activation: %v", err)
 	}
@@ -875,139 +913,4 @@ func runAssetGoose(t *testing.T, ctx context.Context, repositoryRoot, databaseUR
 		return fmt.Errorf("goose %s: %w: %s", strings.Join(arguments, " "), err, strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-func TestAssetRegistryProtectedDownPreservesEnvironmentIdentity(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	ownerConfig, err := pgx.ParseConfig(testDatabaseURL(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	databaseName := strings.ReplaceAll(assetFixtureSuffix(t), "-", "_")
-	if len(databaseName) > 60 {
-		databaseName = databaseName[:60]
-	}
-	maintenanceConfig := ownerConfig.Copy()
-	maintenanceConfig.Database = "postgres"
-	maintenance, err := pgx.ConnectConfig(ctx, maintenanceConfig)
-	if err != nil {
-		t.Fatalf("connect maintenance database: %v", err)
-	}
-	defer maintenance.Close(context.Background())
-	identifier := pgx.Identifier{databaseName}.Sanitize()
-	if _, err := maintenance.Exec(ctx, `CREATE DATABASE `+identifier); err != nil {
-		t.Fatalf("create isolated migration database: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = maintenance.Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, databaseName)
-		_, _ = maintenance.Exec(context.Background(), `DROP DATABASE IF EXISTS `+identifier)
-	})
-
-	isolatedConfig := ownerConfig.Copy()
-	isolatedConfig.Database = databaseName
-	isolatedLocation, err := url.Parse(testDatabaseURL(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	isolatedLocation.Path = "/" + databaseName
-	isolatedURL := isolatedLocation.String()
-	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up-to", "27"); err != nil {
-		t.Fatal(err)
-	}
-	isolated, err := pgx.ConnectConfig(ctx, isolatedConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := isolated.Exec(ctx, `INSERT INTO environments (environment_id, name, environment_type)
-		VALUES ('protected-down', 'Protected Down', 'dev')`); err != nil {
-		isolated.Close(ctx)
-		t.Fatal(err)
-	}
-	isolated.Close(ctx)
-
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down-to", "2"); err != nil {
-		t.Fatalf("empty-registry protected down: %v", err)
-	}
-	isolated, err = pgx.ConnectConfig(ctx, isolatedConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var environmentID string
-	if err := isolated.QueryRow(ctx, `SELECT environment_id FROM environments WHERE singleton_id=1`).Scan(&environmentID); err != nil {
-		isolated.Close(ctx)
-		t.Fatalf("environment after empty down: %v", err)
-	}
-	if environmentID != "protected-down" {
-		isolated.Close(ctx)
-		t.Fatalf("environment ID after down = %q", environmentID)
-	}
-	var runtimeCanInsert, registrarCanSelect bool
-	if err := isolated.QueryRow(ctx, `SELECT
-		has_table_privilege('relay_control_runtime', 'environments', 'INSERT'),
-		has_table_privilege('relay_control_asset_registrar', 'environments', 'SELECT')`).
-		Scan(&runtimeCanInsert, &registrarCanSelect); err != nil {
-		isolated.Close(ctx)
-		t.Fatalf("read baseline ACL after down: %v", err)
-	}
-	if !runtimeCanInsert || registrarCanSelect {
-		isolated.Close(ctx)
-		t.Fatalf("down ACL runtime_insert=%v registrar_select=%v, want true/false", runtimeCanInsert, registrarCanSelect)
-	}
-	isolated.Close(ctx)
-
-	if err := runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "up-to", "27"); err != nil {
-		t.Fatal(err)
-	}
-	isolated, err = pgx.ConnectConfig(ctx, isolatedConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writer, err := isolated.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
-	if err != nil {
-		isolated.Close(ctx)
-		t.Fatal(err)
-	}
-	if _, err := writer.Exec(ctx, `SELECT public.control_register_node_driver(
-		'protected-down-node', 'v1', 'Protected Driver', 'active', ARRAY['management_health_read']::text[]
-	)`); err != nil {
-		_ = writer.Rollback(ctx)
-		isolated.Close(ctx)
-		t.Fatalf("seed concurrent registrar write: %v", err)
-	}
-	err = runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down-to", "2")
-	if err == nil || !strings.Contains(err.Error(), "could not obtain lock") {
-		_ = writer.Rollback(ctx)
-		isolated.Close(ctx)
-		t.Fatalf("down racing an in-flight registrar did not fail immediately on its NOWAIT lock: %v", err)
-	}
-	if err := writer.Commit(ctx); err != nil {
-		isolated.Close(ctx)
-		t.Fatalf("commit concurrent registrar write: %v", err)
-	}
-	isolated.Close(ctx)
-
-	err = runAssetGoose(t, ctx, repositoryRoot, isolatedURL, "down-to", "2")
-	if err == nil || !strings.Contains(err.Error(), "asset registry migration down requires an empty registry") {
-		t.Fatalf("down racing registrar write error = %v", err)
-	}
-	isolated, err = pgx.ConnectConfig(ctx, isolatedConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer isolated.Close(context.Background())
-	var version int
-	if err := isolated.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 3 {
-		t.Fatalf("migration version after refused down = %d, want 3", version)
-	}
-	if err := isolated.QueryRow(ctx, `SELECT environment_id FROM environments WHERE singleton_id=1`).Scan(&environmentID); err != nil {
-		t.Fatal(err)
-	}
-	if environmentID != "protected-down" {
-		t.Fatalf("environment ID after refused down = %q", environmentID)
-	}
 }

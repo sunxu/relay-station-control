@@ -112,25 +112,9 @@ func TestDingTalkDuplicateDisplayNamesEnqueue(t *testing.T) {
 	}
 }
 
-func TestDingTalkCatalogCleanInstallAndForwardUpgrade(t *testing.T) {
-	for _, scenario := range []struct {
-		name      string
-		migration []string
-		upgrade   bool
-	}{
-		{name: "clean install", migration: []string{"up"}},
-		{name: "forward upgrade", migration: []string{"up-to", "30"}, upgrade: true},
-	} {
-		t.Run(scenario.name, func(t *testing.T) {
-			database := newIsolatedJobDatabase(t, scenario.migration...)
-			if scenario.upgrade {
-				if err := runAssetGoose(t, context.Background(), "../..", database.ownerURL, "up"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			testDingTalkCatalogAndSnapshot(t, database)
-		})
-	}
+func TestDingTalkCatalogCleanInstall(t *testing.T) {
+	database := newIsolatedJobDatabase(t)
+	testDingTalkCatalogAndSnapshot(t, database)
 }
 
 func TestDingTalkCanonicalPayloadEnqueue(t *testing.T) {

@@ -72,7 +72,7 @@ func newOwnershipNodeGroup(
 			instance_id,display_name,node_type,driver_contract_version,
 			management_endpoint,reader_secret_ref
 		) VALUES ($1,'Ownership Test Node',$2,$3,$4,NULL)`,
-			nodeID, group.nodeType, group.contract, "https://node-"+nodeID.String()+".test"); err != nil {
+			nodeID, group.nodeType, group.contract, "http://node-"+nodeID.String()+".test"); err != nil {
 			t.Fatal(err)
 		}
 		group.nodes = append(group.nodes, nodeID)
@@ -385,7 +385,7 @@ func TestCrossNodeDuplicateOwnershipQuery(t *testing.T) {
 		}
 
 		gatewayID := uuid.New()
-		insertGatewayInstance(t, ctx, database.owner, gatewayID, "https://ownership-gw-binding.test", "file://ownership-gw-binding-reader")
+		insertGatewayInstance(t, ctx, database.owner, gatewayID, "http://ownership-gw-binding.test", "file://ownership-gw-binding-reader")
 		var snapshotID uuid.UUID
 		if err := database.owner.QueryRow(ctx, `INSERT INTO gateway_directory_snapshots(
 			snapshot_id, gateway_instance_id, fingerprint, schema_version, account_count

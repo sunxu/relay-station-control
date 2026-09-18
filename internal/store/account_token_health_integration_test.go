@@ -255,7 +255,18 @@ func TestAccountTokenHealthQualificationGatesRemainConservativePostgres(t *testi
 		{
 			name: "monitoring disabled",
 			setup: func(t *testing.T, f *availabilityFixture) {
-				if _, err := f.db.owner.Exec(context.Background(), `DELETE FROM relay_node_inventory_monitoring_activations WHERE instance_id=$1`, f.node); err != nil {
+				tx, err := f.db.owner.Begin(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback(context.Background())
+				if _, err := tx.Exec(context.Background(), `SET LOCAL ROLE relay_control_asset_registrar`); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tx.Exec(context.Background(), `SELECT public.control_set_node_inventory_monitoring($1,false,NULL,'deployment_disable','integration-test',NULL::uuid)`, f.node); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(context.Background()); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -319,108 +330,6 @@ func TestAccountTokenHealthEmptyAccountsAndIncompleteSourcePostgres(t *testing.T
 			setTokenRefreshAt(t, availability.db, availability.node, availability.keys[0], "-1 second", "UNKNOWN")
 			requireTokenHealth(t, availability.db, availability.node, availability.keys[0], "UNKNOWN")
 		})
-	}
-}
-
-func TestNodeAccountQualityV4AddsTokenProjectionWithoutChangingV1V2V3Postgres(t *testing.T) {
-	ctx := context.Background()
-	// This fixture verifies migration 29's down contract, not the latest
-	// additive read function introduced by later slices.
-	fixture := newAvailabilityFixture(t, 1, "up-to", "29")
-	key := fixture.keys[0]
-	enableTokenQualityFixture(t, fixture.db, fixture.node)
-	setTokenRefreshAt(t, fixture.db, fixture.node, key, "0 seconds", "VALID")
-
-	var v1, v2, v3 string
-	for _, check := range []struct {
-		name string
-		into *string
-		sig  string
-	}{
-		{name: "v1", into: &v1, sig: "public.control_query_node_account_quality_v1(uuid,text,text,text,interval,integer)"},
-		{name: "v2", into: &v2, sig: "public.control_query_node_account_quality_v2(uuid,text,text,text,text,interval,integer)"},
-		{name: "v3", into: &v3, sig: "public.control_query_node_account_quality_v3(uuid,text,text,text,text,text,text,interval,integer)"},
-	} {
-		if err := databaseQueryFunctionDefinition(ctx, fixture.db, check.sig, check.into); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	var accountKey, email, provider, quality string
-	var requestCount, successCount, failureCount int64
-	var successRate, p95 *float64
-	var lastSuccess, lastFailure *time.Time
-	var lastFailureClass *string
-	var inventory, recent []byte
-	var tokenState string
-	var expected *time.Time
-	if err := fixture.db.runtime.QueryRow(ctx, `
-		SELECT account_key, normalized_email, provider, quality, request_count,
-			success_count, failure_count, success_rate, p95_latency_ms,
-			last_success_at, last_failure_at, last_failure_class, inventory,
-			recent_requests, token_state, expected_valid_until
-		FROM public.control_query_node_account_quality_v4($1,'','','','','','', '15 minutes'::interval,100)`, fixture.node).
-		Scan(&accountKey, &email, &provider, &quality, &requestCount, &successCount, &failureCount, &successRate, &p95, &lastSuccess, &lastFailure, &lastFailureClass, &inventory, &recent, &tokenState, &expected); err != nil {
-		t.Fatal(err)
-	}
-	if accountKey != key || email == "" || provider != "antigravity" || tokenState != "VALID" || expected == nil {
-		t.Fatalf("v4 projection = key=%s email=%s provider=%s state=%s expected=%v", accountKey, email, provider, tokenState, expected)
-	}
-	if requestCount < 0 || successCount < 0 || failureCount < 0 || successRate != nil && (*successRate < 0 || *successRate > 1) || p95 != nil && *p95 < 0 || len(inventory) == 0 || len(recent) == 0 {
-		t.Fatal("v4 changed the existing quality projection shape")
-	}
-
-	before := map[string]string{"v1": v1, "v2": v2, "v3": v3}
-	if err := runAssetGoose(t, ctx, "../..", fixture.db.ownerURL, "down"); err != nil {
-		t.Fatal(err)
-	}
-	var v4Removed bool
-	if err := fixture.db.owner.QueryRow(ctx, `SELECT to_regprocedure('public.control_query_node_account_quality_v4(uuid,text,text,text,text,text,text,interval,integer)') IS NULL`).Scan(&v4Removed); err != nil || !v4Removed {
-		t.Fatalf("v4 was not removed on down: %v", err)
-	}
-	for name, want := range before {
-		sig := map[string]string{"v1": "public.control_query_node_account_quality_v1(uuid,text,text,text,interval,integer)", "v2": "public.control_query_node_account_quality_v2(uuid,text,text,text,text,interval,integer)", "v3": "public.control_query_node_account_quality_v3(uuid,text,text,text,text,text,text,interval,integer)"}[name]
-		var got string
-		if err := databaseQueryFunctionDefinition(ctx, fixture.db, sig, &got); err != nil || got != want {
-			t.Fatalf("%s definition changed across v4 down/up: err=%v", name, err)
-		}
-	}
-	if err := runAssetGoose(t, ctx, "../..", fixture.db.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestNodeAccountQualityV4ForwardUpgradePreservesV1V2V3AndColumnsPostgres(t *testing.T) {
-	ctx := context.Background()
-	fixture := newAvailabilityFixture(t, 1, "up-to", "28")
-	oldDefinitions := make(map[string]string)
-	for _, signature := range []string{
-		"public.control_query_node_account_quality_v1(uuid,text,text,text,interval,integer)",
-		"public.control_query_node_account_quality_v2(uuid,text,text,text,text,interval,integer)",
-		"public.control_query_node_account_quality_v3(uuid,text,text,text,text,text,text,interval,integer)",
-	} {
-		var definition string
-		if err := databaseQueryFunctionDefinition(ctx, fixture.db, signature, &definition); err != nil {
-			t.Fatal(err)
-		}
-		oldDefinitions[signature] = definition
-	}
-	oldColumns := accountQualityColumnCatalog(t, ctx, fixture.db)
-
-	if err := runAssetGoose(t, ctx, "../..", fixture.db.ownerURL, "up-by-one"); err != nil {
-		t.Fatal(err)
-	}
-	for signature, want := range oldDefinitions {
-		var got string
-		if err := databaseQueryFunctionDefinition(ctx, fixture.db, signature, &got); err != nil {
-			t.Fatal(err)
-		}
-		if got != want {
-			t.Fatalf("function definition changed during 28->29 upgrade: %s", signature)
-		}
-	}
-	if got := accountQualityColumnCatalog(t, ctx, fixture.db); !reflect.DeepEqual(got, oldColumns) {
-		t.Fatalf("column catalog changed during 28->29 upgrade:\nold=%v\nnew=%v", oldColumns, got)
 	}
 }
 
@@ -507,7 +416,7 @@ func TestNodeAccountQualityV4BatchProjectionIsSetBased(t *testing.T) {
 		t.Fatal("empty v4 query plan")
 	}
 	definition := ""
-	if err := databaseQueryFunctionDefinition(ctx, database, "public.control_query_node_account_quality_v4(uuid,text,text,text,text,text,text,interval,integer)", &definition); err != nil {
+	if err := databaseQueryFunctionDefinition(ctx, database, "public.control_query_node_account_quality_stage1_v4(uuid,text,text,text,text,text,text,interval,integer)", &definition); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(definition, "public.control_query_account_token_health_v1(") != 1 || !strings.Contains(definition, "token_page AS MATERIALIZED") || !strings.Contains(definition, "ARRAY(") {

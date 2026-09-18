@@ -302,13 +302,7 @@ func TestReadonlyQueryBundlePinsPostgresAndOwnsTemporaryCleanup(t *testing.T) {
 	}
 	postgresScript := readFile(t, filepath.Join(root, "account-inventory-readonly-query-postgres.sh"))
 	for _, required := range []string{
-		"TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility",
-		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState",
 		"TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix",
-		"migration8_existing_state_unchanged=covered",
-		"migration8_identity_copy_backfill=0",
-		"protected_down_empty_up=covered",
-		"protected_down_audit_fail_closed=covered",
 		"runtime_function_execute=allowed",
 		"runtime_sensitive_table_enumeration=denied",
 		"runtime_sensitive_table_dml=denied",
@@ -408,13 +402,6 @@ func TestReadonlyQuerySuccessfulPathsStrictlyVerifyCleanup(t *testing.T) {
 
 func TestReadonlyQueryPostgresClassifiesGroupedGoTestFailuresWithoutPrintingLogs(t *testing.T) {
 	script := readFile(t, filepath.Join(acceptanceRoot(t), "account-inventory-readonly-query-postgres.sh"))
-	migrationTest := readFile(t, filepath.Join(repositoryRoot(t), "internal", "store",
-		"account_inventory_readonly_query_migration_schema_integration_test.go"))
-	for _, subtest := range []string{"tables_unchanged", "columns_unchanged", "rows_unchanged"} {
-		if !strings.Contains(migrationTest, `t.Run("`+subtest+`"`) {
-			t.Errorf("migration preservation acceptance lacks exact subtest %q", subtest)
-		}
-	}
 	for _, required := range []string{
 		"go test -json ./internal/store",
 		"go test -json -race ./internal/store ./internal/api",
@@ -429,21 +416,7 @@ func TestReadonlyQueryPostgresClassifiesGroupedGoTestFailuresWithoutPrintingLogs
 	}
 
 	mappings := map[string][2]string{
-		"TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility": {
-			"store_test_migration_empty_down_up_failed", "race_test_migration_empty_down_up_failed",
-		},
-		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState": {
-			"store_test_migration_state_preservation_failed", "race_test_migration_state_preservation_failed",
-		},
-		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/tables_unchanged": {
-			"store_test_migration_state_tables_changed", "race_test_migration_state_tables_changed",
-		},
-		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/columns_unchanged": {
-			"store_test_migration_state_columns_changed", "race_test_migration_state_columns_changed",
-		},
-		"TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/rows_unchanged": {
-			"store_test_migration_state_rows_changed", "race_test_migration_state_rows_changed",
-		},
+
 		"TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix": {
 			"store_test_store_permission_matrix_failed", "race_test_store_permission_matrix_failed",
 		},

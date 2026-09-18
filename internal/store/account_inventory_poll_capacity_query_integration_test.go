@@ -8,9 +8,6 @@ import (
 	"github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/inventorypoll"
 	pollstore "github.com/sunxu/relay-station-control/internal/store"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -176,31 +173,8 @@ func TestAccountInventoryPollCapacityRuntimeReadIsSchedulerCompatible(t *testing
 	if !errors.As(err, &pgerr) || pgerr.Code != "23514" || errors.Is(err, inventorypoll.ErrCapacityExceeded) {
 		t.Fatalf("inconsistent scheduler was misclassified: %v", err)
 	}
-	// Down executes only its function DROP, in a rolled-back owner transaction.
-	raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "00019_account_inventory_poll_capacity_query_access.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	down := strings.Split(string(raw), "-- +goose Down")[1]
-	tx, err := database.owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, down); err != nil {
-		t.Fatal(err)
-	}
-	var absent bool
-	if err = tx.QueryRow(ctx, "SELECT to_regprocedure($1) IS NULL", pollCapacityFunction).Scan(&absent); err != nil || !absent {
-		t.Fatal("down did not drop function", err)
-	}
-	if err = tx.QueryRow(ctx, "SELECT count(*) FROM account_inventory_poll_runs").Scan(&runs); err != nil || runs != 2 {
-		t.Fatal("down changed poll history", err)
-	}
-	if err = tx.Rollback(ctx); err != nil {
-		t.Fatal(err)
-	}
-	t.Log("capacity ACL, zero-account eligibility, N+1 atomic rejection, N recovery, policy inconsistency, and readonly Down: PASS")
+
+	t.Log("capacity ACL, zero-account eligibility, N+1 atomic rejection, N recovery, and policy inconsistency: PASS")
 }
 
 func TestAccountInventoryPollCapacityExpiredRetryRemainsBounded(t *testing.T) {

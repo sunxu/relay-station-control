@@ -163,7 +163,7 @@ func runFormalMonitoringScript(ctx context.Context, t *testing.T, registrarURL, 
 		databaseName := strings.TrimPrefix(parsed.Path, "/")
 		container := os.Getenv("CONTROL_POSTGRES_CONTAINER")
 		if container == "" {
-			container = "relay-station-dev-control-postgres-1"
+			container = "relay-control-stage0-pg"
 		}
 		containerArgs := []string{
 			"exec", "-i", container, "env",

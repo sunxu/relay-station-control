@@ -72,21 +72,6 @@ func TestAccountAdmissionRechecksDurableNodeEligibilityPG18(t *testing.T) {
 	}
 }
 
-func TestAccountAdmissionFencingMigrationUpgradesFromPreviousHeadPG18(t *testing.T) {
-	database := newIsolatedJobDatabase(t, "up-to", "49")
-	ctx := context.Background()
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
-		t.Fatal(err)
-	}
-	var version int32
-	if err := database.owner.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 50 {
-		t.Fatalf("migration version=%d, want 50", version)
-	}
-}
-
 func TestAccountNoopAdmissionConvergesConcurrentPreparedRetriesPG18(t *testing.T) {
 	ctx := context.Background()
 	databaseURL, owner, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)

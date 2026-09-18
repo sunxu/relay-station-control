@@ -64,6 +64,7 @@ func newProblemOwnershipNodeGroup(
 			nodeID, group.nodeType, group.contract, "http://node-"+nodeID.String()+".test"); err != nil {
 			t.Fatal(err)
 		}
+		enableCurrentNodeMonitoring(t, ctx, database, nodeID)
 		group.nodes = append(group.nodes, nodeID)
 	}
 	return group

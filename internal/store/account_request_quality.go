@@ -100,7 +100,7 @@ func (r *AccountRequestQualityRepository) ListRequestQualityTargets(ctx context.
 	if r == nil || r.pool == nil {
 		return nil, errors.New("store: account request quality database is unavailable")
 	}
-	rows, err := r.pool.Query(ctx, `SELECT instance_id, node_type, driver_contract_version, management_endpoint, reader_secret_ref, capabilities FROM public.control_query_account_request_quality_targets_v1()`)
+	rows, err := r.pool.Query(ctx, `SELECT instance_id, node_type, driver_contract_version, management_endpoint, capabilities FROM public.control_query_account_request_quality_targets_v1()`)
 	if err != nil {
 		return nil, err
 	}
@@ -109,20 +109,15 @@ func (r *AccountRequestQualityRepository) ListRequestQualityTargets(ctx context.
 	for rows.Next() {
 		var id uuid.UUID
 		var nodeType, contract, endpoint string
-		var secret *string
 		var caps []string
-		if err := rows.Scan(&id, &nodeType, &contract, &endpoint, &secret, &caps); err != nil {
+		if err := rows.Scan(&id, &nodeType, &contract, &endpoint, &caps); err != nil {
 			return nil, err
-		}
-		ref := ""
-		if secret != nil {
-			ref = *secret
 		}
 		capabilities := make([]drivers.Capability, len(caps))
 		for i := range caps {
 			capabilities[i] = drivers.Capability(caps[i])
 		}
-		targets = append(targets, drivers.NodeTarget{InstanceID: id, NodeType: drivers.NodeType(nodeType), DriverContractVersion: drivers.DriverContractVersion(contract), ManagementEndpoint: endpoint, ReaderSecretReference: drivers.NewSecretReference(ref), Capabilities: capabilities})
+		targets = append(targets, drivers.NodeTarget{InstanceID: id, NodeType: drivers.NodeType(nodeType), DriverContractVersion: drivers.DriverContractVersion(contract), ManagementEndpoint: endpoint, Capabilities: capabilities})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

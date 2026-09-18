@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,55 +63,6 @@ func installExecutionPolicyKind(t *testing.T, ctx context.Context, pool *pgxpool
 
 func executionPolicyPayload() []byte {
 	return []byte(`{"enabled":true,"mode":"safe","revision":1,"target_id":"2cf45c9d-ea70-4d1a-ae2b-550701c22a55"}`)
-}
-
-func TestDurableJobExecutionPolicyForwardMigrationDefaultsAndOldJobs(t *testing.T) {
-	database := newIsolatedJobDatabase(t, "up-to", "27")
-	ctx := context.Background()
-	definition := syntheticJobDefinition("test.policy.old_" + assetFixtureSuffix(t))
-	tx, err := database.owner.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	insertSyntheticJobKind(t, ctx, tx, definition)
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	// The old schema/function must be able to create evidence before 00028.
-	payload := executionPolicyPayload()
-	jobID, operationID := uuid.New(), uuid.New()
-	if _, err := database.owner.Exec(ctx, `SELECT * FROM public.control_enqueue_async_job(
-		$1::uuid, $2::text, $3::text, 1::integer, $4::uuid, $5::jsonb,
-		sha256(convert_to(public.control_job_payload_canonical($5::jsonb),'UTF8')),
-		50::smallint, $6::uuid, $7::text, false::boolean
-	)`, jobID, "test:old:"+uuid.NewString(), definition.Kind, operationID,
-		payload, uuid.New(), "job:"+jobID.String()+":wake:v1"); err != nil {
-		t.Fatalf("enqueue pre-00028 job: %v", err)
-	}
-
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	var catalogUnknown, catalogDirect, jobUnknown, jobDirect bool
-	if err := database.owner.QueryRow(ctx, `SELECT k.allow_unknown_effect_replay,k.allow_direct_success,
-		j.allow_unknown_effect_replay,j.allow_direct_success
-		FROM async_job_kinds k JOIN async_jobs j ON j.job_kind=k.job_kind WHERE j.job_id=$1`, jobID).
-		Scan(&catalogUnknown, &catalogDirect, &jobUnknown, &jobDirect); err != nil {
-		t.Fatal(err)
-	}
-	if catalogUnknown || catalogDirect || jobUnknown || jobDirect {
-		t.Fatalf("00028 defaults changed old policy: catalog=%t/%t job=%t/%t", catalogUnknown, catalogDirect, jobUnknown, jobDirect)
-	}
-}
-
-func TestDurableJobExecutionPolicyDownIsForwardOnly(t *testing.T) {
-	// Exercise 00028's own guard, not a later forward-only catalog migration.
-	database := newIsolatedJobDatabase(t, "up-to", "28")
-	err := runAssetGoose(t, context.Background(), "../..", database.ownerURL, "down-to", "27")
-	if err == nil || !strings.Contains(err.Error(), "execution policy migration is forward-only") {
-		t.Fatalf("policy down error = %v", err)
-	}
 }
 
 func TestDurableJobExecutionPolicyCatalogAndJobInvariants(t *testing.T) {

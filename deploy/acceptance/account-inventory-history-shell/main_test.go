@@ -118,7 +118,6 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-run.sh",
 		"account-inventory-history-postgres.sh",
 		"account-inventory-history-process.sh",
-		"account-inventory-history-rollback.sh",
 		"account-inventory-history-data-plane.sh",
 		"account-inventory-history-safety-run.sh",
 	}
@@ -126,7 +125,6 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"account-inventory-history-run.sh":        "relay-control-history-run.",
 		"account-inventory-history-postgres.sh":   "relay-control-history-postgres.",
 		"account-inventory-history-process.sh":    "relay-control-history-process.",
-		"account-inventory-history-rollback.sh":   "relay-control-history-rollback.",
 		"account-inventory-history-data-plane.sh": "relay-control-history-data-plane.",
 		"account-inventory-history-safety-run.sh": "relay-control-history-safety.",
 	}
@@ -166,9 +164,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 
 	runner := readAcceptanceFile(t, scripts[0])
 	for _, required := range []string{
-		`mode="${1:-static}"`, "static)", "postgres)", "process)", "rollback)", "data-plane)", "all)",
+		`mode="${1:-static}"`, "static)", "postgres)", "process)", "data-plane)", "all)",
 		"account-inventory-history-postgres.sh", "account-inventory-history-process.sh",
-		"account-inventory-history-rollback.sh", "rollback_gate=covered",
 		"account-inventory-history-data-plane.sh", "data_plane_isolation=covered",
 		"baseline_models=1/1", "outage_models=100/100", "gateway_inference_e2e=not_covered",
 		"account-inventory-history-safety-run.sh", "sensitive_canary=partial_local_sinks", "external_requests=not_covered",
@@ -214,8 +211,8 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	for _, required := range []string{
 		"docker compose --project-name", "down --volumes --remove-orphans",
 		"docker ps --all", "docker volume ls", "docker network ls",
-		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose up-to 9", "go tool goose down",
-		"assert_version 9", "assert_version 8", "migrate down", "migrate up",
+		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose up",
+		"assert_version 51", "migrate",
 		"TestAccountInventoryHistoryPostgresSchemaSmoke", "core_sha256=covered",
 		"TestAccountInventoryHistoryPostgresPlannerCatalogGate",
 		"TestAccountInventoryHistoryPostgresRollupPublicationMatrix",
@@ -264,10 +261,6 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"TestAccountInventoryHistoryPlannerSerializesRetentionBoundary",
 		"TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress",
 		"TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion",
-		"TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection",
-		"TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy",
-		"account_inventory_history_migration8_fingerprint=success",
-		"old_columns=count_digest_covered", "provider_health=current_poll_result",
 		"TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition",
 		"TestInventorySnapshotContractFailureFinalizesWithoutPromotion",
 		"TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff",
@@ -329,7 +322,6 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 	}
 
 	assertHistoryProcessContract(t)
-	assertHistoryRollbackContract(t)
 	assertHistorySafetyContract(t)
 }
 
@@ -342,7 +334,6 @@ func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
 	for stage, mode := range map[string]string{
 		"history_postgres":   "postgres",
 		"history_process":    "process",
-		"history_rollback":   "rollback",
 		"history_data_plane": "data-plane",
 	} {
 		pattern := regexp.MustCompile(`(?ms)^  ` + stage + `:\n.*?account-inventory-history-run\.sh ` + mode + `$`)
@@ -360,12 +351,10 @@ func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
 		"      - history_static",
 		"      - history_postgres",
 		"      - history_process",
-		"      - history_rollback",
 		"      - history_data_plane",
 		"${{ needs.history_static.result }}",
 		"${{ needs.history_postgres.result }}",
 		"${{ needs.history_process.result }}",
-		"${{ needs.history_rollback.result }}",
 		"${{ needs.history_data_plane.result }}",
 		"account_inventory_history_acceptance=failed reason=stage_dependency_failed",
 		"account_inventory_history_acceptance=success mode=all",
@@ -376,85 +365,6 @@ func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
 	}
 	if strings.Contains(workflow, "account-inventory-history-run.sh all") {
 		t.Fatal("history workflow still runs Docker-heavy stages on one runner")
-	}
-}
-
-func assertHistoryRollbackContract(t *testing.T) {
-	t.Helper()
-	rollback := readAcceptanceFile(t, "account-inventory-history-rollback.sh")
-	harness := readAcceptanceFile(t, "account-inventory-history-rollback/main.go")
-	fakeNode := readAcceptanceFile(t, "account-inventory-history-fake-node/main.go")
-	for _, required := range []string{
-		"d4310023b3128199e485670d4bde84da7607412f",
-		"git archive --format=tar", `-o "$runtime_directory/control-old" ./cmd/control`,
-		`-o "$runtime_directory/control-current" ./cmd/control`,
-		`CGO_ENABLED=0 GOOS=linux go build -trimpath \
-      -o "$runtime_directory/history-fake-node" ./deploy/acceptance/account-inventory-history-fake-node`,
-		"CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED=true",
-		"CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED=true", "CONTROL_CLIPROXYAPI_DRIVER_ENABLED=true",
-		"CONTROL_COOKIE_SECURE=true",
-		`history-harness" verify-baseline`, `history-harness" wait`,
-		`history-harness" http-query`, `history-harness" verify`,
-		`session_value="$(sed -n`, `csrf_value="$(sed -n`,
-		`"$management_key" "$fake_token" "$session_value" "$csrf_value"`, `"$runtime_directory"/*.log`,
-		"account_inventory_history_fake_node=stopped total=1 health=0 inventory=1 unauthorized=0 rejected=0",
-		"lock_acquired=false", `[ "$lock_acquired" = true ]`,
-		`lock_directory="$temporary_root/relay-control-history-rollback-${control_port}.lock"`,
-		"snapshot_cleanup=controlled", "poll_cleanup=controlled", "current_fk_null=covered",
-		"current_candidate_disabled=covered", "compatibility_gate=covered",
-		"runner_stopped_before_old_binary=covered",
-		"old_control_poll_promotion=covered", "old_control_http_current_query=covered",
-		"history_and_history_audit_unchanged=covered", "production_down=not_used",
-		`if [ -n "$old_control_name" ]`, `if [ -n "$fake_node_name" ]`,
-		`docker_no_proxy rm --force`, `docker_no_proxy container inspect`,
-		"down --volumes --remove-orphans", "docker ps --all", "docker volume ls", "docker network ls",
-		"cleanup_runtime_residual", `rmdir "$lock_directory"`,
-		"cleanup_containers=0", "cleanup_volumes=0", "cleanup_networks=0",
-		"cleanup_temp=0", "cleanup_lock=0",
-	} {
-		if !strings.Contains(rollback, required) {
-			t.Errorf("history rollback runner lacks %q", required)
-		}
-	}
-	for _, required := range []string{
-		`case "verify-baseline":`, `case "wait":`, `case "http-query":`, `case "verify":`,
-		`controlauth.SessionCookieName`, `request.Header.Set("X-CSRF-Token", session.CSRF)`,
-		"promotion_applied", "current_poll_run_id=$2",
-		"category='account_inventory' AND action='account_inventory.view' AND result='success'",
-	} {
-		if !strings.Contains(harness, required) {
-			t.Errorf("history rollback harness lacks %q", required)
-		}
-	}
-	for _, required := range []string{
-		`case "/v0/management/auth-files":`, `bump(&node.counts.inventory)`,
-		"total=%d health=%d inventory=%d unauthorized=%d rejected=%d",
-	} {
-		if !strings.Contains(fakeNode, required) {
-			t.Errorf("history rollback fake node lacks %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"history-forward-probe", "history-old-probe", "old-probe",
-		"POLL_ENABLED=false", "POLL_ENABLED='false'", `POLL_ENABLED="false"`,
-	} {
-		if strings.Contains(rollback+"\n"+harness, forbidden) {
-			t.Errorf("history rollback gate contains forbidden %q", forbidden)
-		}
-	}
-	if strings.Contains(rollback, "git checkout") || strings.Contains(rollback, "git worktree") ||
-		strings.Count(rollback, "label=com.docker.compose.project=") < 3 {
-		t.Fatal("history rollback export or cleanup contract is invalid")
-	}
-	candidateStart := strings.LastIndex(rollback, "\n  start_current_disabled_control\n")
-	candidateStop := strings.LastIndex(rollback, "\n  stop_current_disabled_control\n")
-	baselineCheck := strings.LastIndex(rollback, `history-harness" verify-baseline`)
-	oldStart := strings.LastIndex(rollback, "\n  start_old_control ")
-	if candidateStart < 0 || candidateStop <= candidateStart || baselineCheck <= candidateStop || oldStart <= baselineCheck {
-		t.Fatal("history rollback candidate-to-old handoff order is invalid")
-	}
-	if regexp.MustCompile(`(?m)^[^#\n]*(?:goose[^\n]*[[:space:]'\"]down(?:[[:space:]'\"]|$)|migrate[[:space:]'\"]+down(?:[[:space:]'\"]|$)|migrate-down|migration-down)`).MatchString(rollback) {
-		t.Fatal("history rollback runner must not invoke migration down")
 	}
 }
 
@@ -755,22 +665,17 @@ func TestHistoryAcceptanceCleanupAndReportContract(t *testing.T) {
 	}{
 		{
 			"account-inventory-history-run.sh", "account_inventory_history_acceptance",
-			"account_inventory_history_acceptance mode exact_discovery race history_targeted_race million_rows sensitive_canary external_requests fake_network_counter data_plane_isolation baseline_models outage_models gateway_inference_e2e process rollback_gate local_sink_canary sensitive_canary_database_sinks " + cleanupKeys,
+			"account_inventory_history_acceptance mode exact_discovery race history_targeted_race million_rows sensitive_canary external_requests fake_network_counter data_plane_isolation baseline_models outage_models gateway_inference_e2e process local_sink_canary sensitive_canary_database_sinks " + cleanupKeys,
 			false, false,
 		},
 		{
 			"account-inventory-history-postgres.sh", "account_inventory_history_postgres",
-			"account_inventory_history_postgres server_major migration up_down_up core_sha256 canonical_golden compaction_main_path crash_recovery_matrix security_boundary_matrix aggregate_schema_constraints_protection_gates compaction_claim_fencing compaction_reconcile_phases summarize_atomicity summarize_timeout_disconnect_recovery summarize_immutability snapshot_delete_atomicity snapshot_delete_selection snapshot_delete_resume compaction_complete_count_gate final_rollup finalize_atomicity final_immutability metrics_completed_only zero_provider planner_catalog_utc_inclusive_72h planner_eligibility_matrix finalize_catalog_9500 utc_dst_72h_expression slot_provider_matrix incomplete_segment_gates coverage_expression_9499_finalize_9474_9500_10000 last_segment_concurrency policy_boundary metrics_backlog_drain retention_batches retention_child_atomicity poll_candidate_rejections retention_eligibility_boundaries retention_ordered_chain_coverage_omission retention_query_promotion_scope_concurrency retention_query_promotion_scope_race retention_planner_lock planner_limit_progress retired_day_poll_lock legacy_retention_bootstrap zero_poll_lineage_bootstrap retired_day_no_resurrection current_fields_after_retention current_query_after_retention current_health_query_matrix current_http_null_source provider_health_finalize_matrix lease_expiry history_audit_allowlist_retention_atomicity sensitive_canary_database_sinks capacity_1_10_50_total_accounts audit_gate runtime_table_dml runtime_functions " + cleanupKeys,
+			"account_inventory_history_postgres server_major migration fresh_install core_sha256 canonical_golden compaction_main_path crash_recovery_matrix security_boundary_matrix aggregate_schema_constraints_protection_gates compaction_claim_fencing compaction_reconcile_phases summarize_atomicity summarize_timeout_disconnect_recovery summarize_immutability snapshot_delete_atomicity snapshot_delete_selection snapshot_delete_resume compaction_complete_count_gate final_rollup finalize_atomicity final_immutability metrics_completed_only zero_provider planner_catalog_utc_inclusive_72h planner_eligibility_matrix finalize_catalog_9500 utc_dst_72h_expression slot_provider_matrix incomplete_segment_gates coverage_expression_9499_finalize_9474_9500_10000 last_segment_concurrency policy_boundary metrics_backlog_drain retention_batches retention_child_atomicity poll_candidate_rejections retention_eligibility_boundaries retention_ordered_chain_coverage_omission retention_query_promotion_scope_concurrency retention_query_promotion_scope_race retention_planner_lock planner_limit_progress retired_day_poll_lock legacy_retention_bootstrap zero_poll_lineage_bootstrap retired_day_no_resurrection current_fields_after_retention current_query_after_retention current_health_query_matrix current_http_null_source provider_health_finalize_matrix lease_expiry history_audit_allowlist_retention_atomicity sensitive_canary_database_sinks capacity_1_10_50_total_accounts audit_gate runtime_table_dml runtime_functions " + cleanupKeys,
 			true, false,
 		},
 		{
 			"account-inventory-history-process.sh", "account_inventory_history_process",
 			"account_inventory_history_process migration default_disabled metrics_http metrics_failure_isolation enabled_zero_source staging_concurrency_1 staging_delete_batch_1 staging_source_snapshots staging_current_query_equivalent source_backed_snapshots history_concurrency dual_workers_observed stale_fence_zero_impact source_backed_retention source_backed_postgres_restart source_backed_max_conns_1 source_backed_statement_timeout_recovery held_sql_sigterm_drain held_sql_statement_timeout_atomicity max_conns_1_pool_wait unexpired_lease reconciler_restart_takeover postgres_restart_recovery control_postgres_restart_phase_matrix permission_terminal_internal trigger_terminal_internal planner_runtime_stopped rollup_runtime_stopped retention_runtime_stopped terminal_source_preserved sigterm_exit log_redaction fake_network_counter external_requests node gateway prometheus internet model " + cleanupKeys,
-			true, true,
-		},
-		{
-			"account-inventory-history-rollback.sh", "account_inventory_history_rollback",
-			"account_inventory_history_rollback migration current_candidate_disabled compatibility_gate runner_stopped_before_old_binary pinned_old_revision snapshot_cleanup poll_cleanup current_fk_null old_control_poll_promotion old_control_http_current_query history_and_history_audit_unchanged fake_node_inventory_requests production_down " + cleanupKeys,
 			true, true,
 		},
 		{
@@ -914,7 +819,6 @@ func TestHistoryAcceptanceAllInvalidArgumentsAreFixedAndRedacted(t *testing.T) {
 		{"account-inventory-history-run.sh", []string{"invalid", "extra"}, "account_inventory_history_acceptance=failed reason=invalid_arguments"},
 		{"account-inventory-history-postgres.sh", []string{"unexpected"}, "account_inventory_history_postgres=failed reason=invalid_arguments"},
 		{"account-inventory-history-process.sh", []string{"unexpected"}, "account_inventory_history_process=failed reason=invalid_arguments"},
-		{"account-inventory-history-rollback.sh", []string{"unexpected"}, "account_inventory_history_rollback=failed reason=invalid_arguments"},
 		{"account-inventory-history-safety-run.sh", []string{"unexpected"}, "account_inventory_history_safety=failed reason=invalid_arguments"},
 		{"account-inventory-history-data-plane.sh", []string{"unexpected"}, "account_inventory_history_data_plane=failed reason=invalid_arguments"},
 		{"account-inventory-history-capacity.sh", []string{"unknown"}, "account_inventory_history_capacity=failed reason=invalid_scale"},

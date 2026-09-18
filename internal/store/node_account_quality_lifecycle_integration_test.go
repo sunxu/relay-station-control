@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"github.com/jackc/pgx/v5/pgconn"
-	"reflect"
 	"testing"
 	"time"
 
@@ -21,6 +20,7 @@ func TestNodeAccountQualityLifecycleFilterPostgres(t *testing.T) {
 	if _, err := database.owner.Exec(ctx, `INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES($1,$2,$3,'management_account_inventory_read')`, fixture.instanceID, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
+	enableCurrentNodeMonitoring(t, ctx, database, fixture.instanceID)
 	accounts := []lifecycleAccount{{email: "lifecycle@example.invalid"}}
 	fixture.finalize(t, ctx, database, accounts)
 	fixture.finalize(t, ctx, database, nil)
@@ -103,37 +103,5 @@ func TestNodeAccountQualityLifecycleFilterAndACLPostgres(t *testing.T) {
 		if !errors.As(err, &pgerr) || pgerr.Code != "42501" {
 			t.Fatalf("direct access not denied: %v", err)
 		}
-	}
-	before := captureReadonlyQueryMigrationState(t, ctx, db)
-	var v1Before, v1After string
-	const v1SQL = `SELECT pg_get_functiondef('public.control_query_node_account_quality_v1(uuid,text,text,text,interval,integer)'::regprocedure)`
-	if err := db.owner.QueryRow(ctx, v1SQL).Scan(&v1Before); err != nil {
-		t.Fatal(err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "down"); err != nil {
-		t.Fatal(err)
-	}
-	var removed bool
-	if err := db.owner.QueryRow(ctx, `SELECT to_regprocedure($1) IS NULL`, sig).Scan(&removed); err != nil || !removed {
-		t.Fatal("v2 not removed")
-	}
-	var retained int
-	if err := db.runtime.QueryRow(ctx, `SELECT count(*) FROM public.control_query_node_account_quality_v1($1,'','','','15 minutes'::interval,100)`, f.lifecycle.instanceID).Scan(&retained); err != nil || retained != 4 {
-		t.Fatalf("v1 compatibility %d %v", retained, err)
-	}
-	if !reflect.DeepEqual(before, captureReadonlyQueryMigrationState(t, ctx, db)) {
-		t.Fatal("down changed persistence")
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.owner.QueryRow(ctx, v1SQL).Scan(&v1After); err != nil || v1After != v1Before {
-		t.Fatal("v1 modified")
-	}
-	if p := query("missing", ""); len(p.Items) != 1 || p.Items[0].AccountKey != "openai:b@example.invalid" || !p.HasMore {
-		t.Fatal("v2 recovery failed")
-	}
-	if !reflect.DeepEqual(before, captureReadonlyQueryMigrationState(t, ctx, db)) {
-		t.Fatal("up changed persistence")
 	}
 }

@@ -45,7 +45,7 @@ func newCrossNodeDuplicateSchemaFixture(
 			instance_id, display_name, node_type, driver_contract_version,
 			management_endpoint, reader_secret_ref
 		) VALUES ($1,'Cross Node Duplicate Node','cross-node-duplicate','v1',$2,NULL)`,
-			nodeID, "https://node-"+nodeID.String()+".test"); err != nil {
+			nodeID, "http://node-"+nodeID.String()+".test"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -424,11 +424,9 @@ func TestCrossNodeDuplicateOwnershipSchemaFoundation(t *testing.T) {
 	t.Run("asset/environment deletion is restricted while duplicate history exists", func(t *testing.T) {
 		occurrenceID := fixture.insertOccurrence(t, ctx, database, "openai:dup12@example.com", now)
 		fixture.insertEvidence(t, ctx, database, occurrenceID, fixture.nodeA, "owner_confirmed", uuid.New(), now)
-		// ON DELETE RESTRICT raises restrict_violation (23001), not
-		// foreign_key_violation (23503); see
-		// relay_node_gateway_account_binding_schema_integration_test.go.
+		// The current lifecycle guard rejects asset-history mutation first.
 		_, err := database.owner.Exec(ctx, `DELETE FROM relay_node_assets WHERE instance_id=$1`, fixture.nodeA)
-		requireGatewayDirectorySQLState(t, err, "23001")
+		requireGatewayDirectorySQLState(t, err, "42501")
 		// environments already has its own unconditional delete-block guard
 		// (identity singleton, 23514) that fires before our FK is ever
 		// evaluated; either way environment deletion cannot silently

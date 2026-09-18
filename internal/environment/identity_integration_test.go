@@ -2,9 +2,11 @@ package environment
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	store "github.com/sunxu/relay-station-control/internal/store/sqlc"
@@ -28,6 +30,24 @@ func TestVerifyDatabaseIdentityAndRecovery(t *testing.T) {
 
 	queries := store.New(pool)
 	actual, err := queries.GetEnvironment(ctx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		ownerURL := os.Getenv("CONTROL_DATABASE_TEST_URL")
+		if ownerURL == "" {
+			t.Fatalf("environment fixture missing and CONTROL_DATABASE_TEST_URL is not set")
+		}
+		owner, ownerErr := pgxpool.New(ctx, ownerURL)
+		if ownerErr != nil {
+			t.Fatalf("connect fixture owner database: %v", ownerErr)
+		}
+		defer owner.Close()
+		if _, ownerErr = owner.Exec(ctx, `
+			INSERT INTO environments(singleton_id, environment_id, name, environment_type)
+			VALUES (1, 'identity-integration', 'Identity integration test', 'dev')
+			ON CONFLICT (singleton_id) DO NOTHING`); ownerErr != nil {
+			t.Fatalf("bootstrap environment singleton fixture: %v", ownerErr)
+		}
+		actual, err = queries.GetEnvironment(ctx)
+	}
 	if err != nil {
 		t.Fatalf("read environment singleton: %v", err)
 	}

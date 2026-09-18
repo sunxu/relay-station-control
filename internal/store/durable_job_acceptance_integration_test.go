@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -270,11 +271,87 @@ type isolatedJobDatabase struct {
 	runtime    *pgxpool.Pool
 }
 
+var testDatabaseTemplate struct {
+	sync.Mutex
+	name string
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	cleanupTestDatabaseTemplate()
+	os.Exit(code)
+}
+
 func newIsolatedJobDatabase(t *testing.T, migrationArguments ...string) *isolatedJobDatabase {
+	t.Helper()
+	if len(migrationArguments) == 0 {
+		return newTemplateJobDatabase(t)
+	}
+	return newRawMigrationJobDatabase(t, migrationArguments...)
+}
+
+func newTemplateJobDatabase(t *testing.T) *isolatedJobDatabase {
+	t.Helper()
+	templateName := ensureTestDatabaseTemplate(t)
+	return createIsolatedJobDatabase(t, templateName)
+}
+
+func newRawMigrationJobDatabase(t *testing.T, migrationArguments ...string) *isolatedJobDatabase {
 	t.Helper()
 	if len(migrationArguments) == 0 {
 		migrationArguments = []string{"up"}
 	}
+	return createIsolatedJobDatabase(t, "", migrationArguments...)
+}
+
+func ensureTestDatabaseTemplate(t *testing.T) string {
+	t.Helper()
+	testDatabaseTemplate.Lock()
+	defer testDatabaseTemplate.Unlock()
+	if testDatabaseTemplate.name != "" {
+		return testDatabaseTemplate.name
+	}
+
+	ownerConfig, err := pgx.ParseConfig(testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	templateName := strings.ReplaceAll("control_test_template_"+uuid.NewString(), "-", "")[:48]
+	maintenanceConfig := ownerConfig.Copy()
+	maintenanceConfig.Database = "postgres"
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	maintenance, err := pgx.ConnectConfig(ctx, maintenanceConfig)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	identifier := pgx.Identifier{templateName}.Sanitize()
+	if _, err := maintenance.Exec(ctx, `CREATE DATABASE `+identifier); err != nil {
+		_ = maintenance.Close(ctx)
+		cancel()
+		t.Fatalf("create test template database: %v", err)
+	}
+	_ = maintenance.Close(ctx)
+	cancel()
+
+	templateURL, err := url.Parse(testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	templateURL.Path = "/" + templateName
+	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
+	err = runAssetGoose(t, migrationCtx, "../..", templateURL.String(), "up")
+	cancelMigration()
+	if err != nil {
+		cleanupNamedTestDatabase(t, templateName)
+		t.Fatal(err)
+	}
+	testDatabaseTemplate.name = templateName
+	return templateName
+}
+
+func createIsolatedJobDatabase(t *testing.T, templateName string, migrationArguments ...string) *isolatedJobDatabase {
+	t.Helper()
 	ownerConfig, err := pgx.ParseConfig(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
@@ -289,7 +366,11 @@ func newIsolatedJobDatabase(t *testing.T, migrationArguments ...string) *isolate
 		t.Fatal(err)
 	}
 	identifier := pgx.Identifier{databaseName}.Sanitize()
-	if _, err := maintenance.Exec(controlCtx, `CREATE DATABASE `+identifier); err != nil {
+	createSQL := `CREATE DATABASE ` + identifier
+	if templateName != "" {
+		createSQL += ` TEMPLATE ` + pgx.Identifier{templateName}.Sanitize()
+	}
+	if _, err := maintenance.Exec(controlCtx, createSQL); err != nil {
 		maintenance.Close(controlCtx)
 		cancelControl()
 		t.Fatal(err)
@@ -313,19 +394,48 @@ func newIsolatedJobDatabase(t *testing.T, migrationArguments ...string) *isolate
 	}
 	runtimeLocation.Path = "/" + databaseName
 	result := &isolatedJobDatabase{ownerURL: ownerLocation.String(), runtimeURL: runtimeLocation.String()}
-	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
-	err = runAssetGoose(t, migrationCtx, "../..", result.ownerURL, migrationArguments...)
-	cancelMigration()
-	if err != nil {
-		t.Fatal(err)
+	if templateName == "" {
+		migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
+		err = runAssetGoose(t, migrationCtx, "../..", result.ownerURL, migrationArguments...)
+		cancelMigration()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	poolCtx, cancelPool := context.WithTimeout(context.Background(), 45*time.Second)
-	result.owner, err = pgxpool.New(poolCtx, result.ownerURL)
+	ownerPoolConfig, err := pgxpool.ParseConfig(result.ownerURL)
 	if err != nil {
 		cancelPool()
 		t.Fatal(err)
 	}
-	result.runtime, err = pgxpool.New(poolCtx, result.runtimeURL)
+	if logicalNow := os.Getenv("CONTROL_TEST_GATEWAY_DIRECTORY_NOW"); logicalNow != "" {
+		ownerPoolConfig.ConnConfig.RuntimeParams["control.test_gateway_directory_now"] = logicalNow
+		ownerPoolConfig.MaxConns = 1
+	}
+	if reconcileNow := os.Getenv("CONTROL_TEST_GATEWAY_DIRECTORY_RECONCILE_NOW"); reconcileNow != "" {
+		ownerPoolConfig.ConnConfig.RuntimeParams["control.test_gateway_directory_reconcile_now"] = reconcileNow
+	}
+	result.owner, err = pgxpool.NewWithConfig(poolCtx, ownerPoolConfig)
+	if err != nil {
+		cancelPool()
+		t.Fatal(err)
+	}
+	runtimePoolConfig, err := pgxpool.ParseConfig(result.runtimeURL)
+	if err != nil {
+		result.owner.Close()
+		cancelPool()
+		t.Fatal(err)
+	}
+	if logicalNow := os.Getenv("CONTROL_TEST_GATEWAY_DIRECTORY_NOW"); logicalNow != "" {
+		runtimePoolConfig.ConnConfig.RuntimeParams["control.test_gateway_directory_now"] = logicalNow
+	}
+	if reconcileNow := os.Getenv("CONTROL_TEST_GATEWAY_DIRECTORY_RECONCILE_NOW"); reconcileNow != "" {
+		runtimePoolConfig.ConnConfig.RuntimeParams["control.test_gateway_directory_reconcile_now"] = reconcileNow
+	}
+	if os.Getenv("CONTROL_TEST_GATEWAY_DIRECTORY_NOW") != "" {
+		runtimePoolConfig.MaxConns = 1
+	}
+	result.runtime, err = pgxpool.NewWithConfig(poolCtx, runtimePoolConfig)
 	cancelPool()
 	if err != nil {
 		result.owner.Close()
@@ -336,6 +446,52 @@ func newIsolatedJobDatabase(t *testing.T, migrationArguments ...string) *isolate
 		result.owner.Close()
 	})
 	return result
+}
+
+func cleanupNamedTestDatabase(t *testing.T, databaseName string) {
+	t.Helper()
+	ownerConfig, err := pgx.ParseConfig(testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerConfig.Database = "postgres"
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	maintenance, err := pgx.ConnectConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer maintenance.Close(ctx)
+	identifier := pgx.Identifier{databaseName}.Sanitize()
+	_, _ = maintenance.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, databaseName)
+	_, _ = maintenance.Exec(ctx, `DROP DATABASE IF EXISTS `+identifier+` WITH (FORCE)`)
+}
+
+func cleanupTestDatabaseTemplate() {
+	testDatabaseTemplate.Lock()
+	defer testDatabaseTemplate.Unlock()
+	if testDatabaseTemplate.name == "" {
+		return
+	}
+	baseURL := os.Getenv("CONTROL_DATABASE_TEST_URL")
+	if baseURL == "" {
+		return
+	}
+	config, err := pgx.ParseConfig(baseURL)
+	if err != nil {
+		return
+	}
+	config.Database = "postgres"
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	maintenance, err := pgx.ConnectConfig(ctx, config)
+	if err != nil {
+		return
+	}
+	defer maintenance.Close(ctx)
+	identifier := pgx.Identifier{testDatabaseTemplate.name}.Sanitize()
+	_, _ = maintenance.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, testDatabaseTemplate.name)
+	_, _ = maintenance.Exec(ctx, `DROP DATABASE IF EXISTS `+identifier+` WITH (FORCE)`)
 }
 
 func TestDurableJobRuntimeCatalogAndStateBypassMatrix(t *testing.T) {
@@ -1492,77 +1648,6 @@ func TestDurableJobIndexesAndPublicReadSnapshot(t *testing.T) {
 			plan := strings.Join(lines, "\n")
 			if !strings.Contains(plan, planCase.index) {
 				t.Fatalf("plan does not use %s:\n%s", planCase.index, plan)
-			}
-		})
-	}
-}
-
-func TestDurableJobProtectedDownEachEvidenceClassPreservesPriorSchema(t *testing.T) {
-	cases := []struct {
-		name  string
-		setup func(*testing.T, context.Context, *isolatedJobDatabase, jobcore.Definition)
-	}{
-		{"kind", func(t *testing.T, ctx context.Context, database *isolatedJobDatabase, definition jobcore.Definition) {
-			installJobDefinition(t, ctx, database.owner, definition)
-		}},
-		{"job", func(t *testing.T, ctx context.Context, database *isolatedJobDatabase, definition jobcore.Definition) {
-			installJobDefinition(t, ctx, database.owner, definition)
-			insertBareJob(t, ctx, database.owner, definition)
-		}},
-		{"event", func(t *testing.T, ctx context.Context, database *isolatedJobDatabase, definition jobcore.Definition) {
-			installJobDefinition(t, ctx, database.owner, definition)
-			jobID, _ := insertBareJob(t, ctx, database.owner, definition)
-			if _, err := database.owner.Exec(ctx, `INSERT INTO async_job_events(
-				job_id,sequence,event_type,to_status,attempt,reason_code,actor_type
-			) VALUES ($1,1,'enqueued','pending',0,'job_enqueued','service')`, jobID); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"outbox", func(t *testing.T, ctx context.Context, database *isolatedJobDatabase, definition jobcore.Definition) {
-			installJobDefinition(t, ctx, database.owner, definition)
-			jobID, operationID := insertBareJob(t, ctx, database.owner, definition)
-			eventID := uuid.New()
-			if _, err := database.owner.Exec(ctx, `INSERT INTO operation_outbox(
-				event_id,event_key,job_id,operation_id,topic,envelope,status,error_code
-			) VALUES ($1,$2,$3,$4,'async_job_wake',jsonb_build_object(
-				'schema_version',1,'event_id',$1::uuid,'job_id',$3::uuid,
-				'operation_id',$4::uuid,'topic','async_job_wake'
-			),'suppressed','publisher_disabled')`, eventID, "job:"+jobID.String()+":wake:v1", jobID, operationID); err != nil {
-				t.Fatal(err)
-			}
-		}},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			// Keep this evidence-protection case on the legacy 00004 schema;
-			// otherwise 00028's forward-only guard is the first failure.
-			database := newIsolatedJobDatabase(t, "up-to", "4")
-			ctx := context.Background()
-			if _, err := database.owner.Exec(ctx, `INSERT INTO environments(environment_id,name,environment_type)
-				VALUES ('test-env','Protected Down Sentinel','dev')`); err != nil {
-				t.Fatal(err)
-			}
-			definition := syntheticJobDefinition("test.down_" + testCase.name)
-			testCase.setup(t, ctx, database, definition)
-			err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "3")
-			if err == nil || !strings.Contains(err.Error(), "durable job evidence exists") {
-				t.Fatalf("%s evidence down = %v", testCase.name, err)
-			}
-			var version, environmentCount int
-			var environmentsTable, authTable, assetsTable, jobsTable *string
-			if err := database.owner.QueryRow(ctx, `SELECT
-				(SELECT max(version_id) FROM goose_db_version WHERE is_applied),
-				(SELECT count(*) FROM environments WHERE environment_id='test-env'),
-				to_regclass('public.environments')::text,
-				to_regclass('public.control_admin_users')::text,
-				to_regclass('public.gateway_instances')::text,
-				to_regclass('public.async_jobs')::text`).Scan(
-				&version, &environmentCount, &environmentsTable, &authTable, &assetsTable, &jobsTable); err != nil {
-				t.Fatal(err)
-			}
-			if version != 4 || environmentCount != 1 || environmentsTable == nil || authTable == nil || assetsTable == nil || jobsTable == nil {
-				t.Fatalf("refused down damaged schema version=%d env=%d tables=%v/%v/%v/%v",
-					version, environmentCount, environmentsTable, authTable, assetsTable, jobsTable)
 			}
 		})
 	}

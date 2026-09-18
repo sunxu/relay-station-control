@@ -2,15 +2,63 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sunxu/relay-station-control/internal/requestquality"
 	store "github.com/sunxu/relay-station-control/internal/store"
 )
+
+func TestAccountAvailabilityLatestSchemaACLAndQueryBounds(t *testing.T) {
+	database := newAvailabilityFixture(t, 0).db
+	ctx := context.Background()
+	functions := []string{
+		"public.control_query_account_availability_v1(uuid,text[])",
+		"public.control_query_account_availability_occurrences_v1(uuid,text,text,timestamptz,uuid,integer)",
+	}
+	for _, signature := range functions {
+		var definer, runtimeExec, publicExec, fixedPath bool
+		var owner string
+		if err := database.owner.QueryRow(ctx, `SELECT p.prosecdef,r.rolname,
+			has_function_privilege('relay_control_runtime',p.oid,'EXECUTE'),
+			EXISTS(SELECT 1 FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'),
+			p.proconfig @> ARRAY['search_path=pg_catalog']
+			FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.oid=$1::regprocedure`, signature).
+			Scan(&definer, &owner, &runtimeExec, &publicExec, &fixedPath); err != nil {
+			t.Fatal(err)
+		}
+		if !definer || owner != "relay_control_migrator" || !runtimeExec || publicExec || !fixedPath {
+			t.Fatalf("unsafe availability function %s: definer=%v owner=%s runtime=%v public=%v path=%v", signature, definer, owner, runtimeExec, publicExec, fixedPath)
+		}
+	}
+	for _, table := range []string{"account_availability_checkpoints", "account_availability_occurrences", "account_inventory_provider_states", "account_request_quality_events"} {
+		if _, err := database.runtime.Exec(ctx, "SELECT * FROM public."+table+" LIMIT 1"); err == nil {
+			t.Fatalf("runtime directly selected %s", table)
+		} else {
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Fatalf("runtime direct SELECT %s SQLSTATE=%v", table, err)
+			}
+		}
+	}
+	repository, err := store.NewAccountAvailabilityRepository(database.runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.BatchAccountAvailability(ctx, uuid.Nil, nil); !errors.Is(err, store.ErrInvalidAccountAvailabilityQuery) {
+		t.Fatalf("zero-node query error=%v", err)
+	}
+	for _, limit := range []int{0, 101} {
+		if _, err := repository.ListAccountAvailabilityOccurrences(ctx, store.AccountAvailabilityOccurrenceQuery{InstanceID: uuid.New(), Limit: limit}); !errors.Is(err, store.ErrInvalidAccountAvailabilityQuery) {
+			t.Fatalf("limit=%d query error=%v", limit, err)
+		}
+	}
+}
 
 type availabilityFixture struct {
 	db     *isolatedJobDatabase

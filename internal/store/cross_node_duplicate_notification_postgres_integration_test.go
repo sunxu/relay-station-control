@@ -162,10 +162,30 @@ func TestCrossNodeDuplicateNotificationUsesTransitionTimeRenameSnapshot(t *testi
 	newCrossNodeDuplicateLifecycleEnvironment(t, ctx, database, environmentID)
 	group := newProblemOwnershipNodeGroup(t, ctx, database, "notify-rename", 2)
 	accountKey := "antigravity:rename@example.invalid"
-	for i, node := range group.nodes {
-		if _, err := database.owner.Exec(ctx, `UPDATE relay_node_assets SET display_name=$2 WHERE instance_id=$1`, node, fmt.Sprintf("Old-%d", i)); err != nil {
+	renameNode := func(node uuid.UUID, name string) {
+		var revision int64
+		var endpoint string
+		if err := database.owner.QueryRow(ctx, `SELECT revision, management_endpoint FROM relay_node_assets WHERE instance_id=$1`, node).Scan(&revision, &endpoint); err != nil {
 			t.Fatal(err)
 		}
+		tx, err := database.owner.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `SET LOCAL ROLE relay_control_runtime`); err != nil {
+			_ = tx.Rollback(ctx)
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `SELECT public.control_edit_relay_node_asset_stage0_v1($1,$2,$3,$4,'keep',NULL::bytea)`, node, revision, name, endpoint); err != nil {
+			_ = tx.Rollback(ctx)
+			t.Fatal(err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, node := range group.nodes {
+		renameNode(node, fmt.Sprintf("Old-%d", i))
 		group.finalize(t, ctx, database, node, []string{"rename@example.invalid"}, 1, false)
 	}
 	repository := newCrossNodeDuplicateOwnershipLifecycleRepository(t, database)
@@ -179,9 +199,7 @@ func TestCrossNodeDuplicateNotificationUsesTransitionTimeRenameSnapshot(t *testi
 	}
 
 	for i, node := range group.nodes {
-		if _, err := database.owner.Exec(ctx, `UPDATE relay_node_assets SET display_name=$2 WHERE instance_id=$1`, node, fmt.Sprintf("New-%d", i)); err != nil {
-			t.Fatal(err)
-		}
+		renameNode(node, fmt.Sprintf("New-%d", i))
 	}
 	group.finalize(t, ctx, database, group.nodes[1], nil, 0, false)
 	resolved, err := repository.Evaluate(ctx, environmentID, accountKey)

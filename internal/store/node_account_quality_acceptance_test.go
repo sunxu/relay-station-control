@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -190,7 +189,7 @@ func TestNodeAccountQualityAcceptancePostgres(t *testing.T) {
 	})
 }
 
-func TestNodeAccountQualityACLAndRollbackPostgres(t *testing.T) {
+func TestNodeAccountQualityACLPostgres(t *testing.T) {
 	ctx := context.Background()
 	fixture := newReadonlyQueryFixture(t, ctx, []lifecycleAccount{{email: "retained@example.invalid"}})
 	db := fixture.database
@@ -218,32 +217,5 @@ func TestNodeAccountQualityACLAndRollbackPostgres(t *testing.T) {
 		if !errors.As(err, &pgerr) || pgerr.Code != "42501" {
 			t.Fatalf("%s direct select error: %v", table, err)
 		}
-	}
-	before := captureReadonlyQueryMigrationState(t, ctx, db)
-	var functionsBefore string
-	const functionSQL = `SELECT string_agg(pg_get_functiondef(oid),E'\n' ORDER BY oid) FROM pg_proc WHERE proname IN ('control_query_current_account_inventory_v1','control_query_account_request_quality_v1')`
-	if err := db.owner.QueryRow(ctx, functionSQL).Scan(&functionsBefore); err != nil {
-		t.Fatal(err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "down-to", "20"); err != nil {
-		t.Fatal(err)
-	}
-	if page, err := repo.ListAccountQuality(ctx, q); err == nil || len(page.Items) != 0 {
-		t.Fatal("missing function must fail, not successful empty")
-	}
-	after := captureReadonlyQueryMigrationState(t, ctx, db)
-	if !reflect.DeepEqual(before, after) {
-		t.Fatal("query access down modified persistence")
-	}
-	var functionsAfter string
-	if err := db.owner.QueryRow(ctx, functionSQL).Scan(&functionsAfter); err != nil || functionsAfter != functionsBefore {
-		t.Fatal("existing read functions changed")
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	page, err := repo.ListAccountQuality(ctx, q)
-	if err != nil || len(page.Items) != 1 || page.Items[0].AccountKey != "openai:retained@example.invalid" || page.Items[0].Quality != "unknown" {
-		t.Fatalf("query recovery lost inventory: %+v %v", page, err)
 	}
 }

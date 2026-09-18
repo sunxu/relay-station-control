@@ -274,7 +274,23 @@ func TestAccountAvailabilityNotificationRenameUsesTransitionSnapshots(t *testing
 	if err := f.db.owner.QueryRow(context.Background(), `SELECT display_name FROM relay_node_assets WHERE instance_id=$1`, f.node).Scan(&originalName); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.owner.Exec(context.Background(), `UPDATE relay_node_assets SET display_name='Relay renamed' WHERE instance_id=$1`, f.node); err != nil {
+	var revision int64
+	var endpoint string
+	if err := f.db.owner.QueryRow(context.Background(), `SELECT revision, management_endpoint FROM relay_node_assets WHERE instance_id=$1`, f.node).Scan(&revision, &endpoint); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := f.db.owner.Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	if _, err := tx.Exec(context.Background(), `SET LOCAL ROLE relay_control_runtime`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(context.Background(), `SELECT public.control_edit_relay_node_asset_stage0_v1($1,$2,'Relay renamed',$3,'keep',NULL::bytea)`, f.node, revision, endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	f.event(t, 0, "rename-success", "rename-success-h", "", f.now.Add(-time.Second))

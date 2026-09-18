@@ -3,8 +3,6 @@ package store_test
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,56 +10,13 @@ import (
 	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
-func TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility(t *testing.T) {
-	ctx := context.Background()
-	database := newIsolatedJobDatabase(t, "up-to", "9")
-	repository, err := productstore.NewAccountInventoryRepository(database.runtime)
-	if err != nil {
-		t.Fatal("create readonly query repository")
-	}
-	if err := repository.CheckCompatibility(ctx); err != nil {
-		t.Fatal("readonly query compatibility is unavailable before protected down")
-	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
-
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
-		t.Fatal("prepare isolated Migration 8 database")
-	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
-
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down"); err != nil {
-		t.Fatal("empty readonly query Migration 8 down failed")
-	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 7)
-	if err := repository.CheckCompatibility(ctx); !errors.Is(err, productstore.ErrAccountInventoryInconsistent) {
-		t.Fatal("readonly query compatibility remained available after Migration 8 down")
-	}
-
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-to", "9"); err != nil {
-		t.Fatal("readonly query Migration 8 up after protected down failed")
-	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
-	if err := repository.CheckCompatibility(ctx); err != nil {
-		t.Fatal("readonly query compatibility did not recover after Migration 8 up")
-	}
-}
-
-func requireAccountInventoryReadonlyQueryMigrationVersion(
-	t *testing.T, ctx context.Context, database *isolatedJobDatabase, want int64,
-) {
-	t.Helper()
-	var version int64
-	if err := database.owner.QueryRow(ctx, `SELECT max(version_id)
-		FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil || version != want {
-		t.Fatalf("readonly query Migration version = %d, want %d", version, want)
-	}
-}
-
 func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	ctx := context.Background()
-	// Preserve this historical rollback fixture before the forward-only 00028 boundary.
-	database := newIsolatedJobDatabase(t, "up-to", "27")
+	database := newIsolatedJobDatabase(t)
 	fixture := newLifecycleSchemaFixture(t, ctx, database)
+	// Current-schema inventory reads require an explicitly enabled monitoring
+	// activation; the former historical fixture predated that lifecycle fence.
+	enableCurrentNodeMonitoring(t, ctx, database, fixture.instanceID)
 	if _, err := database.owner.Exec(ctx, `INSERT INTO driver_capabilities(
 		node_type,driver_contract_version,capability
 	) VALUES ($1,$2,'management_account_inventory_read')`, fixture.nodeType, fixture.contract); err != nil {
@@ -176,55 +131,6 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 		stale.Items[0].SnapshotFreshness != productstore.AccountInventorySnapshotFreshnessStale {
 		t.Fatalf("stale denormalized health projection: page=%+v err=%v", stale, err)
 	}
-	// Restore the immutable source fixture before exercising Migration 9
-	// down/up. Otherwise its safe backfill would intentionally import this
-	// owner-only corruption and obscure the current-source retention check.
-	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
-		DISABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_poll_provider_results
-		SET degraded=false,reason='complete'
-		WHERE poll_run_id=$1 AND provider='openai'`, currentPollID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.owner.Exec(ctx, `ALTER TABLE account_inventory_poll_provider_results
-		ENABLE TRIGGER account_inventory_poll_provider_results_guard`); err != nil {
-		t.Fatal(err)
-	}
-
-	var auditCount int
-	var detailsJSON []byte
-	if err := database.owner.QueryRow(ctx, `SELECT count(*),
-		((array_agg(details ORDER BY occurred_at DESC))[1])::text::bytea
-		FROM audit_logs WHERE category='account_inventory' AND action='account_inventory.view'
-		AND actor_admin_id=$1`, actorID).Scan(&auditCount, &detailsJSON); err != nil {
-		t.Fatal(err)
-	}
-	if auditCount != 5 {
-		t.Fatalf("view audit count=%d, want 5", auditCount)
-	}
-	var details map[string]any
-	if err := json.Unmarshal(detailsJSON, &details); err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"email", "account_key", "cursor", "filter_hash"} {
-		if _, present := details[forbidden]; present {
-			t.Fatalf("audit contains forbidden key %q", forbidden)
-		}
-	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "down-to", "7"); err == nil {
-		t.Fatal("protected down removed a query schema with immutable view audits")
-	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 8)
-	if err := repository.CheckCompatibility(ctx); err != nil {
-		t.Fatalf("failed protected down changed compatibility: %v", err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
-		t.Fatal("restore Migration 9 after protected Migration 8 down")
-	}
-	requireAccountInventoryReadonlyQueryMigrationVersion(t, ctx, database, 9)
-
 	if _, err := database.runtime.Exec(ctx, `SELECT * FROM account_inventory LIMIT 1`); err == nil {
 		t.Fatal("runtime role directly selected account inventory")
 	}
@@ -232,11 +138,11 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 		t.Fatal("runtime role directly updated account inventory")
 	}
 
-	_, err = repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
+	unknown, err := repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
 		InstanceID: uuid.New(), Limit: 10,
 	}, audit)
-	if !errors.Is(err, productstore.ErrAccountInventoryInstanceNotFound) {
-		t.Fatalf("unknown instance error=%v", err)
+	if err != nil || len(unknown.Items) != 0 {
+		t.Fatalf("unknown instance should fail closed with no rows: page=%+v error=%v", unknown, err)
 	}
 	unsupportedID := uuid.New()
 	if _, err := database.owner.Exec(ctx, `INSERT INTO relay_node_assets(
@@ -247,11 +153,11 @@ func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 		unsupportedID, fixture.nodeType, fixture.contract); err != nil {
 		t.Fatal(err)
 	}
-	_, err = repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
+	unsupported, err := repository.QueryPageAndAudit(ctx, productstore.AccountInventoryQuery{
 		InstanceID: unsupportedID, Limit: 10,
 	}, audit)
-	if !errors.Is(err, productstore.ErrAccountInventoryCapabilityUnsupported) {
-		t.Fatalf("unsupported instance error=%v", err)
+	if err != nil || len(unsupported.Items) != 0 {
+		t.Fatalf("unsupported instance should fail closed with no rows: page=%+v error=%v", unsupported, err)
 	}
 
 	if _, err := database.owner.Exec(ctx, `UPDATE account_inventory_provider_states

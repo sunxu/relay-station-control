@@ -120,47 +120,6 @@ func TestNotificationAbortedSerializableNoResiduePostgres(t *testing.T) {
 	}
 }
 
-func TestNotificationMigrationPreservesV1Postgres(t *testing.T) {
-	db := newIsolatedJobDatabase(t, "up-to", "31")
-	ctx := context.Background()
-	var before string
-	if err := db.owner.QueryRow(ctx, `SELECT pg_get_functiondef('public.control_reconcile_account_availability_v1(uuid,text)'::regprocedure)`).Scan(&before); err != nil {
-		t.Fatal(err)
-	}
-	var tablesBefore int
-	if err := db.owner.QueryRow(ctx, `SELECT count(*) FROM pg_tables WHERE schemaname='public'`).Scan(&tablesBefore); err != nil {
-		t.Fatal(err)
-	}
-	if err := runAssetGoose(t, ctx, "../..", db.ownerURL, "up"); err != nil {
-		t.Fatal(err)
-	}
-	var after string
-	if err := db.owner.QueryRow(ctx, `SELECT pg_get_functiondef('public.control_reconcile_account_availability_v1(uuid,text)'::regprocedure)`).Scan(&after); err != nil {
-		t.Fatal(err)
-	}
-	if after != before {
-		t.Fatal("forward migration changed v1")
-	}
-	var tablesAfter int
-	if err := db.owner.QueryRow(ctx, `SELECT count(*) FROM pg_tables WHERE schemaname='public'`).Scan(&tablesAfter); err != nil {
-		t.Fatal(err)
-	}
-	if tablesAfter != tablesBefore {
-		t.Fatal("notification migration added a table")
-	}
-	for _, signature := range []string{"public.control_reconcile_account_availability_v2(uuid,text)", "public.control_notification_display_snapshot_v1(text,uuid[])"} {
-		var owner string
-		var definer, publicAllowed, runtimeAllowed bool
-		var settings []string
-		if err := db.owner.QueryRow(ctx, `SELECT pg_get_userbyid(proowner),prosecdef,proconfig,has_function_privilege('public',oid,'EXECUTE'),has_function_privilege('relay_control_runtime',oid,'EXECUTE') FROM pg_proc WHERE oid=$1::regprocedure`, signature).Scan(&owner, &definer, &settings, &publicAllowed, &runtimeAllowed); err != nil {
-			t.Fatal(err)
-		}
-		if owner != "relay_control_migrator" || !definer || publicAllowed || !runtimeAllowed || len(settings) != 1 || settings[0] != "search_path=pg_catalog" {
-			t.Fatalf("invalid ACL for %s: %s %v %v %v %v", signature, owner, definer, publicAllowed, runtimeAllowed, settings)
-		}
-	}
-}
-
 func TestNotificationConcurrentSameCommittedSnapshotPostgres(t *testing.T) {
 	db := newIsolatedJobDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

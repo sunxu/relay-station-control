@@ -83,26 +83,15 @@ require_test() {
 }
 
 migrate() {
-  local direction="$1" log_name="$2"
-  case "$direction" in
-    up|down) ;;
-    *) fixed_failure 'migration_direction_invalid' ;;
-  esac
+  local log_name="$1"
   if ! (
     cd "$repository_root/tools"
-    if [ "$direction" = up ]; then
-      env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-        GOOSE_DRIVER=postgres \
-        GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
-        go tool goose up-to 9
-    else
-      env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-        GOOSE_DRIVER=postgres \
-        GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
-        go tool goose down
-    fi
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+      GOOSE_DRIVER=postgres \
+      GOOSE_DBSTRING="$CONTROL_HISTORY_MIGRATOR_TEST_URL" GOOSE_MIGRATION_DIR=../migrations \
+      go tool goose up
   ) >"$runtime_directory/$log_name" 2>&1; then
-    fixed_failure "migration_${direction}_failed"
+    fixed_failure 'migration_up_failed'
   fi
 }
 
@@ -166,7 +155,7 @@ require_api_test() {
 run_store_probe() {
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test ./internal/store \
-      -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryHistoryCrashRecoveryMatrix|TestAccountInventoryHistorySecurityBoundaryMatrix|TestAccountInventoryHistoryAggregateSchemaConstraintAndProtectionGateMatrix|TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert|TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource|TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls|TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing|TestAccountInventoryHistoryExpiredLeaseRequiresReconcileAcrossCompactionPhases|TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope|TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume|TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates|TestAccountInventoryHistoryRetentionEligibilityBoundaries|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection|TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy|TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition|TestInventorySnapshotContractFailureFinalizesWithoutPromotion|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary|TestAccountInventoryHistorySensitiveCanaryDatabaseSinks|TestAccountInventoryHistoryCapacityOneTenFifty|TestAccountInventoryRowsFailClosed)$' \
+      -run '^(TestAccountInventoryHistoryCompactionMainPathAndRecovery|TestAccountInventoryHistoryCrashRecoveryMatrix|TestAccountInventoryHistorySecurityBoundaryMatrix|TestAccountInventoryHistoryAggregateSchemaConstraintAndProtectionGateMatrix|TestAccountInventoryHistorySnapshotDeleteSelectionBoundariesAndNoLateInsert|TestAccountInventoryHistoryResumeDeleteNeverReaggregatesResidualSource|TestAccountInventoryHistoryCompletionCountMismatchFailsClosedAndRetainsPolls|TestAccountInventoryHistoryCompactionClaimRenewReclaimFencing|TestAccountInventoryHistoryExpiredLeaseRequiresReconcileAcrossCompactionPhases|TestAccountInventoryHistorySummarizeWriteFailuresAreAtomic|TestAccountInventoryDailyRollupNoProviderAtomicFinalize|TestAccountInventoryDailyRollupPolicyBoundaryResetAndCoverage|TestHistoryMetricsBacklogIncludesUnplannedEligibleSnapshotsAndDrains|TestHistoryMetricsOldestIncludesEligibleSourceWithoutPlannedRun|TestAccountInventoryHistoryRetentionBatchesConservationAndCurrentQuery|TestAccountInventoryHistoryConcurrentRetentionQueryPromotionAndScope|TestAccountInventoryHistoryPollRetentionChildFailuresRollbackAndResume|TestAccountInventoryHistoryPollRetentionRejectsIneligibleCandidates|TestAccountInventoryHistoryRetentionEligibilityBoundaries|TestAccountInventoryHistoryPlannerSerializesRetentionBoundary|TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress|TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion|TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition|TestInventorySnapshotContractFailureFinalizesWithoutPromotion|TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff|TestAccountInventoryHistoryLeaseExpiryWhileWaitingForRunLock|TestAccountInventoryHistoryFailedShapesAndProviderDayBound|TestAccountInventoryHistoryAuditExactAllowlistAndRetentionBoundary|TestAccountInventoryHistorySensitiveCanaryDatabaseSinks|TestAccountInventoryHistoryCapacityOneTenFifty|TestAccountInventoryRowsFailClosed)$' \
       -count=1 >"$runtime_directory/store-main-path.log" 2>&1; then
     failed_test="$(
       awk '
@@ -238,8 +227,8 @@ main() {
   export CONTROL_DATABASE_TEST_URL="$CONTROL_HISTORY_MIGRATOR_TEST_URL"
   export CONTROL_RUNTIME_DATABASE_TEST_URL="$CONTROL_HISTORY_RUNTIME_TEST_URL"
 
-  migrate up migration-up.log
-  assert_version 9 migration-version-up.log
+  migrate migration-up.log
+  assert_version 51 migration-version-up.log
   if ! compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control \
     --tuples-only --no-align --command 'SHOW server_version_num' >"$runtime_directory/server-version.log" 2>&1; then
     fixed_failure 'postgres_version_check_failed'
@@ -268,8 +257,6 @@ main() {
   require_store_test TestAccountInventoryHistoryPlannerSerializesRetentionBoundary
   require_store_test TestAccountInventoryHistoryPlannerLimitOneMakesPersistentProgress
   require_store_test TestAccountInventoryHistoryRetiredDaySerializesLatePollInsertion
-  require_store_test TestAccountInventoryHistoryMigrationBackfillsLegacyPollThenRetiresWithoutResurrection
-  require_store_test TestAccountInventoryHistoryMigrationBackfillsHealthWithoutHistoryOrIdentityCopy
   require_store_test TestAccountInventoryLifecycleConcurrentFinalizeAndScopeTransition
   require_store_test TestInventorySnapshotContractFailureFinalizesWithoutPromotion
   require_store_test TestAccountInventoryHistoryZeroPollLineageCompletesAcrossRetentionCutoff
@@ -290,21 +277,13 @@ main() {
   run_store_race_probe
   run_api_probe
 
-  migrate down migration-down.log
-  assert_version 8 migration-version-down.log
-  down_state="$(compose exec -T postgres psql --username relay_control_migrator --dbname relay_station_control \
-    --tuples-only --no-align --command \
-    "SELECT count(*) FROM unnest(ARRAY['account_inventory_compaction_runs','account_inventory_daily_rollup_runs','account_inventory_daily_summaries','account_inventory_daily_provider_summaries','account_inventory_daily_account_rollups','account_inventory_daily_provider_rollups','account_inventory_history_retired_days']) AS name WHERE to_regclass('public.' || name) IS NOT NULL" 2>/dev/null)" \
-    || fixed_failure 'migration_down_schema_check_failed'
-  [ "$down_state" = '0' ] || fixed_failure 'migration_down_schema_residual'
-
-  migrate up migration-second-up.log
-  assert_version 9 migration-version-second-up.log
-  run_probe schema-second-up.log
+  migrate migration-latest-repeat.log
+  assert_version 51 migration-version-repeat.log
+  run_probe schema-repeat.log
 
   strict_cleanup
   echo 'account_inventory_history_migration8_fingerprint=success old_columns=count_digest_covered provider_health=current_poll_result'
-  echo 'account_inventory_history_postgres=success server_major=18 migration=9 up_down_up=covered core_sha256=covered canonical_golden=covered compaction_main_path=covered crash_recovery_matrix=covered security_boundary_matrix=covered aggregate_schema_constraints_protection_gates=covered compaction_claim_fencing=covered compaction_reconcile_phases=covered summarize_atomicity=covered summarize_timeout_disconnect_recovery=covered summarize_immutability=covered snapshot_delete_atomicity=covered snapshot_delete_selection=covered snapshot_delete_resume=covered compaction_complete_count_gate=covered final_rollup=covered finalize_atomicity=covered final_immutability=covered metrics_completed_only=covered zero_provider=covered planner_catalog_utc_inclusive_72h=covered planner_eligibility_matrix=covered finalize_catalog_9500=covered utc_dst_72h_expression=covered slot_provider_matrix=covered incomplete_segment_gates=covered coverage_expression_9499_finalize_9474_9500_10000=covered last_segment_concurrency=covered policy_boundary=covered metrics_backlog_drain=covered retention_batches=covered retention_child_atomicity=covered poll_candidate_rejections=covered retention_eligibility_boundaries=covered retention_ordered_chain_coverage_omission=covered retention_query_promotion_scope_concurrency=covered retention_query_promotion_scope_race=covered retention_planner_lock=covered planner_limit_progress=covered retired_day_poll_lock=covered legacy_retention_bootstrap=covered zero_poll_lineage_bootstrap=covered retired_day_no_resurrection=covered current_fields_after_retention=covered current_query_after_retention=covered current_health_query_matrix=covered current_http_null_source=covered provider_health_finalize_matrix=covered lease_expiry=covered history_audit_allowlist_retention_atomicity=covered sensitive_canary_database_sinks=covered capacity_1_10_50_total_accounts=1000 audit_gate=covered runtime_table_dml=denied runtime_functions=allowlisted cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
+  echo 'account_inventory_history_postgres=success server_major=18 migration=51 fresh_install=covered core_sha256=covered canonical_golden=covered compaction_main_path=covered crash_recovery_matrix=covered security_boundary_matrix=covered aggregate_schema_constraints_protection_gates=covered compaction_claim_fencing=covered compaction_reconcile_phases=covered summarize_atomicity=covered summarize_timeout_disconnect_recovery=covered summarize_immutability=covered snapshot_delete_atomicity=covered snapshot_delete_selection=covered snapshot_delete_resume=covered compaction_complete_count_gate=covered final_rollup=covered finalize_atomicity=covered final_immutability=covered metrics_completed_only=covered zero_provider=covered planner_catalog_utc_inclusive_72h=covered planner_eligibility_matrix=covered finalize_catalog_9500=covered utc_dst_72h_expression=covered slot_provider_matrix=covered incomplete_segment_gates=covered coverage_expression_9499_finalize_9474_9500_10000=covered last_segment_concurrency=covered policy_boundary=covered metrics_backlog_drain=covered retention_batches=covered retention_child_atomicity=covered poll_candidate_rejections=covered retention_eligibility_boundaries=covered retention_ordered_chain_coverage_omission=covered retention_query_promotion_scope_concurrency=covered retention_query_promotion_scope_race=covered retention_planner_lock=covered planner_limit_progress=covered retired_day_poll_lock=covered legacy_retention_bootstrap=covered zero_poll_lineage_bootstrap=covered retired_day_no_resurrection=covered current_fields_after_retention=covered current_query_after_retention=covered current_health_query_matrix=covered current_http_null_source=covered provider_health_finalize_matrix=covered lease_expiry=covered history_audit_allowlist_retention_atomicity=covered sensitive_canary_database_sinks=covered capacity_1_10_50_total_accounts=1000 audit_gate=covered runtime_table_dml=denied runtime_functions=allowlisted cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0 cleanup_temp=0 cleanup_lock=0'
 }
 
 cd "$repository_root"

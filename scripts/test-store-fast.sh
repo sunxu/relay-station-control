@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Fast, non-PostgreSQL feedback for credential semantics and error contracts.
+go test ./internal/assetcredential ./internal/compatgate ./internal/store ./internal/drivers/cliproxyapi ./cmd/control \
+  -run '^(TestValidateCredentialPlaintextUsesExactUTF8Bytes|TestCredentialSealerUnavailableMatrixDoesNotSealKeepOrClear|TestNodeSecretSetRequiresK1OnlyWhenUsed|TestGatewayCanonicalIntentSecretKeyFailsClosed|TestAccountUploadIntentFingerprintUsesExactCredentialBytes|TestUsageQueueUsesStage0AssetCredentialResolver|TestLoadStage0AssetCredentialSealerMissingPathIsUnavailable|TestLoadStage0AssetCredentialSealerRepresentativeFileFailureIsUnavailable|TestStage0AssetCredentialSealerUsesFrozenAAD|TestStage0AssetCredentialSealerDoesNotGenerateWhenUnavailable)$' \
+  -count=1

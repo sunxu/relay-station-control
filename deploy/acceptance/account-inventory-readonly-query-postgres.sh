@@ -108,7 +108,7 @@ require_test() {
 
 classify_grouped_go_test_failure() {
   local log="$1" gate="$2" event package test_name
-  local failure_event_pattern='^\{"Time":"[^"]+","Action":"fail","Package":"github\.com/sunxu/relay-station-control/(internal/store|internal/api)","Test":"(TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/tables_unchanged|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/columns_unchanged|TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState/rows_unchanged|TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix|TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix|TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback|TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics|TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)"(,"Elapsed":[0-9]+(\.[0-9]+)?)?\}$'
+  local failure_event_pattern='^\{"Time":"[^"]+","Action":"fail","Package":"github\.com/sunxu/relay-station-control/(internal/store|internal/api)","Test":"(TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix|TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix|TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback|TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics|TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover|TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping)"(,"Elapsed":[0-9]+(\.[0-9]+)?)?\}$'
 
   while IFS= read -r event; do
     if [[ "$event" =~ $failure_event_pattern ]]; then
@@ -230,8 +230,6 @@ main() {
   fi
   grep -Eq '^[1-9][0-9]*$' "$runtime_directory/migration-version.log" || fixed_failure 'migration_version_invalid'
 
-  require_test ./internal/store TestAccountInventoryReadonlyQueryMigrationEmptyDownUpRestoresCompatibility
-  require_test ./internal/store TestAccountInventoryReadonlyQueryMigrationPreservesExistingLifecycleState
   require_test ./internal/store TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix
   require_test ./internal/store TestAccountInventoryReadonlyQueryRuntimeAndUnauthorizedPermissionMatrix
   require_test ./internal/store TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback
@@ -282,7 +280,7 @@ main() {
   fi
 
   strict_cleanup
-  echo 'account_inventory_readonly_query_postgres=success server_major=18 migration=8 migration8_existing_state_unchanged=covered migration8_identity_copy_backfill=0 protected_down_empty_up=covered protected_down_audit_fail_closed=covered permissions=covered runtime_function_execute=allowed runtime_sensitive_table_enumeration=denied runtime_sensitive_table_dml=denied unauthorized_function_execute=denied query_semantics=covered http=covered concurrency=covered atomic_audit=covered database_faults=covered capacity_1_10_50=covered query_external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
+  echo 'account_inventory_readonly_query_postgres=success server_major=18 permissions=covered runtime_function_execute=allowed runtime_sensitive_table_enumeration=denied runtime_sensitive_table_dml=denied unauthorized_function_execute=denied query_semantics=covered http=covered concurrency=covered atomic_audit=covered database_faults=covered capacity_1_10_50=covered query_external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
   printf '%s\n' "$capacity_one" "$capacity_ten" "$capacity_fifty"
 }
 

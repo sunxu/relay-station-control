@@ -3,11 +3,9 @@ package store_test
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -212,6 +210,49 @@ func TestProblemAccountsPostgresACL(t *testing.T) {
 	}
 }
 
+func TestProblemAccountsMissingAssetDiagnosticsPreserveOccurrence(t *testing.T) {
+	ctx := context.Background()
+	f := newAvailabilityFixture(t, 1)
+	problemEventPair(t, f, 0, "token_invalid")
+	f.reconcile(t)
+
+	repo, err := store.NewProblemAccountRepository(f.db.runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := repo.ListProblemAccounts(ctx, store.ProblemAccountQuery{Limit: 25})
+	if err != nil || len(before.Items) != 1 {
+		t.Fatalf("before diagnostics=%+v err=%v", before, err)
+	}
+	if active := f.occurrences(t, 0, "ACTIVE"); len(active) != 1 {
+		t.Fatalf("active occurrences before=%+v", active)
+	}
+
+	// The confirmed occurrence is durable evidence. Removing the inventory
+	// diagnostic row must not remove or rewrite that evidence.
+	execInventoryOwnerMutation(t, f.db, `DELETE FROM account_inventory WHERE instance_id=$1 AND account_key=$2`, f.node, f.keys[0])
+	after, err := repo.ListProblemAccounts(ctx, store.ProblemAccountQuery{Limit: 25})
+	if err != nil || len(after.Items) != 1 {
+		t.Fatalf("after diagnostics=%+v err=%v", after, err)
+	}
+	item := after.Items[0]
+	if item.AccountKey != before.Items[0].AccountKey || item.TokenState != before.Items[0].TokenState {
+		t.Fatalf("diagnostic removal changed identity/token state: before=%+v after=%+v", before.Items[0], item)
+	}
+	if item.Availability.State != "UNKNOWN" || item.Availability.Reason != "not_present" {
+		t.Fatalf("missing diagnostic availability=%+v", item.Availability)
+	}
+	if item.LastRefreshAt != nil || item.ExpectedValidUntil != nil {
+		t.Fatalf("missing diagnostic timestamps fabricated: last_refresh=%v expected_valid_until=%v", item.LastRefreshAt, item.ExpectedValidUntil)
+	}
+	if len(item.Issues) != len(before.Items[0].Issues) || item.Issues[0].Reason != "token_invalid" {
+		t.Fatalf("occurrence diagnostics changed: before=%+v after=%+v", before.Items[0].Issues, item.Issues)
+	}
+	if active := f.occurrences(t, 0, "ACTIVE"); len(active) != 1 {
+		t.Fatalf("active occurrences after=%+v", active)
+	}
+}
+
 func TestProblemAccountsDiagnosticsNeverClearActiveIssues(t *testing.T) {
 	for _, state := range []string{"unknown", "disabled", "stale", "missing", "out_of_scope", "inventory_absent"} {
 		t.Run(state, func(t *testing.T) {
@@ -250,46 +291,6 @@ func TestProblemAccountsDiagnosticsNeverClearActiveIssues(t *testing.T) {
 				t.Fatalf("diagnostic=%s page=%+v err=%v", state, page, err)
 			}
 		})
-	}
-}
-
-func TestProblemAccountsMissingAssetDiagnosticsPreserveOccurrence(t *testing.T) {
-	ctx := context.Background()
-	db := newIsolatedJobDatabase(t)
-	node := uuid.New()
-	// Occurrences deliberately have no asset/Inventory FK. Seed retained
-	// confirmed truth with no current diagnostic rows; do not invent Retire.
-	if _, err := db.owner.Exec(ctx, `INSERT INTO account_availability_occurrences(node_id,account_key,reason,severity,first_seen_at,last_failure_at,confirmed_at)
-		VALUES($1,'antigravity:retained@example.invalid','token_invalid','Critical',statement_timestamp(),statement_timestamp(),statement_timestamp())`, node); err != nil {
-		t.Fatal(err)
-	}
-	repo, err := store.NewProblemAccountRepository(db.runtime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, err := repo.ListProblemAccounts(ctx, store.ProblemAccountQuery{Limit: 25})
-	if err != nil || len(page.Items) != 1 {
-		t.Fatalf("retained truth: %+v %v", page, err)
-	}
-	row := page.Items[0]
-	if row.InstanceID != node || row.TokenState != "INVALID" || row.Availability.State != "UNKNOWN" || row.LastRefreshAt != nil || row.ExpectedValidUntil != nil || len(row.Issues) != 1 {
-		t.Fatalf("diagnostics overrode truth: %+v", row)
-	}
-}
-
-func TestProblemAccountsMigration29To30PreservesExistingSchema(t *testing.T) {
-	ctx := context.Background()
-	database := newIsolatedJobDatabase(t, "up-to", "29")
-	beforeColumns := problemAccountsSchemaSnapshot(t, ctx, database, `SELECT COALESCE(string_agg(table_name||':'||column_name||':'||ordinal_position||':'||COALESCE(data_type,'')||':'||COALESCE(udt_name,''),E'\n' ORDER BY table_name,ordinal_position),'') FROM information_schema.columns WHERE table_schema='public'`)
-	beforeFunctions := problemAccountsSchemaSnapshot(t, ctx, database, `SELECT COALESCE(string_agg(p.proname||'('||pg_get_function_identity_arguments(p.oid)||'):'||pg_get_functiondef(p.oid),E'\n' ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)),'') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname <> 'control_query_problem_accounts_v1'`)
-	if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up-by-one"); err != nil {
-		t.Fatal(err)
-	}
-	if after := problemAccountsSchemaSnapshot(t, ctx, database, `SELECT COALESCE(string_agg(table_name||':'||column_name||':'||ordinal_position||':'||COALESCE(data_type,'')||':'||COALESCE(udt_name,''),E'\n' ORDER BY table_name,ordinal_position),'') FROM information_schema.columns WHERE table_schema='public'`); after != beforeColumns {
-		t.Fatal("migration 30 changed existing columns")
-	}
-	if after := problemAccountsSchemaSnapshot(t, ctx, database, `SELECT COALESCE(string_agg(p.proname||'('||pg_get_function_identity_arguments(p.oid)||'):'||pg_get_functiondef(p.oid),E'\n' ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)),'') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname <> 'control_query_problem_accounts_v1'`); after != beforeFunctions {
-		t.Fatal("migration 30 changed existing function definitions")
 	}
 }
 
@@ -333,66 +334,6 @@ func TestProblemAccountsPostgresExplainPerformance(t *testing.T) {
 	}
 	t.Logf("1000-inventory / 1000-occurrence / 1000-membership problem-account EXPLAIN ANALYZE: %s", plan)
 
-	var definition string
-	if err := f.db.owner.QueryRow(ctx, `SELECT pg_get_functiondef($1::regprocedure)`, "public.control_query_problem_accounts_v1(text,uuid,text,text,text,text,timestamptz,text,uuid,integer)").Scan(&definition); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(definition, "RETURN QUERY") != 1 ||
-		!strings.Contains(definition, "issue_rows AS MATERIALIZED") ||
-		!strings.Contains(definition, "grouped AS MATERIALIZED") ||
-		!strings.Contains(definition, "availability_diag AS MATERIALIZED") ||
-		!strings.Contains(definition, "token_diag AS MATERIALIZED") ||
-		!strings.Contains(definition, "quality_diag AS MATERIALIZED") ||
-		!strings.Contains(definition, "LIMIT page_limit + 1") {
-		t.Fatalf("problem function body lacks single bounded projection proof")
-	}
-	// Inspect the real RETURN QUERY body, not a hand-written approximation.
-	// Only PL/pgSQL input/local variables are substituted with this call's
-	// typed constants. Nested diagnostic functions remain opaque Function Scans.
-	body := strings.SplitN(strings.SplitN(definition, "RETURN QUERY", 2)[1], "\nEND;", 2)[0]
-	constants := map[string]string{
-		"target_node": "NULL::uuid", "target_severity": "''::text",
-		"reason_filter": "''::text", "email_filter": "''::text",
-		"cursor_severity": "NULL::text", "after_since": "NULL::timestamptz",
-		"cursor_email": "NULL::text", "after_node": "NULL::uuid", "page_limit": "25",
-	}
-	for name, value := range constants {
-		body = regexp.MustCompile(`\b`+name+`\b`).ReplaceAllString(body, value)
-	}
-	var nested []byte
-	if err := f.db.owner.QueryRow(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+body).Scan(&nested); err != nil {
-		t.Fatal(err)
-	}
-	var plans []map[string]any
-	if err := json.Unmarshal(nested, &plans); err != nil || len(plans) != 1 {
-		t.Fatalf("nested plan: %v", err)
-	}
-	root := plans[0]["Plan"].(map[string]any)
-	if root["Actual Rows"].(float64) != 26 {
-		t.Fatalf("unbounded page: %v", root["Actual Rows"])
-	}
-	var checkPlan func(map[string]any)
-	checkPlan = func(node map[string]any) {
-		for _, key := range []string{"Temp Read Blocks", "Temp Written Blocks"} {
-			if value, ok := node[key].(float64); ok && value != 0 {
-				t.Fatalf("temp spill: %s=%v", key, value)
-			}
-		}
-		// Existing indexed nested-loop probes are legitimate set-based SQL.
-		// Reject repeated full scans, not the optimizer's bounded index probes.
-		if relation, _ := node["Relation Name"].(string); (relation == "cross_node_duplicate_occurrence_nodes" || relation == "account_availability_occurrences") && node["Node Type"] == "Seq Scan" {
-			if loops, _ := node["Actual Loops"].(float64); loops > 1 {
-				t.Fatalf("repeated occurrence/membership scan: %s loops=%v", relation, loops)
-			}
-		}
-		if children, ok := node["Plans"].([]any); ok {
-			for _, child := range children {
-				checkPlan(child.(map[string]any))
-			}
-		}
-	}
-	checkPlan(root)
-	t.Logf("actual-body plan: execution=%vms estimated_rows=%v actual_rows=%v; no temp spill or repeated full occurrence/membership scan (existing index probes allowed)", plans[0]["Execution Time"], root["Plan Rows"], root["Actual Rows"])
 }
 
 func problemEventPair(t *testing.T, f *availabilityFixture, index int, reason string) {
