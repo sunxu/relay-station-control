@@ -1,18 +1,19 @@
 # Phase 8 — Stage 1 Frontend Baseline & Technical Decisions
 
-> Status: **NON-BROWSER EXECUTABLE BASELINE COMPLETE — Browser E2E and human approval pending**
+> Status: **EXECUTABLE BASELINE COMPLETE — Human approval pending**
 > Phase: **Phase 8 — Stage 1**
 > Scope: **Frontend Baseline & Technical Decisions**
 > Current Control source baseline: `e3b52987a35ed470eba958b3f6764188bb4197f2`
 > Current frontend tree: `58e8f8af4157edf2f78e3cb07586029a7358c334`
+> Acceptance harness: `4ef6e934637ac886852d26a70970820e887d0a03` (acceptance-only; not a frontend baseline)
 > Historical pre-Stage-0 Control baseline: `7e73fb87ea46e8930afd94a3bd25f009ece5bedb`
 > Stage 0: **CLOSED**
 > Post-Stage-0 delta refresh: **PASS**
 > Canonical technical decisions TD-01..TD-16: **NO INVALIDATION**
 > Non-Browser executable baseline: **PASS**
-> Browser E2E: **DEFERRED**
+> Browser E2E: **PASS**
 > Phase 2 human approval: **PENDING**
-> Stage 1 final freeze: **NOT YET ELIGIBLE**
+> Stage 1 final freeze: **PENDING HUMAN APPROVAL**
 > Stage 2 implementation: **NOT AUTHORIZED**
 
 ---
@@ -114,6 +115,12 @@ e3b52987a35ed470eba958b3f6764188bb4197f2
 
 FRONTEND_TREE =
 58e8f8af4157edf2f78e3cb07586029a7358c334
+
+ACCEPTANCE_HARNESS_SHA =
+4ef6e934637ac886852d26a70970820e887d0a03
+
+The acceptance harness identity is recorded separately and is not a new
+frontend implementation baseline.
 ```
 
 ### 4.2 Delta result
@@ -375,7 +382,7 @@ Results:
 | `generate:api` | PASS |
 | generated-source drift | PASS — `git diff --exit-code` clean |
 | Vite production build | PASS — 1569 modules, ~2.99s |
-| Browser E2E | DEFERRED |
+| Browser E2E | PASS |
 
 Build output:
 
@@ -387,12 +394,72 @@ internal/webui/dist generated
 
 ```text
 NON_BROWSER_EXECUTABLE_BASELINE = PASS
-EXECUTABLE_BASELINE_REMAINING = BROWSER_E2E_ONLY
+EXECUTABLE_BASELINE = COMPLETE
 ```
 
 Detailed evidence:
 
 `docs/evidence/phase8-stage1-frontend-executable-baseline.md`
+
+### Browser and focused acceptance
+
+The repository-authoritative Browser baseline completed with host execution
+according to `docs/testing/ACCEPTANCE_E2E_POLICY.md`.
+
+```text
+GENERAL_BROWSER_E2E = PASS
+6 passed
+duration = 40.7s
+
+UPLOAD = PASS
+ENABLE_FIXTURE = PASS
+ENABLE = PASS
+REPLACE = PASS
+REMOVE = PASS
+OVERRIDE = PASS
+DISABLE = REUSED / VALID
+SECURITY_REPLAY = REUSED / VALID
+```
+
+Coverage remained:
+
+```text
+global desktop = 1280x720
+Problems = 390x844
+Topology = 1280x900, 390x844
+```
+
+The final Browser runtime used Playwright bundled Chromium, Chrome for
+Testing `151.0.7922.34`. Host execution was required after an initial
+bundled Chromium startup failure at the host/sandbox boundary:
+
+```text
+HOST_EXECUTION_POLICY_APPLIED = YES
+BROWSER_HOST_EXECUTION_BLOCKER = RESOLVED
+```
+
+No system Chrome, unsafe Chromium flags, Playwright configuration changes,
+or Browser test changes were used.
+
+Disable and Security Replay reuse durable Gate 7 evidence with equivalent
+frontend/E2E/package inputs, runtime contract, and Node artifact provenance.
+
+The acceptance-only deterministic inventory bootstrap is orchestration, not
+production scheduler behavior:
+
+```text
+disable           -> DISABLE_EMAIL
+security-replay   -> DISABLE_EMAIL
+enable-fixture    -> ENABLE_EMAIL
+enable            -> ENABLE_EMAIL
+replace           -> REPLACE_EMAIL
+remove            -> REMOVE_EMAIL
+override          -> OVERRIDE_LIFECYCLE_EMAIL
+replace-discovery -> no deterministic bootstrap; scheduler discovery preserved
+```
+
+It did not change production inventory semantics, poll timing, Browser
+timeouts, or Browser tests.
 
 ---
 
@@ -418,18 +485,19 @@ The historical failure remains part of the record. Because the historical pre-St
 
 ## 10. Browser / E2E Baseline
 
-Browser E2E is intentionally deferred.
+Browser E2E and required focused acceptance are complete.
 
 ```text
-BROWSER_E2E = DEFERRED
+BROWSER_E2E_BASELINE = PASS
+EXECUTABLE_BASELINE = COMPLETE
 ```
 
-Deferred is not PASS.
-
-The final Stage 1 executable-baseline gate still requires Browser E2E against the accepted final post-Stage-0 baseline and matching production-like runtime/artifact provenance.
-
 ```text
-STAGE1_FINAL_FREEZE_ELIGIBLE = NO
+TD_INVALIDATION = NONE
+PHASE2_HUMAN_APPROVAL = PENDING
+STAGE1_FINAL_FREEZE_ELIGIBLE = PENDING_HUMAN_APPROVAL
+STAGE1_FINAL_FREEZE = NO
+STAGE2_IMPLEMENTATION_AUTHORIZED = NO
 ```
 
 ---
@@ -494,16 +562,17 @@ Post-Stage-0 frontend delta refresh      PASS
 Final Stage 1 source baseline selected   PASS
 TD invalidation                          NONE
 Non-Browser executable baseline          PASS
-Browser E2E                              DEFERRED
+Browser E2E                              PASS
 Phase 2 human approval                   PENDING
 P0/P1                                    0/0
 ```
 
-Therefore:
+Therefore the executable gate is complete, but final freeze remains pending
+human approval:
 
 ```text
 STAGE1_FRONTEND_TECHNICAL_DECISIONS_FROZEN = NO
-STAGE1_FINAL_FREEZE_ELIGIBLE = NO
+STAGE1_FINAL_FREEZE_ELIGIBLE = PENDING_HUMAN_APPROVAL
 STAGE2_IMPLEMENTATION_ALLOWED = NO
 ```
 
@@ -578,7 +647,7 @@ Post-Stage0 delta refresh = PASS
 TD invalidation = NONE
 Final Stage 1 source baseline selected
 Non-Browser executable baseline = PASS
-Browser E2E = DEFERRED
+Browser E2E = PASS
 ```
 
 ---
@@ -602,8 +671,12 @@ TD_INVALIDATION = NONE
 
 NON_BROWSER_EXECUTABLE_BASELINE = PASS
 
-EXECUTABLE_BASELINE_REMAINING =
-BROWSER_E2E_ONLY
+BROWSER_E2E_BASELINE = PASS
+
+EXECUTABLE_BASELINE = COMPLETE
+
+ACCEPTANCE_HARNESS_SHA =
+4ef6e934637ac886852d26a70970820e887d0a03
 
 PHASE2_HUMAN_APPROVAL =
 PENDING
@@ -612,5 +685,8 @@ STAGE1_FRONTEND_TECHNICAL_DECISIONS_FROZEN =
 NO
 
 STAGE2_IMPLEMENTATION_ALLOWED =
+NO
+
+STAGE1_FINAL_FREEZE =
 NO
 ```

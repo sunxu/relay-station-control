@@ -1,10 +1,11 @@
 # Phase 8 — Stage 1 Frontend Executable Baseline Evidence
 
-> Status: **NON-BROWSER BASELINE PASS — Browser E2E deferred**
+> Status: **EXECUTABLE BASELINE COMPLETE — Human approval pending**
 > Phase: **Phase 8 — Stage 1**
 > Evidence type: **Frontend executable baseline**
 > Control source: `e3b52987a35ed470eba958b3f6764188bb4197f2`
 > Frontend tree: `58e8f8af4157edf2f78e3cb07586029a7358c334`
+> Acceptance harness: `4ef6e934637ac886852d26a70970820e887d0a03` (acceptance-only)
 
 ---
 
@@ -36,6 +37,16 @@ e3b52987a35ed470eba958b3f6764188bb4197f2
 ```text
 FRONTEND_TREE =
 58e8f8af4157edf2f78e3cb07586029a7358c334
+
+### Acceptance harness
+
+```text
+ACCEPTANCE_HARNESS_SHA =
+4ef6e934637ac886852d26a70970820e887d0a03
+```
+
+This acceptance-only identity is separate from, and does not replace, the
+product/frontend implementation baseline.
 ```
 
 ### Frontend manifests
@@ -74,6 +85,9 @@ Earlier Node 26 runs were diagnostic-only and are not substituted for the Node 2
 
 ```text
 HEAD =
+4ef6e934637ac886852d26a70970820e887d0a03
+
+PRODUCT_FRONTEND_SHA =
 e3b52987a35ed470eba958b3f6764188bb4197f2
 
 Worktree before execution =
@@ -100,13 +114,16 @@ No source or test patch was introduced to obtain the result.
 | generated-source drift | **PASS** | `git diff --exit-code` clean |
 | Vite production build | **PASS** | 1569 modules, ~2.99s |
 | `internal/webui/dist` | **GENERATED** | 712 files, ~34 MB |
-| Browser E2E | **DEFERRED** | intentionally not executed in this evidence pass |
+| General Browser E2E | **PASS** | 6 passed, 40.7s |
+| Focused acceptance | **PASS** | upload, enable-fixture, enable, replace, remove, override |
+| Disable / Security Replay | **REUSED / VALID** | durable Gate 7 evidence |
 
 Overall:
 
 ```text
 NON_BROWSER_EXECUTABLE_BASELINE = PASS
-EXECUTABLE_BASELINE_REMAINING = BROWSER_E2E_ONLY
+BROWSER_E2E_BASELINE = PASS
+EXECUTABLE_BASELINE = COMPLETE
 ```
 
 ---
@@ -339,23 +356,100 @@ The selected Stage 1 source baseline already contains the committed generated ar
 
 ## 10. Browser E2E
 
-Browser E2E was intentionally deferred for a later Stage 1 executable pass.
+The repository-authoritative Browser baseline completed using host execution
+required by `docs/testing/ACCEPTANCE_E2E_POLICY.md`.
 
-Current evidence state:
-
-```text
-BROWSER_E2E = DEFERRED
-```
-
-Deferred is not PASS.
-
-The later Browser evidence must be bound to the accepted final Stage 1 source/artifact baseline and record the relevant production-like runtime provenance.
-
-Until that evidence is present:
+General Browser:
 
 ```text
-STAGE1_FINAL_FREEZE_ELIGIBLE = NO
+GENERAL_BROWSER_E2E = PASS
+6 passed
+duration = 40.7s
+
+Authentication = PASS
+Gateway management = PASS
+Node lifecycle = PASS
+Problems = PASS
+Topology = PASS
+
+global desktop = 1280x720
+Problems responsive = 390x844
+Topology responsive = 1280x900, 390x844
 ```
+
+Focused acceptance:
+
+```text
+UPLOAD = PASS
+ENABLE_FIXTURE = PASS
+ENABLE = PASS
+REPLACE = PASS
+REMOVE = PASS
+OVERRIDE = PASS
+DISABLE = REUSED / VALID
+SECURITY_REPLAY = REUSED / VALID
+```
+
+Runtime/toolchain:
+
+```text
+Control image = sha256:5245b19d9557386804cfab210828d1c7bbfaf7eed9229b2913b646387b13e522
+OCI revision = e3b52987a35ed470eba958b3f6764188bb4197f2
+PostgreSQL migrations = 00001–00051 PASS
+Control = PASS
+PostgreSQL = PASS
+Node = PASS
+node-counter = PASS
+TLS = PASS
+secret-init = PASS
+negative configuration checks = PASS
+
+Playwright = 1.62.1
+Browser = bundled Chromium / Chrome for Testing 151.0.7922.34
+HOST_EXECUTION_POLICY_APPLIED = YES
+BROWSER_HOST_EXECUTION_BLOCKER = RESOLVED
+```
+
+The initial bundled Chromium SIGABRT was classified as a host/sandbox
+execution boundary issue, not a product or Browser test defect. The formal
+run continued with bundled Chromium and did not use system Chrome, unsafe
+flags, Playwright config changes, or test-source changes.
+
+Focused evidence:
+
+```text
+Replace: inventory finalize PASS, Browser PASS, receipt PASS, audit PASS,
+native POST = 1, Node PASS, secret scan PASS
+
+Remove: inventory finalize PASS, Browser PASS, native DELETE = 1,
+Node PASS, cancel PASS, secret scan PASS
+
+Override: inventory finalize PASS, Browser PASS, lifecycle override PASS,
+cancel PASS, secret scan PASS
+
+Enable: fixture inventory PASS, HTTP PASS, PostgreSQL PASS, receipt PASS,
+audit PASS, native PATCH = 1, Node PASS, secret scan PASS
+```
+
+Disable and Security Replay reuse durable Gate 7 evidence after confirming
+frontend/E2E/package equivalence, runtime-contract equivalence, and identical
+Node artifact provenance.
+
+The acceptance-only deterministic bootstrap mapping is:
+
+```text
+disable           -> DISABLE_EMAIL
+security-replay   -> DISABLE_EMAIL
+enable-fixture    -> ENABLE_EMAIL
+enable            -> ENABLE_EMAIL
+replace           -> REPLACE_EMAIL
+remove            -> REMOVE_EMAIL
+override          -> OVERRIDE_LIFECYCLE_EMAIL
+replace-discovery -> no deterministic bootstrap; scheduler discovery preserved
+```
+
+This orchestration did not alter production inventory semantics, poll timing,
+Browser timeouts, or Browser tests.
 
 ---
 
@@ -393,13 +487,48 @@ HISTORICAL_ASSET_REGISTRY_FLAKE =
 NOT REPRODUCED IN FINAL NODE 24 BASELINE
 
 BROWSER_E2E =
-DEFERRED
+PASS
 
 NON_BROWSER_EXECUTABLE_BASELINE =
 PASS
 
-EXECUTABLE_BASELINE_REMAINING =
-BROWSER_E2E_ONLY
+BROWSER_E2E_BASELINE =
+PASS
+
+EXECUTABLE_BASELINE =
+COMPLETE
+
+TD_INVALIDATION =
+NONE
+
+PHASE2_HUMAN_APPROVAL =
+PENDING
+
+STAGE1_FINAL_FREEZE =
+NO
+
+STAGE2_IMPLEMENTATION_AUTHORIZED =
+NO
 ```
 
-No code changes, test changes, dependency changes, timeout changes, commit, or push were required to obtain this baseline.
+Secret hygiene:
+
+```text
+SECRET_HYGIENE = PASS
+repo-external focused runtimes removed
+Compose projects removed
+storageState removed
+raw secrets not retained
+worktree clean
+```
+
+The acceptance harness identity is separate from the product/frontend
+identity:
+
+```text
+PRODUCT_FRONTEND_SHA =
+e3b52987a35ed470eba958b3f6764188bb4197f2
+
+ACCEPTANCE_HARNESS_SHA =
+4ef6e934637ac886852d26a70970820e887d0a03
+```
