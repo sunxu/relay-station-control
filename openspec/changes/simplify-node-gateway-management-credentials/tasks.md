@@ -56,9 +56,9 @@
 
 ## 7. Verification / Acceptance
 
-- [ ] 7.1 依次运行crypto、store/migration/ACL、asset command、runtime resolver、API/frontend focused groups；每组首个真实blocker fail-fast，全部通过后运行full store/accountadmin/API与focused race。
+- [x] 7.1 依次运行crypto、store/migration/ACL、asset command、runtime resolver、API/frontend focused groups；每组首个真实blocker fail-fast，全部通过后运行full store/accountadmin/API与focused race。证据：Gate 1–6 focused evidence、full store PASS、API/frontend PASS、Gate 4 focused PASS。
 - [x] 7.2 运行`make test build`、`go vet ./...`、frontend unit/typecheck、`openspec validate simplify-node-gateway-management-credentials --strict`与`openspec validate --all --strict`，记录命令、runtime和结果。Gate 6 final run全部通过。
-- [ ] 7.3 从clean exact candidate构建immutable class-4 Control artifact，验证source→manifest→image→running identity及Migration51/floor4 provenance，不重建Gateway/Node。
-- [ ] 7.4 在production-like stack执行O01–O05与最小Node/Gateway/Phase7/recovery runtime acceptance，记录最长business wait、zero data-plane dependency与zero Inventory-as-execution-truth。
-- [ ] 7.5 运行一次可复用shared secret scan，证明plaintext credential、raw K2、sealed credential blob、K2 identity commitment value、credential-bearing headers与raw native body在API/DOM/log/audit/metrics/trace/Browser state/test evidence/acceptance artifact为零泄漏，并完成独立P0/P1/P2 review。
-- [ ] 7.6 对照R1–R21、Architecture A–L、Base TCCR proof IDs与O01–O05完成最终coverage reconciliation，更新implementation evidence、canonical specs与Ops release truth，最后验证clean worktree；只有全部门禁PASS后才申请archive/closeout。
+- [x] 7.3 从clean exact candidate构建immutable class-4 Control artifact，验证source→manifest→image→running identity及Migration51/floor4 provenance，不重建Gateway/Node。证据：`docs/evidence/phase8-stage0-gate7-acceptance.md`。
+- [x] 7.4 在production-like stack执行O01–O05与最小Node/Gateway/Phase7/recovery runtime acceptance，记录最长business wait、zero data-plane dependency与zero Inventory-as-execution-truth。证据：O01–O05 compatgate evidence、Gate 4–6 owning evidence及 `docs/evidence/phase8-stage0-gate7-acceptance.md`。
+- [x] 7.5 运行一次可复用shared secret scan，证明plaintext credential、raw K2、sealed credential blob、K2 identity commitment value、credential-bearing headers与raw native body在API/DOM/log/audit/metrics/trace/Browser state/test evidence/acceptance artifact为零泄漏，并完成独立P0/P1/P2 review。证据：Gate 1–6 secret scans、bundled Chromium acceptance scans、`docs/evidence/phase8-stage0-gate7-acceptance.md`及 Unified Review。
+- [x] 7.6 对照R1–R21、Architecture A–L、Base TCCR proof IDs与O01–O05完成最终coverage reconciliation，更新implementation evidence、canonical specs与Ops release truth，最后验证clean worktree；只有全部门禁PASS后才申请archive/closeout。证据：`docs/evidence/phase8-stage0-gate7-acceptance.md`、最终 validation section、clean candidate `c51d149daf3765dc981a445a9c84c26305575592`。

@@ -16,16 +16,16 @@ Validated pre-Stage0 runtime provenance:
 fab6aadc36a9f8ebe1309e5db457dcbac0136880
 
 Current implementation status:
-IN PROGRESS
+COMPLETE / PHASE 8 STAGE 0 CLOSED
 
 Migration 00051:
-NOT STARTED
+PASS
 
 Runtime acceptance:
-NOT STARTED
+PASS — Gate 7 evidence is recorded in `docs/evidence/phase8-stage0-gate7-acceptance.md`
 
 Stage0 class-4 artifact:
-NOT BUILT
+BUILT / VERIFIED — Control image `sha256:67e152929c1589ce43766611549c00c71f32b7c325d9c521f58a6fd703f06ecc`
 
 ## Gate 1 — K2 / Crypto Foundation
 
@@ -182,9 +182,9 @@ O05: PASS (real PostgreSQL compatibility-admission observer)
 Full PostgreSQL store regression: DEFERRED TO STAGE0 UNIFIED REVIEW
 ```
 
-Overall implementation remains `IN PROGRESS` because unified review and the
-final class-4 artifact are still pending. Gate 3A, Gate 4, Gate 5, and Gate 6
-implementation evidence is recorded in this document.
+Historical Gate 2 snapshot: implementation was then `IN PROGRESS` because
+unified review and the final class-4 artifact were still pending. The later
+Gate 3A, Gate 4, Gate 5, Gate 6 and Gate 7 evidence supersedes that snapshot.
 
 ## Gate 3A / Stage B — Repository Cutover and Store Credential Semantics
 
@@ -215,8 +215,9 @@ constructor uses an explicit unavailable capability and never falls back to
 | Real K2 startup composition | PASS | Gate 3A Stage C production composition evidence |
 
 The long Directory outbound acceptance test was migrated to the Stage 0
-resolver during Gate 4. API/frontend and Ops evidence is recorded in the
-later Gate 5 and Gate 6 sections; the worktree remains uncommitted.
+resolver during Gate 4. This paragraph is a historical pre-final-candidate
+snapshot; the final committed candidate and Gate 7 evidence are recorded at
+the end of this document.
 
 ## Gate 3A / Stage C — Production K2 Composition
 
@@ -241,18 +242,19 @@ the remaining utility/test references are outside that path.
 | K1/K2 separation | PASS | independent intent-key and sealer constructor capabilities |
 | Runtime key generation / hot reload / rotation | ZERO | no startup generation, refresh, or rotation path |
 | Stage0 Migration 51 / O05 / compatgate | PASS | fresh focused PostgreSQL and compatgate verification |
-| Gate 4 runtime Open consumers | NOT STARTED | intentionally deferred |
+| Gate 4 runtime Open consumers | PASS | later Gate 4 closeout superseded this planning snapshot |
 
 ## Gate 3A final status
 
 ```text
+Historical Gate 3A snapshot:
 Stage A — fixed lifecycle mutation functions: PASS
 Stage B — repository cutover and store credential semantics: PASS
 Stage C — production K2 composition: PASS
-Gate 4 runtime Open cutover: NOT STARTED
-Overall implementation: IN PROGRESS
-Commit: NOT CREATED
-Push: NOT RUN
+Gate 4 runtime Open cutover: NOT STARTED at that snapshot
+Overall implementation: IN PROGRESS at that snapshot
+Commit: NOT CREATED at that snapshot
+Push: NOT RUN at that snapshot
 ```
 
 ## Gate 4 — Runtime Credential Open Cutover (PASS)
@@ -449,7 +451,7 @@ Gate 6 implementation evidence is complete. `go test ./... -count=1`,
 `git diff --check` passed. The full Go run used the real PostgreSQL test URLs;
 no production K2, database, or API secret was printed.
 
-## Current Stage 0 Review Status
+## Final Stage 0 Review Status
 
 ```text
 Gate 3A: PASS
@@ -462,8 +464,19 @@ Browser execution: host execution
 Gate 5-owned Browser failures: ZERO
 Topology readonly: FIXTURE_BUG / NON-GATE5-OWNING
 Authentication: ENVIRONMENT INPUT MISSING / NON-GATE5-OWNING
-Unified review: PENDING RE-REVIEW
-Stage 0 class-4 artifact: NOT BUILT
-Commit: NOT CREATED
+Unified review: PASS
+Gate 7: PASS
+Gate 7 durable evidence: PASS — `docs/evidence/phase8-stage0-gate7-acceptance.md`
+Stage 0 class-4 artifact: BUILT / VERIFIED
+Candidate: `c51d149daf3765dc981a445a9c84c26305575592`
+Control image: `sha256:67e152929c1589ce43766611549c00c71f32b7c325d9c521f58a6fd703f06ecc`
+Node artifact: `relay-station-node:phase7-replacement-0b34a22f-20260918`
+Node image: `sha256:7e3428ca0d4bc1640311f540ec1bc33b0d6fcf0cd0d9d700fc19fd98a480ee99`
+Stage 0 implementation: VALIDATED
+Stage 0: CLOSED
+Commit: PRESENT
 Push: NOT RUN
+
+The earlier status block in this file was a historical planning snapshot and
+is superseded by this final section.
 ```
