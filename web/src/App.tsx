@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Alert, Card, Spin } from "antd";
 import type { AuthApi } from "./api/auth-api";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { LocaleSwitcher } from "./foundation/LocaleSwitcher";
 
 const BootstrapPage = lazy(() => import("./pages/BootstrapPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -43,5 +44,5 @@ function AuthShell() {
 }
 
 export default function App({ api }: { api?: AuthApi }) {
-  return <AuthProvider api={api}><AuthShell /></AuthProvider>;
+  return <AuthProvider api={api}><LocaleSwitcher /><AuthShell /></AuthProvider>;
 }

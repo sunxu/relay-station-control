@@ -1,7 +1,10 @@
-import { useAppLocale } from "./FrontendFoundationProvider";
+import { useOptionalAppLocale } from "./FrontendFoundationProvider";
 
 export function LocaleSwitcher() {
-  const { locale, setLocale } = useAppLocale();
+  const context = useOptionalAppLocale();
+  if (!context) return null;
+
+  const { locale, setLocale } = context;
 
   return (
     <label>

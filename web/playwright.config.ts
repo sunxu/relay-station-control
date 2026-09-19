@@ -13,7 +13,8 @@ export default defineConfig({
   outputDir: process.env.CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR ?? "test-results/e2e",
   use: {
     baseURL,
-    channel: process.env.CONTROL_E2E_BROWSER_CHANNEL ?? "chrome",
+    channel: process.env.CONTROL_E2E_BROWSER_CHANNEL ?? "chromium",
+    viewport: { width: 1280, height: 720 },
     headless: true,
     ignoreHTTPSErrors: true,
     trace: "off",

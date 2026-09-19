@@ -22,6 +22,10 @@ export function useAppLocale(): AppLocaleContextValue {
   return context;
 }
 
+export function useOptionalAppLocale(): AppLocaleContextValue | null {
+  return useContext(AppLocaleContext);
+}
+
 export function FrontendFoundationProvider({
   children,
   initialLocale,
