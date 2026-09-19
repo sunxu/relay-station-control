@@ -23,11 +23,14 @@ ARG VERSION=dev
 RUN --mount=type=cache,id=relay-control-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=relay-control-gobuild,target=/root/.cache/go-build \
     --mount=type=tmpfs,target=/tmp,size=4294967296 \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/control ./cmd/control
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/control ./cmd/control && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/relay-control-init ./cmd/relay-control-init
 
 FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=go-build --chown=65532:65532 --chmod=0555 /out/control /usr/local/bin/control
+COPY --from=go-build --chown=65532:65532 --chmod=0555 /out/relay-control-init /usr/local/bin/relay-control-init
+COPY --chown=65532:65532 migrations /app/migrations
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/control"]
