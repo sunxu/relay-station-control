@@ -23,8 +23,19 @@ CONTROL_E2E_NODE_COMMIT="${CONTROL_E2E_NODE_COMMIT:-0b34a22fcaec392d39f710f3a841
 CONTROL_E2E_RESOLVED_IMAGE_ID=""
 CONTROL_E2E_NODE_MANAGEMENT_PASSWORD=""
 
+# General Browser owns only shared production-like surfaces. Focused
+# account-operation specs require dedicated ACCEPTANCE_* runtime inputs and
+# remain owned by deploy/acceptance/runtime/run.sh modes.
+GENERAL_BROWSER_SPECS=(
+  e2e/authentication.spec.ts
+  e2e/gateway-management.spec.ts
+  e2e/node-lifecycle.spec.ts
+  e2e/topology.spec.ts
+  e2e/problems.spec.ts
+)
+
 usage() {
-  echo "Usage: CONTROL_E2E_RUNTIME_DIR=/absolute/private/path $0 [all|container|playwright|data-plane]"
+  echo "Usage: CONTROL_E2E_RUNTIME_DIR=/absolute/private/path $0 [all|general|container|playwright|data-plane]"
   echo
   echo "The runtime directory must be outside the workspace and is deleted only when"
   echo "CONTROL_E2E_CLEAN_RUNTIME=1 is explicitly set. No secret value is printed."
@@ -344,19 +355,31 @@ build_and_start() {
 }
 
 run_playwright() {
-  local root output_dir exit_code=0
+  local mode="${1:-all}" root output_dir exit_code=0
   root="$(runtime_dir)"
   output_dir="$root/playwright-output"
   rm -rf -- "$output_dir"
-  CONTROL_E2E_BASE_URL="https://localhost:${CONTROL_E2E_TLS_PORT}" \
-  CONTROL_E2E_CONTAINER="$CONTROL_E2E_CONTAINER" \
-  CONTROL_E2E_BOOTSTRAP_SECRET_FILE="$root/bootstrap-secret" \
-  CONTROL_E2E_ADMIN_PASSWORD_FILE="$root/admin-password" \
-  CONTROL_E2E_SECOND_ADMIN_PASSWORD_FILE="$root/second-admin-password" \
-  CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
-  PLAYWRIGHT_HTML_OPEN=never \
-    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-      npm --prefix "$CONTROL_DIR/web" run test:e2e || exit_code=$?
+  if [[ "$mode" == "general" ]]; then
+    CONTROL_E2E_BASE_URL="https://localhost:${CONTROL_E2E_TLS_PORT}" \
+    CONTROL_E2E_CONTAINER="$CONTROL_E2E_CONTAINER" \
+    CONTROL_E2E_BOOTSTRAP_SECRET_FILE="$root/bootstrap-secret" \
+    CONTROL_E2E_ADMIN_PASSWORD_FILE="$root/admin-password" \
+    CONTROL_E2E_SECOND_ADMIN_PASSWORD_FILE="$root/second-admin-password" \
+    CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
+    PLAYWRIGHT_HTML_OPEN=never \
+      env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+        npm --prefix "$CONTROL_DIR/web" run test:e2e -- "${GENERAL_BROWSER_SPECS[@]}" || exit_code=$?
+  else
+    CONTROL_E2E_BASE_URL="https://localhost:${CONTROL_E2E_TLS_PORT}" \
+    CONTROL_E2E_CONTAINER="$CONTROL_E2E_CONTAINER" \
+    CONTROL_E2E_BOOTSTRAP_SECRET_FILE="$root/bootstrap-secret" \
+    CONTROL_E2E_ADMIN_PASSWORD_FILE="$root/admin-password" \
+    CONTROL_E2E_SECOND_ADMIN_PASSWORD_FILE="$root/second-admin-password" \
+    CONTROL_E2E_PLAYWRIGHT_OUTPUT_DIR="$output_dir" \
+    PLAYWRIGHT_HTML_OPEN=never \
+      env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+        npm --prefix "$CONTROL_DIR/web" run test:e2e || exit_code=$?
+  fi
   rm -rf -- "$output_dir"
   return "$exit_code"
 }
@@ -396,6 +419,7 @@ main() {
 
   case "$command" in
     all) build_and_start; run_playwright; run_data_plane_smoke ;;
+    general) build_and_start; run_playwright general ;;
     container) build_and_start ;;
     playwright) run_playwright ;;
     data-plane) run_data_plane_smoke ;;
