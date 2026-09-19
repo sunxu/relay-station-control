@@ -23,6 +23,11 @@ const (
 	driverVersion = "cliproxyapi.auth-files.v1"
 )
 
+var driverCapabilities = []string{
+	"management_account_inventory_read",
+	"management_health_read",
+}
+
 func main() {
 	if err := run(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "control-init failed")
@@ -96,7 +101,7 @@ VALUES ($1,$2,$3) ON CONFLICT (singleton_id) DO NOTHING`, identity.ID, identity.
 	if err = pool.QueryRow(ctx, `SELECT environment_id,environment_type FROM environments WHERE singleton_id=1`).Scan(&actualID, &actualType); err != nil || actualID != identity.ID || actualType != identity.Type {
 		return errors.New("environment identity conflict")
 	}
-	if _, err = pool.Exec(ctx, `SELECT public.control_register_node_driver($1,$2,$3,'active',$4::text[])`, nodeType, driverVersion, "CLIProxyAPI", []string{"management_health_read", "management_account_inventory_read"}); err != nil {
+	if _, err = pool.Exec(ctx, `SELECT public.control_register_node_driver($1,$2,$3,'active',$4::text[])`, nodeType, driverVersion, "CLIProxyAPI", driverCapabilities); err != nil {
 		return errors.New("driver catalog seed failed")
 	}
 	active := csvEnv("CONTROL_INITIAL_ACTIVE_PROVIDERS", []string{"antigravity"})
