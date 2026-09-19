@@ -59,8 +59,8 @@ function Evidence({ api, occurrenceId, onUnauthorized, copy }: { api: TopologyAp
       { title: copy.recordedTime, dataIndex: "recorded_at", render: (value) => formatDateTime(value, locale) },
     ]} />
     <Flex gap={8} justify="end">
-      <Button disabled={!cursor} onClick={() => setCursor(undefined)}>{copy.evidenceFirstPage}</Button>
-      <Button disabled={!query.data.next_cursor || query.isFetching} onClick={() => setCursor(query.data.next_cursor ?? undefined)}>{copy.evidenceNextPage}</Button>
+      <Button data-testid="topology-evidence-first" disabled={!cursor} onClick={() => setCursor(undefined)}>{copy.evidenceFirstPage}</Button>
+      <Button data-testid="topology-evidence-next" disabled={!query.data.next_cursor || query.isFetching} onClick={() => setCursor(query.data.next_cursor ?? undefined)}>{copy.evidenceNextPage}</Button>
     </Flex>
   </Flex>;
 }
@@ -169,7 +169,10 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
   const occurrenceTable = (items: TopologyOccurrence[]) => <Table className="topology-table"
     key={instanceId} rowKey="occurrence_id" size="small" scroll={{ x: 1320 }} pagination={false}
     dataSource={items} columns={occurrenceColumns}
-    expandable={{ expandedRowRender: (row) => <Evidence api={api} occurrenceId={row.occurrence_id} onUnauthorized={expireSession} copy={copy} /> }}
+    expandable={{
+      expandedRowRender: (row) => <Evidence api={api} occurrenceId={row.occurrence_id} onUnauthorized={expireSession} copy={copy} />,
+      expandIcon: ({ expanded, onExpand, record }) => <Button type="text" data-testid={`topology-evidence-expand-${record.occurrence_id}`} onClick={(event) => onExpand(record, event)}>{expanded ? "−" : "+"}</Button>,
+    }}
     locale={{ emptyText: copy.emptyOccurrence }}
   />;
   const accountRows: AccountListRow[] = (accountQualityView.data?.items ?? []).map((item) => {
@@ -242,7 +245,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
       </Card>
       <AccountDetailsDrawer api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />
       <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={(accountKey) => { setDetailsAccountKey(accountKey); setDetailsRow(accountRows.find((item) => item.account_key === accountKey)); }} onUnauthorized={expireSession} />
-      <Card className="topology-card" title={copy.providerSnapshot} extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>{copy.refreshProvider}</Button>}>
+      <Card className="topology-card" title={copy.providerSnapshot} extra={<Button data-testid="topology-refresh-provider" onClick={() => void providers.refetch()} loading={providers.isFetching}>{copy.refreshProvider}</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError retry={() => void providers.refetch()} />}
         {providers.data && !providers.error && <>
@@ -285,12 +288,12 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
         {current.error && <ReadError retry={() => void current.refetch()} />}
         {current.data && !current.error && <>
           {occurrenceTable(current.data.items)}
-          <Flex justify="end" gap={8}><Button disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>{copy.firstPage}</Button><Button disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>
+          <Flex justify="end" gap={8}><Button data-testid="topology-current-first" disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>{copy.firstPage}</Button><Button data-testid="topology-current-next" disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>
         </>}
       </Card>
       <Card className="topology-card" data-testid="topology-history-ownership" title={copy.ownershipHistory}>
         <Flex gap={8} wrap>
-          <Select allowClear aria-label={copy.historyStatus} placeholder={copy.historyPlaceholder} value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: "ACTIVE" }, { value: "RESOLVED", label: "Resolved" }]} style={{ minWidth: 170 }} />
+          <Select data-testid="topology-history-status" allowClear aria-label={copy.historyStatus} placeholder={copy.historyPlaceholder} value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: <span data-testid="topology-history-status-active">ACTIVE</span> }, { value: "RESOLVED", label: <span data-testid="topology-history-status-resolved">Resolved</span> }]} style={{ minWidth: 170 }} />
           <Button onClick={() => void history.refetch()} loading={history.isFetching}>{copy.refreshHistory}</Button>
         </Flex>
         {history.isPending && <Spin />}
@@ -298,7 +301,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
         {history.data && !history.error && <>
           <Text type="secondary">{copy.historicalInvolvement} · {formatDateTime(history.data.observed_at, locale)}</Text>
           {occurrenceTable(history.data.items)}
-          <Flex justify="end" gap={8}><Button disabled={!historyCursor} onClick={() => setHistoryCursor(undefined)}>{copy.firstPage}</Button><Button disabled={!history.data.next_cursor || history.isFetching} onClick={() => setHistoryCursor(history.data?.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>
+          <Flex justify="end" gap={8}><Button data-testid="topology-history-first" disabled={!historyCursor} onClick={() => setHistoryCursor(undefined)}>{copy.firstPage}</Button><Button data-testid="topology-history-next" disabled={!history.data.next_cursor || history.isFetching} onClick={() => setHistoryCursor(history.data?.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>
         </>}
       </Card>
     </>}

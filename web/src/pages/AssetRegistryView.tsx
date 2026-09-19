@@ -491,10 +491,10 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 		{ title: t("assets.lifecycle"), dataIndex: "lifecycleStatus", key: "lifecycleStatus", render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{value === "active" ? t("assets.currentNode") : t("assets.retiredNode")}</Tag> },
 		{ title: t("assets.revision"), dataIndex: "revision", key: "revision" },
 		{ title: t("assets.operationLabel"), key: "actions", render: (_: unknown, node: NodeAsset) => <Space wrap>
-			<Button size="small" onClick={() => void showNodeDetail(node)}>{t("assets.details")}</Button>
+			<Button data-testid={`node-details-${node.instanceId}`} size="small" onClick={() => void showNodeDetail(node)}>{t("assets.details")}</Button>
 			{node.lifecycleStatus === "active" && <>
-				<Button size="small" onClick={() => openNodeForm("edit", node)}>{t("assets.edit")}</Button>
-				<Button size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>{t("assets.replace")}</Button>
+				<Button data-testid={`node-edit-${node.instanceId}`} size="small" onClick={() => openNodeForm("edit", node)}>{t("assets.edit")}</Button>
+				<Button data-testid={`node-replace-${node.instanceId}`} size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>{t("assets.replace")}</Button>
 				<Popconfirm title={t("assets.retireGatewayTitle")} onConfirm={() => void retireNode(node)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger disabled={nodeBusy}>{t("assets.retire")}</Button></Popconfirm>
 			</>}
 		</Space> },
@@ -583,7 +583,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			{nodeMessage && <Alert type="warning" showIcon message={nodeMessage} closable onClose={() => setNodeMessage(undefined)} />}
 			<Flex justify="space-between" align="center" wrap gap={8}>
           <Space wrap aria-label={t("assets.nodeFilter")}>
-			<Select aria-label={t("assets.nodeLifecycle")} value={lifecycle} options={[{ value: "active", label: t("assets.currentNode") }, { value: "retired", label: t("assets.retiredNode") }, { value: "all", label: t("assets.allNodes") }]} onChange={(value) => { setLifecycle(value); resetCursor(); }} style={{ minWidth: 150 }} />
+			<Select data-testid="node-lifecycle-filter" aria-label={t("assets.nodeLifecycle")} value={lifecycle} options={[{ value: "active", label: t("assets.currentNode") }, { value: "retired", label: t("assets.retiredNode") }, { value: "all", label: t("assets.allNodes") }]} onChange={(value) => { setLifecycle(value); resetCursor(); }} style={{ minWidth: 150 }} />
             <Select
               aria-label={t("assets.nodeType")}
               allowClear
@@ -630,7 +630,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
             </Flex>
           )}
         </Flex>
-		<Modal open={Boolean(nodeModal)} title={nodeModal === "register" ? t("assets.formTitleRegister") : nodeModal === "edit" ? t("assets.formTitleEdit") : t("assets.formTitleReplace")} okText={t("assets.save")} cancelText={t("assets.cancel")} confirmLoading={nodeBusy} onCancel={() => setNodeModal(undefined)} onOk={() => void nodeForm.submit()} destroyOnHidden>
+		<Modal open={Boolean(nodeModal)} title={nodeModal === "register" ? t("assets.formTitleRegister") : nodeModal === "edit" ? t("assets.formTitleEdit") : t("assets.formTitleReplace")} okText={t("assets.save")} cancelText={t("assets.cancel")} okButtonProps={{ "data-testid": "node-form-submit" }} cancelButtonProps={{ "data-testid": "node-form-cancel" }} confirmLoading={nodeBusy} onCancel={() => setNodeModal(undefined)} onOk={() => void nodeForm.submit()} destroyOnHidden>
 			<Form form={nodeForm} layout="vertical" onFinish={(values) => void submitNode(values)}>
 				{nodeModal !== "edit" && <Form.Item name="new_instance_id" label={t("assets.newInstanceId")} extra={t("assets.generated")}><Input data-testid={nodeModal === "register" ? "node-register-instance-id" : "node-replace-instance-id"} readOnly /></Form.Item>}
 				<Form.Item name="display_name" label={t("assets.displayName")} rules={[{ required: true }]}><Input data-testid="node-form-display-name" maxLength={100} /></Form.Item>
@@ -644,7 +644,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 				{nodeModal === "edit" && <Form.Item name="credential_action" label={t("assets.credentialAction")}><Select options={[{ value: "keep", label: t("assets.credentialKeep") }, { value: "set", label: t("assets.credentialSet") }, { value: "clear", label: t("assets.credentialClear") }]} /></Form.Item>}
 			</Form>
 		</Modal>
-		<Modal open={Boolean(nodeDetail)} title={t("assets.nodeDetails")} footer={null} onCancel={() => { nodeDetailRequestRef.current += 1; setNodeDetail(undefined); setProbeObservation(undefined); setMonitoringResult(undefined); setNodeOperationBusy(undefined); setNodeMessage(undefined); }}>
+		<Modal open={Boolean(nodeDetail)} title={t("assets.nodeDetails")} closeIcon={<span data-testid="node-detail-close">×</span>} footer={null} onCancel={() => { nodeDetailRequestRef.current += 1; setNodeDetail(undefined); setProbeObservation(undefined); setMonitoringResult(undefined); setNodeOperationBusy(undefined); setNodeMessage(undefined); }}>
 			{nodeDetail && <>
 			<Descriptions column={1} size="small" bordered>
 				<Descriptions.Item label={t("assets.instanceId")}><Text code>{nodeDetail.asset.instanceId}</Text></Descriptions.Item>
@@ -660,7 +660,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 					<Button data-testid="node-health-button" loading={nodeOperationBusy === "health"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("health")}>{t("assets.health")}</Button>
 					<Button data-testid="node-connection-test-button" loading={nodeOperationBusy === "connection-test"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("connection-test")}>{t("assets.connectionTest")}</Button>
 					<Button data-testid="node-monitoring-enable-button" loading={nodeOperationBusy === "monitoring-enable"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runMonitoringCommand("monitoring-enable")}>{t("assets.monitoringEnable")}</Button>
-					<Popconfirm title={t("assets.disableMonitoringTitle")} description={t("assets.disableMonitoringDescription")} okText={t("assets.disableMonitoring")} cancelText={t("assets.cancel")} onConfirm={() => void runMonitoringCommand("monitoring-disable")}>
+					<Popconfirm title={t("assets.disableMonitoringTitle")} description={t("assets.disableMonitoringDescription")} okText={t("assets.disableMonitoring")} cancelText={t("assets.cancel")} okButtonProps={{ "data-testid": "node-monitoring-disable-confirm" }} onConfirm={() => void runMonitoringCommand("monitoring-disable")}>
 						<Button data-testid="node-monitoring-disable-button" loading={nodeOperationBusy === "monitoring-disable"} disabled={Boolean(nodeOperationBusy)}>{t("assets.disableMonitoring")}</Button>
 					</Popconfirm>
 				</Space>

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { formatDateTime } from "../src/time";
+import { formatDateTime } from "../src/foundation/format";
 
 const nodes = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
 const asset = (id: string, name: string) => ({ instance_id: id, display_name: name, node_type: "relay", driver_contract_version: "v1", management_endpoint: "https://node.invalid", secret_configured: false, capabilities: [], monitoring: { active: true, effective_from: null, effective_to: null } });
@@ -35,14 +35,14 @@ test("Account detail preserves server Token projection and occurrence history", 
     throw new Error(`unexpected detail API ${path}`);
   });
   await page.goto(`/topology?instance_id=${nodes[0]}`);
-  await page.getByRole("button", { name: "查看详情", exact: true }).click();
+  await page.getByTestId(`account-details-${encodeURIComponent(accountKey)}`).click();
   const drawer = page.getByRole("dialog");
-  await drawer.getByRole("tab", { name: "采集信息" }).click();
+  await page.getByTestId("account-inventory-tab").click();
   await expect(drawer.getByText("INVALID", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Expected Valid Until", { exact: true })).toBeVisible();
   // Browser and test runner share the host system timezone; no bespoke UI formatter.
-  await expect(drawer.getByText(formatDateTime(expected), { exact: true })).toBeVisible();
-  await drawer.getByRole("tab", { name: "可用性事件" }).click();
+  await expect(drawer.getByText(formatDateTime(expected, "zh-CN"), { exact: true })).toBeVisible();
+  await page.getByTestId("account-availability-tab").click();
   await expect(drawer.getByText("token_invalid", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Critical", { exact: true })).toBeVisible();
   expect(qualityReads).toBe(1);
@@ -76,31 +76,29 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
   const currentCard = page.getByTestId("topology-current-ownership");
   const historyCard = page.getByTestId("topology-history-ownership");
   await test.step("current/history have independent pagination and status", async () => {
-    await page.getByRole("button", { name: "Current 下一页" }).click();
+    await page.getByTestId("topology-current-next").click();
     await expect(currentCard.getByText("没有符合条件的 occurrence")).toBeVisible();
     await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
-    await page.getByRole("button", { name: "Current 首页" }).click();
+    await page.getByTestId("topology-current-first").click();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
-    const filter = page.getByRole("combobox", { name: "历史状态" });
-    await filter.focus();
-    await filter.press("ArrowDown");
-    await filter.press("ArrowDown");
-    await filter.press("Enter");
+    const filter = page.getByTestId("topology-history-status");
+    await filter.click();
+    await page.getByTestId("topology-history-status-resolved").click();
     await expect.poll(() => requests.some((r) => r.includes("duplicate-history?status=RESOLVED"))).toBe(true);
-    await expect(historyCard.getByText("RESOLVED", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "History 下一页" }).click();
+    await expect(historyCard.getByText("RESOLVED", { exact: true }).last()).toBeVisible();
+    await page.getByTestId("topology-history-next").click();
     await expect(historyCard.getByText("没有符合条件的 occurrence")).toBeVisible();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
-    await page.getByRole("button", { name: "History 首页" }).click();
+    await page.getByTestId("topology-history-first").click();
     await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
   });
   await test.step("evidence pagination is an actual expanded UI read", async () => {
-    await currentCard.getByRole("button", { name: "Expand row" }).click();
-    await expect(page.getByRole("button", { name: "Evidence 下一页" })).toBeVisible();
-    await page.getByRole("button", { name: "Evidence 下一页" }).click();
-    await expect(page.getByRole("button", { name: "Evidence 下一页" })).toBeDisabled();
+    await currentCard.getByTestId(`topology-evidence-expand-${occurrence.occurrence_id}`).click();
+    await expect(page.getByTestId("topology-evidence-next")).toBeVisible();
+    await page.getByTestId("topology-evidence-next").click();
+    await expect(page.getByTestId("topology-evidence-next")).toBeDisabled();
     await expect.poll(() => requests.some((r) => r.includes("/evidence?cursor=evidence-page-2"))).toBe(true);
-    await page.getByRole("button", { name: "Evidence 首页" }).click();
+    await page.getByTestId("topology-evidence-first").click();
     await expect(page.getByText("owner_confirmed", { exact: true })).toBeVisible();
   });
   await test.step("Node pagination, keyboard selection, local failure and recovery", async () => {
@@ -119,7 +117,7 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     await expect(page.getByText(`Instance ID：${nodes[1]}`)).toBeVisible();
     await expect(page.getByText("读取不可用（unavailable）")).toBeVisible();
     await expect(page.getByText("unbound", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "刷新 Provider" }).click();
+    await page.getByTestId("topology-refresh-provider").click();
     await expect(page.getByText("fresh", { exact: true }).first()).toBeVisible();
     await page.goBack();
     await expect(page.getByText(`Instance ID：${nodes[0]}`)).toBeVisible();
@@ -136,7 +134,7 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     await expect(page.getByText("stale", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("degraded", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("not-yet-observed", { exact: true })).toBeVisible();
-    await expect(page.getByText(`健康观测：${formatDateTime("2026-09-07T00:05:00Z")}`).first()).toBeVisible();
+    await expect(page.getByText(`健康观测：${formatDateTime("2026-09-07T00:05:00Z", "zh-CN")}`).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await currentCard.scrollIntoViewIfNeeded();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
@@ -146,7 +144,7 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
   });
   await test.step("evidence 401 clears the authenticated page", async () => {
     expireEvidence = true;
-    await currentCard.getByRole("button", { name: "Expand row" }).click();
+    await currentCard.getByTestId(`topology-evidence-expand-${occurrence.occurrence_id}`).click();
     await expect(page.getByTestId("login-page")).toBeVisible();
     await expect(page.getByTestId("topology-page")).toHaveCount(0);
     expect(requests.every((r) => r.startsWith("GET ") || r.includes("POST /api/topology/nodes/") && r.endsWith("/account-quality/query"))).toBe(true);

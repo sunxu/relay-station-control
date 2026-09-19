@@ -137,7 +137,7 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   await expect(card.getByText("Primary Node")).toBeVisible();
   expect(requests.some((request) => /\/api\/assets\/nodes\/[^/]+\/(health|connection-test|monitoring-(enable|disable))$/.test(request))).toBe(false);
 
-  await card.getByRole("button", { name: /详.{0,2}情/ }).click();
+  await card.getByTestId(`node-details-${firstID}`).click();
   const activeDetail = page.getByLabel("Node 详情");
   await expect(activeDetail.getByTestId("node-management-operations")).toBeVisible();
   await expect(activeDetail.getByTestId("node-health-button")).toBeVisible();
@@ -152,28 +152,30 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   await expect(activeDetail.getByTestId("node-monitoring-result")).toContainText("enabled");
   await activeDetail.getByTestId("node-monitoring-disable-button").click();
   await expect(page.getByText("这会立即关闭当前监控，并取消已有的未来监控预约。")).toBeVisible();
-  await page.getByRole("button", { name: /停.{0,2}用/ }).last().click();
+  await page.getByTestId("node-monitoring-disable-confirm").click();
   await expect(activeDetail.getByTestId("node-monitoring-result")).toContainText("disabled");
-  await activeDetail.getByRole("button", { name: "Close" }).click();
+  await page.getByTestId("node-detail-close").click();
   await expect(activeDetail).toBeHidden();
 
-  await card.getByRole("button", { name: /编\s*辑/ }).click();
+  await card.getByTestId(`node-edit-${firstID}`).click();
   await page.getByTestId("node-form-display-name").fill("Edited Node");
-  await page.getByRole("button", { name: /保\s*存/ }).click();
+  await page.getByTestId("node-form-submit").click();
   await expect(card.getByText("Edited Node")).toBeVisible();
 
-  await card.getByRole("button", { name: "Replace" }).click();
+  await card.getByTestId(`node-replace-${firstID}`).click();
   const replacementInstance = page.getByTestId("node-replace-instance-id");
   await expect(replacementInstance).toHaveAttribute("readonly");
   await expect(replacementInstance).toHaveValue(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   await page.getByTestId("node-form-display-name").fill("Replacement Node");
-  await page.getByRole("button", { name: /保\s*存/ }).click();
+  await page.getByTestId("node-form-submit").click();
   await expect(card.getByText("Replacement Node")).toBeVisible();
 
-  await card.getByRole("combobox", { name: "Node 生命周期" }).click();
-  await page.getByText("历史 Node", { exact: true }).click();
+  const lifecycleFilter = page.getByTestId("node-lifecycle-filter");
+  await lifecycleFilter.click();
+  await lifecycleFilter.press("ArrowDown");
+  await lifecycleFilter.press("Enter");
   await expect(card.getByText("Edited Node")).toBeVisible();
-  await card.getByRole("button", { name: /详\s*情/ }).click();
+  await card.getByTestId(`node-details-${firstID}`).click();
   const detailDialog = page.getByLabel("Node 详情");
   await expect(detailDialog.getByText(replacementID!, { exact: true })).toBeVisible();
   await expect(detailDialog.getByText(firstID, { exact: true })).toBeVisible();
