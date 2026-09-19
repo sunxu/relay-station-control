@@ -9,11 +9,19 @@ WORKSPACE_DIR="$(cd -- "${CONTROL_DIR}/.." && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.yaml"
 
 CONTROL_E2E_IMAGE="${CONTROL_E2E_IMAGE:-relay-station/control:auth-e2e}"
+EXPECTED_SHA="${EXPECTED_SHA:-e3b52987a35ed470eba958b3f6764188bb4197f2}"
 CONTROL_E2E_PROJECT="${CONTROL_E2E_PROJECT:-relay-control-auth-e2e}"
 CONTROL_E2E_CONTAINER="${CONTROL_E2E_CONTAINER:-relay-control-auth-e2e}"
 CONTROL_E2E_PORT="${CONTROL_E2E_PORT:-18080}"
 CONTROL_E2E_DB_PORT="${CONTROL_E2E_DB_PORT:-55433}"
 CONTROL_E2E_TLS_PORT="${CONTROL_E2E_TLS_PORT:-18443}"
+CONTROL_E2E_NODE_PORT="${CONTROL_E2E_NODE_PORT:-19317}"
+CONTROL_E2E_NODE_IMAGE="${CONTROL_E2E_NODE_IMAGE:-relay-station-node:phase7-replacement-0b34a22f-20260918}"
+CONTROL_E2E_NODE_DIGEST="${CONTROL_E2E_NODE_DIGEST:-sha256:7e3428ca0d4bc1640311f540ec1bc33b0d6fcf0cd0d9d700fc19fd98a480ee99}"
+CONTROL_E2E_NODE_VERSION="${CONTROL_E2E_NODE_VERSION:-7.3.2}"
+CONTROL_E2E_NODE_COMMIT="${CONTROL_E2E_NODE_COMMIT:-0b34a22fcaec392d39f710f3a8418595b491607d}"
+CONTROL_E2E_RESOLVED_IMAGE_ID=""
+CONTROL_E2E_NODE_MANAGEMENT_PASSWORD=""
 
 usage() {
   echo "Usage: CONTROL_E2E_RUNTIME_DIR=/absolute/private/path $0 [all|container|playwright|data-plane]"
@@ -47,6 +55,8 @@ init_runtime() {
   mkdir -p "$root"
   chmod 700 "$root"
 
+  CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$(openssl rand -hex 32)"
+
   if [[ ! -e "$root/bootstrap-secret" ]]; then
     openssl rand -hex 32 > "$root/bootstrap-secret"
   fi
@@ -58,6 +68,43 @@ init_runtime() {
   if [[ ! -e "$root/asset-credential-key" ]]; then
     (cd "$CONTROL_DIR" && go run ./cmd/relay-control-asset-credential-key --path "$root/asset-credential-key" >/dev/null)
   fi
+  openssl rand -out "$root/account-operation-intent-key" 32
+  printf '%s' "$CONTROL_E2E_NODE_MANAGEMENT_PASSWORD" > "$root/node-management-key"
+  mkdir -p "$root/node/auths" "$root/node/logs"
+  cat > "$root/node/config.yaml" <<YAML
+host: "0.0.0.0"
+port: 8317
+remote-management:
+  allow-remote: true
+  secret-key: "$CONTROL_E2E_NODE_MANAGEMENT_PASSWORD"
+  disable-control-panel: true
+auth-dir: "/root/.cli-proxy-api"
+logging-to-file: true
+request-log: false
+YAML
+  cat > "$root/node-counter.conf" <<'NGINX'
+pid /tmp/nginx.pid;
+events {}
+http {
+  log_format native_counter '$request_method $uri $status';
+  access_log /dev/stdout native_counter;
+  error_log /dev/stderr warn;
+  client_body_temp_path /tmp/client_temp;
+  proxy_temp_path /tmp/proxy_temp;
+  fastcgi_temp_path /tmp/fastcgi_temp;
+  uwsgi_temp_path /tmp/uwsgi_temp;
+  scgi_temp_path /tmp/scgi_temp;
+  server {
+    listen 8318;
+    location / {
+      proxy_pass http://node:8317;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header Authorization $http_authorization;
+    }
+  }
+}
+NGINX
   if [[ ! -e "$root/admin-password" ]]; then
     openssl rand -base64 36 | tr -d '\r\n' > "$root/admin-password"
   fi
@@ -73,18 +120,22 @@ init_runtime() {
       -addext 'extendedKeyUsage=serverAuth' \
       -keyout "$root/tls.key" -out "$root/tls.crt" >/dev/null 2>&1
   fi
-  chmod 400 "$root/bootstrap-secret" "$root/auth-keyring.json" "$root/asset-credential-key" "$root/admin-password" "$root/second-admin-password" "$root/tls.key"
+  chmod 400 "$root/bootstrap-secret" "$root/auth-keyring.json" "$root/asset-credential-key" "$root/node-management-key" "$root/admin-password" "$root/second-admin-password" "$root/tls.key"
+  chmod 600 "$root/account-operation-intent-key"
   chmod 444 "$root/tls.crt"
 }
 
 compose() {
   CONTROL_E2E_RUNTIME_DIR="$(runtime_dir)" \
-  CONTROL_E2E_IMAGE="$CONTROL_E2E_IMAGE" \
+  CONTROL_E2E_RESOLVED_IMAGE_ID="$CONTROL_E2E_RESOLVED_IMAGE_ID" \
   CONTROL_E2E_PROJECT="$CONTROL_E2E_PROJECT" \
   CONTROL_E2E_CONTAINER="$CONTROL_E2E_CONTAINER" \
   CONTROL_E2E_PORT="$CONTROL_E2E_PORT" \
   CONTROL_E2E_DB_PORT="$CONTROL_E2E_DB_PORT" \
   CONTROL_E2E_TLS_PORT="$CONTROL_E2E_TLS_PORT" \
+  CONTROL_E2E_NODE_PORT="$CONTROL_E2E_NODE_PORT" \
+  CONTROL_E2E_NODE_IMAGE="$CONTROL_E2E_NODE_IMAGE" \
+  CONTROL_E2E_NODE_MANAGEMENT_PASSWORD="$CONTROL_E2E_NODE_MANAGEMENT_PASSWORD" \
     docker compose -f "$COMPOSE_FILE" "$@"
 }
 
@@ -135,7 +186,7 @@ expect_start_failure() {
   local label="$1"
   shift
   local output exit_code=0
-  output="$(docker run --rm --user 65532:65532 -e CONTROL_ENVIRONMENT_ID=development "$@" "$CONTROL_E2E_IMAGE" 2>&1)" || exit_code=$?
+  output="$(docker run --rm --user 65532:65532 -e CONTROL_ENVIRONMENT_ID=development "$@" "$CONTROL_E2E_RESOLVED_IMAGE_ID" 2>&1)" || exit_code=$?
   if [[ "$exit_code" -eq 0 ]]; then
     echo "FAIL: $label unexpectedly started" >&2
     return 1
@@ -165,6 +216,45 @@ verify_container_contract() {
   headers="$(curl --noproxy '*' --silent --show-error --dump-header - --output /dev/null "http://localhost:${CONTROL_E2E_PORT}/")"
   printf '%s' "$headers" | grep -Eiq '^Cache-Control:[[:space:]]*no-store' || { echo "FAIL: authentication shell lacks Cache-Control: no-store" >&2; return 1; }
   echo "PASS: linux/arm64 image, non-root runtime, 65532:0400 secrets, no-store responses"
+}
+
+verify_source_and_artifacts() {
+  local image_revision control_image_id node_image_id
+  [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "FAIL: EXPECTED_SHA is invalid" >&2; return 1; }
+  image_revision="$(docker image inspect "$CONTROL_E2E_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+  [[ "$image_revision" == "$EXPECTED_SHA" ]] || { echo "FAIL: Control image revision mismatch" >&2; return 1; }
+  control_image_id="$(docker image inspect "$CONTROL_E2E_IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
+  [[ "$control_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "FAIL: Control image ID is invalid" >&2; return 1; }
+  CONTROL_E2E_RESOLVED_IMAGE_ID="$control_image_id"
+  node_image_id="$(docker image inspect "$CONTROL_E2E_NODE_IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
+  [[ "$node_image_id" == "$CONTROL_E2E_NODE_DIGEST" ]] || { echo "FAIL: Node image identity mismatch" >&2; return 1; }
+  [[ "$CONTROL_E2E_NODE_VERSION" == "7.3.2" && "$CONTROL_E2E_NODE_COMMIT" == "0b34a22fcaec392d39f710f3a8418595b491607d" ]] || { echo "FAIL: Node artifact metadata mismatch" >&2; return 1; }
+  echo "CANDIDATE_IMAGE_ID=$CONTROL_E2E_RESOLVED_IMAGE_ID"
+  echo "CANDIDATE_IMAGE_REVISION=PASS"
+  echo "NODE_ARTIFACT_IDENTITY=PASS"
+}
+
+wait_for_node() {
+  local attempts=60
+  until curl --noproxy '*' --silent --show-error --fail "http://localhost:${CONTROL_E2E_NODE_PORT}/healthz" >/dev/null; do
+    attempts=$((attempts - 1))
+    if [[ "$attempts" -eq 0 ]]; then
+      echo "Node did not become healthy" >&2
+      compose logs --no-color node >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+verify_node_runtime() {
+  local headers
+  headers="$(curl --noproxy '*' --silent --show-error --fail --dump-header - --output /dev/null \
+    --header "Authorization: Bearer $CONTROL_E2E_NODE_MANAGEMENT_PASSWORD" \
+    "http://localhost:${CONTROL_E2E_NODE_PORT}/v0/management/auth-files")"
+  printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="x-cpa-version"{sub(/\r$/, "", $2); print $2}' | grep -Fxq "$CONTROL_E2E_NODE_VERSION" || { echo "FAIL: Node version header mismatch" >&2; return 1; }
+  printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="x-cpa-commit"{sub(/\r$/, "", $2); print $2}' | grep -Fxq "$CONTROL_E2E_NODE_COMMIT" || { echo "FAIL: Node commit header mismatch" >&2; return 1; }
+  echo "NODE_RUNTIME=PASS"
 }
 
 run_negative_configuration_tests() {
@@ -230,13 +320,21 @@ build_and_start() {
   docker build \
     --platform linux/arm64 \
     --build-arg "GOPROXY=${CONTROL_E2E_GOPROXY:-https://proxy.golang.org,direct}" \
+    --label "org.opencontainers.image.revision=$EXPECTED_SHA" \
     --load \
     --tag "$CONTROL_E2E_IMAGE" \
     "$CONTROL_DIR"
+  verify_source_and_artifacts
   compose up -d --wait postgres
   migrate_up
   seed_environment
-  compose up -d secret-init
+  compose up -d secret-init node
+  compose wait secret-init
+  echo "SECRET_INIT=PASS"
+  wait_for_node
+  verify_node_runtime
+  compose up -d --wait node-counter
+  echo "NODE_COUNTER=PASS"
   compose up -d control
   wait_for_http
   compose up -d tls
