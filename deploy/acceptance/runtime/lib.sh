@@ -88,7 +88,9 @@ run_browser_spec() {
   shift 2
   ACCEPTANCE_FAILURE_LAYER=browser
   set +e
-  CONTROL_E2E_BROWSER_CHANNEL=chromium npm --prefix "$CONTROL_DIR/web" run test:e2e -- "$@" 2>&1 | tee "$output"
+  CONTROL_E2E_BROWSER_CHANNEL=chromium \
+    CONTROL_E2E_LOCALE="${CONTROL_E2E_LOCALE:-zh-CN}" \
+    npm --prefix "$CONTROL_DIR/web" run test:e2e -- "$@" 2>&1 | tee "$output"
   local status="${PIPESTATUS[0]}"
   set -e
   if [[ "$status" != 0 ]]; then
