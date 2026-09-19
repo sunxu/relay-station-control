@@ -1,8 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
 import type { AuthApi } from "./api/auth-api";
 import type { SessionResponse } from "./api/generated/control";
+import { FrontendFoundationProvider } from "./foundation/FrontendFoundationProvider";
+
+function render(ui: ReactElement) {
+  return rtlRender(<FrontendFoundationProvider initialLocale="zh-CN">{ui}</FrontendFoundationProvider>);
+}
 
 vi.mock("./pages/TopologyPage", () => ({
   default: () => <main data-testid="mock-topology-page">Node Topology chunk</main>,

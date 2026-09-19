@@ -6,6 +6,7 @@ import type { AssetApi } from "../api/asset-types";
 import type { GatewayAdminApi } from "../api/gateway-api";
 import type { GatewayAsset, GatewayAssetDetailResponse } from "../api/generated/control";
 import { AssetRegistryView } from "./AssetRegistryView";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
 
 const gateway: GatewayAsset = {
   instance_id: "00000000-0000-4000-8000-000000000001",
@@ -46,7 +47,7 @@ function gatewayApi(): GatewayAdminApi {
 }
 
 function Wrapper({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>;
+  return <FrontendFoundationProvider initialLocale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
 }
 
 describe("Gateway management controls", () => {
