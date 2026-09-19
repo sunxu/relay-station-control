@@ -495,10 +495,10 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			{node.lifecycleStatus === "active" && <>
 				<Button data-testid={`node-edit-${node.instanceId}`} size="small" onClick={() => openNodeForm("edit", node)}>{t("assets.edit")}</Button>
 				<Button data-testid={`node-replace-${node.instanceId}`} size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>{t("assets.replace")}</Button>
-				<Popconfirm title={t("assets.retireGatewayTitle")} onConfirm={() => void retireNode(node)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger disabled={nodeBusy}>{t("assets.retire")}</Button></Popconfirm>
+				<Popconfirm title={t("assets.retireNodeTitle")} onConfirm={() => void retireNode(node)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger disabled={nodeBusy}>{t("assets.retire")}</Button></Popconfirm>
 			</>}
 		</Space> },
-  ], [api, csrfToken, nodeBusy]);
+  ], [api, csrfToken, locale, nodeBusy, t]);
 
   return (
     <Flex vertical gap={20} data-testid="asset-registry-view">

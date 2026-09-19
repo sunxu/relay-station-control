@@ -148,3 +148,19 @@ test.describe("Stage 3 representative English surfaces", () => {
     await expect(page.locator("body")).not.toContainText(/\b(?:translation|operations|topology)\.[a-z0-9_.-]+\b/u);
   });
 });
+
+test.describe("Stage 3 live locale transition", () => {
+  test.use({ locale: "zh-CN" });
+
+  test("updates a mounted management shell from Chinese to English", async ({ page }) => {
+    await installAuthenticatedRoutes(page);
+    await page.goto("/");
+    await expect(page.getByTestId("management-page")).toBeVisible();
+    await expect(page.getByTestId("management-nav-jobs")).toHaveText("持久任务");
+
+    await page.getByTestId("locale-selector").selectOption("en");
+
+    await expect(page.getByTestId("management-nav-jobs")).toHaveText("Persistent jobs");
+    await expect(page.getByTestId("locale-selector")).toHaveValue("en");
+  });
+});

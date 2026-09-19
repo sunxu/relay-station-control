@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { JobApiError } from "../api/job-types";
 import type { JobApi, JobDetail, JobSummary } from "../api/job-types";
 import { JobRegistryView } from "./JobRegistryView";
+import { LocaleSwitcher } from "../foundation/LocaleSwitcher";
 
 const summary: JobSummary = {
   jobId: "00000000-0000-4000-8000-000000000101",
@@ -59,6 +60,14 @@ describe("durable job read-only view", () => {
     expect(await screen.findByText("当前过滤条件下没有持久任务")).toBeInTheDocument();
     expect(api.jobs).toHaveBeenCalledWith(expect.objectContaining({ limit: 50, cursor: undefined }));
     expect(screen.queryByRole("button", { name: /创建任务|重试任务|取消任务|删除任务/ })).not.toBeInTheDocument();
+  });
+
+  it("updates mounted table columns when locale changes", async () => {
+    const api = makeApi();
+    render(<><LocaleSwitcher /><JobRegistryView api={api} onUnauthorized={vi.fn()} /></>, { wrapper: Wrapper });
+    expect(await screen.findByRole("columnheader", { name: "任务类型" })).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("locale-selector"), { target: { value: "en" } });
+    expect(await screen.findByRole("columnheader", { name: "Job type" })).toBeInTheDocument();
   });
 
   it("filters, pages, renders local values and opens a redacted event timeline", async () => {

@@ -28,8 +28,8 @@ const { Text } = Typography;
 function unauthorized(error: unknown) {
   return (error instanceof TopologyApiError || error instanceof AssetApiError) && error.status === 401;
 }
-function ReadError({ retry, message = resources["zh-CN"].translation.topology.readUnavailable }: { retry: () => void; message?: string }) {
-  return <Alert type="error" title={message} action={<Button onClick={retry}>{resources["zh-CN"].translation.topology.retry}</Button>} />;
+function ReadError({ retry, message, retryLabel }: { retry: () => void; message: string; retryLabel: string }) {
+  return <Alert type="error" title={message} action={<Button onClick={retry}>{retryLabel}</Button>} />;
 }
 function accountReadError(error: unknown, copy: TranslationResource["topology"]): string {
   if (error instanceof TopologyApiError) {
@@ -47,7 +47,7 @@ function Evidence({ api, occurrenceId, onUnauthorized, copy }: { api: TopologyAp
   const query = useTopologyEvidence(api, occurrenceId, cursor);
   useEffect(() => { if (unauthorized(query.error)) onUnauthorized(); }, [query.error, onUnauthorized]);
   if (query.isPending) return <Spin size="small" />;
-  if (query.error) return <ReadError message={copy.readUnavailable} retry={() => void query.refetch()} />;
+  if (query.error) return <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void query.refetch()} />;
   return <Flex vertical gap={8}>
     <Text>{copy.evidenceNote}</Text>
     <Table className="topology-table" size="small" scroll={{ x: 1050 }} pagination={false} rowKey="observation_id" dataSource={query.data.items} columns={[
@@ -202,7 +202,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
   return <Flex vertical gap={16} data-testid="topology-view" className="topology-view" style={{ minWidth: 0 }}>
     <Card className="topology-card" title={copy.node}>
       {nodes.isPending && <Spin />}
-      {nodes.error && <ReadError message={copy.nodeListUnavailable} retry={() => void nodes.refetch()} />}
+      {nodes.error && <ReadError message={copy.nodeListUnavailable} retryLabel={copy.retry} retry={() => void nodes.refetch()} />}
       <Select data-testid="relay-node-selector" aria-label={copy.relayNode} placeholder={copy.selectNode} value={instanceId} onChange={select} options={nodeOptions} style={{ width: "100%", maxWidth: 560 }} />
       {!nodes.error && nodes.data?.items.length === 0 && <Empty description={copy.empty} />}
       <Flex justify="end" gap={8} style={{ marginTop: 8 }}>
@@ -215,7 +215,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     {instanceId && <>
       <Card className="topology-card" title={copy.inventoryEvidence}>
         {selected.isPending && <Spin />}
-        {selected.error && <ReadError message={selected.error instanceof AssetApiError && selected.error.status === 404 ? copy.nodeNotFound : copy.nodeReadUnavailable} retry={() => void selected.refetch()} />}
+        {selected.error && <ReadError message={selected.error instanceof AssetApiError && selected.error.status === 404 ? copy.nodeNotFound : copy.nodeReadUnavailable} retryLabel={copy.retry} retry={() => void selected.refetch()} />}
         <Flex vertical>
           <Text>{copy.node}：{node?.displayName ?? instanceId}</Text>
           <Text style={{ overflowWrap: "anywhere" }}>{copy.instanceId}：{instanceId}</Text>
@@ -236,7 +236,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
         </Flex>
 
         {accountQualityView.isPending && <Flex role="status" aria-label={copy.readingQuality} justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
-        {accountQualityView.error && !accountQualityView.isPending && <ReadError message={accountReadError(accountQualityView.error, copy)} retry={() => executeAccountQuery(qualityCursor)} />}
+        {accountQualityView.error && !accountQualityView.isPending && <ReadError message={accountReadError(accountQualityView.error, copy)} retryLabel={copy.retry} retry={() => executeAccountQuery(qualityCursor)} />}
         {accountQualityView.data && !accountQualityView.error && <>
           {accountQualityView.data.items.length === 0 && <Empty description={copy.noAccounts} />}
           {accountQualityView.data.items.length > 0 && <AccountList rows={accountRows} onSelectAccount={(row) => { setDetailsAccountKey(row.account_key); setDetailsRow(row); }} />}
@@ -247,7 +247,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
       <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={(accountKey) => { setDetailsAccountKey(accountKey); setDetailsRow(accountRows.find((item) => item.account_key === accountKey)); }} onUnauthorized={expireSession} />
       <Card className="topology-card" title={copy.providerSnapshot} extra={<Button data-testid="topology-refresh-provider" onClick={() => void providers.refetch()} loading={providers.isFetching}>{copy.refreshProvider}</Button>}>
         {providers.isPending && <Spin />}
-        {providers.error && <ReadError retry={() => void providers.refetch()} />}
+        {providers.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void providers.refetch()} />}
         {providers.data && !providers.error && <>
           <Text type="secondary">{copy.observedAt}：{formatDateTime(providers.data.observed_at, locale)}</Text>
           {screens.xs ? <Flex vertical gap={12} style={{ marginTop: 12 }}>
@@ -269,7 +269,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
       </Card>
       <Card className="topology-card" title={copy.gatewayContext} extra={<Button onClick={() => void binding.refetch()} loading={binding.isFetching}>{copy.refreshBinding}</Button>}>
         {binding.isPending && <Spin />}
-        {binding.error && <ReadError retry={() => void binding.refetch()} />}
+        {binding.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void binding.refetch()} />}
         {binding.data && !binding.error && <Flex vertical gap={6} style={{ overflowWrap: "anywhere" }}>
           <Text>{copy.bindingTruth}：<Tag>{binding.data.current_binding ? "BOUND" : "UNBOUND"}</Tag></Text>
           <Text>{copy.bindingResolution}：<Tag>{binding.data.resolution}</Tag></Text>
@@ -285,7 +285,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
       </Card>
       <Card className="topology-card" data-testid="topology-current-ownership" title={copy.ownershipCurrent} extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>{copy.refreshCurrent}</Button>}>
         {current.isPending && <Spin />}
-        {current.error && <ReadError retry={() => void current.refetch()} />}
+        {current.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void current.refetch()} />}
         {current.data && !current.error && <>
           {occurrenceTable(current.data.items)}
           <Flex justify="end" gap={8}><Button data-testid="topology-current-first" disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>{copy.firstPage}</Button><Button data-testid="topology-current-next" disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>
@@ -297,7 +297,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Button onClick={() => void history.refetch()} loading={history.isFetching}>{copy.refreshHistory}</Button>
         </Flex>
         {history.isPending && <Spin />}
-        {history.error && <ReadError retry={() => void history.refetch()} />}
+        {history.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void history.refetch()} />}
         {history.data && !history.error && <>
           <Text type="secondary">{copy.historicalInvolvement} · {formatDateTime(history.data.observed_at, locale)}</Text>
           {occurrenceTable(history.data.items)}

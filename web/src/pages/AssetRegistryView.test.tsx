@@ -7,6 +7,7 @@ import type { AssetApi, DriverAsset, GatewayState, NodeAsset, NodeMonitoringResu
 import { AssetApiError } from "../api/asset-types";
 import { AssetRegistryView, buildCredentialPatch } from "./AssetRegistryView";
 import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
+import { LocaleSwitcher } from "../foundation/LocaleSwitcher";
 
 const drivers: DriverAsset[] = [{
   nodeType: "cliproxyapi",
@@ -262,6 +263,19 @@ describe("asset registry read-only view", () => {
 		expect(screen.getByTestId("node-monitoring-disable-button")).toBeInTheDocument();
 		expect(api.nodeDetail).toHaveBeenCalledWith(firstNode.instanceId);
 	}, 15_000);
+
+  it("updates mounted Node columns and retire copy when locale changes", async () => {
+    const api = makeApi();
+    api.retireNode = vi.fn().mockResolvedValue(undefined);
+    render(<><LocaleSwitcher /><AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} /></>, { wrapper: Wrapper });
+
+    expect((await screen.findAllByRole("columnheader", { name: "Node 类型" })).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByTestId("locale-selector"), { target: { value: "en" } });
+    expect((await screen.findAllByRole("columnheader", { name: "Node type" })).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Retire" }));
+    expect(await screen.findByText("Retire this Node?")).toBeInTheDocument();
+    expect(screen.queryByText("Retire this Gateway?")).not.toBeInTheDocument();
+  });
 
 	it("accepts internal Docker HTTP endpoints and rejects HTTPS for Node registration", async () => {
 		const api = makeApi();

@@ -94,7 +94,7 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
     { title: copy.token, key: "token", width: 190, render: (_, row) => <Flex vertical><Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state ?? "—"}</Tag><Text type="secondary">{copy.expectedValidUntil}</Text><Text type="secondary">{formatDateTime(row.expected_valid_until, locale)}</Text></Flex> },
     { title: copy.inventoryTiming, key: "inventory", width: 200, render: (_, row) => <Flex vertical><Text>{copy.lastRefresh}: {formatDateTime(row.last_refresh_at, locale)}</Text><Text>{copy.nextRetry}: {formatDateTime(row.next_retry_at, locale)}</Text></Flex> },
     { title: copy.requestEvidence, key: "request-evidence", width: 200, render: (_, row) => <Flex vertical><Text>{copy.lastSuccess}: {formatDateTime(row.last_success_at, locale)}</Text><Text>{copy.lastFailure}: {formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
-  ], []);
+  ], [copy, locale]);
 
   const hasFilters = Boolean(provider || node.trim() || severity || reason || email.trim());
   const emptyText = hasFilters ? copy.noFiltered : copy.noProblems;

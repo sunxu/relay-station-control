@@ -83,7 +83,7 @@ export function JobRegistryView({ api, onUnauthorized }: { api: JobApi; onUnauth
     { title: copy.outbox, dataIndex: "outboxStatus", key: "outboxStatus" },
     { title: copy.createdAt, dataIndex: "createdAt", key: "createdAt", render: (value: string | null) => formatDateTime(value, locale) },
     { title: copy.action, key: "view", render: (_, item) => <Button onClick={() => setSelectedJobID(item.jobId)}>{copy.viewDetails}</Button> },
-  ], []);
+  ], [copy, locale]);
 
   return (
     <Flex vertical gap={16} data-testid="job-registry-view">

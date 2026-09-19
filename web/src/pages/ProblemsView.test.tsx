@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ProblemAccountItem, ProblemAccountResponse, ProblemAccountsApi } from "../api/problem-accounts-types";
 import { ProblemAccountsApiError } from "../api/problem-accounts-types";
 import { ProblemsView } from "./ProblemsView";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
+import { LocaleSwitcher } from "../foundation/LocaleSwitcher";
+import { formatDateTime } from "../foundation/format";
 
 const issue = (type: ProblemAccountItem["issues"][number]["type"], reason: ProblemAccountItem["issues"][number]["reason"], severity: ProblemAccountItem["issues"][number]["severity"], id: string) => ({
   occurrence_id: id, type, reason, severity, since: "2026-09-10T01:02:03Z",
@@ -19,7 +22,7 @@ function row(instance_id: string, account_key: string, email: string, issues: Pr
 }
 
 function wrapper({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>{children}</QueryClientProvider>;
+  return <FrontendFoundationProvider initialLocale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
 }
 
 function makeApi(response: ProblemAccountResponse): ProblemAccountsApi {
@@ -27,6 +30,14 @@ function makeApi(response: ProblemAccountResponse): ProblemAccountsApi {
 }
 
 describe("ProblemsView", () => {
+  it("updates mounted table columns when locale changes", async () => {
+    const api = makeApi({ items: [row("00000000-0000-4000-8000-000000000001", "same", "same@example.invalid", [issue("TOKEN_INVALID", "token_invalid", "Critical", "occ-1")])], next_cursor: null });
+    render(<><LocaleSwitcher /><ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} /></>, { wrapper });
+    const problemRow = await screen.findByTestId("problem-row");
+    expect(problemRow).toHaveTextContent(formatDateTime("2026-09-10T01:02:03Z", "zh-CN"));
+    fireEvent.change(screen.getByTestId("locale-selector"), { target: { value: "en" } });
+    await waitFor(() => expect(problemRow).toHaveTextContent(formatDateTime("2026-09-10T01:02:03Z", "en")));
+  });
   it("auto-queries the first page and keeps one row per node/account pair", async () => {
     const api = makeApi({ items: [
       row("00000000-0000-4000-8000-000000000001", "same", "same@example.invalid", [issue("TOKEN_INVALID", "token_invalid", "Critical", "occ-1")]),

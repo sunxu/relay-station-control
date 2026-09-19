@@ -8,6 +8,7 @@ import { AssetApiError } from "../api/asset-types";
 import type { TopologyApi } from "../api/topology-types";
 import { TopologyApiError } from "../api/topology-types";
 import type { AccountOperationsApi } from "../api/account-operations-api";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
@@ -112,6 +113,18 @@ it("shows a local 503 as an error instead of an empty Provider state", async () 
 
   expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
   expect(screen.queryByText("没有应监控或已持有 state 的 Provider")).not.toBeInTheDocument();
+});
+
+it("uses English copy for Provider read errors", async () => {
+  const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [makeNode(A, "Node A")], nextCursor: null }), node: vi.fn().mockResolvedValue(makeNode(A, "Node A")) } as unknown as AssetApi;
+  const api = emptyTopology();
+  api.providers = vi.fn().mockRejectedValue(new TopologyApiError(503));
+  render(<FrontendFoundationProvider initialLocale="en"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TopologyView api={api} assetApi={assetApi} initialInstanceId={A} onUnauthorized={vi.fn()} /></QueryClientProvider></FrontendFoundationProvider>);
+
+  const errorAlert = (await screen.findAllByRole("alert")).find((alert) => alert.textContent?.includes("Unavailable"));
+  expect(errorAlert).toBeDefined();
+  expect(errorAlert?.querySelector("button")).toHaveTextContent("Retry");
+  expect(screen.queryByText("读取不可用（unavailable）")).not.toBeInTheDocument();
 });
 
 it("keeps resolved history visible when current affected Nodes are empty", async () => {
