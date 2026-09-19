@@ -1,12 +1,18 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { Modal } from "antd";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountOperationsApi } from "../api/account-operations-api";
 import { AccountOperationApiError, accountOperationErrorMessage } from "../api/account-operations-api";
 import type { AccountOperationProjection } from "../api/generated/control";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
+import type { ReactElement } from "react";
 import { AccountOperationResult, AccountOperationsPanel, UploadNewAccountAction } from "./AccountOperationsPanel";
 
 afterEach(() => Modal.destroyAll());
+
+function render(ui: ReactElement) {
+  return rtlRender(<FrontendFoundationProvider initialLocale="zh-CN">{ui}</FrontendFoundationProvider>);
+}
 
 async function dialogWithTitle(title: string): Promise<HTMLElement> {
   const matches = await screen.findAllByText(title);
@@ -106,7 +112,7 @@ describe("AccountOperationsPanel", () => {
     render(<AccountOperationsPanel api={api} csrf="csrf" nodeInstanceId="node" accountKey="antigravity:user@example.invalid" />);
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     const dialog = await dialogWithTitle("确认移除此账户？");
-    fireEvent.click(within(dialog).getByRole("button", { name: /Cancel|取消/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /Cancel|取\s*消/ }));
     await Promise.resolve();
     expect(api.mutate).not.toHaveBeenCalled();
   });

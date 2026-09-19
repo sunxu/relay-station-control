@@ -79,6 +79,18 @@ const canonicalTranslation = {
     description: "Node 及其只读关联观察",
     management: "管理员控制台",
   },
+  operations: {
+    guidance: "操作只提交逻辑账号身份；物理目标由服务端基于最新 Node 快照选择。",
+    applied: "已应用", noop: "无需变更", unknown: "远端结果不确定", failed: "执行失败",
+    unknownTitle: "执行结果未知", unknownDescription: "请求可能已被远端应用，也可能未应用。系统不会自动重试，以避免重复操作。请结合当前账户状态人工判断后再决定是否发起新的命令。",
+    commandId: "Command ID", operation: "操作", executionState: "执行状态", resultError: "结果/错误", created: "创建时间", updated: "更新时间",
+    disable: "Disable", enable: "Enable", remove: "Remove", uploadNew: "Upload New", replaceExisting: "Replace Existing",
+    removeTitle: "确认移除此账户？", removeDescription: "该操作会删除 Node 上对应的单个凭据文件，无法由 Control 自动恢复。", confirmRemove: "确认移除",
+    replaceTitle: "确认替换现有凭据？", replaceDescription: "Replace 使用远端原生的尽力而为、后写入覆盖语义。", confirmReplace: "确认替换",
+    lookupPlaceholder: "输入 Command ID 查看操作结果", read: "读取操作", unknownOverride: "未知结果 Override", overrideType: "Override 类型", overrideReason: "Override reason", overrideDetail: "Override detail", optionalDetail: "可选说明", submitOverride: "执行 Override", confirmOverride: "确认 Override",
+    uploadAccount: "Upload New Account", uploadDescription: "无需已有 Inventory 账号。服务端会根据逻辑身份生成并验证远端目标。", uploadProvider: "Upload New Provider", uploadEmail: "Upload New Email", accountEmail: "账户邮箱", chooseCredential: "选择 credential JSON（最大 1 MiB）",
+    credentialTooLarge: "凭据文件不能超过 1 MiB", keep: "Keep existing", set: "Set new credential", clear: "Clear credential",
+  },
   auth: {
     errors: {
       unavailable: "请求暂时无法完成，请稍后再试。",
@@ -242,6 +254,18 @@ export const resources = {
         title: "Node Topology",
         description: "Read-only observation of Nodes and their relationships",
         management: "Management console",
+      },
+      operations: {
+        guidance: "Operations submit only the logical account identity; the server selects the physical target from the latest Node snapshot.",
+        applied: "Applied", noop: "No change", unknown: "Remote outcome unknown", failed: "Failed",
+        unknownTitle: "Outcome unknown", unknownDescription: "The request may or may not have been applied remotely. The system will not retry automatically to avoid duplicate operations. Inspect the current account state before issuing a new command.",
+        commandId: "Command ID", operation: "Operation", executionState: "Execution state", resultError: "Result/error", created: "Created", updated: "Updated",
+        disable: "Disable", enable: "Enable", remove: "Remove", uploadNew: "Upload New", replaceExisting: "Replace Existing",
+        removeTitle: "Remove this account?", removeDescription: "This deletes the corresponding single credential file on the Node; Control cannot restore it automatically.", confirmRemove: "Confirm removal",
+        replaceTitle: "Replace the existing credential?", replaceDescription: "Replace uses the remote native best-effort, last-write-wins overwrite semantics.", confirmReplace: "Confirm replacement",
+        lookupPlaceholder: "Enter a Command ID to view the operation result", read: "Read operation", unknownOverride: "Outcome unknown override", overrideType: "Override type", overrideReason: "Override reason", overrideDetail: "Override detail", optionalDetail: "Optional detail", submitOverride: "Run override", confirmOverride: "Confirm override",
+        uploadAccount: "Upload New Account", uploadDescription: "No existing Inventory account is required. The server generates and validates the remote target from the logical identity.", uploadProvider: "Upload New Provider", uploadEmail: "Upload New Email", accountEmail: "Account email", chooseCredential: "Choose credential JSON (max 1 MiB)",
+        credentialTooLarge: "Credential file cannot exceed 1 MiB", keep: "Keep existing", set: "Set new credential", clear: "Clear credential",
       },
       auth: {
         errors: {
