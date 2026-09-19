@@ -360,6 +360,8 @@ run_playwright() {
   output_dir="$root/playwright-output"
   rm -rf -- "$output_dir"
   if [[ "$mode" == "general" ]]; then
+    LANG="zh_CN.UTF-8" \
+    LC_ALL="zh_CN.UTF-8" \
     CONTROL_E2E_BASE_URL="https://localhost:${CONTROL_E2E_TLS_PORT}" \
     CONTROL_E2E_CONTAINER="$CONTROL_E2E_CONTAINER" \
     CONTROL_E2E_BOOTSTRAP_SECRET_FILE="$root/bootstrap-secret" \
