@@ -128,7 +128,7 @@ test.describe("Stage 3 representative English surfaces", () => {
     await page.goto("/");
     await expect(page.getByTestId("management-page")).toBeVisible();
     await expect(page.getByTestId("locale-selector")).toHaveValue("en");
-    await expect(page.getByTestId("management-page")).toContainText("Management");
+    await expect(page.getByTestId("management-page")).toContainText("Persistent jobs");
 
     await page.getByTestId("management-nav-jobs").click();
     await expect(page.getByTestId("jobs-page")).toBeVisible();
