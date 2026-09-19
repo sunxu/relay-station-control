@@ -1,6 +1,6 @@
 # Phase 8 — Stage 1 Frontend Executable Baseline Evidence
 
-> Status: **EXECUTABLE BASELINE COMPLETE — Human approval pending**
+> Status: **STAGE 1 CLOSED — Final independent freeze passed**
 > Phase: **Phase 8 — Stage 1**
 > Evidence type: **Frontend executable baseline**
 > Control source: `e3b52987a35ed470eba958b3f6764188bb4197f2`
@@ -502,13 +502,19 @@ TD_INVALIDATION =
 NONE
 
 PHASE2_HUMAN_APPROVAL =
-PENDING
+APPROVED
 
 STAGE1_FINAL_FREEZE =
-NO
+YES
 
 STAGE2_IMPLEMENTATION_AUTHORIZED =
-NO
+YES
+
+STAGE1_STATUS =
+CLOSED
+
+STAGE1_EXIT =
+PASS
 ```
 
 Secret hygiene:

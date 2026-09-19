@@ -1,6 +1,6 @@
 # Phase 8 — Stage 1 Frontend Baseline & Technical Decisions
 
-> Status: **EXECUTABLE BASELINE COMPLETE — Human approval pending**
+> Status: **STAGE 1 CLOSED — Final independent freeze passed**
 > Phase: **Phase 8 — Stage 1**
 > Scope: **Frontend Baseline & Technical Decisions**
 > Current Control source baseline: `e3b52987a35ed470eba958b3f6764188bb4197f2`
@@ -12,9 +12,9 @@
 > Canonical technical decisions TD-01..TD-16: **NO INVALIDATION**
 > Non-Browser executable baseline: **PASS**
 > Browser E2E: **PASS**
-> Phase 2 human approval: **PENDING**
-> Stage 1 final freeze: **PENDING HUMAN APPROVAL**
-> Stage 2 implementation: **NOT AUTHORIZED**
+> Phase 2 human approval: **APPROVED**
+> Stage 1 final freeze: **CLOSED**
+> Stage 2 implementation: **AUTHORIZED**
 
 ---
 
@@ -494,10 +494,10 @@ EXECUTABLE_BASELINE = COMPLETE
 
 ```text
 TD_INVALIDATION = NONE
-PHASE2_HUMAN_APPROVAL = PENDING
-STAGE1_FINAL_FREEZE_ELIGIBLE = PENDING_HUMAN_APPROVAL
-STAGE1_FINAL_FREEZE = NO
-STAGE2_IMPLEMENTATION_AUTHORIZED = NO
+PHASE2_HUMAN_APPROVAL = APPROVED
+STAGE1_FINAL_FREEZE_ELIGIBLE = YES
+STAGE1_FINAL_FREEZE = YES
+STAGE2_IMPLEMENTATION_AUTHORIZED = YES
 ```
 
 ---
@@ -517,16 +517,20 @@ The remaining P2 was clerical and corrected without changing TD-01..TD-16.
 Final Phase 2 review state:
 
 ```text
-READY FOR HUMAN APPROVAL
+APPROVED
 ```
 
 Current status:
 
 ```text
-PHASE2_HUMAN_APPROVAL = PENDING
+PHASE2_HUMAN_APPROVAL = APPROVED
+TD-01..TD-16 = VALID / APPROVED / NOT_INVALIDATED
+LOCATOR_POLICY_DEBT = ACCEPTED / NON-BLOCKING
 ```
 
-Human approval may advance the decisions to `TECHNICAL_DECISIONS_APPROVED_PENDING_GATES`, but does not itself create the final Stage 1 freeze.
+Human approval accepted the documented architectural constraints, known
+locator-policy debt, and executable baseline results. It authorized this
+independent freeze review; the freeze decision remains evidence-based.
 
 ---
 
@@ -563,24 +567,23 @@ Final Stage 1 source baseline selected   PASS
 TD invalidation                          NONE
 Non-Browser executable baseline          PASS
 Browser E2E                              PASS
-Phase 2 human approval                   PENDING
+Phase 2 human approval                   APPROVED
 P0/P1                                    0/0
 ```
 
-Therefore the executable gate is complete, but final freeze remains pending
-human approval:
+All final freeze conditions are satisfied:
 
 ```text
-STAGE1_FRONTEND_TECHNICAL_DECISIONS_FROZEN = NO
-STAGE1_FINAL_FREEZE_ELIGIBLE = PENDING_HUMAN_APPROVAL
-STAGE2_IMPLEMENTATION_ALLOWED = NO
+STAGE1_FRONTEND_TECHNICAL_DECISIONS_FROZEN = YES
+STAGE1_FINAL_FREEZE_ELIGIBLE = YES
+STAGE2_IMPLEMENTATION_ALLOWED = YES
 ```
 
 ---
 
 ## 13. Stage 2 / Stage 3 Ownership
 
-If Stage 1 later exits successfully, Stage 2 owns foundation implementation: AntD theme/foundation provider, narrow app tokens, i18next/react-i18next setup, locale resolver/persistence, AntD locale mapping, formatting helpers, thin shared page/read-state primitives, resource parity/completeness proof, and deterministic locale test fixture.
+Stage 1 has exited successfully. Stage 2 owns foundation implementation: AntD theme/foundation provider, narrow app tokens, i18next/react-i18next setup, locale resolver/persistence, AntD locale mapping, formatting helpers, thin shared page/read-state primitives, resource parity/completeness proof, and deterministic locale test fixture.
 
 Stage 3 owns product-surface migration using TD-16 slices.
 
@@ -655,7 +658,7 @@ Browser E2E = PASS
 ## 15. Current Authoritative Disposition
 
 ```text
-PHASE_8_STAGE_1 = IN_PROGRESS
+PHASE_8_STAGE_1 = CLOSED
 
 STAGE0 = CLOSED
 
@@ -666,6 +669,8 @@ e3b52987a35ed470eba958b3f6764188bb4197f2
 
 FINAL_STAGE1_FRONTEND_TREE =
 58e8f8af4157edf2f78e3cb07586029a7358c334
+
+FINAL_STAGE1_BASELINE_SELECTED = YES
 
 TD_INVALIDATION = NONE
 
@@ -679,14 +684,20 @@ ACCEPTANCE_HARNESS_SHA =
 4ef6e934637ac886852d26a70970820e887d0a03
 
 PHASE2_HUMAN_APPROVAL =
-PENDING
+APPROVED
 
 STAGE1_FRONTEND_TECHNICAL_DECISIONS_FROZEN =
-NO
+YES
 
 STAGE2_IMPLEMENTATION_ALLOWED =
-NO
+YES
 
 STAGE1_FINAL_FREEZE =
-NO
+YES
+
+STAGE1_STATUS =
+CLOSED
+
+STAGE1_EXIT =
+PASS
 ```
