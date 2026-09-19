@@ -178,7 +178,7 @@ INVENTORY_POLL_START_GRACE="299s"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_POLL_ENABLED="true"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 [[ "$MODE" == "security-replay" ]] && { INVENTORY_POLL_ENABLED="true"; INVENTORY_LIFECYCLE_ENABLED="true"; INVENTORY_POLL_START_GRACE="299s"; }
-if [[ "$MODE" == "disable" || "$MODE" == "security-replay" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]]; then
+if [[ "$MODE" == "disable" || "$MODE" == "security-replay" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "remove" || "$MODE" == "override" ]]; then
   # The one-shot acceptance bootstrap owns this poll. Keep the production
   # Control scheduler disabled so two workers cannot claim the same run.
   INVENTORY_POLL_ENABLED="false"
@@ -348,6 +348,15 @@ if [[ "$MODE" != "auth" ]]; then
   elif [[ "$MODE" == "enable-fixture" || "$MODE" == "enable" ]]; then
     ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
     run_inventory_bootstrap "$ENABLE_EMAIL"
+  elif [[ "$MODE" == "replace" ]]; then
+    ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
+    run_inventory_bootstrap "$REPLACE_EMAIL"
+  elif [[ "$MODE" == "remove" ]]; then
+    ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
+    run_inventory_bootstrap "$REMOVE_EMAIL"
+  elif [[ "$MODE" == "override" ]]; then
+    ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
+    run_inventory_bootstrap "$OVERRIDE_LIFECYCLE_EMAIL"
   fi
 fi
 if [[ "$MODE" == "override" ]]; then
