@@ -122,48 +122,47 @@ test("authenticated administrator can manage Gateway lifecycle through Control A
   await expect(card).toBeVisible();
   await expect(card.getByText("Primary Gateway")).toBeVisible();
 
-  await card.getByRole("button", { name: /编\s*辑/ }).click();
-  await page.getByLabel("显示名称").fill("Edited Gateway");
-  await page.getByRole("button", { name: /保\s*存/ }).click();
+  await card.getByTestId(`gateway-edit-${firstID}`).click();
+  await page.getByTestId("gateway-form-display-name").fill("Edited Gateway");
+  await page.getByTestId("gateway-form-submit").click();
   await expect(card.getByText("Edited Gateway")).toBeVisible();
 
   staleNextEdit = true;
-  await card.getByRole("button", { name: /编\s*辑/ }).click();
-  await page.getByLabel("显示名称").fill("Stale Edit");
-  await page.getByRole("button", { name: /保\s*存/ }).click();
+  await card.getByTestId(`gateway-edit-${firstID}`).click();
+  await page.getByTestId("gateway-form-display-name").fill("Stale Edit");
+  await page.getByTestId("gateway-form-submit").click();
   await expect(page.getByText("资产已被其他管理员修改，请刷新后重试。")).toBeVisible();
-  await page.getByRole("button", { name: /取\s*消/ }).click();
+  await page.getByTestId("gateway-form-cancel").click();
 
-  await card.getByRole("button", { name: "Health" }).click();
+  await card.getByTestId(`gateway-health-${firstID}`).click();
   await expect(page.getByText("Health 检查已完成。")).toBeVisible();
-  await card.getByRole("button", { name: "Connection Test" }).click();
+  await card.getByTestId(`gateway-connection-${firstID}`).click();
   await expect(page.getByText("Connection Test 已完成。")).toBeVisible();
 
-  await card.getByRole("button", { name: "Replace" }).click();
-  await page.getByLabel("新 Instance ID").fill(replacementID);
-  await page.getByRole("button", { name: /保\s*存/ }).click();
+  await card.getByTestId(`gateway-replace-${firstID}`).click();
+  await page.getByTestId("gateway-form-instance-id").fill(replacementID);
+  await page.getByTestId("gateway-form-submit").click();
   await expect(card.getByText("Replacement Gateway")).toBeVisible();
 
-  await card.getByRole("button", { name: /Retire/ }).click();
-  await page.getByRole("button", { name: /退\s*役/ }).click();
-  await expect(card.getByRole("button", { name: /登\s*记 Gateway/ })).toBeVisible();
+  await card.getByTestId(`gateway-retire-${replacementID}`).click();
+  await page.getByTestId(`gateway-retire-confirm-${replacementID}`).click();
+  await expect(card.getByTestId("gateway-register")).toBeVisible();
 
-  await card.getByRole("button", { name: /登\s*记 Gateway/ }).click();
-  await page.getByLabel("新 Instance ID").fill(retiredID);
-  await page.getByLabel("显示名称").fill("Registered Gateway");
-  await page.getByLabel("Management endpoint").fill("http://registered-gateway.invalid:8317");
-  await page.getByRole("button", { name: /保\s*存/ }).click();
+  await card.getByTestId("gateway-register").click();
+  await page.getByTestId("gateway-form-instance-id").fill(retiredID);
+  await page.getByTestId("gateway-form-display-name").fill("Registered Gateway");
+  await page.getByTestId("gateway-form-endpoint").fill("http://registered-gateway.invalid:8317");
+  await page.getByTestId("gateway-form-submit").click();
   await expect(card.getByText("Registered Gateway")).toBeVisible();
 
-  await card.getByRole("combobox", { name: "Gateway 生命周期过滤" }).click();
-  await page.getByText("历史 Gateway", { exact: true }).click();
+  await card.getByTestId("gateway-lifecycle-filter").click();
+  await page.getByTestId("gateway-filter-retired-option").click();
   await expect(card.getByText("Edited Gateway")).toBeVisible();
-  await card.getByRole("button", { name: /详\s*情/ }).first().click();
+  await card.getByTestId(`gateway-details-${replacementID}`).click();
   await expect(page.getByText(replacementID, { exact: true })).toBeVisible();
-  await expect(page.getByText(firstID, { exact: true })).toBeVisible();
-  await page.locator(".ant-modal-close").click();
-  await card.getByRole("button", { name: /详\s*情/ }).nth(1).click();
-  await expect(page.getByLabel("Gateway 详情").getByText(firstID, { exact: true })).toBeVisible();
+  await page.getByTestId("gateway-detail-close").click();
+  await card.getByTestId(`gateway-details-${firstID}`).click();
+  await expect(page.getByTestId("gateway-detail-dialog").getByText(firstID, { exact: true })).toBeVisible();
   expect(await page.getByText(secretReference, { exact: true }).count()).toBe(0);
 
   const controlOrigin = new URL(baseURL!).origin;

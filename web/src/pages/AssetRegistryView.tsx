@@ -194,8 +194,8 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
     <Flex vertical gap={12}>
       {message && <Alert type="warning" showIcon message={message} closable onClose={() => setMessage(undefined)} />}
       <Flex justify="space-between" align="center" wrap gap={8}>
-        <Select aria-label={t("assets.lifecycleFilter")} value={lifecycle} onChange={changeLifecycle} options={[{ value: "active", label: t("assets.currentGateway") }, { value: "retired", label: t("assets.retiredGateway") }, { value: "all", label: t("assets.all") }]} />
-        {lifecycle === "active" && items.length === 0 && <Button type="primary" onClick={() => openForm("register")}>{t("assets.registerGateway")}</Button>}
+        <Select data-testid="gateway-lifecycle-filter" aria-label={t("assets.lifecycleFilter")} value={lifecycle} onChange={changeLifecycle} options={[{ value: "active", label: t("assets.currentGateway") }, { value: "retired", label: <span data-testid="gateway-filter-retired-option">{t("assets.retiredGateway")}</span> }, { value: "all", label: t("assets.all") }]} />
+        {lifecycle === "active" && items.length === 0 && <Button data-testid="gateway-register" type="primary" onClick={() => openForm("register")}>{t("assets.registerGateway")}</Button>}
       </Flex>
       {list.isPending ? <Spin /> : list.error ? <Alert type="error" message={t("assets.listReadFailed")} action={<Button onClick={() => void refresh()}>{t("assets.retry")}</Button>} /> : <>
         <Table<GatewayAsset> rowKey="instance_id" size="small" pagination={false} dataSource={items} scroll={{ x: 1100 }} columns={[
@@ -205,10 +205,10 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
         { title: "Revision", dataIndex: "revision" },
         { title: "Secret", dataIndex: "secret_configured", render: (value: boolean) => value ? "已配置" : "未配置" },
         { title: "操作", key: "actions", render: (_: unknown, asset: GatewayAsset) => <Space wrap>
-          <Button size="small" onClick={() => void showDetail(asset)}>{t("assets.details")}</Button>
-          <Button size="small" onClick={() => void probe(asset, false)} disabled={asset.lifecycle_status !== "active" || busy}>{t("assets.health")}</Button>
-          <Button size="small" onClick={() => void probe(asset, true)} disabled={asset.lifecycle_status !== "active" || busy}>{t("assets.connectionTest")}</Button>
-          {asset.lifecycle_status === "active" && <><Button size="small" onClick={() => openForm("edit", asset)}>{t("assets.edit")}</Button><Button size="small" onClick={() => openForm("replace", asset)}>{t("assets.replace")}</Button><Popconfirm title={t("assets.retireGatewayTitle")} description={t("assets.retireGatewayDescription")} onConfirm={() => void retire(asset)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger loading={busy}>{t("assets.retire")}</Button></Popconfirm></>}
+          <Button data-testid={`gateway-details-${asset.instance_id}`} size="small" onClick={() => void showDetail(asset)}>{t("assets.details")}</Button>
+          <Button data-testid={`gateway-health-${asset.instance_id}`} size="small" onClick={() => void probe(asset, false)} disabled={asset.lifecycle_status !== "active" || busy}>{t("assets.health")}</Button>
+          <Button data-testid={`gateway-connection-${asset.instance_id}`} size="small" onClick={() => void probe(asset, true)} disabled={asset.lifecycle_status !== "active" || busy}>{t("assets.connectionTest")}</Button>
+          {asset.lifecycle_status === "active" && <><Button data-testid={`gateway-edit-${asset.instance_id}`} size="small" onClick={() => openForm("edit", asset)}>{t("assets.edit")}</Button><Button data-testid={`gateway-replace-${asset.instance_id}`} size="small" onClick={() => openForm("replace", asset)}>{t("assets.replace")}</Button><Popconfirm title={t("assets.retireGatewayTitle")} description={t("assets.retireGatewayDescription")} onConfirm={() => void retire(asset)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")} okButtonProps={{ "data-testid": `gateway-retire-confirm-${asset.instance_id}` }} cancelButtonProps={{ "data-testid": `gateway-retire-cancel-${asset.instance_id}` }}><Button data-testid={`gateway-retire-${asset.instance_id}`} size="small" danger loading={busy}>{t("assets.retire")}</Button></Popconfirm></>}
         </Space> },
         ]} />
         <Flex justify="end" gap={8} style={{ marginTop: 12 }}>
@@ -217,16 +217,16 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
         </Flex>
       </>}
     </Flex>
-    <Modal open={Boolean(modal)} title={modal === "register" ? "登记 Gateway" : modal === "edit" ? "编辑 Gateway" : "Replace Gateway"} okText="保存" cancelText="取消" confirmLoading={busy} onCancel={() => setModal(undefined)} onOk={() => void form.submit()} destroyOnHidden>
+    <Modal open={Boolean(modal)} title={modal === "register" ? "登记 Gateway" : modal === "edit" ? "编辑 Gateway" : "Replace Gateway"} okText="保存" cancelText="取消" confirmLoading={busy} okButtonProps={{ "data-testid": "gateway-form-submit" }} cancelButtonProps={{ "data-testid": "gateway-form-cancel" }} onCancel={() => setModal(undefined)} onOk={() => void form.submit()} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-        {modal !== "edit" && <Form.Item name="new_instance_id" label={t("assets.newInstanceId")} rules={[{ required: true, message: t("assets.uuid") }]}><Input placeholder={t("assets.uuid")} /></Form.Item>}
-        <Form.Item name="display_name" label={t("assets.displayName")} rules={[{ required: true, message: t("assets.displayName") }]}><Input maxLength={100} /></Form.Item>
-        <Form.Item name="management_endpoint" label={t("assets.endpoint")} rules={[{ required: true, message: t("assets.validHttp") }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://gateway:8317" /></Form.Item>
+        {modal !== "edit" && <Form.Item name="new_instance_id" label={t("assets.newInstanceId")} rules={[{ required: true, message: t("assets.uuid") }]}><Input data-testid="gateway-form-instance-id" placeholder={t("assets.uuid")} /></Form.Item>}
+        <Form.Item name="display_name" label={t("assets.displayName")} rules={[{ required: true, message: t("assets.displayName") }]}><Input data-testid="gateway-form-display-name" maxLength={100} /></Form.Item>
+        <Form.Item name="management_endpoint" label={t("assets.endpoint")} rules={[{ required: true, message: t("assets.validHttp") }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input data-testid="gateway-form-endpoint" placeholder="http://gateway:8317" /></Form.Item>
         <Form.Item name="credential" label={t("assets.directoryCredential")} dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (modal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error(t("assets.requiredCredential")); } })]} extra={t("assets.noSavedCredential")}><Input.Password autoComplete="new-password" placeholder={modal === "edit" ? t("assets.credentialActionPlaceholder") : t("assets.optional")} /></Form.Item>
         {modal === "edit" && <Form.Item name="credential_action" label={t("assets.credentialAction")}><Select options={[{ value: "keep", label: t("assets.credentialKeep") }, { value: "set", label: t("assets.credentialSet") }, { value: "clear", label: t("assets.credentialClear") }]} /></Form.Item>}
       </Form>
     </Modal>
-    <Modal open={Boolean(detail)} title={t("assets.gatewayDetails")} footer={null} onCancel={() => setDetail(undefined)}>
+    <Modal data-testid="gateway-detail-dialog" open={Boolean(detail)} title={t("assets.gatewayDetails")} footer={null} closeIcon={<span data-testid="gateway-detail-close">×</span>} onCancel={() => setDetail(undefined)}>
       {detail && <Descriptions column={1} size="small" bordered>
         <Descriptions.Item label={t("assets.instanceId")}><Text code>{detail.asset.instance_id}</Text></Descriptions.Item>
         <Descriptions.Item label={t("assets.status")}>{detail.asset.lifecycle_status}</Descriptions.Item>
