@@ -58,9 +58,13 @@ func run(ctx context.Context) error {
 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'relay_control_runtime') THEN
   CREATE ROLE relay_control_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 END IF;
+IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'relay_control_asset_registrar') THEN
+  CREATE ROLE relay_control_asset_registrar NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+END IF;
 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'relay_control_app') THEN
   CREATE ROLE relay_control_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS IN ROLE relay_control_runtime;
 END IF;
+GRANT relay_control_runtime TO relay_control_app;
 END $do$`); err != nil {
 			return errors.New("runtime role bootstrap failed")
 		}
