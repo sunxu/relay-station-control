@@ -47,6 +47,12 @@ Playwright bundled Chromium through the approved host execution path.
 | Disable receipt and audit | PASS |
 | Secret scans | PASS |
 
+O01, O02, O03, O04 and O05 compatibility-gate results are PASS in the
+existing Migration 51/compatgate evidence. Their protected-state observer
+emits only PASS/FAIL and unchanged booleans. The current Gate 7 runtime used
+the same class-4/Migration-51 candidate and separately revalidated the runtime
+path above.
+
 The inventory bootstrap used the shared Stage 0 runtime, current Node driver,
 existing scheduler/claim/worker/finalize path and current-schema protected read.
 It did not insert `account_inventory`, snapshot items, credentials or legacy
@@ -69,8 +75,9 @@ disable.log          3a9bb0dde00801fa5c57249deb6f7315440bf9f9cba59b455e3fa174184
 
 Execution windows were 2026-09-19T10:29Z–10:30Z and
 2026-09-19T10:31Z–10:35Z. The scheduler's normal five-minute slot boundary
-was observed; no scheduler parameter, Browser timeout or production inventory
-behavior was changed.
+was observed; this was the longest business wait. The Browser mutation steps
+completed in under four seconds. No scheduler parameter, Browser timeout or
+production inventory behavior was changed.
 
 ## Final disposition
 
