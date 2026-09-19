@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { AssetApi, DriverAsset, GatewayState, NodeAsset, NodeMonitoringResult, NodeProbeResult, ProviderPolicyState } from "../api/asset-types";
 import { AssetApiError } from "../api/asset-types";
 import { AssetRegistryView, buildCredentialPatch } from "./AssetRegistryView";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
 
 const drivers: DriverAsset[] = [{
   nodeType: "cliproxyapi",
@@ -98,7 +99,7 @@ function makeApi(): AssetApi {
 }
 
 function Wrapper({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>;
+  return <FrontendFoundationProvider initialLocale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
 }
 
 describe("asset registry read-only view", () => {
@@ -215,9 +216,11 @@ describe("asset registry read-only view", () => {
     const api = makeApi();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QueryClientProvider client={client}>
-        <AssetRegistryView api={api} onUnauthorized={vi.fn()} />
-      </QueryClientProvider>,
+      <FrontendFoundationProvider initialLocale="zh-CN">
+        <QueryClientProvider client={client}>
+          <AssetRegistryView api={api} onUnauthorized={vi.fn()} />
+        </QueryClientProvider>
+      </FrontendFoundationProvider>,
     );
     expect(await screen.findByText("Primary Gateway")).toBeInTheDocument();
 

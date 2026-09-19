@@ -33,6 +33,7 @@ import {
 } from "../api/asset-hooks";
 import { formatDateTime } from "../time";
 import { validateInternalHttpEndpoint } from "../validation/internal-http-endpoint";
+import { useTranslation } from "react-i18next";
 
 const { Text } = Typography;
 const pageSize = 50;
@@ -240,11 +241,13 @@ function ResourceFrame({
   error,
   retry,
   children,
+  labels,
 }: {
   loading: boolean;
   error: unknown;
   retry(): void;
   children: ReactNode;
+  labels: { readFailed: string; unavailable: string; retry: string };
 }) {
   if (loading) return <Flex justify="center" className="asset-loading"><Spin /></Flex>;
   if (error) {
@@ -252,9 +255,9 @@ function ResourceFrame({
       <Alert
         type="error"
         showIcon
-        message="读取失败"
-        description="当前数据不可用；未显示旧数据或内部错误。"
-        action={<Button onClick={retry}>重试</Button>}
+        message={labels.readFailed}
+        description={labels.unavailable}
+        action={<Button onClick={retry}>{labels.retry}</Button>}
       />
     );
   }
@@ -266,6 +269,8 @@ function capabilities(values: string[]) {
 }
 
 export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthorized }: { api: AssetApi; gatewayApi?: GatewayAdminApi; csrfToken?: string; onUnauthorized(): void }) {
+	const { t } = useTranslation();
+	const labels = { readFailed: t("assets.readFailed"), unavailable: t("assets.unavailable"), retry: t("assets.retry") };
 	const [lifecycle, setLifecycle] = useState<"active" | "retired" | "all">("active");
   const [nodeType, setNodeType] = useState<string>();
   const [capability, setCapability] = useState<string>();
@@ -493,8 +498,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
     <Flex vertical gap={20} data-testid="asset-registry-view">
       {gatewayApi && <GatewayManagement api={gatewayApi} csrfToken={csrfToken} onUnauthorized={onUnauthorized} />}
       <div className="asset-card-grid">
-        <Card title="环境" data-testid="environment-card">
-          <ResourceFrame loading={environment.isPending} error={environment.error} retry={() => void environment.refetch()}>
+        <Card title={t("assets.environment")} data-testid="environment-card">
+          <ResourceFrame loading={environment.isPending} error={environment.error} retry={() => void environment.refetch()} labels={labels}>
             {environment.data && (
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="环境 ID"><Text code>{environment.data.environmentId}</Text></Descriptions.Item>
@@ -505,8 +510,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           </ResourceFrame>
         </Card>
 
-        <Card title="Gateway" data-testid="gateway-card">
-          <ResourceFrame loading={gateway.isPending} error={gateway.error} retry={() => void gateway.refetch()}>
+        <Card title={t("assets.gateway")} data-testid="gateway-card">
+          <ResourceFrame loading={gateway.isPending} error={gateway.error} retry={() => void gateway.refetch()} labels={labels}>
             {gateway.data?.status === "configured" && gateway.data.gateway ? (
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="名称">{gateway.data.gateway.displayName}</Descriptions.Item>
@@ -515,11 +520,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
                 <Descriptions.Item label="Credential">{gateway.data.gateway.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
                 <Descriptions.Item label="更新时间">{formatDateTime(gateway.data.gateway.updatedAt)}</Descriptions.Item>
               </Descriptions>
-            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未登记 Gateway" />}
+            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyGateway")} />}
           </ResourceFrame>
         </Card>
 
-        <Card title="当前 Provider 策略" data-testid="policy-card">
+        <Card title={t("assets.policy")} data-testid="policy-card">
           <Flex vertical gap={12}>
             {policyScopes.length > 0 && (
               <Select
@@ -532,8 +537,8 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
                 }}
               />
             )}
-            <ResourceFrame loading={Boolean(policyScope) && policy.isPending} error={policy.error} retry={() => void policy.refetch()}>
-              {!policyScope ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先登记 Driver" /> : policy.data?.status === "configured" && policy.data.policy ? (
+            <ResourceFrame loading={Boolean(policyScope) && policy.isPending} error={policy.error} retry={() => void policy.refetch()} labels={labels}>
+              {!policyScope ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.selectDriver")} /> : policy.data?.status === "configured" && policy.data.policy ? (
                 <Descriptions column={1} size="small">
                   <Descriptions.Item label="版本"><Text code>{policy.data.policy.policyVersionId}</Text></Descriptions.Item>
                   <Descriptions.Item label="作用域">{policy.data.policy.nodeType} / {policy.data.policy.driverContractVersion}</Descriptions.Item>
@@ -541,14 +546,14 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
                   <Descriptions.Item label="Out of scope">{capabilities(policy.data.policy.outOfScopeProviders)}</Descriptions.Item>
                   <Descriptions.Item label="激活区间">{formatDateTime(policy.data.policy.effectiveFrom)} – {formatDateTime(policy.data.policy.effectiveTo)}</Descriptions.Item>
                 </Descriptions>
-              ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置当前 Provider 策略" />}
+              ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyPolicy")} />}
             </ResourceFrame>
           </Flex>
         </Card>
       </div>
 
-      <Card title="Driver 与 capability" data-testid="drivers-card">
-        <ResourceFrame loading={drivers.isPending} error={drivers.error} retry={() => void drivers.refetch()}>
+      <Card title={t("assets.drivers")} data-testid="drivers-card">
+        <ResourceFrame loading={drivers.isPending} error={drivers.error} retry={() => void drivers.refetch()} labels={labels}>
           {drivers.data && drivers.data.length > 0 ? (
             <Table<DriverAsset>
               rowKey={(driver) => `${driver.nodeType}:${driver.driverContractVersion}`}
@@ -563,11 +568,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
                 { title: "能力", dataIndex: "capabilities", key: "capabilities", render: capabilities },
               ]}
             />
-          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未登记 Driver" />}
+          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyDriver")} />}
         </ResourceFrame>
       </Card>
 
-      <Card title="Relay Node" data-testid="nodes-card">
+      <Card title={t("assets.nodes")} data-testid="nodes-card">
         <Flex vertical gap={16}>
 			{nodeMessage && <Alert type="warning" showIcon message={nodeMessage} closable onClose={() => setNodeMessage(undefined)} />}
 			<Flex justify="space-between" align="center" wrap gap={8}>
@@ -607,10 +612,10 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			{lifecycle === "active" && api.registerNode && <Button type="primary" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("register")}>登记 Node</Button>}
 			</Flex>
 			{drivers.error && <Alert type="warning" showIcon message="Driver 信息不可用，无法登记 Node" />}
-          <ResourceFrame loading={nodes.isPending} error={nodes.error} retry={() => void nodes.refetch()}>
+          <ResourceFrame loading={nodes.isPending} error={nodes.error} retry={() => void nodes.refetch()} labels={labels}>
             {nodes.data && nodes.data.items.length > 0 ? (
               <Table<NodeAsset> rowKey="instanceId" size="small" scroll={{ x: 1260 }} pagination={false} dataSource={nodes.data.items} columns={columns} />
-            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前过滤条件下没有 Relay Node" />}
+            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyNodes")} />}
           </ResourceFrame>
           {!nodes.error && (
             <Flex justify="end" gap={8}>
