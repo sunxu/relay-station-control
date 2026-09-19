@@ -1,0 +1,42 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { useTranslation } from "react-i18next";
+import { FrontendFoundationProvider } from "./FrontendFoundationProvider";
+import { antdLocales } from "./theme";
+
+function FoundationProbe() {
+  const { i18n, t } = useTranslation();
+
+  return (
+    <>
+      <span data-testid="child">{t("common.locale.label")}</span>
+      <span data-testid="language">{i18n.language}</span>
+    </>
+  );
+}
+
+describe("FrontendFoundationProvider", () => {
+  it("renders children and binds zh-CN to i18next and Ant Design", () => {
+    render(
+      <FrontendFoundationProvider initialLocale="zh-CN">
+        <FoundationProbe />
+      </FrontendFoundationProvider>,
+    );
+
+    expect(screen.getByTestId("child")).toHaveTextContent("语言");
+    expect(screen.getByTestId("language")).toHaveTextContent("zh-CN");
+    expect(antdLocales["zh-CN"].locale).toBe("zh-cn");
+  });
+
+  it("binds en to i18next and Ant Design", () => {
+    render(
+      <FrontendFoundationProvider initialLocale="en">
+        <FoundationProbe />
+      </FrontendFoundationProvider>,
+    );
+
+    expect(screen.getByTestId("child")).toHaveTextContent("Language");
+    expect(screen.getByTestId("language")).toHaveTextContent("en");
+    expect(antdLocales.en.locale).toBe("en");
+  });
+});
