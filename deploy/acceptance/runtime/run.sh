@@ -372,8 +372,12 @@ SQL
   mkdir -p "$RUNTIME_DIR/logs"
   run_browser_spec override "$RUNTIME_DIR/acceptance-output.log" account-operations-override.spec.ts
   capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND account_key='antigravity:$OVERRIDE_LIFECYCLE_EMAIL'")" == 1 ]] || { echo "override_target_account_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND lifecycle_override_at IS NOT NULL AND lifecycle_override_reason='process_restarted'")" == 1 ]] || { echo "lifecycle_override_mismatch" >&2; exit 1; }
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND same_account_override_at IS NOT NULL AND same_account_override_reason='process_restarted'")" == 1 ]] || { echo "same_account_override_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_command_receipts WHERE target_operation_command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND command_kind='account.same_account_override' AND http_status=200")" == 1 ]] || { echo "same_account_receipt_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND action='account.same_account_override' AND result='success' AND details->>'target_operation_command_id'='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND details->>'reason'='process_restarted'")" == 1 ]] || { echo "same_account_audit_mismatch" >&2; exit 1; }
+  [[ "$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" PATCH "/v0/management/auth-files/status")" == 0 ]] || { echo "same_account_native_mutation_unexpected" >&2; exit 1; }
   scan_override_secret() {
     scan_secret_value "secret" "$1"
   }

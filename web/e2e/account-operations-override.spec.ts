@@ -72,9 +72,9 @@ test("performs a lifecycle override with closed-set reasons", async ({ page }) =
   await page.getByTestId("account-override-submit").click();
   await page.getByTestId("account-override-confirm").click();
   const sameAccountResponse = await sameAccountResponsePromise;
-  const sameAccountBody = await sameAccountResponse.json() as { operation?: { command_id?: string; execution_state?: string; same_account_overridden?: boolean; same_account_override_reason?: string } };
+  const sameAccountBody = await sameAccountResponse.json() as { operation?: { command_id?: string; account_key?: string; execution_state?: string; same_account_overridden?: boolean; same_account_override_reason?: string } };
   expect(sameAccountResponse.status()).toBe(200);
-  expect(sameAccountBody.operation).toMatchObject({ command_id: lifecycleCommandID, execution_state: "outcome_unknown", same_account_overridden: true, same_account_override_reason: "process_restarted" });
+  expect(sameAccountBody.operation).toMatchObject({ command_id: lifecycleCommandID, account_key: `antigravity:${lifecycleEmail}`, execution_state: "outcome_unknown", same_account_overridden: true, same_account_override_reason: "process_restarted" });
 
   writeFileSync(evidenceFile, JSON.stringify({
     lifecycle: { target_command_id: lifecycleCommandID, reason: "process_restarted", response_status: lifecycleResponse.status() },
