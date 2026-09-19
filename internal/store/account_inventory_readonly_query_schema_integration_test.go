@@ -10,6 +10,77 @@ import (
 	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
 
+func TestAccountInventoryReadonlyQuerySecuredFunctionContext(t *testing.T) {
+	ctx := context.Background()
+	t.Run("fresh_install", func(t *testing.T) {
+		database := newIsolatedJobDatabase(t)
+		requireCurrentInventoryQueryContext(t, ctx, database)
+	})
+	t.Run("upgrade_from_51", func(t *testing.T) {
+		database := newIsolatedJobDatabase(t, "up-to", "51")
+		var before int64
+		if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory`).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+			t.Fatal(err)
+		}
+		if err := runAssetGoose(t, ctx, "../..", database.ownerURL, "up"); err != nil {
+			t.Fatal(err)
+		}
+		requireCurrentInventoryQueryContext(t, ctx, database)
+		var after int64
+		if err := database.owner.QueryRow(ctx, `SELECT count(*) FROM account_inventory`).Scan(&after); err != nil {
+			t.Fatal(err)
+		}
+		if after != before {
+			t.Fatalf("corrective migration changed current inventory rows: before=%d after=%d", before, after)
+		}
+	})
+}
+
+func requireCurrentInventoryQueryContext(t *testing.T, ctx context.Context, database *isolatedJobDatabase) {
+	t.Helper()
+	var securityDefiner bool
+	var owner string
+	var config []string
+	if err := database.owner.QueryRow(ctx, `
+		SELECT procedure_row.prosecdef,
+		       pg_catalog.pg_get_userbyid(procedure_row.proowner),
+		       procedure_row.proconfig
+		FROM pg_catalog.pg_proc AS procedure_row
+		WHERE procedure_row.oid =
+			'public.control_query_current_account_inventory_v1(
+			 uuid,text,text,text,text,text,integer
+			)'::regprocedure`).Scan(&securityDefiner, &owner, &config); err != nil {
+		t.Fatal(err)
+	}
+	if !securityDefiner {
+		t.Fatal("current inventory query is not SECURITY DEFINER")
+	}
+	if owner != "relay_control_migrator" {
+		t.Fatalf("current inventory query owner=%q", owner)
+	}
+	contains := func(want string) bool {
+		for _, value := range config {
+			if value == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains("search_path=pg_catalog") || !contains("TimeZone=UTC") {
+		t.Fatalf("current inventory query function config=%v", config)
+	}
+	var compatibility []byte
+	if err := database.owner.QueryRow(ctx, `SELECT public.control_history_schema_compatibility_v1()`).Scan(&compatibility); err != nil {
+		t.Fatalf("history schema compatibility: %v", err)
+	}
+	if len(compatibility) == 0 {
+		t.Fatal("history schema compatibility returned empty result")
+	}
+}
+
 func TestAccountInventoryReadonlyQueryStoreAndPermissionMatrix(t *testing.T) {
 	ctx := context.Background()
 	database := newIsolatedJobDatabase(t)
