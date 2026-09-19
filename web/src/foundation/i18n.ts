@@ -11,6 +11,7 @@ export function createAppI18n(locale: AppLocale): i18n {
     fallbackLng: "zh-CN",
     supportedLngs: supportedLocales,
     resources,
+    initAsync: false,
     interpolation: {
       escapeValue: false,
     },

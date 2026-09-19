@@ -23,6 +23,7 @@ describe("LocaleSwitcher", () => {
     );
 
     expect(screen.getByTestId("locale-selector")).toBeInTheDocument();
+    expect(screen.getByTestId("locale-selector")).toHaveAccessibleName("语言");
     expect(screen.getByTestId("locale-option-zh-CN")).toHaveTextContent("中文");
     expect(screen.getByTestId("locale-option-en")).toHaveTextContent("English");
 
@@ -48,6 +49,7 @@ describe("LocaleSwitcher", () => {
       );
       fireEvent.change(screen.getByTestId("locale-selector"), { target: { value: "en" } });
       expect(screen.getByTestId("current-language")).toHaveTextContent("en");
+      expect(screen.getByTestId("locale-selector")).toHaveAccessibleName("Language");
     } finally {
       Object.defineProperty(window, "localStorage", { configurable: true, value: originalStorage });
     }

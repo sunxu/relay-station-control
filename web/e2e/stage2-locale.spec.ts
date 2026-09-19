@@ -48,7 +48,6 @@ test.describe("Stage 2 explicit selection", () => {
   test.use({ locale: "zh-CN" });
 
   test("explicit en selection survives reload", async ({ page, configureLocaleStorage }) => {
-    await configureLocaleStorage();
     await openApp(page);
     const selector = page.getByTestId("locale-selector");
     await expect(selector).toHaveValue("zh-CN");

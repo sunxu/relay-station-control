@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useOptionalAppLocale } from "./FrontendFoundationProvider";
 
 export function LocaleSwitcher() {
@@ -5,12 +6,12 @@ export function LocaleSwitcher() {
   if (!context) return null;
 
   const { locale, setLocale } = context;
+  const { t } = useTranslation();
 
   return (
     <label>
-      <span className="sr-only">Language</span>
       <select
-        aria-label="Language"
+        aria-label={t("common.locale.label")}
         data-testid="locale-selector"
         value={locale}
         onChange={(event) => setLocale(event.target.value as typeof locale)}

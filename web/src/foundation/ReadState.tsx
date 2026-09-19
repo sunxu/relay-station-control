@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export type ReadStateStatus = "loading" | "error" | "empty" | "content";
 
@@ -10,20 +11,21 @@ export type ReadStateProps = {
 };
 
 export function ReadState({ status, message, onRetry, children }: ReadStateProps) {
+  const { t } = useTranslation();
   if (status === "content") return <>{children}</>;
 
   if (status === "error") {
     return (
       <div className="read-state read-state-error" role="alert">
-        <p>{message ?? "Unavailable"}</p>
-        {onRetry ? <button type="button" onClick={onRetry}>Retry</button> : null}
+        <p>{message ?? t("common.readState.unavailable")}</p>
+        {onRetry ? <button type="button" onClick={onRetry}>{t("common.readState.retry")}</button> : null}
       </div>
     );
   }
 
   return (
     <div className={`read-state read-state-${status}`} role="status" aria-live="polite">
-      {message ?? (status === "loading" ? "Loading" : "No records")}
+      {message ?? t(status === "loading" ? "common.readState.loading" : "common.readState.empty")}
     </div>
   );
 }

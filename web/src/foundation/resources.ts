@@ -3,6 +3,12 @@ const canonicalTranslation = {
     locale: {
       label: "语言",
     },
+    readState: {
+      loading: "加载中",
+      unavailable: "暂不可用",
+      empty: "暂无记录",
+      retry: "重试",
+    },
   },
 } as const;
 
@@ -28,6 +34,12 @@ export const resources = {
       common: {
         locale: {
           label: "Language",
+        },
+        readState: {
+          loading: "Loading",
+          unavailable: "Unavailable",
+          empty: "No records",
+          retry: "Retry",
         },
       },
     } satisfies TranslationResource,
