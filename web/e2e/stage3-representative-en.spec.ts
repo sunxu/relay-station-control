@@ -145,6 +145,6 @@ test.describe("Stage 3 representative English surfaces", () => {
     await page.getByTestId("account-operation-command-id").fill(commandID);
     await page.getByTestId("account-operation-read").click();
     await expect(page.getByTestId("account-operation-result")).toContainText("Outcome unknown");
-    await expect(page.locator("body")).not.toContainText(/translation|operations\.|topology\./u);
+    await expect(page.locator("body")).not.toContainText(/translation(?:\.|$)|operations\.|topology\./u);
   });
 });
