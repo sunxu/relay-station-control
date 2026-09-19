@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthApi } from "../api/auth-api";
 import { AuthProvider } from "../auth/AuthContext";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
 import JobsPage from "./JobsPage";
 
 const jobId = "00000000-0000-4000-8000-000000000501";
@@ -56,9 +57,11 @@ const authApi = {
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <AuthProvider api={authApi}>{children}</AuthProvider>
-    </QueryClientProvider>
+    <FrontendFoundationProvider initialLocale="zh-CN">
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AuthProvider api={authApi}>{children}</AuthProvider>
+      </QueryClientProvider>
+    </FrontendFoundationProvider>
   );
 }
 
@@ -104,7 +107,7 @@ describe("JobsPage DingTalk failed delivery diagnostics", () => {
     const row = screen.getByText("dingtalk_alert_delivery").closest("tr")!;
     expect(within(row).getAllByText("failed").length).toBeGreaterThan(0);
     expect(screen.getByText("5 / 5")).toBeInTheDocument();
-    expect(screen.getByText(formatDateTime(failedSummary.created_at))).toBeInTheDocument();
+    expect(screen.getByText(formatDateTime(failedSummary.created_at, "zh-CN"))).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /通知|Notification|Webhook|webhook/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/webhook|query|signing|rawresponse|raw_response|通知|notification/i)).not.toBeInTheDocument();
 
@@ -114,10 +117,10 @@ describe("JobsPage DingTalk failed delivery diagnostics", () => {
     expect(within(drawer).getAllByText("failed").length).toBeGreaterThan(0);
     expect(within(drawer).getByText("5 / 5")).toBeInTheDocument();
     expect(within(drawer).getAllByText("dingtalk_business_rejected").length).toBeGreaterThan(0);
-    expect(within(drawer).getByText(formatDateTime(failedSummary.started_at))).toBeInTheDocument();
-    expect(within(drawer).getByText(formatDateTime(failedSummary.completed_at))).toBeInTheDocument();
-    expect(within(drawer).getByText(formatDateTime(failedSummary.created_at))).toBeInTheDocument();
-    expect(within(drawer).getByText(formatDateTime(failedSummary.updated_at))).toBeInTheDocument();
+    expect(within(drawer).getByText(formatDateTime(failedSummary.started_at, "zh-CN"))).toBeInTheDocument();
+    expect(within(drawer).getByText(formatDateTime(failedSummary.completed_at, "zh-CN"))).toBeInTheDocument();
+    expect(within(drawer).getByText(formatDateTime(failedSummary.created_at, "zh-CN"))).toBeInTheDocument();
+    expect(within(drawer).getByText(formatDateTime(failedSummary.updated_at, "zh-CN"))).toBeInTheDocument();
     expect(within(drawer).getByText("#6 failed")).toBeInTheDocument();
 
     const body = document.body.textContent ?? "";

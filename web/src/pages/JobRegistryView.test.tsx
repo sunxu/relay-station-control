@@ -1,4 +1,5 @@
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -47,7 +48,7 @@ function makeApi(): JobApi {
 }
 
 function Wrapper({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>;
+  return <FrontendFoundationProvider initialLocale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
 }
 
 describe("durable job read-only view", () => {
@@ -80,7 +81,7 @@ describe("durable job read-only view", () => {
 
     expect(await screen.findByText(summary.jobKind)).toBeInTheDocument();
     expect(document.querySelector(`tr[data-row-key="${summary.jobId}"]`)).not.toBeNull();
-    expect(screen.getAllByText(formatDateTime("2026-08-25T10:00:00Z")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatDateTime("2026-08-25T10:00:00Z", "zh-CN")).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: "synthetic.noop" } });
     fireEvent.mouseDown(screen.getByLabelText("任务状态"));
     fireEvent.click(await screen.findByText("running", { selector: ".ant-select-item-option-content" }));

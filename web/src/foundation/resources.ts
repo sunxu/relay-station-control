@@ -91,6 +91,7 @@ const canonicalTranslation = {
     uploadAccount: "Upload New Account", uploadDescription: "无需已有 Inventory 账号。服务端会根据逻辑身份生成并验证远端目标。", uploadProvider: "Upload New Provider", uploadEmail: "Upload New Email", accountEmail: "账户邮箱", chooseCredential: "选择 credential JSON（最大 1 MiB）",
     credentialTooLarge: "凭据文件不能超过 1 MiB", keep: "Keep existing", set: "Set new credential", clear: "Clear credential",
   },
+  jobs: { title: "持久任务", description: "PostgreSQL 真相源的只读运行视图", management: "管理员控制台" },
   auth: {
     errors: {
       unavailable: "请求暂时无法完成，请稍后再试。",
@@ -267,6 +268,7 @@ export const resources = {
         uploadAccount: "Upload New Account", uploadDescription: "No existing Inventory account is required. The server generates and validates the remote target from the logical identity.", uploadProvider: "Upload New Provider", uploadEmail: "Upload New Email", accountEmail: "Account email", chooseCredential: "Choose credential JSON (max 1 MiB)",
         credentialTooLarge: "Credential file cannot exceed 1 MiB", keep: "Keep existing", set: "Set new credential", clear: "Clear credential",
       },
+      jobs: { title: "Persistent jobs", description: "Read-only runtime view backed by PostgreSQL truth", management: "Management console" },
       auth: {
         errors: {
           unavailable: "The request could not be completed. Try again later.",

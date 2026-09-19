@@ -5,7 +5,8 @@ import type { ColumnsType } from "antd/es/table";
 import { useJob, useJobs } from "../api/job-hooks";
 import { JobApiError, jobStatuses } from "../api/job-types";
 import type { JobApi, JobFilters, JobLifecycleEvent, JobStatus, JobSummary } from "../api/job-types";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 
 const { Text } = Typography;
 const defaultPageSize = 50;
@@ -31,6 +32,7 @@ function ReadFailure({ error, retry, notFound }: { error: unknown; retry: () => 
 }
 
 function EventLine({ event }: { event: JobLifecycleEvent }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   return (
     <Flex vertical gap={2} data-testid={`job-event-${event.sequence}`}>
       <Space wrap>
@@ -38,13 +40,14 @@ function EventLine({ event }: { event: JobLifecycleEvent }) {
         <Tag>{event.fromStatus ?? "初始"} → {event.toStatus}</Tag>
         <Text type="secondary">attempt {event.attemptCount}</Text>
       </Space>
-      <Text type="secondary">{event.actorType} · {formatDateTime(event.occurredAt)}</Text>
+      <Text type="secondary">{event.actorType} · {formatDateTime(event.occurredAt, locale)}</Text>
       {(event.reasonCode || event.errorCode) && <Text code>{[event.reasonCode, event.errorCode].filter(Boolean).join(" / ")}</Text>}
     </Flex>
   );
 }
 
 export function JobRegistryView({ api, onUnauthorized }: { api: JobApi; onUnauthorized: () => void }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const [jobKind, setJobKind] = useState("");
   const [status, setStatus] = useState<JobStatus>();
   const [createdFrom, setCreatedFrom] = useState("");
@@ -76,7 +79,7 @@ export function JobRegistryView({ api, onUnauthorized }: { api: JobApi; onUnauth
     { title: "状态", dataIndex: "status", key: "status", render: (value: JobStatus) => <Tag>{value}</Tag> },
     { title: "尝试", key: "attempts", render: (_, item) => `${item.attemptCount} / ${item.maxAttempts}` },
     { title: "Outbox", dataIndex: "outboxStatus", key: "outboxStatus" },
-    { title: "创建时间", dataIndex: "createdAt", key: "createdAt", render: formatDateTime },
+    { title: "创建时间", dataIndex: "createdAt", key: "createdAt", render: (value: string | null) => formatDateTime(value, locale) },
     { title: "操作", key: "view", render: (_, item) => <Button onClick={() => setSelectedJobID(item.jobId)}>查看详情</Button> },
   ], []);
 
@@ -142,11 +145,11 @@ export function JobRegistryView({ api, onUnauthorized }: { api: JobApi; onUnauth
               <Descriptions.Item label="取消请求">{detail.data.cancelRequested ? "已请求" : "未请求"}</Descriptions.Item>
               <Descriptions.Item label="固定错误码">{detail.data.errorCode ?? "—"}</Descriptions.Item>
               <Descriptions.Item label="Outbox">{detail.data.outboxStatus}</Descriptions.Item>
-              <Descriptions.Item label="可执行时间">{formatDateTime(detail.data.availableAt)}</Descriptions.Item>
-              <Descriptions.Item label="开始时间">{formatDateTime(detail.data.startedAt)}</Descriptions.Item>
-              <Descriptions.Item label="完成时间">{formatDateTime(detail.data.completedAt)}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{formatDateTime(detail.data.createdAt)}</Descriptions.Item>
-              <Descriptions.Item label="更新时间">{formatDateTime(detail.data.updatedAt)}</Descriptions.Item>
+              <Descriptions.Item label="可执行时间">{formatDateTime(detail.data.availableAt, locale)}</Descriptions.Item>
+              <Descriptions.Item label="开始时间">{formatDateTime(detail.data.startedAt, locale)}</Descriptions.Item>
+              <Descriptions.Item label="完成时间">{formatDateTime(detail.data.completedAt, locale)}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{formatDateTime(detail.data.createdAt, locale)}</Descriptions.Item>
+              <Descriptions.Item label="更新时间">{formatDateTime(detail.data.updatedAt, locale)}</Descriptions.Item>
             </Descriptions>
             <div>
               <Typography.Title level={4}>生命周期事件</Typography.Title>
