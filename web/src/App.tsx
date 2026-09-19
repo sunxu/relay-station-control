@@ -18,7 +18,6 @@ const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 function AuthShell() {
   const auth = useAuth();
   const { t } = useTranslation();
-  const authenticatedRoute = auth.route === "management" || auth.route === "assets" || auth.route === "jobs" || auth.route === "topology" || auth.route === "problems";
   const localeControl = auth.route === "management" ? null : <LocaleSwitcher />;
 
   if (auth.route === "loading") {

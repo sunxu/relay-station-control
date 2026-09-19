@@ -78,7 +78,7 @@ function RecentRequestStrip({ requests, locale, copy }: { requests: AccountListR
   </Flex>;
 }
 
-export function AccountList({ rows, loading = false, unavailable = false, onSelectAccount, onRetry, emptyDescription = "当前过滤条件下没有账号" }: AccountListProps) {
+export function AccountList({ rows, loading = false, unavailable = false, onSelectAccount, onRetry, emptyDescription }: AccountListProps) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const copy = resources[locale].translation.accounts;
   const columns: ColumnsType<AccountListRow> = [
@@ -99,6 +99,6 @@ export function AccountList({ rows, loading = false, unavailable = false, onSele
 
   if (loading) return <Flex justify="center" role="status" aria-label={copy.readingAccounts}><Spin /></Flex>;
   if (unavailable) return <Flex vertical align="center" gap={8}><Text type="danger">{copy.unavailable}</Text>{onRetry && <Button onClick={onRetry}>{copy.retry}</Button>}</Flex>;
-  if (rows.length === 0) return <Empty description={emptyDescription === "当前过滤条件下没有账号" ? copy.noAccounts : emptyDescription} />;
+  if (rows.length === 0) return <Empty description={emptyDescription ?? copy.noAccounts} />;
   return <Flex vertical gap={8}><Text type="secondary">{copy.recentRequestsDescription}</Text><Table<AccountListRow> rowKey="account_key" size="small" scroll={{ x: 1350 }} pagination={false} dataSource={rows} columns={columns} /></Flex>;
 }
