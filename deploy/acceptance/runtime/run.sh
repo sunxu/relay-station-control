@@ -178,7 +178,7 @@ INVENTORY_POLL_START_GRACE="299s"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_POLL_ENABLED="true"
 [[ "$MODE" == "disable" || "$MODE" == "enable-fixture" || "$MODE" == "enable" || "$MODE" == "replace" || "$MODE" == "replace-discovery" || "$MODE" == "remove" || "$MODE" == "override" ]] && INVENTORY_LIFECYCLE_ENABLED="true"
 [[ "$MODE" == "security-replay" ]] && { INVENTORY_POLL_ENABLED="true"; INVENTORY_LIFECYCLE_ENABLED="true"; INVENTORY_POLL_START_GRACE="299s"; }
-if [[ "$MODE" == "disable" || "$MODE" == "security-replay" ]]; then
+if [[ "$MODE" == "disable" || "$MODE" == "security-replay" || "$MODE" == "enable-fixture" || "$MODE" == "enable" ]]; then
   # The one-shot acceptance bootstrap owns this poll. Keep the production
   # Control scheduler disabled so two workers cannot claim the same run.
   INVENTORY_POLL_ENABLED="false"
@@ -295,7 +295,7 @@ if [[ "$MODE" == "startup" ]]; then
 fi
 ACCEPTANCE_FAILURE_LAYER=control
 run_inventory_bootstrap() {
-  local network module_cache
+  local target_email="$1" network module_cache
   network="$(docker network ls --filter "label=com.docker.compose.project=${PROJECT}" --format '{{.Name}}' | head -n 1)"
   [[ -n "$network" ]] || { echo "INVENTORY_BOOTSTRAP_NETWORK_MISSING" >&2; return 1; }
   module_cache="$(go env GOMODCACHE)"
@@ -316,7 +316,7 @@ run_inventory_bootstrap() {
     -e DATABASE_URL='postgres://relay_control_app_dev:relay_control_runtime_dev_only@postgres:5432/relay_station_control?sslmode=disable' \
     -e CONTROL_ASSET_CREDENTIAL_KEY_FILE=/run/control-secrets/asset-credential-key \
     -e ACCOUNT_INVENTORY_NODE_ID="$NODE_INSTANCE_ID" \
-    -e ACCOUNT_INVENTORY_TARGET_EMAIL="$DISABLE_EMAIL" \
+    -e ACCOUNT_INVENTORY_TARGET_EMAIL="$target_email" \
     "$GOLANG_IMAGE" go run ./deploy/acceptance/stage0-inventory-bootstrap
 }
 if [[ "$MODE" == "disable" || "$MODE" == "security-replay" ]]; then
@@ -344,7 +344,10 @@ if [[ "$MODE" != "auth" ]]; then
   echo "STAGE0_NODE_SEALED_PRESENCE=PASS"
   if [[ "$MODE" == "disable" || "$MODE" == "security-replay" ]]; then
     ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
-    run_inventory_bootstrap
+    run_inventory_bootstrap "$DISABLE_EMAIL"
+  elif [[ "$MODE" == "enable-fixture" || "$MODE" == "enable" ]]; then
+    ACCEPTANCE_FAILURE_LAYER=inventory_bootstrap
+    run_inventory_bootstrap "$ENABLE_EMAIL"
   fi
 fi
 if [[ "$MODE" == "override" ]]; then
