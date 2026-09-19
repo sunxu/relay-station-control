@@ -105,8 +105,5 @@ body {
   }
 }
 
-.topology-view .ant-card { min-width: 0; }
-.topology-view .ant-card-head-wrapper { flex-wrap: wrap; gap: 8px; padding-block: 12px; }
-.topology-view .ant-card-head-title { white-space: normal; min-width: 0; }
-.topology-view .ant-table-wrapper { min-width: 0; max-width: 100%; }
-.topology-view .ant-table-cell { overflow-wrap: anywhere; }
+.topology-view .topology-card { min-width: 0; }
+.topology-view .topology-table { min-width: 0; max-width: 100%; }

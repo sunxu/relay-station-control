@@ -74,6 +74,11 @@ const canonicalTranslation = {
     emptyPolicy: "尚未配置当前 Provider 策略",
     emptyNodes: "当前过滤条件下没有 Relay Node",
   },
+  topology: {
+    title: "Node Topology",
+    description: "Node 及其只读关联观察",
+    management: "管理员控制台",
+  },
   auth: {
     errors: {
       unavailable: "请求暂时无法完成，请稍后再试。",
@@ -232,6 +237,11 @@ export const resources = {
         selectDriver: "Register a Driver first",
         emptyPolicy: "No current provider policy configured",
         emptyNodes: "No Relay Node matches the current filters",
+      },
+      topology: {
+        title: "Node Topology",
+        description: "Read-only observation of Nodes and their relationships",
+        management: "Management console",
       },
       auth: {
         errors: {

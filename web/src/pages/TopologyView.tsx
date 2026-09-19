@@ -46,7 +46,7 @@ function Evidence({ api, occurrenceId, onUnauthorized }: { api: TopologyApi; occ
   if (query.error) return <ReadError retry={() => void query.refetch()} />;
   return <Flex vertical gap={8}>
     <Text>Evidence 记录 authoritative evaluation 涉及关系，不等于历史 confirmed owner。</Text>
-    <Table size="small" scroll={{ x: 1050 }} pagination={false} rowKey="observation_id" dataSource={query.data.items} columns={[
+    <Table className="topology-table" size="small" scroll={{ x: 1050 }} pagination={false} rowKey="observation_id" dataSource={query.data.items} columns={[
       { title: "Node", dataIndex: "instance_id" },
       { title: "类型", dataIndex: "observation_kind" },
       { title: "Provider", dataIndex: "source_provider" },
@@ -160,7 +160,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
   ];
   const nodeOptions = (nodes.error ? [] : nodes.data?.items ?? []).map((item) => ({ value: item.instanceId, label: `${item.displayName} · ${item.instanceId}` }));
   if (node && !nodeOptions.some((option) => option.value === node.instanceId)) nodeOptions.unshift({ value: node.instanceId, label: `${node.displayName} · ${node.instanceId}` });
-  const occurrenceTable = (items: TopologyOccurrence[]) => <Table
+  const occurrenceTable = (items: TopologyOccurrence[]) => <Table className="topology-table"
     key={instanceId} rowKey="occurrence_id" size="small" scroll={{ x: 1320 }} pagination={false}
     dataSource={items} columns={occurrenceColumns}
     expandable={{ expandedRowRender: (row) => <Evidence api={api} occurrenceId={row.occurrence_id} onUnauthorized={expireSession} /> }}
@@ -191,7 +191,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     };
   });
   return <Flex vertical gap={16} data-testid="topology-view" className="topology-view" style={{ minWidth: 0 }}>
-    <Card title="Node">
+    <Card className="topology-card" title="Node">
       {nodes.isPending && <Spin />}
       {nodes.error && <ReadError message="Node 清单读取不可用" retry={() => void nodes.refetch()} />}
       <Select data-testid="relay-node-selector" aria-label="Relay Node" placeholder="选择 Relay Node" value={instanceId} onChange={select} options={nodeOptions} style={{ width: "100%", maxWidth: 560 }} />
@@ -204,7 +204,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     {inventoryApi && <AccountInventoryCapacity api={inventoryApi} csrfToken={csrfToken} onUnauthorized={expireSession} />}
     {!instanceId && <Empty description="请选择 Node 查看只读拓扑" />}
     {instanceId && <>
-      <Card title="Inventory evidence">
+      <Card className="topology-card" title="Inventory evidence">
         {selected.isPending && <Spin />}
         {selected.error && <ReadError message={selected.error instanceof AssetApiError && selected.error.status === 404 ? "Node 不存在" : "Node 读取不可用"} retry={() => void selected.refetch()} />}
         <Flex vertical>
@@ -213,7 +213,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Text>监控：{node ? node.monitoringActive ? "active" : "inactive" : "unknown"}</Text>
         </Flex>
       </Card>
-      <Card title="账号清单与质量" role="region" aria-label="Account Quality">
+      <Card className="topology-card" title="账号清单与质量" role="region" aria-label="Account Quality">
         {accountOperationsApi && csrfToken && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={expireSession} /></Flex>}
         <Flex gap={8} wrap>
           <Input aria-label="Provider 精确筛选" placeholder="Provider（精确）" value={qualityProvider ?? ""} disabled={accountQualityView.isPending} maxLength={64} onChange={(event) => { setQualityProvider(event.target.value || undefined); resetAccountResult(); }} style={{ width: 190 }} />
@@ -236,14 +236,14 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
       </Card>
       <AccountDetailsDrawer api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />
       <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={(accountKey) => { setDetailsAccountKey(accountKey); setDetailsRow(accountRows.find((item) => item.account_key === accountKey)); }} onUnauthorized={expireSession} />
-      <Card title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
+      <Card className="topology-card" title="Provider snapshot 与 latest health" extra={<Button onClick={() => void providers.refetch()} loading={providers.isFetching}>刷新 Provider</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError retry={() => void providers.refetch()} />}
         {providers.data && !providers.error && <>
           <Text type="secondary">来源时间：{formatDateTime(providers.data.observed_at)}</Text>
           {screens.xs ? <Flex vertical gap={12} style={{ marginTop: 12 }}>
             {providers.data.providers.length === 0 && <Empty description="没有应监控或已持有 state 的 Provider" />}
-            {providers.data.providers.map((row) => <Card key={row.provider} size="small" title={row.provider}>
+            {providers.data.providers.map((row) => <Card className="topology-card" key={row.provider} size="small" title={row.provider}>
               <Flex vertical gap={8}>
                 <Text>监控范围：{row.monitoring_status}</Text>
                 <Flex wrap gap={8}>
@@ -255,10 +255,10 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
                 <Text style={{ overflowWrap: "anywhere" }}>原因：{row.health_reason ?? "—"}</Text>
               </Flex>
             </Card>)}
-          </Flex> : <Table rowKey="provider" size="small" scroll={{ x: 1100 }} pagination={false} dataSource={providers.data.providers} columns={providerColumns} locale={{ emptyText: "没有应监控或已持有 state 的 Provider" }} />}
+          </Flex> : <Table className="topology-table" rowKey="provider" size="small" scroll={{ x: 1100 }} pagination={false} dataSource={providers.data.providers} columns={providerColumns} locale={{ emptyText: "没有应监控或已持有 state 的 Provider" }} />}
         </>}
       </Card>
-      <Card title="Gateway Usage Context" extra={<Button onClick={() => void binding.refetch()} loading={binding.isFetching}>刷新 Binding</Button>}>
+      <Card className="topology-card" title="Gateway Usage Context" extra={<Button onClick={() => void binding.refetch()} loading={binding.isFetching}>刷新 Binding</Button>}>
         {binding.isPending && <Spin />}
         {binding.error && <ReadError retry={() => void binding.refetch()} />}
         {binding.data && !binding.error && <Flex vertical gap={6} style={{ overflowWrap: "anywhere" }}>
@@ -274,7 +274,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Text>观察时间：{formatDateTime(binding.data.observed_at)}</Text>
         </Flex>}
       </Card>
-      <Card data-testid="topology-current-ownership" title="Ownership Fact · 当前 duplicate" extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>刷新 Current</Button>}>
+      <Card className="topology-card" data-testid="topology-current-ownership" title="Ownership Fact · 当前 duplicate" extra={<Button onClick={() => void current.refetch()} loading={current.isFetching}>刷新 Current</Button>}>
         {current.isPending && <Spin />}
         {current.error && <ReadError retry={() => void current.refetch()} />}
         {current.data && !current.error && <>
@@ -282,7 +282,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Flex justify="end" gap={8}><Button disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>Current 首页</Button><Button disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>Current 下一页</Button></Flex>
         </>}
       </Card>
-      <Card data-testid="topology-history-ownership" title="Ownership Fact · 历史评估涉及">
+      <Card className="topology-card" data-testid="topology-history-ownership" title="Ownership Fact · 历史评估涉及">
         <Flex gap={8} wrap>
           <Select allowClear aria-label="历史状态" placeholder="History 全部状态" value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: "ACTIVE" }, { value: "RESOLVED", label: "Resolved" }]} style={{ minWidth: 170 }} />
           <Button onClick={() => void history.refetch()} loading={history.isFetching}>刷新 History</Button>
