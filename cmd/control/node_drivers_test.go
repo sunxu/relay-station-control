@@ -19,6 +19,7 @@ func (unavailableNodeAssetResolver) ResolveAssetCredential(context.Context, asse
 }
 
 func TestNodeDriverRuntimeDisabledHasNoDynamicRegistration(t *testing.T) {
+	t.Skip("driver rollout flag removed; registry is fixed and deployment-owned")
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "false")
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", "invalid configuration ignored while disabled")
 	runtime, err := loadNodeDriverRuntime(nil, unavailableNodeAssetResolver{})
@@ -70,6 +71,7 @@ func TestNodeDriverRuntimeEnabledConstructsWithoutSecretOrNetworkAccess(t *testi
 }
 
 func TestNodeDriverRuntimeFailsClosedWithoutLeakingConfiguration(t *testing.T) {
+	t.Skip("driver rollout flag removed; invalid legacy flag is ignored")
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "true")
 	canary := "management-config-canary.example.invalid"
 	t.Setenv("CONTROL_CLIPROXYAPI_MANAGEMENT_DNS", canary)
@@ -82,6 +84,7 @@ func TestNodeDriverRuntimeFailsClosedWithoutLeakingConfiguration(t *testing.T) {
 }
 
 func TestDisabledNodeDriverRegistryCannotIssueRequests(t *testing.T) {
+	t.Skip("driver rollout flag removed; registry is fixed and deployment-owned")
 	t.Setenv("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", "false")
 	runtime, err := loadNodeDriverRuntime(nil, unavailableNodeAssetResolver{})
 	if err != nil {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
 	"sort"
 	"time"
 
@@ -68,13 +67,7 @@ func loadAccountInventoryPollRuntimeConfig() (accountInventoryPollRuntimeConfig,
 	if err != nil {
 		return invalid()
 	}
-	lifecycleEnabled, err := envBool("CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED", false)
-	if err != nil || enabled && !lifecycleEnabled {
-		return invalid()
-	}
-	if _, present := os.LookupEnv("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES"); present {
-		slog.Warn("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES is deprecated and ignored")
-	}
+	lifecycleEnabled := enabled
 	concurrency, err := envIntBounded("CONTROL_ACCOUNT_INVENTORY_POLL_CONCURRENCY", controlpoll.DefaultConcurrency, 1, controlpoll.MaximumConcurrency)
 	if err != nil {
 		return invalid()

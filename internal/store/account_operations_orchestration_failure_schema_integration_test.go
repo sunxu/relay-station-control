@@ -241,9 +241,9 @@ func (f *failureFixture) handler(scenario failureScenario, email string) http.Ha
 			if scenario == failureUnsupportedRuntime {
 				w.Header().Set("X-CPA-VERSION", "7.3.1")
 			} else {
-				w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
+				w.Header().Set("X-CPA-VERSION", "test-node-version")
 			}
-			w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+			w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 			files := "[]"
 			switch scenario {
 			case failureTimeout, failureConnectionLoss, failureGeneric500:

@@ -95,12 +95,8 @@ func TestLoadAccountInventoryPollRuntimeConfigDefaultsAndBounds(t *testing.T) {
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_MAX_NODES", "1")
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_CONCURRENCY", "1")
 	t.Setenv("CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED", "true")
-	if _, err = loadAccountInventoryPollRuntimeConfig(); err == nil {
-		t.Fatal("polling without lifecycle-aware finalize was accepted")
-	}
-	t.Setenv("CONTROL_ACCOUNT_INVENTORY_LIFECYCLE_ENABLED", "true")
 	if configuration, err = loadAccountInventoryPollRuntimeConfig(); err != nil || !configuration.enabled || !configuration.lifecycleEnabled {
-		t.Fatalf("explicit lifecycle-aware polling rejected: %+v/%v", configuration, err)
+		t.Fatalf("enabled polling rejected: %+v/%v", configuration, err)
 	}
 }
 

@@ -282,8 +282,8 @@ func runAccountCommandOrchestration(t *testing.T, ctx context.Context, r *store.
 	t.Helper()
 	var gets, mutations int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		w.Header().Set("X-CPA-VERSION", "test-node-version")
+		w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 		if req.Method == http.MethodGet {
 			gets++
 			_, _ = io.WriteString(w, `{"files":[`+

@@ -61,8 +61,8 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 		if r.Method == http.MethodGet {
 			snapshotCount.Add(1)
 			if artifact.Load().(bool) {
-				w.Header().Add("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-				w.Header().Add("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+				w.Header().Add("X-CPA-VERSION", "test-node-version")
+				w.Header().Add("X-CPA-COMMIT", "test-node-commit")
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, snapshot.Load().(string))

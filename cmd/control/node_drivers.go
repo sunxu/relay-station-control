@@ -23,18 +23,8 @@ type nodeDriverRuntime struct {
 // dependencies. It does not resolve a target, read a target Secret, open a
 // network connection, start a goroutine, or register a durable job.
 func loadNodeDriverRuntime(logger *slog.Logger, assetResolver controlnodes.AssetCredentialResolver) (nodeDriverRuntime, error) {
-	enabled, err := envBool("CONTROL_CLIPROXYAPI_DRIVER_ENABLED", false)
-	if err != nil {
-		return nodeDriverRuntime{}, errors.New("node driver configuration is invalid")
-	}
+	var err error
 	metrics := controlcliproxy.NewDriverMetrics()
-	if !enabled {
-		registry, registryErr := controlnodes.NewRegistry()
-		if registryErr != nil {
-			return nodeDriverRuntime{}, errors.New("node driver registry is invalid")
-		}
-		return nodeDriverRuntime{registry: registry, metrics: metrics, assetSecret: assetResolver}, nil
-	}
 
 	connectTimeout, err := envDurationBounded(
 		"CONTROL_CLIPROXYAPI_CONNECT_TIMEOUT",
