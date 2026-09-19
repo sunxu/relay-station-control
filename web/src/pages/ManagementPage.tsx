@@ -49,6 +49,10 @@ export default function ManagementPage() {
   const [reauthForm] = Form.useForm<ReauthenticateRequest>();
   const [passwordForm] = Form.useForm<ChangePasswordRequest>();
   const [createForm] = Form.useForm<CreateAdministratorRequest>();
+  const mfaOptions = useMemo(() => [
+    { label: t("management.mfa.totp"), value: "totp" satisfies MfaMethod },
+    { label: t("management.mfa.recoveryCode"), value: "recovery_code" satisfies MfaMethod },
+  ], [t]);
 
   const run = useCallback(async <T,>(operation: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
@@ -211,7 +215,7 @@ export default function ManagementPage() {
                   {highRisk}
                   <Form form={reauthForm} layout="vertical" preserve={false} onFinish={submitReauthentication}>
                     <Form.Item label={t("management.reauth.currentPassword")} name="password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
-                    <Form.Item label={t("management.reauth.mfaMethod")} name="mfa_method" initialValue="totp"><Select options={[{ label: "TOTP", value: "totp" satisfies MfaMethod }, { label: "恢复码", value: "recovery_code" satisfies MfaMethod }]} /></Form.Item>
+                    <Form.Item label={t("management.reauth.mfaMethod")} name="mfa_method" initialValue="totp"><Select options={mfaOptions} /></Form.Item>
                     <Form.Item label={t("management.reauth.mfaCode")} name="mfa_code" rules={[{ required: true }]}><Input.Password visibilityToggle={false} autoComplete="one-time-code" /></Form.Item>
                     <Button type="primary" htmlType="submit" loading={busy}>{t("management.reauth.submit")}</Button>
                   </Form>
@@ -225,7 +229,7 @@ export default function ManagementPage() {
                 <Form form={passwordForm} className="form-column" layout="vertical" preserve={false} onFinish={submitPassword}>
                   <Form.Item label={t("management.password.current")} name="current_password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
                   <Form.Item label={t("management.password.next")} name="new_password" rules={[{ required: true }, { min: 14 }, { max: 128 }]}><Input.Password autoComplete="new-password" /></Form.Item>
-                  <Form.Item label={t("management.password.mfaMethod")} name="mfa_method" initialValue="totp"><Select options={[{ label: "TOTP", value: "totp" }, { label: "恢复码", value: "recovery_code" }]} /></Form.Item>
+                  <Form.Item label={t("management.password.mfaMethod")} name="mfa_method" initialValue="totp"><Select options={mfaOptions} /></Form.Item>
                   <Form.Item label={t("management.password.mfaCode")} name="mfa_code"><Input.Password visibilityToggle={false} autoComplete="one-time-code" /></Form.Item>
                   <Button type="primary" htmlType="submit" loading={busy}>{t("management.password.submit")}</Button>
                 </Form>

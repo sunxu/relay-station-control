@@ -50,7 +50,39 @@ function Wrapper({ children }: { children: ReactNode }) {
   return <FrontendFoundationProvider initialLocale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
 }
 
+function EnglishWrapper({ children }: { children: ReactNode }) {
+  return <FrontendFoundationProvider initialLocale="en"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
+}
+
 describe("Gateway management controls", () => {
+  it("localizes the Gateway form in English", async () => {
+    const api = assetApi();
+    const gatewayApiMock = gatewayApi();
+    vi.mocked(gatewayApiMock.list).mockResolvedValue({ items: [], next_cursor: null, gateway_counts: { active: 0, retired: 0, total: 0 } });
+    render(<AssetRegistryView api={api} gatewayApi={gatewayApiMock} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: EnglishWrapper });
+
+    const card = await screen.findByTestId("gateway-management-card");
+    fireEvent.click(within(card).getByTestId("gateway-register"));
+    expect(await within(screen.getByRole("dialog")).findByText("Register Gateway")).toBeInTheDocument();
+    expect(screen.getByTestId("gateway-form-submit")).toHaveTextContent("Save");
+    expect(screen.getByTestId("gateway-form-cancel")).toHaveTextContent("Cancel");
+    expect(screen.queryByText("登记 Gateway")).not.toBeInTheDocument();
+    expect(screen.queryByText("保存")).not.toBeInTheDocument();
+    expect(screen.queryByText("取消")).not.toBeInTheDocument();
+  });
+
+  it("localizes the Gateway edit form title in English", async () => {
+    const api = assetApi();
+    const gatewayApiMock = gatewayApi();
+    render(<AssetRegistryView api={api} gatewayApi={gatewayApiMock} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: EnglishWrapper });
+
+    const card = await screen.findByTestId("gateway-management-card");
+    await within(card).findByText("Primary Gateway");
+    fireEvent.click(within(card).getByTestId(`gateway-edit-${gateway.instance_id}`));
+    expect(await within(screen.getByRole("dialog")).findByText("Edit Gateway")).toBeInTheDocument();
+    expect(screen.queryByText("编辑 Gateway")).not.toBeInTheDocument();
+  });
+
   it("continues loading history with next_cursor and resets the cursor when the lifecycle filter changes", async () => {
     const api = assetApi();
     const gatewayApiMock = gatewayApi();

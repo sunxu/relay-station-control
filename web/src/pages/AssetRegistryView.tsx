@@ -217,7 +217,7 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
         </Flex>
       </>}
     </Flex>
-    <Modal open={Boolean(modal)} title={modal === "register" ? "登记 Gateway" : modal === "edit" ? "编辑 Gateway" : "Replace Gateway"} okText="保存" cancelText="取消" confirmLoading={busy} okButtonProps={{ "data-testid": "gateway-form-submit" }} cancelButtonProps={{ "data-testid": "gateway-form-cancel" }} onCancel={() => setModal(undefined)} onOk={() => void form.submit()} destroyOnHidden>
+    <Modal open={Boolean(modal)} title={modal === "register" ? t("assets.gatewayFormRegister") : modal === "edit" ? t("assets.gatewayFormEdit") : t("assets.gatewayFormReplace")} okText={t("assets.save")} cancelText={t("assets.cancel")} confirmLoading={busy} okButtonProps={{ "data-testid": "gateway-form-submit" }} cancelButtonProps={{ "data-testid": "gateway-form-cancel" }} onCancel={() => setModal(undefined)} onOk={() => void form.submit()} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
         {modal !== "edit" && <Form.Item name="new_instance_id" label={t("assets.newInstanceId")} rules={[{ required: true, message: t("assets.uuid") }]}><Input data-testid="gateway-form-instance-id" placeholder={t("assets.uuid")} /></Form.Item>}
         <Form.Item name="display_name" label={t("assets.displayName")} rules={[{ required: true, message: t("assets.displayName") }]}><Input data-testid="gateway-form-display-name" maxLength={100} /></Form.Item>

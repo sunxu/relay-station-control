@@ -8,8 +8,8 @@ import type { AuthApi } from "./api/auth-api";
 import type { Administrator, BootstrapState, SessionResponse } from "./api/generated/control";
 import { FrontendFoundationProvider } from "./foundation/FrontendFoundationProvider";
 
-function render(ui: ReactElement) {
-  return rtlRender(<FrontendFoundationProvider initialLocale="zh-CN">{ui}</FrontendFoundationProvider>);
+function render(ui: ReactElement, locale: "zh-CN" | "en" = "zh-CN") {
+  return rtlRender(<FrontendFoundationProvider initialLocale={locale}>{ui}</FrontendFoundationProvider>);
 }
 
 const administrator: Administrator = {
@@ -78,6 +78,25 @@ describe("authentication shell routing", () => {
     render(<App api={makeApi("completed", session)} />);
     expect(await screen.findByTestId("management-page")).toBeInTheDocument();
     expect(screen.getByText("测试管理员 · admin.one")).toBeInTheDocument();
+  });
+
+  it("localizes both management MFA selectors in English", async () => {
+    render(<App api={makeApi("completed", session)} />, "en");
+    await screen.findByTestId("management-page");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Reauthentication" }));
+    const reauthSelect = screen.getByRole("combobox", { name: "MFA method" });
+    fireEvent.mouseDown(reauthSelect);
+    expect(screen.getAllByText("TOTP").length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText("Recovery code")).toBeInTheDocument();
+    expect(screen.queryByText("恢复码")).not.toBeInTheDocument();
+    fireEvent.keyDown(reauthSelect, { key: "Escape" });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Change password" }));
+    const passwordSelect = screen.getByRole("combobox", { name: "MFA method" });
+    fireEvent.mouseDown(passwordSelect);
+    expect(await screen.findByText("Recovery code")).toBeInTheDocument();
+    expect(screen.queryByText("恢复码")).not.toBeInTheDocument();
   });
 
   it("fails closed when bootstrap state cannot be read", async () => {
