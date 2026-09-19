@@ -65,5 +65,21 @@ test("performs a lifecycle override with closed-set reasons", async ({ page }) =
   expect(lifecycleBody.operation).toMatchObject({ command_id: lifecycleCommandID, execution_state: "outcome_unknown", lifecycle_overridden: true, lifecycle_override_reason: "process_restarted" });
   await expect(page.getByTestId("account-operation-result")).toContainText("远端结果不确定");
 
-  writeFileSync(evidenceFile, JSON.stringify({ lifecycle: { target_command_id: lifecycleCommandID, reason: "process_restarted", response_status: lifecycleResponse.status() }, override_requests: requests, cancel_requests: 0 }), { mode: 0o600 });
+  await page.getByTestId("account-override-kind").click();
+  await page.getByTestId("account-override-kind").press("ArrowDown");
+  await page.getByTestId("account-override-kind").press("Enter");
+  const sameAccountResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith(`/api/account-operations/${lifecycleCommandID}/same-account-override`));
+  await page.getByTestId("account-override-submit").click();
+  await page.getByTestId("account-override-confirm").click();
+  const sameAccountResponse = await sameAccountResponsePromise;
+  const sameAccountBody = await sameAccountResponse.json() as { operation?: { command_id?: string; execution_state?: string; same_account_overridden?: boolean; same_account_override_reason?: string } };
+  expect(sameAccountResponse.status()).toBe(200);
+  expect(sameAccountBody.operation).toMatchObject({ command_id: lifecycleCommandID, execution_state: "outcome_unknown", same_account_overridden: true, same_account_override_reason: "process_restarted" });
+
+  writeFileSync(evidenceFile, JSON.stringify({
+    lifecycle: { target_command_id: lifecycleCommandID, reason: "process_restarted", response_status: lifecycleResponse.status() },
+    same_account: { target_command_id: lifecycleCommandID, reason: "process_restarted", response_status: sameAccountResponse.status() },
+    override_requests: requests,
+    cancel_requests: 0,
+  }), { mode: 0o600 });
 });

@@ -373,6 +373,7 @@ SQL
   run_browser_spec override "$RUNTIME_DIR/acceptance-output.log" account-operations-override.spec.ts
   capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND lifecycle_override_at IS NOT NULL AND lifecycle_override_reason='process_restarted'")" == 1 ]] || { echo "lifecycle_override_mismatch" >&2; exit 1; }
+  [[ "$(psql_count "SELECT count(*) FROM account_admin_operations WHERE command_id='$OVERRIDE_LIFECYCLE_COMMAND_ID' AND same_account_override_at IS NOT NULL AND same_account_override_reason='process_restarted'")" == 1 ]] || { echo "same_account_override_mismatch" >&2; exit 1; }
   scan_override_secret() {
     scan_secret_value "secret" "$1"
   }
@@ -383,6 +384,7 @@ SQL
   scan_override_secret "$(cat "$RUNTIME_DIR/second-admin-password")"
   echo "OVERRIDE_SECRET_SCAN=PASS"
   echo "OVERRIDE_LIFECYCLE=PASS"
+  echo "OVERRIDE_SAME_ACCOUNT=PASS"
   echo "OVERRIDE_CANCEL=PASS"
   exit 0
 fi
