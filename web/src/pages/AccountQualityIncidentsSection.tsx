@@ -5,7 +5,8 @@ import { useAccountQualityIncidents } from "../api/account-quality-incidents-hoo
 import type { AccountQualityIncidentItem, AccountQualityIncidentsApi, IncidentFailureClass } from "../api/account-quality-incidents-types";
 import type { TopologyProviderState } from "../api/topology-types";
 import { TopologyApiError } from "../api/topology-types";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 
 const { Text } = Typography;
 const failureOptions = [{ value: "auth", label: "auth" }, { value: "quota", label: "quota" }, { value: "rate_limit", label: "rate_limit" }, { value: "upstream", label: "upstream" }];
@@ -14,6 +15,7 @@ export function AccountQualityIncidentsSection({ api, instanceId, providers, pro
   api: AccountQualityIncidentsApi; instanceId: string; providers: TopologyProviderState[]; providerError: boolean;
   onSelectAccount: (accountKey: string) => void; onUnauthorized: () => void;
 }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const [provider, setProvider] = useState<string>();
   const [failureClass, setFailureClass] = useState<IncidentFailureClass>();
   const [cursor, setCursor] = useState<string>();
@@ -24,8 +26,8 @@ export function AccountQualityIncidentsSection({ api, instanceId, providers, pro
     { title: "Reason", dataIndex: "failure_class" },
     { title: "Status", dataIndex: "status", render: () => <Tag color="red">Active</Tag> },
     { title: "Hits", dataIndex: "hit_count" },
-    { title: "First Seen", dataIndex: "first_seen", render: formatDateTime },
-    { title: "Last Seen", dataIndex: "last_seen", render: formatDateTime },
+    { title: "First Seen", dataIndex: "first_seen", render: (value: string | null) => formatDateTime(value, locale) },
+    { title: "Last Seen", dataIndex: "last_seen", render: (value: string | null) => formatDateTime(value, locale) },
   ];
   useEffect(() => { if (query.error instanceof TopologyApiError && query.error.status === 401) onUnauthorized(); }, [query.error, onUnauthorized]);
   return <Card title="Account Quality Incidents" role="region" aria-label="Account Quality Incidents">

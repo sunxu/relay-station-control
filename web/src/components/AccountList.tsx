@@ -1,6 +1,7 @@
 import { Button, Empty, Flex, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import type { AccountAvailability } from "../api/account-availability-types";
 import type { NodeAccountQualityItemTokenState } from "../api/generated/control";
 
@@ -61,13 +62,13 @@ function qualityLabel(value: AccountListRow["quality"]): string {
   return value === "good" ? "Good" : value === "degraded" ? "Degraded" : value === "bad" ? "Bad" : "Unknown";
 }
 
-function RecentRequestStrip({ requests }: { requests: AccountListRecentRequest[] }) {
+function RecentRequestStrip({ requests, locale }: { requests: AccountListRecentRequest[]; locale: "zh-CN" | "en" }) {
   const ordered = requests.slice(0, 10).reverse();
   if (ordered.length === 0) return <Text type="secondary">无请求</Text>;
   return <Flex gap={3} align="center" aria-label="最近 7 天最近 10 次请求" data-testid="recent-request-strip">
-    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
+    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
       color={request.success ? "green" : "red"}
-      title={`${formatDateTime(request.occurred_at)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
+      title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
       aria-label={`${request.success ? "Success" : "Failed"}${request.failure_class ? ` ${request.failure_class}` : ""}`}
       style={{ width: 9, height: 18, padding: 0, margin: 0, borderRadius: 2 }}
       tabIndex={0}
@@ -76,6 +77,7 @@ function RecentRequestStrip({ requests }: { requests: AccountListRecentRequest[]
 }
 
 export function AccountList({ rows, loading = false, unavailable = false, onSelectAccount, onRetry, emptyDescription = "当前过滤条件下没有账号" }: AccountListProps) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const columns: ColumnsType<AccountListRow> = [
     { title: "账号", key: "account", render: (_, row) => <Flex vertical><Text strong>{row.email || row.account_key}</Text><Text type="secondary" style={{ overflowWrap: "anywhere" }}>{row.account_key}</Text></Flex> },
     { title: "Provider", dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
@@ -83,12 +85,12 @@ export function AccountList({ rows, loading = false, unavailable = false, onSele
     { title: "质量", dataIndex: "quality", render: (value: AccountListRow["quality"]) => <Tag color={qualityColor(value)}>{qualityLabel(value)}</Tag> },
     { title: "Availability", key: "availability", render: (_, row) => row.availability ? <Tag color={row.availability.state === "AVAILABLE" ? "green" : row.availability.state === "UNKNOWN" || row.availability.state === "DISABLED" ? "default" : "red"}>{row.availability.state}</Tag> : "—" },
     { title: "Reason", key: "availability-reason", render: (_, row) => row.availability?.reason || "—" },
-    { title: "Since", key: "availability-since", render: (_, row) => formatDateTime(row.availability?.since) },
-    { title: "最近请求", key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at)}</Text>}</Flex> },
+    { title: "Since", key: "availability-since", render: (_, row) => formatDateTime(row.availability?.since, locale) },
+    { title: "最近请求", key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} locale={locale} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at, locale)}</Text>}</Flex> },
     { title: "成功率", dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
     { title: "Requests", dataIndex: "request_count" },
     { title: "P95", dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
-    { title: "最近失败", key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at)}</Text></Flex> },
+    { title: "最近失败", key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
     ...(onSelectAccount ? [{ title: "详情", key: "details", render: (_: unknown, row: AccountListRow) => <Button data-testid={`account-details-${encodeURIComponent(row.account_key)}`} type="link" onClick={() => onSelectAccount(row)}>查看详情</Button> }] : []),
   ];
 

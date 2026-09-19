@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AccountDetailsDrawer } from "./AccountDetailsDrawer";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
 import type { AccountAvailabilityApi } from "../api/account-availability-types";
 import type { AccountRequestHistoryApi } from "../api/account-request-history-types";
 import type { AccountListRow } from "./AccountList";
@@ -39,7 +39,7 @@ describe("AccountDetailsDrawer availability", () => {
     expect(screen.getAllByRole("row")[1]).toHaveTextContent("token_invalid");
     expect(screen.getAllByRole("row")[2]).toHaveTextContent("forbidden");
     expect(screen.getByText("Critical")).toBeInTheDocument();
-    expect(screen.getAllByText(/2026-09-09/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2026[\/-]09[\/-]09/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "可用性下一页" }));
     await waitFor(() => expect(clientApi.accountAvailabilityOccurrences).toHaveBeenLastCalledWith(NODE, ACCOUNT, "ACTIVE", "next", expect.any(AbortSignal)));
   });
@@ -112,7 +112,7 @@ describe("AccountDetailsDrawer token diagnostics", () => {
     expect(token).toBeInTheDocument();
     if (color) expect(token.closest(".ant-tag")).toHaveClass(`ant-tag-${color}`);
     expect(screen.getByText("Expected Valid Until")).toBeInTheDocument();
-    expect(screen.getByText(formatDateTime("2026-09-11T01:00:00Z"))).toBeInTheDocument();
+    expect(screen.getByText(formatDateTime("2026-09-11T01:00:00Z", "zh-CN"))).toBeInTheDocument();
   });
 
   it("keeps missing diagnostics visible and does not derive token state from timestamps", async () => {
@@ -127,7 +127,7 @@ describe("AccountDetailsDrawer token diagnostics", () => {
     renderDrawer(api(), ACCOUNT, { ...row, provider: "antigravity", token_state: "INVALID", expected_valid_until: "2099-01-01T00:00:00Z" });
     fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
     expect(screen.getByText("INVALID")).toBeInTheDocument();
-    expect(screen.getByText(formatDateTime("2099-01-01T00:00:00Z"))).toBeInTheDocument();
+    expect(screen.getByText(formatDateTime("2099-01-01T00:00:00Z", "zh-CN"))).toBeInTheDocument();
   });
 
   it("replaces token diagnostics when switching accounts without extra token reads", async () => {
@@ -142,13 +142,13 @@ describe("AccountDetailsDrawer token diagnostics", () => {
     rendered.rerender(<QueryClientProvider client={client}><AccountDetailsDrawer api={clientApi} instanceId={NODE} row={second} accountKey={second.account_key} onClose={vi.fn()} onUnauthorized={vi.fn()} /></QueryClientProvider>);
     fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
     expect(screen.queryByText("VALID")).not.toBeInTheDocument();
-    expect(screen.queryByText(formatDateTime(first.expected_valid_until))).not.toBeInTheDocument();
+    expect(screen.queryByText(formatDateTime(first.expected_valid_until, "zh-CN"))).not.toBeInTheDocument();
     expect(screen.getByText("INVALID")).toBeInTheDocument();
-    expect(screen.getByText(formatDateTime(second.expected_valid_until))).toBeInTheDocument();
+    expect(screen.getByText(formatDateTime(second.expected_valid_until, "zh-CN"))).toBeInTheDocument();
     rendered.rerender(<QueryClientProvider client={client}><AccountDetailsDrawer api={clientApi} instanceId={NODE} row={missing} accountKey={missing.account_key} onClose={vi.fn()} onUnauthorized={vi.fn()} /></QueryClientProvider>);
     fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
     expect(screen.queryByText("INVALID")).not.toBeInTheDocument();
-    expect(screen.queryByText(formatDateTime(second.expected_valid_until))).not.toBeInTheDocument();
+    expect(screen.queryByText(formatDateTime(second.expected_valid_until, "zh-CN"))).not.toBeInTheDocument();
     expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent("—");
     expect(clientApi.requestHistory).toHaveBeenCalledTimes(2);
     expect(clientApi.accountAvailabilityOccurrences).not.toHaveBeenCalled();

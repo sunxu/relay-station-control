@@ -3,7 +3,8 @@ import { Alert, Button, Card, Flex, Space, Spin, Tag, Typography } from "antd";
 import { useAccountInventoryPollCapacity } from "../api/account-inventory-hooks";
 import { AccountInventoryApiError } from "../api/account-inventory-types";
 import type { AccountInventoryApi, AccountInventoryPollCapacity } from "../api/account-inventory-types";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 
 const { Text } = Typography;
 
@@ -32,6 +33,7 @@ export function AccountInventoryCapacity({ api, csrfToken, onUnauthorized }: {
 }
 
 function CapacitySummary({ value }: { value: AccountInventoryPollCapacity }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   return <Flex vertical gap={8} style={{ marginTop: 12 }} data-testid="account-inventory-capacity-summary">
     {value.status === "capacity_exceeded" && <Alert type="warning" showIcon message="监控规模超过采集容量，整轮新采集暂停" description="请调整采集并发，或通过监控管理流程减少监控 Node；完成后刷新容量诊断。已有账号证据保留。" />}
 
@@ -50,6 +52,6 @@ function CapacitySummary({ value }: { value: AccountInventoryPollCapacity }) {
       <Text type="secondary">调度余量 {value.dispatchMarginMs}ms</Text>
       <Text type="secondary">启动宽限 {value.pollStartGraceMs}ms</Text>
     </Space>
-    <Text type="secondary">评估槽位：{formatDateTime(value.evaluatedSlot)}；时间：{formatDateTime(value.evaluatedAt)}</Text>
+    <Text type="secondary">评估槽位：{formatDateTime(value.evaluatedSlot, locale)}；时间：{formatDateTime(value.evaluatedAt, locale)}</Text>
   </Flex>;
 }

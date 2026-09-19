@@ -2,7 +2,8 @@ import { Alert, Button, Descriptions, Drawer, Empty, Flex, Select, Spin, Table, 
 import type { AccountRequestHistoryApi } from "../api/account-request-history-types";
 import { AccountRequestHistorySection } from "../pages/AccountRequestHistorySection";
 import type { AccountListRow } from "./AccountList";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { useAccountAvailabilityOccurrences } from "../api/account-availability-hooks";
 import type { AccountAvailabilityApi, AccountAvailabilityOccurrence, AccountAvailabilityOccurrenceStatus } from "../api/account-availability-types";
 import { useEffect, useState } from "react";
@@ -22,6 +23,7 @@ export function AccountDetailsDrawer({ api, accountOperationsApi, csrfToken, ins
   onUnauthorized: () => void;
 }) {
   const identity = row?.account_key ?? accountKey;
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   return <Drawer title={identity ? `账号详情 · ${row?.email || identity}` : "账号详情"} open={Boolean(identity && instanceId)} onClose={onClose} width={720} destroyOnHidden>
     {identity && instanceId && <>
       <Tabs items={[{ key: "history", label: "请求历史", children: <AccountRequestHistorySection key={`${instanceId}:${identity}`} api={api} instanceId={instanceId} accountKey={identity} onUnauthorized={onUnauthorized} /> }, { key: "availability", label: "可用性事件", children: <AvailabilityOccurrences key={`${instanceId}:${identity}`} api={api} instanceId={instanceId} accountKey={identity} onUnauthorized={onUnauthorized} /> }, ...(accountOperationsApi && csrfToken ? [{ key: "operations", label: <span data-testid="account-operations-tab">账户操作</span>, children: <AccountOperationsPanel api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} accountKey={identity} basicStatus={row?.basic_status} onUnauthorized={onUnauthorized} /> }] : []), { key: "inventory", label: "采集信息", children: row ? <Descriptions column={2} size="small" bordered>
@@ -31,18 +33,18 @@ export function AccountDetailsDrawer({ api, accountOperationsApi, csrfToken, ins
         <Descriptions.Item label="基础状态">{row.basic_status}</Descriptions.Item>
         <Descriptions.Item label="质量"><Tag>{row.quality}</Tag></Descriptions.Item>
         <Descriptions.Item label="连续缺失">{row.consecutive_missing_count ?? 0}</Descriptions.Item>
-        <Descriptions.Item label="首次出现">{formatDateTime(row.first_seen_at)}</Descriptions.Item>
-        <Descriptions.Item label="最近出现">{formatDateTime(row.last_seen_at)}</Descriptions.Item>
-        <Descriptions.Item label="最近刷新">{formatDateTime(row.last_refresh_at)}</Descriptions.Item>
-        <Descriptions.Item label="下次重试">{formatDateTime(row.next_retry_at)}</Descriptions.Item>
-        <Descriptions.Item label="Provider 快照">{formatDateTime(row.provider_last_complete_at)}</Descriptions.Item>
+        <Descriptions.Item label="首次出现">{formatDateTime(row.first_seen_at, locale)}</Descriptions.Item>
+        <Descriptions.Item label="最近出现">{formatDateTime(row.last_seen_at, locale)}</Descriptions.Item>
+        <Descriptions.Item label="最近刷新">{formatDateTime(row.last_refresh_at, locale)}</Descriptions.Item>
+        <Descriptions.Item label="下次重试">{formatDateTime(row.next_retry_at, locale)}</Descriptions.Item>
+        <Descriptions.Item label="Provider 快照">{formatDateTime(row.provider_last_complete_at, locale)}</Descriptions.Item>
         <Descriptions.Item label="Snapshot freshness">{row.snapshot_freshness ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Provider health">{row.provider_degraded ? <Tag color="orange">degraded</Tag> : <Tag color="green">normal</Tag>}</Descriptions.Item>
         <Descriptions.Item label="Token Health">{row.token_state ? <Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state}</Tag> : "—"}</Descriptions.Item>
-        <Descriptions.Item label="Expected Valid Until">{formatDateTime(row.expected_valid_until)}</Descriptions.Item>
+        <Descriptions.Item label="Expected Valid Until">{formatDateTime(row.expected_valid_until, locale)}</Descriptions.Item>
         <Descriptions.Item label="Availability">{row.availability?.state ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Availability reason">{row.availability?.reason ?? "—"}</Descriptions.Item>
-        <Descriptions.Item label="Availability since">{formatDateTime(row.availability?.since)}</Descriptions.Item>
+        <Descriptions.Item label="Availability since">{formatDateTime(row.availability?.since, locale)}</Descriptions.Item>
         {(row.availability?.state === "UNKNOWN" || row.availability?.state === "DISABLED") && <Descriptions.Item span={2}><Text type="secondary">当前可用性为 {row.availability.state}；既有 ACTIVE 可用性事件仍保留在事件历史中。</Text></Descriptions.Item>}
       </Descriptions> : <Typography.Text type="secondary">该账号不在当前列表页，采集信息未加载。</Typography.Text> }]}/>
     </>}
@@ -55,6 +57,7 @@ function AvailabilityOccurrences({ api, instanceId, accountKey, onUnauthorized }
   accountKey: string;
   onUnauthorized: () => void;
 }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const [status, setStatus] = useState<AccountAvailabilityOccurrenceStatus>("ACTIVE");
   const [cursor, setCursor] = useState<string>();
   const query = useAccountAvailabilityOccurrences(api, instanceId, accountKey, status, cursor);
@@ -65,10 +68,10 @@ function AvailabilityOccurrences({ api, instanceId, accountKey, onUnauthorized }
     { title: "原因", dataIndex: "reason" },
     { title: "严重度", dataIndex: "severity", render: (value: string) => <Tag color={value === "Critical" ? "red" : "orange"}>{value}</Tag> },
     { title: "状态", dataIndex: "status" },
-    { title: "首次发现", dataIndex: "first_seen_at", render: formatDateTime },
-    { title: "最近失败", dataIndex: "last_failure_at", render: formatDateTime },
-    { title: "确认时间", dataIndex: "confirmed_at", render: formatDateTime },
-    { title: "恢复时间", dataIndex: "resolved_at", render: formatDateTime },
+    { title: "首次发现", dataIndex: "first_seen_at", render: (value: string | null) => formatDateTime(value, locale) },
+    { title: "最近失败", dataIndex: "last_failure_at", render: (value: string | null) => formatDateTime(value, locale) },
+    { title: "确认时间", dataIndex: "confirmed_at", render: (value: string | null) => formatDateTime(value, locale) },
+    { title: "恢复时间", dataIndex: "resolved_at", render: (value: string | null) => formatDateTime(value, locale) },
   ];
   return <Flex vertical gap={8}>
     <Select aria-label="可用性事件状态" value={status} onChange={(value: AccountAvailabilityOccurrenceStatus) => { setStatus(value); setCursor(undefined); }} options={[{ value: "ACTIVE", label: "Active" }, { value: "RESOLVED", label: "Resolved" }]} />

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useAccountRequestHistory } from "../api/account-request-history-hooks";
 import type { AccountRequestHistoryApi, AccountRequestHistoryItem } from "../api/account-request-history-types";
 import { TopologyApiError } from "../api/topology-types";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 
 const { Text } = Typography;
 
@@ -14,12 +15,13 @@ export function AccountRequestHistorySection({ api, instanceId, accountKey, onUn
   accountKey?: string;
   onUnauthorized: () => void;
 }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const [cursor, setCursor] = useState<string>();
   const query = useAccountRequestHistory(api, instanceId, accountKey, cursor);
   useEffect(() => { setCursor(undefined); }, [accountKey, instanceId]);
   useEffect(() => { if (query.error instanceof TopologyApiError && query.error.status === 401) onUnauthorized(); }, [query.error, onUnauthorized]);
   const columns: ColumnsType<AccountRequestHistoryItem> = [
-    { title: "Time", dataIndex: "occurred_at", render: formatDateTime },
+    { title: "Time", dataIndex: "occurred_at", render: (value: string | null) => formatDateTime(value, locale) },
     { title: "Model", dataIndex: "model", render: (value: string) => value || "—" },
     { title: "Result", dataIndex: "success", render: (value: boolean) => <Tag color={value ? "green" : "red"}>{value ? "Success" : "Failed"}</Tag> },
     { title: "Failure", dataIndex: "failure_class", render: (value: string | null, row) => row.success ? "—" : value ?? "—" },
