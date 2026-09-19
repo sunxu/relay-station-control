@@ -105,7 +105,7 @@ VALUES ($1,$2,$3) ON CONFLICT (singleton_id) DO NOTHING`, identity.ID, identity.
 		return errors.New("driver catalog seed failed")
 	}
 	active := csvEnv("CONTROL_INITIAL_ACTIVE_PROVIDERS", []string{"antigravity"})
-	outOfScope := csvEnv("CONTROL_INITIAL_OUT_OF_SCOPE_PROVIDERS", nil)
+	outOfScope := csvEnv("CONTROL_INITIAL_OUT_OF_SCOPE_PROVIDERS", []string{})
 	var policyCount int
 	err = pool.QueryRow(ctx, `SELECT count(*) FROM provider_inventory_policy_activations WHERE node_type=$1 AND driver_contract_version=$2 AND active_range @> CURRENT_TIMESTAMP`, nodeType, driverVersion).Scan(&policyCount)
 	if err != nil {

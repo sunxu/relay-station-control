@@ -14,3 +14,10 @@ func TestDriverCapabilitiesMatchDatabaseCanonicalOrder(t *testing.T) {
 		t.Fatalf("driver capabilities = %#v, want canonical order %#v", driverCapabilities, want)
 	}
 }
+
+func TestCSVEnvEmptyProviderFallbackIsNonNil(t *testing.T) {
+	got := csvEnv("PHASE9_TEST_UNSET_PROVIDER_LIST", []string{})
+	if got == nil {
+		t.Fatal("empty provider fallback must encode as an empty PostgreSQL array, not NULL")
+	}
+}
