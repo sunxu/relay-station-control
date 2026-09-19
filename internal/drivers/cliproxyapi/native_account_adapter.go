@@ -17,8 +17,6 @@ import (
 )
 
 const (
-	FrozenRuntimeVersion          = "7.3.2"
-	FrozenRuntimeCommit           = "0b34a22fcaec392d39f710f3a8418595b491607d"
 	nativeMutationBodyLimit int64 = 64 << 10
 	nativeUploadPrefix            = "antigravity-"
 	nativeUploadSuffix            = ".json"
@@ -101,8 +99,6 @@ type NativeSnapshot struct {
 type NativeAdapter struct {
 	transport     *safeTransport
 	managementKey string
-	version       string
-	commit        string
 }
 
 func (a *NativeAdapter) Format(state fmt.State, _ rune) {
@@ -113,23 +109,23 @@ func (a *NativeAdapter) Format(state fmt.State, _ rune) {
 // retained only for the lifetime of this adapter and is never included in an
 // error or response projection.
 func NewNativeAdapter(endpoint string, config rootdrivers.ValidatedManagementConfig, managementKey string) (*NativeAdapter, error) {
-	return newNativeAdapter(endpoint, config, managementKey, FrozenRuntimeVersion, FrozenRuntimeCommit, transportOptions{})
+	return newNativeAdapter(endpoint, config, managementKey, transportOptions{})
 }
 
-func newNativeAdapter(endpoint string, config rootdrivers.ValidatedManagementConfig, managementKey, version, commit string, options transportOptions) (*NativeAdapter, error) {
-	if managementKey == "" || version == "" || commit == "" {
+func newNativeAdapter(endpoint string, config rootdrivers.ValidatedManagementConfig, managementKey string, options transportOptions) (*NativeAdapter, error) {
+	if managementKey == "" {
 		return nil, &RequestError{Operation: OperationInventory, Reason: FailureRequestRejected}
 	}
 	transport, err := newTransport(endpoint, config, options)
 	if err != nil {
 		return nil, err
 	}
-	return &NativeAdapter{transport: transport, managementKey: managementKey, version: version, commit: commit}, nil
+	return &NativeAdapter{transport: transport, managementKey: managementKey}, nil
 }
 
-// SnapshotAuthFiles performs one fresh, authenticated GET and verifies the
-// exact runtime identity before interpreting its body. Returned values are a
-// bounded transient projection only.
+// SnapshotAuthFiles performs one fresh, authenticated GET. Runtime version and
+// commit are observations only; deployment provenance is owned by deployment
+// acceptance and immutable image selection, not by the request path.
 func (a *NativeAdapter) SnapshotAuthFiles(ctx context.Context) (NativeSnapshot, error) {
 	if a == nil || a.transport == nil || ctx == nil {
 		return NativeSnapshot{FailureCode: NativeFailureNodeManagementUnavailable}, errors.New("native snapshot unavailable")
@@ -139,10 +135,7 @@ func (a *NativeAdapter) SnapshotAuthFiles(ctx context.Context) (NativeSnapshot, 
 		return NativeSnapshot{FailureCode: NativeFailureNodeManagementUnavailable}, err
 	}
 	defer response.Body.Close()
-	version, commit, ok := exactRuntimeIdentity(response.Header, a.version, a.commit)
-	if !ok {
-		return NativeSnapshot{Version: version, Commit: commit, FailureCode: NativeFailureUnsupportedNodeVersion}, errors.New(string(NativeFailureUnsupportedNodeVersion))
-	}
+	version, commit := observedRuntimeIdentity(response.Header)
 	if response.StatusCode != http.StatusOK {
 		return NativeSnapshot{Version: version, Commit: commit, FailureCode: NativeFailureNodeManagementUnavailable}, errors.New(string(NativeFailureNodeManagementUnavailable))
 	}
@@ -157,12 +150,16 @@ func (a *NativeAdapter) SnapshotAuthFiles(ctx context.Context) (NativeSnapshot, 
 	return snapshot, nil
 }
 
-func exactRuntimeIdentity(headers http.Header, expectedVersion, expectedCommit string) (string, string, bool) {
+func observedRuntimeIdentity(headers http.Header) (string, string) {
 	versions, commits := headers.Values("X-CPA-VERSION"), headers.Values("X-CPA-COMMIT")
-	if len(versions) != 1 || len(commits) != 1 || versions[0] == "" || commits[0] == "" {
-		return "", "", false
+	var version, commit string
+	if len(versions) == 1 {
+		version = versions[0]
 	}
-	return versions[0], commits[0], versions[0] == expectedVersion && commits[0] == expectedCommit
+	if len(commits) == 1 {
+		commit = commits[0]
+	}
+	return version, commit
 }
 
 func parseNativeSnapshot(encoded []byte, version, commit string) (NativeSnapshot, error) {

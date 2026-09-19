@@ -139,8 +139,8 @@ func (s *fakeOperationStore) ApplySameAccountOverride(context.Context, store.Acc
 func TestExecuteAdmitsBeforeOneNativeMutation(t *testing.T) {
 	var methods []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		w.Header().Set("X-CPA-VERSION", "test-node-version")
+		w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 		if r.Method == http.MethodGet {
 			_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"a@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
 			return
@@ -178,8 +178,8 @@ func TestExecuteAdmitsBeforeOneNativeMutation(t *testing.T) {
 
 func TestExecuteTerminalizesFreshTargetFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		w.Header().Set("X-CPA-VERSION", "test-node-version")
+		w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 		_, _ = io.WriteString(w, `{"files":[]}`)
 	}))
 	defer server.Close()
@@ -271,8 +271,8 @@ func TestExecuteOutcomeUnknownReplayDoesNotResolveNode(t *testing.T) {
 
 func TestExecutePreparedReplayResumes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		w.Header().Set("X-CPA-VERSION", "test-node-version")
+		w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 		if r.Method == http.MethodGet {
 			_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"resume@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
 			return
@@ -310,8 +310,8 @@ func TestExecutePreparedReplayResumes(t *testing.T) {
 
 func TestExecuteConcurrentPreparedRetriesDispatchOnce(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		w.Header().Set("X-CPA-VERSION", "test-node-version")
+		w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 		if r.Method == http.MethodGet {
 			_, _ = io.WriteString(w, `{"files":[{"name":"a.json","provider":"antigravity","email":"concurrent@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
 			return
@@ -451,8 +451,8 @@ func TestUploadNewRejectsUnsafeGeneratedBasenameBeforeAcceptance(t *testing.T) {
 
 func TestReplaceUnsafeBasenameIsPhysicalFailureAfterAcceptance(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-CPA-VERSION", cliproxyapi.FrozenRuntimeVersion)
-		w.Header().Set("X-CPA-COMMIT", cliproxyapi.FrozenRuntimeCommit)
+		w.Header().Set("X-CPA-VERSION", "test-node-version")
+		w.Header().Set("X-CPA-COMMIT", "test-node-commit")
 		if r.Method == http.MethodGet {
 			_, _ = io.WriteString(w, `{"files":[{"name":"unsafe/name.json","provider":"antigravity","email":"replace@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
 			return
