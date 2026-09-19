@@ -92,6 +92,7 @@ const canonicalTranslation = {
     credentialTooLarge: "凭据文件不能超过 1 MiB", keep: "Keep existing", set: "Set new credential", clear: "Clear credential",
   },
   jobs: { title: "持久任务", description: "PostgreSQL 真相源的只读运行视图", management: "管理员控制台" },
+  problems: { title: "Problems", description: "已确认账号问题的只读运行观察", management: "管理员控制台" },
   auth: {
     errors: {
       unavailable: "请求暂时无法完成，请稍后再试。",
@@ -269,6 +270,7 @@ export const resources = {
         credentialTooLarge: "Credential file cannot exceed 1 MiB", keep: "Keep existing", set: "Set new credential", clear: "Clear credential",
       },
       jobs: { title: "Persistent jobs", description: "Read-only runtime view backed by PostgreSQL truth", management: "Management console" },
+      problems: { title: "Problems", description: "Read-only observation of confirmed account problems", management: "Management console" },
       auth: {
         errors: {
           unavailable: "The request could not be completed. Try again later.",

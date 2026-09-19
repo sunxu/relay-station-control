@@ -1,7 +1,7 @@
 import { formatDateTime } from "../foundation/format";
 import { LocaleSwitcher } from "../foundation/LocaleSwitcher";
 import { PageShell } from "../foundation/PageShell";
-import { useAppLocale } from "../foundation/FrontendFoundationProvider";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -37,7 +37,7 @@ function isFreshReauthentication(until?: string | null): boolean {
 
 export default function ManagementPage() {
   const auth = useAuth();
-  const { locale } = useAppLocale();
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const { t } = useTranslation();
   const session = auth.session;
   const [administrators, setAdministrators] = useState<Administrator[]>([]);

@@ -5,7 +5,8 @@ import type { ColumnsType } from "antd/es/table";
 import { useProblemAccountsQuery } from "../api/problem-accounts-hooks";
 import type { ProblemAccountItem, ProblemAccountQueryRequest, ProblemAccountsApi } from "../api/problem-accounts-types";
 import { ProblemAccountsApiError } from "../api/problem-accounts-types";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 
 const { Text } = Typography;
 type PageSize = 25 | 50 | 100;
@@ -26,6 +27,7 @@ function RequestError({ error, retry }: { error: unknown; retry: () => void }) {
 }
 
 export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemAccountsApi; csrfToken: string; onUnauthorized: () => void }) {
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const [provider, setProvider] = useState<string>();
   const [node, setNode] = useState("");
   const [severity, setSeverity] = useState<"Critical" | "Warning">();
@@ -84,11 +86,11 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
     { title: "Node", key: "node", width: 220, render: (_, row) => <Flex vertical><Text>{row.node_name || "—"}</Text><Text type="secondary" code>{row.instance_id}</Text></Flex> },
     { title: "Account", key: "account", width: 250, render: (_, row) => <Flex vertical><Text>{row.email}</Text><Text type="secondary" code>{row.account_key}</Text></Flex> },
     { title: "Provider", dataIndex: "provider", key: "provider", width: 130, render: (value: string) => <Tag>{value}</Tag> },
-    { title: "Issues", key: "issues", width: 360, render: (_, row) => <Flex vertical gap={4}>{row.issues.map((issue) => <Space key={`${issue.occurrence_id}:${issue.type}`} wrap><Tag color={issueColor(issue.severity)}>{issue.severity}</Tag><Tag>{issue.type}</Tag><Text type="secondary">Since {formatDateTime(issue.since)}</Text><Text type="secondary" code>{issue.occurrence_id}</Text></Space>)}</Flex> },
-    { title: "Availability", key: "availability", width: 220, render: (_, row) => row.availability ? <Flex vertical><Text>{row.availability.state}</Text><Text type="secondary">{row.availability.reason}</Text><Text type="secondary">{formatDateTime(row.availability.since)}</Text></Flex> : "—" },
-    { title: "Token", key: "token", width: 190, render: (_, row) => <Flex vertical><Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state ?? "—"}</Tag><Text type="secondary">Expected Valid Until</Text><Text type="secondary">{formatDateTime(row.expected_valid_until)}</Text></Flex> },
-    { title: "Inventory timing", key: "inventory", width: 200, render: (_, row) => <Flex vertical><Text>last_refresh_at: {formatDateTime(row.last_refresh_at)}</Text><Text>next_retry_at: {formatDateTime(row.next_retry_at)}</Text></Flex> },
-    { title: "Request evidence", key: "request-evidence", width: 200, render: (_, row) => <Flex vertical><Text>last_success_at: {formatDateTime(row.last_success_at)}</Text><Text>last_failure_at: {formatDateTime(row.last_failure_at)}</Text></Flex> },
+    { title: "Issues", key: "issues", width: 360, render: (_, row) => <Flex vertical gap={4}>{row.issues.map((issue) => <Space key={`${issue.occurrence_id}:${issue.type}`} wrap><Tag color={issueColor(issue.severity)}>{issue.severity}</Tag><Tag>{issue.type}</Tag><Text type="secondary">Since {formatDateTime(issue.since, locale)}</Text><Text type="secondary" code>{issue.occurrence_id}</Text></Space>)}</Flex> },
+    { title: "Availability", key: "availability", width: 220, render: (_, row) => row.availability ? <Flex vertical><Text>{row.availability.state}</Text><Text type="secondary">{row.availability.reason}</Text><Text type="secondary">{formatDateTime(row.availability.since, locale)}</Text></Flex> : "—" },
+    { title: "Token", key: "token", width: 190, render: (_, row) => <Flex vertical><Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state ?? "—"}</Tag><Text type="secondary">Expected Valid Until</Text><Text type="secondary">{formatDateTime(row.expected_valid_until, locale)}</Text></Flex> },
+    { title: "Inventory timing", key: "inventory", width: 200, render: (_, row) => <Flex vertical><Text>last_refresh_at: {formatDateTime(row.last_refresh_at, locale)}</Text><Text>next_retry_at: {formatDateTime(row.next_retry_at, locale)}</Text></Flex> },
+    { title: "Request evidence", key: "request-evidence", width: 200, render: (_, row) => <Flex vertical><Text>last_success_at: {formatDateTime(row.last_success_at, locale)}</Text><Text>last_failure_at: {formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
   ], []);
 
   const hasFilters = Boolean(provider || node.trim() || severity || reason || email.trim());
