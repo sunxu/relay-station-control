@@ -132,7 +132,7 @@ test.describe("Stage 3 representative English surfaces", () => {
 
     await page.getByTestId("management-nav-jobs").click();
     await expect(page.getByTestId("jobs-page")).toBeVisible();
-    await expect(page.getByTestId("jobs-card")).toContainText("Jobs");
+    await expect(page.getByTestId("jobs-card")).toContainText("Persistent jobs");
     await expect(page.getByTestId("job-row")).toBeVisible();
 
     await page.goto(`/topology?instance_id=${nodeID}`);
