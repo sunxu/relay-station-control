@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Alert, Card, Spin } from "antd";
+import { useTranslation } from "react-i18next";
 import type { AuthApi } from "./api/auth-api";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LocaleSwitcher } from "./foundation/LocaleSwitcher";
@@ -16,20 +17,21 @@ const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 
 function AuthShell() {
   const auth = useAuth();
+  const { t } = useTranslation();
 
   if (auth.route === "loading") {
-    return <main className="centered-page" data-testid="auth-loading"><Spin size="large" tip="正在读取安全状态" /></main>;
+    return <><LocaleSwitcher /><main className="centered-page" data-testid="auth-loading"><Spin size="large" tip={t("common.shell.authLoading")} /></main></>;
   }
   if (auth.route === "unavailable") {
     return (
-      <main className="centered-page" data-testid="auth-unavailable">
-        <Card className="auth-card"><Alert type="error" showIcon message="Control 认证服务暂时不可用" description="管理面已安全关闭；请检查 Control 与 PostgreSQL 状态。" /></Card>
-      </main>
+      <><LocaleSwitcher /><main className="centered-page" data-testid="auth-unavailable">
+        <Card className="auth-card"><Alert type="error" showIcon message={t("common.shell.authUnavailable")} description={t("common.shell.authUnavailableDescription")} /></Card>
+      </main></>
     );
   }
 
   return (
-    <Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" /></main>}>
+    <><LocaleSwitcher /><Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" tip={t("common.shell.routeLoading")} /></main>}>
       {auth.route === "bootstrap" && <BootstrapPage />}
       {auth.route === "login" && <LoginPage />}
       {auth.route === "activation" && <ActivationPage />}
@@ -39,10 +41,10 @@ function AuthShell() {
       {auth.route === "topology" && <TopologyPage />}
       {auth.route === "problems" && <ProblemsPage />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
-    </Suspense>
+    </Suspense></>
   );
 }
 
 export default function App({ api }: { api?: AuthApi }) {
-  return <AuthProvider api={api}><LocaleSwitcher /><AuthShell /></AuthProvider>;
+  return <AuthProvider api={api}><AuthShell /></AuthProvider>;
 }

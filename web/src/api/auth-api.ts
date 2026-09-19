@@ -38,6 +38,10 @@ import type {
   RecoveryCodesResponse,
   SessionResponse,
 } from "./generated/control";
+import type { TranslationKey } from "../foundation/resources";
+
+type AuthErrorKey = Extract<TranslationKey, `auth.errors.${string}`>;
+type AuthErrorTranslate = (key: AuthErrorKey, requestId?: string) => string;
 
 type GeneratedResponse<T> = {
   data: T | ErrorResponse;
@@ -152,14 +156,15 @@ export const generatedAuthApi: AuthApi = {
   },
 };
 
-export function userFacingError(error: unknown): string {
-  if (!(error instanceof AuthApiError)) return "请求暂时无法完成，请稍后再试。";
-  if (error.detail.code === "rate_limited") return "尝试次数过多，请稍后再试。";
-  if (error.detail.code === "challenge_expired") return "验证已过期，请重新登录。";
-  if (error.detail.code === "last_administrator_protected") return "不能禁用最后一个可用管理员。";
-  if (error.detail.code === "administrator_self_disable_forbidden") return "不能禁用当前登录账号。";
-  if (error.detail.code === "reauthentication_required") return "请先完成重新认证。";
-  if (error.status === 401) return "认证失败，请检查输入后重试。";
-  if (error.detail.code === "csrf_invalid") return "安全凭据已变化，请刷新会话后重试。";
-  return `请求未完成（请求 ID：${error.detail.request_id}）`;
+export function userFacingError(error: unknown, translate?: AuthErrorTranslate): string {
+  const fallback = (key: AuthErrorKey, defaultMessage: string, requestId?: string) => translate?.(key, requestId) ?? defaultMessage;
+  if (!(error instanceof AuthApiError)) return fallback("auth.errors.unavailable", "请求暂时无法完成，请稍后再试。");
+  if (error.detail.code === "rate_limited") return fallback("auth.errors.rateLimited", "尝试次数过多，请稍后再试。");
+  if (error.detail.code === "challenge_expired") return fallback("auth.errors.challengeExpired", "验证已过期，请重新登录。");
+  if (error.detail.code === "last_administrator_protected") return fallback("auth.errors.lastAdministratorProtected", "不能禁用最后一个可用管理员。");
+  if (error.detail.code === "administrator_self_disable_forbidden") return fallback("auth.errors.selfDisableForbidden", "不能禁用当前登录账号。");
+  if (error.detail.code === "reauthentication_required") return fallback("auth.errors.reauthenticationRequired", "请先完成重新认证。");
+  if (error.status === 401) return fallback("auth.errors.unauthorized", "认证失败，请检查输入后重试。");
+  if (error.detail.code === "csrf_invalid") return fallback("auth.errors.csrfInvalid", "安全凭据已变化，请刷新会话后重试。");
+  return fallback("auth.errors.requestIncomplete", `请求未完成（请求 ID：${error.detail.request_id}）`, error.detail.request_id);
 }

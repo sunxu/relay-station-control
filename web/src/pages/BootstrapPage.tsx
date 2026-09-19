@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Flex, Form, Input, Space, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import type { BootstrapStartRequest, TotpEnrollment } from "../api/generated/control";
 import { userFacingError } from "../api/auth-api";
 import { useAuth } from "../auth/AuthContext";
@@ -12,6 +13,7 @@ interface BootstrapForm extends BootstrapStartRequest {
 
 export default function BootstrapPage() {
   const auth = useAuth();
+  const { t } = useTranslation();
   const [form] = Form.useForm<BootstrapForm>();
   const [secret, setSecret] = useState("");
   const [enrollment, setEnrollment] = useState<TotpEnrollment | null>(null);
@@ -39,7 +41,7 @@ export default function BootstrapPage() {
       form.resetFields();
       setEnrollment(response.totp_enrollment);
     } catch (cause) {
-      setError(userFacingError(cause));
+      setError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
     } finally {
       setBusy(false);
     }
@@ -56,7 +58,7 @@ export default function BootstrapPage() {
       auth.acceptSession(response.session);
       auth.showRecoveryCodes(response.recovery_codes);
     } catch (cause) {
-      setError(userFacingError(cause));
+      setError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
     } finally {
       setBusy(false);
     }
@@ -72,7 +74,7 @@ export default function BootstrapPage() {
       setTotpCode("");
       form.resetFields();
     } catch (cause) {
-      setError(userFacingError(cause));
+      setError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
     } finally {
       setBusy(false);
     }
@@ -81,39 +83,40 @@ export default function BootstrapPage() {
   return (
     <main className="centered-page" data-testid="bootstrap-page">
       <Card className="auth-card">
-        <Title level={2}>初始化 Control</Title>
+        <Title level={2}>{t("auth.bootstrap.title")}</Title>
         <Paragraph type="secondary">
-          {auth.bootstrapState === "in_progress" ? "存在未完成的初始化，请重新输入相同资料继续，或使用运行时 Secret 重置。" : "创建首个实名超级管理员。"}
+          {auth.bootstrapState === "in_progress" ? t("auth.bootstrap.inProgress") : t("auth.bootstrap.newInstallation")}
         </Paragraph>
         {error && <Alert type="error" showIcon message={error} className="form-alert" />}
         {!enrollment ? (
           <Form form={form} layout="vertical" preserve={false} onFinish={start} autoComplete="off">
-            <Form.Item label="运行时 Bootstrap Secret" name="secret" rules={[{ required: true }]}>
+            <Form.Item label={t("auth.bootstrap.secret")} name="secret" rules={[{ required: true }]}>
               <Input.Password autoComplete="off" data-testid="bootstrap-secret" />
             </Form.Item>
-            <Form.Item label="登录名" name="login_name" rules={[{ required: true }, { pattern: /^[a-z0-9._-]{3,64}$/ }]}>
-              <Input autoComplete="off" />
+            <Form.Item label={t("auth.bootstrap.loginName")} name="login_name" rules={[{ required: true }, { pattern: /^[a-z0-9._-]{3,64}$/ }]}>
+              <Input autoComplete="off" data-testid="bootstrap-login" />
             </Form.Item>
-            <Form.Item label="实名显示名" name="display_name" rules={[{ required: true, whitespace: true }, { max: 100 }]}>
-              <Input autoComplete="off" />
+            <Form.Item label={t("auth.bootstrap.displayName")} name="display_name" rules={[{ required: true, whitespace: true }, { max: 100 }]}>
+              <Input autoComplete="off" data-testid="bootstrap-display-name" />
             </Form.Item>
-            <Form.Item label="密码" name="password" rules={[{ required: true }, { min: 14 }, { max: 128 }]}>
-              <Input.Password autoComplete="new-password" />
+            <Form.Item label={t("auth.bootstrap.password")} name="password" rules={[{ required: true }, { min: 14 }, { max: 128 }]}>
+              <Input.Password autoComplete="new-password" data-testid="bootstrap-password" />
             </Form.Item>
             <Space wrap>
-              <Button htmlType="submit" type="primary" loading={busy}>开始或继续初始化</Button>
-              {auth.bootstrapState === "in_progress" && <Button danger disabled={busy} onClick={() => void reset()}>重置未完成流程</Button>}
+              <Button data-testid="bootstrap-start" htmlType="submit" type="primary" loading={busy}>{t("auth.bootstrap.start")}</Button>
+              {auth.bootstrapState === "in_progress" && <Button data-testid="bootstrap-reset-pending" danger disabled={busy} onClick={() => void reset()}>{t("auth.bootstrap.resetPending")}</Button>}
             </Space>
           </Form>
         ) : (
           <Flex vertical gap={16}>
-            <Alert type="warning" showIcon message="请立即添加到认证器" description="此 TOTP 配置仅在当前页面内存中保留。" />
+            <Alert type="warning" showIcon message={t("auth.bootstrap.addAuthenticator")} description={t("auth.bootstrap.totpMemoryOnly")} />
             <div className="secret-panel" data-testid="totp-enrollment">
-              <Text copyable={{ text: enrollment.otpauth_uri }}>复制 TOTP 配置 URI</Text>
+              <Text copyable={{ text: enrollment.otpauth_uri }}>{t("auth.bootstrap.copyUri")}</Text>
               <Text type="secondary">{enrollment.algorithm} · {enrollment.digits} 位 · {enrollment.period_seconds} 秒</Text>
             </div>
             <Input
-              aria-label="TOTP 验证码"
+              aria-label={t("auth.bootstrap.totpCode")}
+              data-testid="bootstrap-totp"
               inputMode="numeric"
               maxLength={6}
               value={totpCode}
@@ -121,8 +124,8 @@ export default function BootstrapPage() {
               autoComplete="one-time-code"
             />
             <Space>
-              <Button type="primary" loading={busy} disabled={!/^\d{6}$/.test(totpCode)} onClick={() => void complete()}>确认并永久完成</Button>
-              <Button danger disabled={busy} onClick={() => void reset()}>重置</Button>
+              <Button data-testid="bootstrap-complete" type="primary" loading={busy} disabled={!/^\d{6}$/.test(totpCode)} onClick={() => void complete()}>{t("auth.bootstrap.confirm")}</Button>
+              <Button data-testid="bootstrap-reset" danger disabled={busy} onClick={() => void reset()}>{t("auth.bootstrap.reset")}</Button>
             </Space>
           </Flex>
         )}

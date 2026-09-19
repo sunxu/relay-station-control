@@ -1,10 +1,16 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { Modal } from "antd";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AuthApiError } from "./api/auth-api";
 import type { AuthApi } from "./api/auth-api";
 import type { Administrator, BootstrapState, SessionResponse } from "./api/generated/control";
+import { FrontendFoundationProvider } from "./foundation/FrontendFoundationProvider";
+
+function render(ui: ReactElement) {
+  return rtlRender(<FrontendFoundationProvider initialLocale="zh-CN">{ui}</FrontendFoundationProvider>);
+}
 
 const administrator: Administrator = {
   id: "00000000-0000-4000-8000-000000000001", login_name: "admin.one", display_name: "测试管理员",
@@ -249,7 +255,7 @@ describe("session rotation and high-risk operations", () => {
     fireEvent.click(screen.getByTestId("disable-administrator"));
     const dialogs = await screen.findAllByRole("dialog");
     const dialog = dialogs.at(-1)!;
-    fireEvent.click(within(dialog).getByText("OK").closest("button")!);
+    fireEvent.click(within(dialog).getByText("确 定").closest("button")!);
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(api.disableAdministrator).toHaveBeenCalledTimes(1);
   });

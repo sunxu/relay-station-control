@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Flex, Form, Input, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import type { TotpEnrollment } from "../api/generated/control";
 import { userFacingError } from "../api/auth-api";
 import { useAuth } from "../auth/AuthContext";
@@ -8,6 +9,7 @@ const { Title, Paragraph, Text } = Typography;
 
 export default function ActivationPage() {
   const auth = useAuth();
+  const { t } = useTranslation();
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -32,7 +34,7 @@ export default function ActivationPage() {
       const response = await auth.api.activate({ stage: "start", activation_token: token });
       if ("totp_enrollment" in response) setEnrollment(response.totp_enrollment);
     } catch (cause) {
-      setError(userFacingError(cause));
+      setError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
     } finally {
       setBusy(false);
     }
@@ -52,7 +54,7 @@ export default function ActivationPage() {
         auth.showRecoveryCodes(response.recovery_codes);
       }
     } catch (cause) {
-      setError(userFacingError(cause));
+      setError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
     } finally {
       setBusy(false);
     }
@@ -61,31 +63,31 @@ export default function ActivationPage() {
   return (
     <main className="centered-page" data-testid="activation-page">
       <Card className="auth-card">
-        <Title level={2}>激活管理员账号</Title>
-        <Paragraph type="secondary">请手工粘贴令牌。页面不会从 URL、历史记录或浏览器存储读取令牌。</Paragraph>
+        <Title level={2}>{t("auth.activation.title")}</Title>
+        <Paragraph type="secondary">{t("auth.activation.tokenHint")}</Paragraph>
         {error && <Alert type="error" showIcon message={error} className="form-alert" />}
         <Form layout="vertical" preserve={false} autoComplete="off">
-          <Form.Item label="一次性激活令牌" required>
+          <Form.Item label={t("auth.activation.token")} required>
             <Input.Password value={token} onChange={(event) => setToken(event.target.value)} visibilityToggle={false} autoComplete="off" data-testid="activation-token" />
           </Form.Item>
           {!enrollment ? (
-            <Button type="primary" loading={busy} disabled={token.length < 32} onClick={() => void start()}>开始激活</Button>
+            <Button data-testid="activation-start" type="primary" loading={busy} disabled={token.length < 32} onClick={() => void start()}>{t("auth.activation.start")}</Button>
           ) : (
             <Flex vertical gap={16}>
               <div className="secret-panel">
-                <Text copyable={{ text: enrollment.otpauth_uri }}>复制 TOTP 配置 URI</Text>
-                <Text type="secondary">离开此页后不会保留。</Text>
+                <Text copyable={{ text: enrollment.otpauth_uri }}>{t("auth.bootstrap.copyUri")}</Text>
+                <Text type="secondary">{t("auth.activation.leaveHint")}</Text>
               </div>
-              <Form.Item label="新密码" required>
-                <Input.Password value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+              <Form.Item label={t("auth.activation.newPassword")} required>
+                <Input.Password data-testid="activation-password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
               </Form.Item>
-              <Form.Item label="TOTP 验证码" required>
-                <Input value={totpCode} onChange={(event) => setTotpCode(event.target.value)} maxLength={6} inputMode="numeric" autoComplete="one-time-code" />
+              <Form.Item label={t("auth.activation.totpCode")} required>
+                <Input data-testid="activation-totp" value={totpCode} onChange={(event) => setTotpCode(event.target.value)} maxLength={6} inputMode="numeric" autoComplete="one-time-code" />
               </Form.Item>
-              <Button type="primary" loading={busy} disabled={password.length < 14 || !/^\d{6}$/.test(totpCode)} onClick={() => void complete()}>完成激活</Button>
+              <Button data-testid="activation-complete" type="primary" loading={busy} disabled={password.length < 14 || !/^\d{6}$/.test(totpCode)} onClick={() => void complete()}>{t("auth.activation.complete")}</Button>
             </Flex>
           )}
-          <Button type="link" onClick={() => auth.navigate("login")}>返回登录</Button>
+          <Button data-testid="activation-back" type="link" onClick={() => auth.navigate("login")}>{t("auth.activation.backToLogin")}</Button>
         </Form>
       </Card>
     </main>
