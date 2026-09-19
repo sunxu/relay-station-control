@@ -2,6 +2,8 @@ import { Button, Empty, Flex, Spin, Table, Tag, Tooltip, Typography } from "antd
 import type { ColumnsType } from "antd/es/table";
 import { formatDateTime } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
+import { resources } from "../foundation/resources";
+import type { TranslationResource } from "../foundation/resources";
 import type { AccountAvailability } from "../api/account-availability-types";
 import type { NodeAccountQualityItemTokenState } from "../api/generated/control";
 
@@ -58,18 +60,18 @@ function qualityColor(value: AccountListRow["quality"]): string {
   return value === "good" ? "green" : value === "degraded" ? "orange" : value === "bad" ? "red" : "default";
 }
 
-function qualityLabel(value: AccountListRow["quality"]): string {
-  return value === "good" ? "Good" : value === "degraded" ? "Degraded" : value === "bad" ? "Bad" : "Unknown";
+function qualityLabel(value: AccountListRow["quality"], copy: TranslationResource["accounts"]): string {
+  return value === "good" ? copy.good : value === "degraded" ? copy.degraded : value === "bad" ? copy.bad : copy.unknown;
 }
 
-function RecentRequestStrip({ requests, locale }: { requests: AccountListRecentRequest[]; locale: "zh-CN" | "en" }) {
+function RecentRequestStrip({ requests, locale, copy }: { requests: AccountListRecentRequest[]; locale: "zh-CN" | "en"; copy: TranslationResource["accounts"] }) {
   const ordered = requests.slice(0, 10).reverse();
-  if (ordered.length === 0) return <Text type="secondary">无请求</Text>;
-  return <Flex gap={3} align="center" aria-label="最近 7 天最近 10 次请求" data-testid="recent-request-strip">
-    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
+  if (ordered.length === 0) return <Text type="secondary">{copy.noRequests}</Text>;
+  return <Flex gap={3} align="center" aria-label={copy.recentRequestsAria} data-testid="recent-request-strip">
+    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? copy.success : `${copy.failed}${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
       color={request.success ? "green" : "red"}
-      title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? "Success" : `Failed${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
-      aria-label={`${request.success ? "Success" : "Failed"}${request.failure_class ? ` ${request.failure_class}` : ""}`}
+      title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? copy.success : `${copy.failed}${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
+      aria-label={`${request.success ? copy.success : copy.failed}${request.failure_class ? ` ${request.failure_class}` : ""}`}
       style={{ width: 9, height: 18, padding: 0, margin: 0, borderRadius: 2 }}
       tabIndex={0}
     /></Tooltip>)}
@@ -78,24 +80,25 @@ function RecentRequestStrip({ requests, locale }: { requests: AccountListRecentR
 
 export function AccountList({ rows, loading = false, unavailable = false, onSelectAccount, onRetry, emptyDescription = "当前过滤条件下没有账号" }: AccountListProps) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
+  const copy = resources[locale].translation.accounts;
   const columns: ColumnsType<AccountListRow> = [
-    { title: "账号", key: "account", render: (_, row) => <Flex vertical><Text strong>{row.email || row.account_key}</Text><Text type="secondary" style={{ overflowWrap: "anywhere" }}>{row.account_key}</Text></Flex> },
-    { title: "Provider", dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
-    { title: "状态", key: "status", render: (_, row) => <Flex vertical gap={2}><Tag>{row.lifecycle}</Tag><Text type="secondary">{row.basic_status}</Text></Flex> },
-    { title: "质量", dataIndex: "quality", render: (value: AccountListRow["quality"]) => <Tag color={qualityColor(value)}>{qualityLabel(value)}</Tag> },
-    { title: "Availability", key: "availability", render: (_, row) => row.availability ? <Tag color={row.availability.state === "AVAILABLE" ? "green" : row.availability.state === "UNKNOWN" || row.availability.state === "DISABLED" ? "default" : "red"}>{row.availability.state}</Tag> : "—" },
-    { title: "Reason", key: "availability-reason", render: (_, row) => row.availability?.reason || "—" },
-    { title: "Since", key: "availability-since", render: (_, row) => formatDateTime(row.availability?.since, locale) },
-    { title: "最近请求", key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} locale={locale} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at, locale)}</Text>}</Flex> },
-    { title: "成功率", dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
-    { title: "Requests", dataIndex: "request_count" },
-    { title: "P95", dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
-    { title: "最近失败", key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
-    ...(onSelectAccount ? [{ title: "详情", key: "details", render: (_: unknown, row: AccountListRow) => <Button data-testid={`account-details-${encodeURIComponent(row.account_key)}`} type="link" onClick={() => onSelectAccount(row)}>查看详情</Button> }] : []),
+    { title: copy.account, key: "account", render: (_, row) => <Flex vertical><Text strong>{row.email || row.account_key}</Text><Text type="secondary" style={{ overflowWrap: "anywhere" }}>{row.account_key}</Text></Flex> },
+    { title: copy.provider, dataIndex: "provider", render: (value: string) => <Tag>{value}</Tag> },
+    { title: copy.status, key: "status", render: (_, row) => <Flex vertical gap={2}><Tag>{row.lifecycle}</Tag><Text type="secondary">{row.basic_status}</Text></Flex> },
+    { title: copy.quality, dataIndex: "quality", render: (value: AccountListRow["quality"]) => <Tag color={qualityColor(value)}>{qualityLabel(value, copy)}</Tag> },
+    { title: copy.availability, key: "availability", render: (_, row) => row.availability ? <Tag color={row.availability.state === "AVAILABLE" ? "green" : row.availability.state === "UNKNOWN" || row.availability.state === "DISABLED" ? "default" : "red"}>{row.availability.state}</Tag> : "—" },
+    { title: copy.reason, key: "availability-reason", render: (_, row) => row.availability?.reason || "—" },
+    { title: copy.since, key: "availability-since", render: (_, row) => formatDateTime(row.availability?.since, locale) },
+    { title: copy.recentRequests, key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} locale={locale} copy={copy} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at, locale)}</Text>}</Flex> },
+    { title: copy.successRate, dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
+    { title: copy.requests, dataIndex: "request_count" },
+    { title: copy.p95, dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
+    { title: copy.recentFailure, key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
+    ...(onSelectAccount ? [{ title: copy.details, key: "details", render: (_: unknown, row: AccountListRow) => <Button data-testid={`account-details-${encodeURIComponent(row.account_key)}`} type="link" onClick={() => onSelectAccount(row)}>{copy.viewDetails}</Button> }] : []),
   ];
 
-  if (loading) return <Flex justify="center" role="status" aria-label="正在读取账号"><Spin /></Flex>;
-  if (unavailable) return <Flex vertical align="center" gap={8}><Text type="danger">读取不可用（unavailable）</Text>{onRetry && <Button onClick={onRetry}>重试</Button>}</Flex>;
-  if (rows.length === 0) return <Empty description={emptyDescription} />;
-  return <Flex vertical gap={8}><Text type="secondary">最近请求：7 天内最新 10 次，左旧右新；成功绿色，失败红色。请求质量按所选窗口独立计算。</Text><Table<AccountListRow> rowKey="account_key" size="small" scroll={{ x: 1350 }} pagination={false} dataSource={rows} columns={columns} /></Flex>;
+  if (loading) return <Flex justify="center" role="status" aria-label={copy.readingAccounts}><Spin /></Flex>;
+  if (unavailable) return <Flex vertical align="center" gap={8}><Text type="danger">{copy.unavailable}</Text>{onRetry && <Button onClick={onRetry}>{copy.retry}</Button>}</Flex>;
+  if (rows.length === 0) return <Empty description={emptyDescription === "当前过滤条件下没有账号" ? copy.noAccounts : emptyDescription} />;
+  return <Flex vertical gap={8}><Text type="secondary">{copy.recentRequestsDescription}</Text><Table<AccountListRow> rowKey="account_key" size="small" scroll={{ x: 1350 }} pagination={false} dataSource={rows} columns={columns} /></Flex>;
 }

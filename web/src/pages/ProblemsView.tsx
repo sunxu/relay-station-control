@@ -7,6 +7,8 @@ import type { ProblemAccountItem, ProblemAccountQueryRequest, ProblemAccountsApi
 import { ProblemAccountsApiError } from "../api/problem-accounts-types";
 import { formatDateTime } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
+import { resources } from "../foundation/resources";
+import type { TranslationResource } from "../foundation/resources";
 
 const { Text } = Typography;
 type PageSize = 25 | 50 | 100;
@@ -19,15 +21,16 @@ const issueLabels = [
 
 function issueColor(severity: string) { return severity === "Critical" ? "red" : "gold"; }
 
-function RequestError({ error, retry }: { error: unknown; retry: () => void }) {
+function RequestError({ error, retry, copy }: { error: unknown; retry: () => void; copy: TranslationResource["problems"] }) {
   const status = error instanceof ProblemAccountsApiError ? error.status : undefined;
-  if (status === 400) return <Alert type="error" showIcon message="筛选条件或分页凭据无效，请清除筛选并重新查询。" />;
-  if (status === 403) return <Alert type="error" showIcon message="当前会话无权读取 Problems。" />;
-  return <Alert type="error" showIcon message="读取不可用（unavailable）" action={<Button onClick={retry}>Retry</Button>} />;
+  if (status === 400) return <Alert type="error" showIcon message={copy.invalidFilter} />;
+  if (status === 403) return <Alert type="error" showIcon message={copy.forbidden} />;
+  return <Alert type="error" showIcon message={copy.unavailable} action={<Button onClick={retry}>{copy.retry}</Button>} />;
 }
 
 export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemAccountsApi; csrfToken: string; onUnauthorized: () => void }) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
+  const copy = resources[locale].translation.problems;
   const [provider, setProvider] = useState<string>();
   const [node, setNode] = useState("");
   const [severity, setSeverity] = useState<"Critical" | "Warning">();
@@ -86,34 +89,34 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
     { title: "Node", key: "node", width: 220, render: (_, row) => <Flex vertical><Text>{row.node_name || "—"}</Text><Text type="secondary" code>{row.instance_id}</Text></Flex> },
     { title: "Account", key: "account", width: 250, render: (_, row) => <Flex vertical><Text>{row.email}</Text><Text type="secondary" code>{row.account_key}</Text></Flex> },
     { title: "Provider", dataIndex: "provider", key: "provider", width: 130, render: (value: string) => <Tag>{value}</Tag> },
-    { title: "Issues", key: "issues", width: 360, render: (_, row) => <Flex vertical gap={4}>{row.issues.map((issue) => <Space key={`${issue.occurrence_id}:${issue.type}`} wrap><Tag color={issueColor(issue.severity)}>{issue.severity}</Tag><Tag>{issue.type}</Tag><Text type="secondary">Since {formatDateTime(issue.since, locale)}</Text><Text type="secondary" code>{issue.occurrence_id}</Text></Space>)}</Flex> },
-    { title: "Availability", key: "availability", width: 220, render: (_, row) => row.availability ? <Flex vertical><Text>{row.availability.state}</Text><Text type="secondary">{row.availability.reason}</Text><Text type="secondary">{formatDateTime(row.availability.since, locale)}</Text></Flex> : "—" },
-    { title: "Token", key: "token", width: 190, render: (_, row) => <Flex vertical><Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state ?? "—"}</Tag><Text type="secondary">Expected Valid Until</Text><Text type="secondary">{formatDateTime(row.expected_valid_until, locale)}</Text></Flex> },
-    { title: "Inventory timing", key: "inventory", width: 200, render: (_, row) => <Flex vertical><Text>last_refresh_at: {formatDateTime(row.last_refresh_at, locale)}</Text><Text>next_retry_at: {formatDateTime(row.next_retry_at, locale)}</Text></Flex> },
-    { title: "Request evidence", key: "request-evidence", width: 200, render: (_, row) => <Flex vertical><Text>last_success_at: {formatDateTime(row.last_success_at, locale)}</Text><Text>last_failure_at: {formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
+    { title: copy.issues, key: "issues", width: 360, render: (_, row) => <Flex vertical gap={4}>{row.issues.map((issue) => <Space key={`${issue.occurrence_id}:${issue.type}`} wrap><Tag color={issueColor(issue.severity)}>{issue.severity}</Tag><Tag>{issue.type}</Tag><Text type="secondary">{copy.since} {formatDateTime(issue.since, locale)}</Text><Text type="secondary" code>{issue.occurrence_id}</Text></Space>)}</Flex> },
+    { title: copy.availability, key: "availability", width: 220, render: (_, row) => row.availability ? <Flex vertical><Text>{row.availability.state}</Text><Text type="secondary">{row.availability.reason}</Text><Text type="secondary">{formatDateTime(row.availability.since, locale)}</Text></Flex> : "—" },
+    { title: copy.token, key: "token", width: 190, render: (_, row) => <Flex vertical><Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state ?? "—"}</Tag><Text type="secondary">{copy.expectedValidUntil}</Text><Text type="secondary">{formatDateTime(row.expected_valid_until, locale)}</Text></Flex> },
+    { title: copy.inventoryTiming, key: "inventory", width: 200, render: (_, row) => <Flex vertical><Text>{copy.lastRefresh}: {formatDateTime(row.last_refresh_at, locale)}</Text><Text>{copy.nextRetry}: {formatDateTime(row.next_retry_at, locale)}</Text></Flex> },
+    { title: copy.requestEvidence, key: "request-evidence", width: 200, render: (_, row) => <Flex vertical><Text>{copy.lastSuccess}: {formatDateTime(row.last_success_at, locale)}</Text><Text>{copy.lastFailure}: {formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
   ], []);
 
   const hasFilters = Boolean(provider || node.trim() || severity || reason || email.trim());
-  const emptyText = hasFilters ? "当前过滤条件下没有 confirmed problems" : "当前没有 confirmed problems";
+  const emptyText = hasFilters ? copy.noFiltered : copy.noProblems;
   return (
     <Flex vertical gap={16} data-testid="problems-view">
-      <Card title="Problems 过滤">
+      <Card title={copy.filters}>
         <Space wrap>
-          <Select disabled={list.isPending} aria-label="Provider" allowClear placeholder="Provider" value={provider} options={[{ value: "antigravity", label: "antigravity" }]} onChange={(value) => updateFilter(setProvider, value)} style={{ width: 150 }} />
-          <Input disabled={list.isPending} aria-label="Node UUID" placeholder="Node UUID" maxLength={36} value={node} onChange={(event) => updateFilter(setNode, event.target.value)} style={{ width: 280 }} />
-          <Select disabled={list.isPending} aria-label="Severity" allowClear placeholder="Severity" value={severity} options={["Critical", "Warning"].map((value) => ({ value, label: value }))} onChange={(value) => updateFilter(setSeverity, value)} style={{ width: 150 }} />
-          <Select disabled={list.isPending} aria-label="Reason" allowClear placeholder="Reason" value={reason} options={issueLabels.map(([value, label]) => ({ value, label }))} onChange={(value) => updateFilter(setReason, value)} style={{ width: 260 }} />
-          <Input disabled={list.isPending} aria-label="Email" placeholder="Email" autoComplete="off" maxLength={320} value={email} onChange={(event) => updateFilter(setEmail, event.target.value)} style={{ width: 260 }} />
-          <Select disabled={list.isPending} aria-label="Page size" value={pageSize} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: `${value} / 页` }))} onChange={(value) => { setPageSize(value); setCursorHistory([undefined]); reset(); mutate({ ...request, limit: value, cursor: undefined }); }} style={{ width: 130 }} />
-          <Button type="primary" loading={list.isPending} onClick={() => { setCursorHistory([undefined]); query({ ...request, cursor: undefined }); }} disabled={list.isPending}>Query</Button>
+          <Select disabled={list.isPending} aria-label={copy.provider} allowClear placeholder={copy.provider} value={provider} options={[{ value: "antigravity", label: "antigravity" }]} onChange={(value) => updateFilter(setProvider, value)} style={{ width: 150 }} />
+          <Input disabled={list.isPending} aria-label={copy.nodeUuid} placeholder={copy.nodeUuid} maxLength={36} value={node} onChange={(event) => updateFilter(setNode, event.target.value)} style={{ width: 280 }} />
+          <Select disabled={list.isPending} aria-label={copy.severity} allowClear placeholder={copy.severity} value={severity} options={["Critical", "Warning"].map((value) => ({ value, label: value }))} onChange={(value) => updateFilter(setSeverity, value)} style={{ width: 150 }} />
+          <Select disabled={list.isPending} aria-label={copy.reason} allowClear placeholder={copy.reason} value={reason} options={issueLabels.map(([value, label]) => ({ value, label }))} onChange={(value) => updateFilter(setReason, value)} style={{ width: 260 }} />
+          <Input disabled={list.isPending} aria-label={copy.email} placeholder={copy.email} autoComplete="off" maxLength={320} value={email} onChange={(event) => updateFilter(setEmail, event.target.value)} style={{ width: 260 }} />
+          <Select disabled={list.isPending} aria-label={copy.pageSize} value={pageSize} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: `${value}${copy.pageSuffix}` }))} onChange={(value) => { setPageSize(value); setCursorHistory([undefined]); reset(); mutate({ ...request, limit: value, cursor: undefined }); }} style={{ width: 130 }} />
+          <Button type="primary" loading={list.isPending} onClick={() => { setCursorHistory([undefined]); query({ ...request, cursor: undefined }); }} disabled={list.isPending}>{copy.query}</Button>
         </Space>
       </Card>
-      <Card title="Problems" data-testid="problems-card">
-        {list.isPending && <Flex justify="center"><div role="status" aria-label="正在读取 Problems"><Spin /></div></Flex>}
-        {list.error && <RequestError error={list.error} retry={() => query()} />}
+      <Card title={copy.title} data-testid="problems-card">
+        {list.isPending && <Flex justify="center"><div role="status" aria-label={copy.reading}><Spin /></div></Flex>}
+        {list.error && <RequestError error={list.error} retry={() => query()} copy={copy} />}
         {!list.isPending && !list.error && list.data?.items.length === 0 && <Empty description={emptyText} />}
         {!list.error && list.data && list.data.items.length > 0 && <Table<ProblemAccountItem> rowKey={(row) => `${row.instance_id}:${row.account_key}`} onRow={(row): HTMLAttributes<HTMLTableRowElement> => ({ "data-testid": "problem-row", "data-instance-id": row.instance_id, "data-account-key": row.account_key } as unknown as HTMLAttributes<HTMLTableRowElement>)} size="small" scroll={{ x: 1500 }} pagination={false} dataSource={list.data.items} columns={columns} />}
-        {!list.error && <Flex justify="end" gap={8} style={{ marginTop: 16 }}><Button disabled={list.isPending || cursorHistory.length === 1} onClick={previousPage}>上一页</Button><Button disabled={list.isPending || !list.data?.next_cursor} onClick={nextPage}>下一页</Button></Flex>}
+        {!list.error && <Flex justify="end" gap={8} style={{ marginTop: 16 }}><Button disabled={list.isPending || cursorHistory.length === 1} onClick={previousPage}>{copy.previous}</Button><Button disabled={list.isPending || !list.data?.next_cursor} onClick={nextPage}>{copy.next}</Button></Flex>}
       </Card>
     </Flex>
   );

@@ -7,14 +7,9 @@ import type { AccountMutationKind, AccountOperationsApi } from "../api/account-o
 import { AccountOperationApiError, accountOperationErrorMessage } from "../api/account-operations-api";
 import { formatDateTime } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
+import { resources } from "../foundation/resources";
 
 const maxCredentialBytes = 1024 * 1024;
-const reasons: Array<{ value: OverrideReason; label: string }> = [
-  { value: "process_restarted", label: "Control 进程已重启" },
-  { value: "node_stopped", label: "Node 已停止" },
-  { value: "risk_accepted", label: "已人工接受风险" },
-];
-
 function statePresentation(operation: AccountOperationProjection, t: (key: "operations.applied" | "operations.noop" | "operations.unknown" | "operations.failed") => string) {
   if (operation.execution_state === "remote_applied") return { color: "green", label: t("operations.applied") };
   if (operation.execution_state === "remote_noop") return { color: "blue", label: t("operations.noop") };
@@ -23,9 +18,17 @@ function statePresentation(operation: AccountOperationProjection, t: (key: "oper
   return { color: "default", label: operation.execution_state };
 }
 
+function fallbackOperationCopy(locale: "zh-CN" | "en", key: string, options?: Record<string, unknown>) {
+  const leaf = key.slice("operations.".length) as keyof typeof resources["zh-CN"]["translation"]["operations"];
+  const value = resources[locale].translation.operations[leaf];
+  if (typeof value !== "string") return key;
+  return value.replace(/{{(\w+)}}/g, (_, name: string) => String(options?.[name] ?? `{{${name}}}`));
+}
+
 export function AccountOperationResult({ operation }: { operation: AccountOperationProjection }) {
-  const { t } = useTranslation();
+  const { t: translate } = useTranslation();
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
+  const t = (key: string, options?: Record<string, unknown>) => { const fallback = fallbackOperationCopy(locale, key, options); const value = translate(key, { ...options, defaultValue: fallback }); return value === key ? fallback : value; };
   const state = statePresentation(operation, t);
   return <Flex vertical gap={10} data-testid="account-operation-result">
     {operation.execution_state === "outcome_unknown" && <Alert type="warning" showIcon title={t("operations.unknownTitle")} description={t("operations.unknownDescription")} />}
@@ -41,7 +44,9 @@ export function AccountOperationResult({ operation }: { operation: AccountOperat
 }
 
 export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, basicStatus, onUnauthorized }: { api: AccountOperationsApi; csrf: string; nodeInstanceId: string; accountKey: string; basicStatus?: string; onUnauthorized?: () => void }) {
-  const { t } = useTranslation();
+  const { t: translate } = useTranslation();
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
+  const t = (key: string, options?: Record<string, unknown>) => { const fallback = fallbackOperationCopy(locale, key, options); const value = translate(key, { ...options, defaultValue: fallback }); return value === key ? fallback : value; };
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [credential, setCredential] = useState<File>();
@@ -52,6 +57,11 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
   const [overrideKind, setOverrideKind] = useState<"lifecycle" | "same_account">("lifecycle");
   const [overrideReason, setOverrideReason] = useState<OverrideReason>("process_restarted");
   const [overrideDetail, setOverrideDetail] = useState("");
+  const reasons: Array<{ value: OverrideReason; label: string }> = [
+    { value: "process_restarted", label: t("operations.reasonRestart") },
+    { value: "node_stopped", label: t("operations.reasonNodeStopped") },
+    { value: "risk_accepted", label: t("operations.reasonAccepted") },
+  ];
 
   const once = async (work: () => Promise<AccountOperationProjection>) => {
     if (busyRef.current) return;
@@ -105,23 +115,25 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
     </Space>
     <Divider />
     <Flex gap={8} wrap>
-      <Input data-testid="account-operation-command-id" aria-label="Operation command ID" value={lookupID} onChange={(event) => setLookupID(event.target.value)} placeholder={t("operations.lookupPlaceholder")} style={{ maxWidth: 390 }} />
+      <Input data-testid="account-operation-command-id" aria-label={t("operations.commandId")} value={lookupID} onChange={(event) => setLookupID(event.target.value)} placeholder={t("operations.lookupPlaceholder")} style={{ maxWidth: 390 }} />
       <Button data-testid="account-operation-read" disabled={busy || !lookupID.trim()} loading={busy} onClick={() => void once(() => api.operation(lookupID.trim()))}>{t("operations.read")}</Button>
     </Flex>
     {operation && <AccountOperationResult operation={operation} />}
     {operation?.execution_state === "outcome_unknown" && <>
       <Divider />
       <Typography.Text strong>{t("operations.unknownOverride")}</Typography.Text>
-      <Select data-testid="account-override-kind" aria-label={t("operations.overrideType")} value={overrideKind} onChange={setOverrideKind} options={[{ value: "lifecycle", label: "Lifecycle Override" }, { value: "same_account", label: "Same-account Override" }]} />
+      <Select data-testid="account-override-kind" aria-label={t("operations.overrideType")} value={overrideKind} onChange={setOverrideKind} options={[{ value: "lifecycle", label: t("operations.lifecycleOverride") }, { value: "same_account", label: t("operations.sameAccountOverride") }]} />
       <Select data-testid="account-override-reason" aria-label={t("operations.overrideReason")} value={overrideReason} onChange={setOverrideReason} options={reasons} />
       <Input.TextArea data-testid="account-override-detail" aria-label={t("operations.overrideDetail")} value={overrideDetail} maxLength={512} onChange={(event) => setOverrideDetail(event.target.value)} placeholder={t("operations.optionalDetail")} />
-      <Button data-testid="account-override-submit" danger disabled={busy} loading={busy} onClick={() => Modal.confirm({ title: `确认执行 ${overrideKind === "lifecycle" ? "Lifecycle" : "Same-account"} Override？`, content: `目标操作：${operation.command_id}`, okText: t("operations.confirmOverride"), okButtonProps: { "data-testid": "account-override-confirm" }, cancelButtonProps: { "data-testid": "account-override-cancel" }, onOk: applyOverride })}>{t("operations.submitOverride")}</Button>
+      <Button data-testid="account-override-submit" danger disabled={busy} loading={busy} onClick={() => Modal.confirm({ title: t("operations.overrideConfirmTitle", { kind: overrideKind === "lifecycle" ? "Lifecycle" : "Same-account" }), content: t("operations.overrideTarget", { commandId: operation.command_id }), okText: t("operations.confirmOverride"), okButtonProps: { "data-testid": "account-override-confirm" }, cancelButtonProps: { "data-testid": "account-override-cancel" }, onOk: applyOverride })}>{t("operations.submitOverride")}</Button>
     </>}
   </Flex>;
 }
 
 export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthorized }: { api: AccountOperationsApi; csrf: string; nodeInstanceId: string; onUnauthorized?: () => void }) {
-  const { t } = useTranslation();
+  const { t: translate } = useTranslation();
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
+  const t = (key: string, options?: Record<string, unknown>) => { const fallback = fallbackOperationCopy(locale, key, options); const value = translate(key, { ...options, defaultValue: fallback }); return value === key ? fallback : value; };
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);

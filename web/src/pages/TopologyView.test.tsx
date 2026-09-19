@@ -1,4 +1,4 @@
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
@@ -204,7 +204,7 @@ it("passes window/provider/quality filters and keeps quality pagination bounded"
   renderView(api, assetApi);
   await screen.findByText("a@example.invalid");
   expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText("upstream")).toBeInTheDocument();
-  expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText(formatDateTime("2026-09-07T00:00:00Z"))).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Account Quality" })).getByText(formatDateTime("2026-09-07T00:00:00Z", "zh-CN"))).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "账号下一页" }));
   await waitFor(() => expect(quality).toHaveBeenCalledWith(A, "15m", undefined, undefined, "quality-page-2", expect.any(AbortSignal), "present"));
   const windowSelect = screen.getByRole("combobox", { name: "质量窗口" });
@@ -315,7 +315,7 @@ it("opens request history for the selected account row", async () => {
   fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
   expect(screen.getByText("VALID")).toBeInTheDocument();
   expect(screen.getByText("Expected Valid Until")).toBeInTheDocument();
-  expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent(formatDateTime(observedAt));
+  expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent(formatDateTime(observedAt, "zh-CN"));
   expect(api.accountQuality).toHaveBeenCalledTimes(1);
 });
 

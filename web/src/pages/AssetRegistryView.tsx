@@ -31,7 +31,8 @@ import {
   useGatewayAsset,
   useNodeAssets,
 } from "../api/asset-hooks";
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { validateInternalHttpEndpoint } from "../validation/internal-http-endpoint";
 import { useTranslation } from "react-i18next";
 
@@ -84,30 +85,34 @@ function selectableDrivers(drivers: DriverAsset[] | undefined) {
     .sort((left, right) => left.nodeType.localeCompare(right.nodeType) || left.driverContractVersion.localeCompare(right.driverContractVersion));
 }
 
-function gatewayError(error: unknown) {
+function gatewayError(error: unknown, t: unknown) {
+  const translate = t as (key: string) => string;
   if (error instanceof GatewayApiError) {
-    if (error.code === "stale_revision") return "资产已被其他管理员修改，请刷新后重试。";
-    if (error.code === "command_conflict") return "该操作标识已用于其他请求。";
-    if (error.code === "invalid_endpoint") return "Gateway 管理地址必须使用 http://。";
-    if (error.code === "current_gateway_exists") return "当前已经存在 Gateway，请使用 Replace。";
-    if (error.code === "asset_retired") return "已退役的 Gateway 不能继续操作。";
-    if (error.status === 401) return "认证已过期，请重新登录。";
-    if (error.status === 403) return "当前账号没有执行该操作的权限。";
+    if (error.code === "stale_revision") return translate("assets.errorStale");
+    if (error.code === "command_conflict") return translate("assets.errorConflict");
+    if (error.code === "invalid_endpoint") return translate("assets.errorEndpoint");
+    if (error.code === "current_gateway_exists") return translate("assets.errorGatewayExists");
+    if (error.code === "asset_retired") return translate("assets.errorRetired");
+    if (error.status === 401) return translate("assets.errorExpired");
+    if (error.status === 403) return translate("assets.errorForbidden");
   }
-  return "操作未完成，请刷新后重试。";
+  return translate("assets.errorOperation");
 }
 
-function nodeErrorMessage(error: unknown) {
+function nodeErrorMessage(error: unknown, t: unknown) {
+  const translate = t as (key: string) => string;
   if (error instanceof AssetApiError) {
-    if (error.status === 409) return "Node 已被其他管理员修改或当前状态不允许该操作，请刷新后重试。";
-    if (error.status === 400) return "Node 配置无效，请检查字段后重试。";
-    if (error.status === 401) return "认证已过期，请重新登录。";
-    if (error.status === 403) return "当前账号没有执行该操作的权限。";
+    if (error.status === 409) return translate("assets.errorNodeConflict");
+    if (error.status === 400) return translate("assets.errorNodeConfig");
+    if (error.status === 401) return translate("assets.errorExpired");
+    if (error.status === 403) return translate("assets.errorForbidden");
   }
-  return "Node 操作未完成，请刷新后重试。";
+  return translate("assets.errorNodeOperation");
 }
 
 function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdminApi; csrfToken: string; onUnauthorized(): void }) {
+  const { t } = useTranslation();
+  const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const [lifecycle, setLifecycle] = useState<"active" | "retired" | "all">("active");
   const [cursorHistory, setCursorHistory] = useState<Array<string | undefined>>([undefined]);
   const [selected, setSelected] = useState<GatewayAsset>();
@@ -157,7 +162,7 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
       await refresh();
     } catch (error) {
       if (error instanceof GatewayApiError && error.status === 401) onUnauthorized();
-      else setMessage(gatewayError(error));
+      else setMessage(gatewayError(error, t));
     } finally { setBusy(false); }
   };
 
@@ -168,31 +173,31 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
       await refresh();
     } catch (error) {
       if (error instanceof GatewayApiError && error.status === 401) onUnauthorized();
-      else setMessage(gatewayError(error));
+      else setMessage(gatewayError(error, t));
     } finally { setBusy(false); }
   };
 
   const showDetail = async (asset: GatewayAsset) => {
     try { setDetail(await api.detail(asset.instance_id)); }
-    catch (error) { if (error instanceof GatewayApiError && error.status === 401) onUnauthorized(); else setMessage(gatewayError(error)); }
+    catch (error) { if (error instanceof GatewayApiError && error.status === 401) onUnauthorized(); else setMessage(gatewayError(error, t)); }
   };
 
   const probe = async (asset: GatewayAsset, connectionTest: boolean) => {
     setBusy(true);
     try { await (connectionTest ? api.connectionTest(asset.instance_id, csrfToken) : api.health(asset.instance_id)); setMessage(connectionTest ? "Connection Test 已完成。" : "Health 检查已完成。"); }
-    catch (error) { if (error instanceof GatewayApiError && error.status === 401) onUnauthorized(); else setMessage(gatewayError(error)); }
+    catch (error) { if (error instanceof GatewayApiError && error.status === 401) onUnauthorized(); else setMessage(gatewayError(error, t)); }
     finally { setBusy(false); }
   };
 
   const items = list.data?.items ?? [];
-  return <Card title="Gateway 管理" data-testid="gateway-management-card">
+  return <Card title={t("assets.managementTitle")} data-testid="gateway-management-card">
     <Flex vertical gap={12}>
       {message && <Alert type="warning" showIcon message={message} closable onClose={() => setMessage(undefined)} />}
       <Flex justify="space-between" align="center" wrap gap={8}>
-        <Select aria-label="Gateway 生命周期过滤" value={lifecycle} onChange={changeLifecycle} options={[{ value: "active", label: "当前 Gateway" }, { value: "retired", label: "历史 Gateway" }, { value: "all", label: "全部" }]} />
-        {lifecycle === "active" && items.length === 0 && <Button type="primary" onClick={() => openForm("register")}>登记 Gateway</Button>}
+        <Select aria-label={t("assets.lifecycleFilter")} value={lifecycle} onChange={changeLifecycle} options={[{ value: "active", label: t("assets.currentGateway") }, { value: "retired", label: t("assets.retiredGateway") }, { value: "all", label: t("assets.all") }]} />
+        {lifecycle === "active" && items.length === 0 && <Button type="primary" onClick={() => openForm("register")}>{t("assets.registerGateway")}</Button>}
       </Flex>
-      {list.isPending ? <Spin /> : list.error ? <Alert type="error" message="Gateway 列表读取失败" action={<Button onClick={() => void refresh()}>重试</Button>} /> : <>
+      {list.isPending ? <Spin /> : list.error ? <Alert type="error" message={t("assets.listReadFailed")} action={<Button onClick={() => void refresh()}>{t("assets.retry")}</Button>} /> : <>
         <Table<GatewayAsset> rowKey="instance_id" size="small" pagination={false} dataSource={items} scroll={{ x: 1100 }} columns={[
         { title: "名称", dataIndex: "display_name" },
         { title: "Instance ID", dataIndex: "instance_id", render: (value: string) => <Text code>{value}</Text> },
@@ -200,37 +205,37 @@ function GatewayManagement({ api, csrfToken, onUnauthorized }: { api: GatewayAdm
         { title: "Revision", dataIndex: "revision" },
         { title: "Secret", dataIndex: "secret_configured", render: (value: boolean) => value ? "已配置" : "未配置" },
         { title: "操作", key: "actions", render: (_: unknown, asset: GatewayAsset) => <Space wrap>
-          <Button size="small" onClick={() => void showDetail(asset)}>详情</Button>
-          <Button size="small" onClick={() => void probe(asset, false)} disabled={asset.lifecycle_status !== "active" || busy}>Health</Button>
-          <Button size="small" onClick={() => void probe(asset, true)} disabled={asset.lifecycle_status !== "active" || busy}>Connection Test</Button>
-          {asset.lifecycle_status === "active" && <><Button size="small" onClick={() => openForm("edit", asset)}>编辑</Button><Button size="small" onClick={() => openForm("replace", asset)}>Replace</Button><Popconfirm title="确认退役此 Gateway？" description="退役后将清理当前绑定，历史记录仍会保留。" onConfirm={() => void retire(asset)} okText="退役" cancelText="取消"><Button size="small" danger loading={busy}>Retire</Button></Popconfirm></>}
+          <Button size="small" onClick={() => void showDetail(asset)}>{t("assets.details")}</Button>
+          <Button size="small" onClick={() => void probe(asset, false)} disabled={asset.lifecycle_status !== "active" || busy}>{t("assets.health")}</Button>
+          <Button size="small" onClick={() => void probe(asset, true)} disabled={asset.lifecycle_status !== "active" || busy}>{t("assets.connectionTest")}</Button>
+          {asset.lifecycle_status === "active" && <><Button size="small" onClick={() => openForm("edit", asset)}>{t("assets.edit")}</Button><Button size="small" onClick={() => openForm("replace", asset)}>{t("assets.replace")}</Button><Popconfirm title={t("assets.retireGatewayTitle")} description={t("assets.retireGatewayDescription")} onConfirm={() => void retire(asset)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger loading={busy}>{t("assets.retire")}</Button></Popconfirm></>}
         </Space> },
         ]} />
         <Flex justify="end" gap={8} style={{ marginTop: 12 }}>
-          <Button disabled={cursorHistory.length === 1 || list.isFetching} onClick={previousPage}>上一页</Button>
-          <Button disabled={!list.data?.next_cursor || list.isFetching} onClick={nextPage}>下一页</Button>
+          <Button disabled={cursorHistory.length === 1 || list.isFetching} onClick={previousPage}>{t("topology.firstPage")}</Button>
+          <Button disabled={!list.data?.next_cursor || list.isFetching} onClick={nextPage}>{t("topology.nextPage")}</Button>
         </Flex>
       </>}
     </Flex>
     <Modal open={Boolean(modal)} title={modal === "register" ? "登记 Gateway" : modal === "edit" ? "编辑 Gateway" : "Replace Gateway"} okText="保存" cancelText="取消" confirmLoading={busy} onCancel={() => setModal(undefined)} onOk={() => void form.submit()} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-        {modal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" rules={[{ required: true, message: "请输入 UUID" }]}><Input placeholder="UUID" /></Form.Item>}
-        <Form.Item name="display_name" label="显示名称" rules={[{ required: true, message: "请输入显示名称" }]}><Input maxLength={100} /></Form.Item>
-        <Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://gateway:8317" /></Form.Item>
-        <Form.Item name="credential" label="Directory credential（可选）" dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (modal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error("请输入新的 credential"); } })]} extra="不会回显已保存的 credential。"><Input.Password autoComplete="new-password" placeholder={modal === "edit" ? "按操作选择" : "可选"} /></Form.Item>
-        {modal === "edit" && <Form.Item name="credential_action" label="Credential 操作"><Select options={[{ value: "keep", label: "Keep existing" }, { value: "set", label: "Set new credential" }, { value: "clear", label: "Clear credential" }]} /></Form.Item>}
+        {modal !== "edit" && <Form.Item name="new_instance_id" label={t("assets.newInstanceId")} rules={[{ required: true, message: t("assets.uuid") }]}><Input placeholder={t("assets.uuid")} /></Form.Item>}
+        <Form.Item name="display_name" label={t("assets.displayName")} rules={[{ required: true, message: t("assets.displayName") }]}><Input maxLength={100} /></Form.Item>
+        <Form.Item name="management_endpoint" label={t("assets.endpoint")} rules={[{ required: true, message: t("assets.validHttp") }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input placeholder="http://gateway:8317" /></Form.Item>
+        <Form.Item name="credential" label={t("assets.directoryCredential")} dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (modal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error(t("assets.requiredCredential")); } })]} extra={t("assets.noSavedCredential")}><Input.Password autoComplete="new-password" placeholder={modal === "edit" ? t("assets.credentialActionPlaceholder") : t("assets.optional")} /></Form.Item>
+        {modal === "edit" && <Form.Item name="credential_action" label={t("assets.credentialAction")}><Select options={[{ value: "keep", label: t("assets.credentialKeep") }, { value: "set", label: t("assets.credentialSet") }, { value: "clear", label: t("assets.credentialClear") }]} /></Form.Item>}
       </Form>
     </Modal>
-    <Modal open={Boolean(detail)} title="Gateway 详情" footer={null} onCancel={() => setDetail(undefined)}>
+    <Modal open={Boolean(detail)} title={t("assets.gatewayDetails")} footer={null} onCancel={() => setDetail(undefined)}>
       {detail && <Descriptions column={1} size="small" bordered>
-        <Descriptions.Item label="Instance ID"><Text code>{detail.asset.instance_id}</Text></Descriptions.Item>
-        <Descriptions.Item label="状态">{detail.asset.lifecycle_status}</Descriptions.Item>
-        <Descriptions.Item label="Revision">{detail.asset.revision}</Descriptions.Item>
-        <Descriptions.Item label="名称">{detail.asset.display_name}</Descriptions.Item>
-        <Descriptions.Item label="Endpoint"><Text code>{detail.asset.management_endpoint}</Text></Descriptions.Item>
-        <Descriptions.Item label="Secret">{detail.asset.secret_configured ? "已配置" : "未配置"}</Descriptions.Item>
-        <Descriptions.Item label="前驱">{detail.predecessor?.old_instance_id ?? "—"}</Descriptions.Item>
-        <Descriptions.Item label="后继">{detail.successor?.new_instance_id ?? "—"}</Descriptions.Item>
+        <Descriptions.Item label={t("assets.instanceId")}><Text code>{detail.asset.instance_id}</Text></Descriptions.Item>
+        <Descriptions.Item label={t("assets.status")}>{detail.asset.lifecycle_status}</Descriptions.Item>
+        <Descriptions.Item label={t("assets.revision")}>{detail.asset.revision}</Descriptions.Item>
+        <Descriptions.Item label={t("assets.name")}>{detail.asset.display_name}</Descriptions.Item>
+        <Descriptions.Item label={t("assets.endpoint")}><Text code>{detail.asset.management_endpoint}</Text></Descriptions.Item>
+        <Descriptions.Item label={t("assets.credential")}>{detail.asset.secret_configured ? t("assets.configured") : t("assets.notConfigured")}</Descriptions.Item>
+        <Descriptions.Item label={t("assets.predecessorLabel")}>{detail.predecessor?.old_instance_id ?? "—"}</Descriptions.Item>
+        <Descriptions.Item label={t("assets.successorLabel")}>{detail.successor?.new_instance_id ?? "—"}</Descriptions.Item>
       </Descriptions>}
     </Modal>
   </Card>;
@@ -270,6 +275,7 @@ function capabilities(values: string[]) {
 
 export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthorized }: { api: AssetApi; gatewayApi?: GatewayAdminApi; csrfToken?: string; onUnauthorized(): void }) {
 	const { t } = useTranslation();
+	const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
 	const labels = { readFailed: t("assets.readFailed"), unavailable: t("assets.unavailable"), retry: t("assets.retry") };
 	const [lifecycle, setLifecycle] = useState<"active" | "retired" | "all">("active");
   const [nodeType, setNodeType] = useState<string>();
@@ -368,14 +374,14 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			await nodes.refetch();
 		} catch (error) {
 			if (error instanceof AssetApiError && error.status === 401) onUnauthorized();
-			else setNodeMessage(nodeErrorMessage(error));
+			else setNodeMessage(nodeErrorMessage(error, t));
 		} finally { setNodeBusy(false); }
 	};
 	const retireNode = async (node: NodeAsset) => {
 		if (!api.retireNode) return;
 		setNodeBusy(true);
 		try { await api.retireNode(node.instanceId, { command_id: commandId(), expected_revision: node.revision }, csrfToken); await nodes.refetch(); }
-		catch (error) { if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error)); }
+		catch (error) { if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error, t)); }
 		finally { setNodeBusy(false); }
 	};
 	const showNodeDetail = async (node: NodeAsset) => {
@@ -390,7 +396,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			if (requestId === nodeDetailRequestRef.current) setNodeDetail(detail);
 		} catch (error) {
 			if (requestId !== nodeDetailRequestRef.current) return;
-			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error));
+			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error, t));
 		}
 	};
 	const refreshNodeAfterOperation = async (instanceId: string, requestId: number) => {
@@ -411,11 +417,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			const result = kind === "health" ? await api.health!(nodeDetail.asset.instanceId) : await api.connectionTest!(nodeDetail.asset.instanceId, csrfToken);
 			if (requestId === nodeDetailRequestRef.current) {
 				setProbeObservation({ kind, result });
-				setNodeMessage(kind === "health" ? "Health 检查已完成。" : "Connection Test 已完成。");
+				setNodeMessage(kind === "health" ? t("assets.healthCompleted") : t("assets.connectionCompleted"));
 			}
 		} catch (error) {
 			if (requestId !== nodeDetailRequestRef.current) return;
-			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error));
+			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error, t));
 		} finally {
 			if (requestId === nodeDetailRequestRef.current) setNodeOperationBusy(undefined);
 		}
@@ -439,12 +445,12 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			commandIdsRef.current.delete(key);
 			if (requestId === nodeDetailRequestRef.current) {
 				setMonitoringResult(result);
-				setNodeMessage(`监控操作已完成：${result.result}`);
+				setNodeMessage(t("assets.operationCompleted", { result: result.result }));
 				await refreshNodeAfterOperation(instanceId, requestId);
 			}
 		} catch (error) {
 			if (requestId !== nodeDetailRequestRef.current) return;
-			if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error));
+		if (error instanceof AssetApiError && error.status === 401) onUnauthorized(); else setNodeMessage(nodeErrorMessage(error, t));
 		} finally {
 			if (requestId === nodeDetailRequestRef.current) setNodeOperationBusy(undefined);
 		}
@@ -459,37 +465,37 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
   })), [drivers.data]);
 
   const columns = useMemo(() => [
-    { title: "Node", dataIndex: "displayName", key: "displayName" },
-    { title: "Instance ID", dataIndex: "instanceId", key: "instanceId", render: (value: string) => <Text code>{value}</Text> },
-    { title: "类型", dataIndex: "nodeType", key: "nodeType" },
-    { title: "Driver 合约", dataIndex: "driverContractVersion", key: "driverContractVersion" },
-    { title: "能力", dataIndex: "capabilities", key: "capabilities", render: capabilities },
+    { title: t("assets.node"), dataIndex: "displayName", key: "displayName" },
+    { title: t("assets.instanceId"), dataIndex: "instanceId", key: "instanceId", render: (value: string) => <Text code>{value}</Text> },
+    { title: t("assets.nodeTypeLabel"), dataIndex: "nodeType", key: "nodeType" },
+    { title: t("assets.contract"), dataIndex: "driverContractVersion", key: "driverContractVersion" },
+    { title: t("assets.capabilities"), dataIndex: "capabilities", key: "capabilities", render: capabilities },
     {
-      title: "账号监控",
+      title: t("assets.monitoring"),
       dataIndex: "monitoringActive",
       key: "monitoringActive",
       render: (active: boolean, node: NodeAsset) => (
         <Flex vertical gap={4}>
-          <Tag color={active ? "green" : "default"}>{active ? "已激活" : "未激活"}</Tag>
-          {active && <Text type="secondary">{formatDateTime(node.monitoringEffectiveFrom)} – {formatDateTime(node.monitoringEffectiveTo)}</Text>}
+          <Tag color={active ? "green" : "default"}>{active ? t("assets.activated") : t("assets.inactive")}</Tag>
+          {active && <Text type="secondary">{formatDateTime(node.monitoringEffectiveFrom, locale)} – {formatDateTime(node.monitoringEffectiveTo, locale)}</Text>}
         </Flex>
       ),
     },
     {
-      title: "Management endpoint",
+      title: t("assets.endpoint"),
       dataIndex: "managementEndpoint",
       key: "managementEndpoint",
       render: (value: string) => <Text code className="asset-endpoint">{value}</Text>,
     },
-    { title: "Secret", dataIndex: "secretConfigured", key: "secretConfigured", render: (value: boolean) => value ? "已配置" : "未配置" },
-		{ title: "生命周期", dataIndex: "lifecycleStatus", key: "lifecycleStatus", render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{value === "active" ? "当前" : "已退役"}</Tag> },
-		{ title: "Revision", dataIndex: "revision", key: "revision" },
-		{ title: "操作", key: "actions", render: (_: unknown, node: NodeAsset) => <Space wrap>
-			<Button size="small" onClick={() => void showNodeDetail(node)}>详情</Button>
+		{ title: t("assets.credential"), dataIndex: "secretConfigured", key: "secretConfigured", render: (value: boolean) => value ? t("assets.configured") : t("assets.notConfigured") },
+		{ title: t("assets.lifecycle"), dataIndex: "lifecycleStatus", key: "lifecycleStatus", render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{value === "active" ? t("assets.currentNode") : t("assets.retiredNode")}</Tag> },
+		{ title: t("assets.revision"), dataIndex: "revision", key: "revision" },
+		{ title: t("assets.operationLabel"), key: "actions", render: (_: unknown, node: NodeAsset) => <Space wrap>
+			<Button size="small" onClick={() => void showNodeDetail(node)}>{t("assets.details")}</Button>
 			{node.lifecycleStatus === "active" && <>
-				<Button size="small" onClick={() => openNodeForm("edit", node)}>编辑</Button>
-				<Button size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>Replace</Button>
-				<Popconfirm title="确认退役此 Node？" onConfirm={() => void retireNode(node)} okText="退役" cancelText="取消"><Button size="small" danger disabled={nodeBusy}>Retire</Button></Popconfirm>
+				<Button size="small" onClick={() => openNodeForm("edit", node)}>{t("assets.edit")}</Button>
+				<Button size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>{t("assets.replace")}</Button>
+				<Popconfirm title={t("assets.retireGatewayTitle")} onConfirm={() => void retireNode(node)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger disabled={nodeBusy}>{t("assets.retire")}</Button></Popconfirm>
 			</>}
 		</Space> },
   ], [api, csrfToken, nodeBusy]);
@@ -502,9 +508,9 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           <ResourceFrame loading={environment.isPending} error={environment.error} retry={() => void environment.refetch()} labels={labels}>
             {environment.data && (
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="环境 ID"><Text code>{environment.data.environmentId}</Text></Descriptions.Item>
-                <Descriptions.Item label="类型">{environment.data.environmentType}</Descriptions.Item>
-                <Descriptions.Item label="名称">{environment.data.displayName}</Descriptions.Item>
+                <Descriptions.Item label={t("assets.environmentId")}><Text code>{environment.data.environmentId}</Text></Descriptions.Item>
+                <Descriptions.Item label={t("assets.type")}>{environment.data.environmentType}</Descriptions.Item>
+                <Descriptions.Item label={t("assets.name")}>{environment.data.displayName}</Descriptions.Item>
               </Descriptions>
             )}
           </ResourceFrame>
@@ -514,11 +520,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           <ResourceFrame loading={gateway.isPending} error={gateway.error} retry={() => void gateway.refetch()} labels={labels}>
             {gateway.data?.status === "configured" && gateway.data.gateway ? (
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="名称">{gateway.data.gateway.displayName}</Descriptions.Item>
-                <Descriptions.Item label="Instance ID"><Text code>{gateway.data.gateway.instanceId}</Text></Descriptions.Item>
-                <Descriptions.Item label="Endpoint"><Text code className="asset-endpoint">{gateway.data.gateway.managementEndpoint}</Text></Descriptions.Item>
-                <Descriptions.Item label="Credential">{gateway.data.gateway.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
-                <Descriptions.Item label="更新时间">{formatDateTime(gateway.data.gateway.updatedAt)}</Descriptions.Item>
+                <Descriptions.Item label={t("assets.name")}>{gateway.data.gateway.displayName}</Descriptions.Item>
+                <Descriptions.Item label={t("assets.instanceId")}><Text code>{gateway.data.gateway.instanceId}</Text></Descriptions.Item>
+                <Descriptions.Item label={t("assets.endpoint")}><Text code className="asset-endpoint">{gateway.data.gateway.managementEndpoint}</Text></Descriptions.Item>
+                <Descriptions.Item label={t("assets.credential")}>{gateway.data.gateway.secretConfigured ? t("assets.configured") : t("assets.notConfigured")}</Descriptions.Item>
+                <Descriptions.Item label={t("assets.updatedAt")}>{formatDateTime(gateway.data.gateway.updatedAt, locale)}</Descriptions.Item>
               </Descriptions>
             ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyGateway")} />}
           </ResourceFrame>
@@ -528,7 +534,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           <Flex vertical gap={12}>
             {policyScopes.length > 0 && (
               <Select
-                aria-label="Provider 策略作用域"
+                aria-label={t("assets.providerPolicyScope")}
                 value={policyScope ? `${policyScope.nodeType}\u0000${policyScope.driverContractVersion}` : undefined}
                 options={policyScopes}
                 onChange={(value) => {
@@ -540,11 +546,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
             <ResourceFrame loading={Boolean(policyScope) && policy.isPending} error={policy.error} retry={() => void policy.refetch()} labels={labels}>
               {!policyScope ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.selectDriver")} /> : policy.data?.status === "configured" && policy.data.policy ? (
                 <Descriptions column={1} size="small">
-                  <Descriptions.Item label="版本"><Text code>{policy.data.policy.policyVersionId}</Text></Descriptions.Item>
-                  <Descriptions.Item label="作用域">{policy.data.policy.nodeType} / {policy.data.policy.driverContractVersion}</Descriptions.Item>
-                  <Descriptions.Item label="Active">{capabilities(policy.data.policy.activeProviders)}</Descriptions.Item>
-                  <Descriptions.Item label="Out of scope">{capabilities(policy.data.policy.outOfScopeProviders)}</Descriptions.Item>
-                  <Descriptions.Item label="激活区间">{formatDateTime(policy.data.policy.effectiveFrom)} – {formatDateTime(policy.data.policy.effectiveTo)}</Descriptions.Item>
+                  <Descriptions.Item label={t("assets.version")}><Text code>{policy.data.policy.policyVersionId}</Text></Descriptions.Item>
+                  <Descriptions.Item label={t("assets.scope")}>{policy.data.policy.nodeType} / {policy.data.policy.driverContractVersion}</Descriptions.Item>
+                  <Descriptions.Item label={t("assets.policyActive")}>{capabilities(policy.data.policy.activeProviders)}</Descriptions.Item>
+                  <Descriptions.Item label={t("assets.policyOutOfScope")}>{capabilities(policy.data.policy.outOfScopeProviders)}</Descriptions.Item>
+                  <Descriptions.Item label={t("assets.activeWindow")}>{formatDateTime(policy.data.policy.effectiveFrom, locale)} – {formatDateTime(policy.data.policy.effectiveTo, locale)}</Descriptions.Item>
                 </Descriptions>
               ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyPolicy")} />}
             </ResourceFrame>
@@ -561,11 +567,11 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
               pagination={false}
               dataSource={drivers.data}
               columns={[
-                { title: "Node 类型", dataIndex: "nodeType", key: "nodeType" },
-                { title: "合约版本", dataIndex: "driverContractVersion", key: "driverContractVersion" },
-                { title: "名称", dataIndex: "displayName", key: "displayName" },
-                { title: "状态", dataIndex: "status", key: "status", render: (value) => <Tag>{value}</Tag> },
-                { title: "能力", dataIndex: "capabilities", key: "capabilities", render: capabilities },
+                { title: t("assets.nodeTypeLabel"), dataIndex: "nodeType", key: "nodeType" },
+                { title: t("assets.contractVersion"), dataIndex: "driverContractVersion", key: "driverContractVersion" },
+                { title: t("assets.name"), dataIndex: "displayName", key: "displayName" },
+                { title: t("assets.status"), dataIndex: "status", key: "status", render: (value) => <Tag>{value}</Tag> },
+                { title: t("assets.capabilities"), dataIndex: "capabilities", key: "capabilities", render: capabilities },
               ]}
             />
           ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyDriver")} />}
@@ -576,21 +582,21 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
         <Flex vertical gap={16}>
 			{nodeMessage && <Alert type="warning" showIcon message={nodeMessage} closable onClose={() => setNodeMessage(undefined)} />}
 			<Flex justify="space-between" align="center" wrap gap={8}>
-          <Space wrap aria-label="Node 过滤器">
-			<Select aria-label="Node 生命周期" value={lifecycle} options={[{ value: "active", label: "当前 Node" }, { value: "retired", label: "历史 Node" }, { value: "all", label: "全部 Node" }]} onChange={(value) => { setLifecycle(value); resetCursor(); }} style={{ minWidth: 150 }} />
+          <Space wrap aria-label={t("assets.nodeFilter")}>
+			<Select aria-label={t("assets.nodeLifecycle")} value={lifecycle} options={[{ value: "active", label: t("assets.currentNode") }, { value: "retired", label: t("assets.retiredNode") }, { value: "all", label: t("assets.allNodes") }]} onChange={(value) => { setLifecycle(value); resetCursor(); }} style={{ minWidth: 150 }} />
             <Select
-              aria-label="Node 类型"
+              aria-label={t("assets.nodeType")}
               allowClear
-              placeholder="全部 Node 类型"
+              placeholder={t("assets.allNodeTypes")}
               value={nodeType}
               options={driverTypes}
               onChange={(value) => { setNodeType(value); resetCursor(); }}
               style={{ minWidth: 180 }}
             />
             <Select
-              aria-label="Capability"
+              aria-label={t("assets.capability")}
               allowClear
-              placeholder="全部 capability"
+              placeholder={t("assets.allCapabilities")}
               value={capability}
               options={[
                 { value: "management_health_read", label: "management_health_read" },
@@ -600,18 +606,18 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
               style={{ minWidth: 280 }}
             />
             <Select
-              aria-label="监控状态"
+              aria-label={t("assets.monitoringStatus")}
               allowClear
-              placeholder="全部监控状态"
+              placeholder={t("assets.monitoringStatus")}
               value={monitoringActive}
-              options={[{ value: true, label: "监控已激活" }, { value: false, label: "监控未激活" }]}
+              options={[{ value: true, label: t("assets.monitoringActive") }, { value: false, label: t("assets.monitoringInactive") }]}
               onChange={(value) => { setMonitoringActive(value); resetCursor(); }}
               style={{ minWidth: 180 }}
             />
           </Space>
-			{lifecycle === "active" && api.registerNode && <Button type="primary" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("register")}>登记 Node</Button>}
+			{lifecycle === "active" && api.registerNode && <Button type="primary" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("register")}>{t("assets.registerNode")}</Button>}
 			</Flex>
-			{drivers.error && <Alert type="warning" showIcon message="Driver 信息不可用，无法登记 Node" />}
+			{drivers.error && <Alert type="warning" showIcon message={t("assets.driverUnavailable")} />}
           <ResourceFrame loading={nodes.isPending} error={nodes.error} retry={() => void nodes.refetch()} labels={labels}>
             {nodes.data && nodes.data.items.length > 0 ? (
               <Table<NodeAsset> rowKey="instanceId" size="small" scroll={{ x: 1260 }} pagination={false} dataSource={nodes.data.items} columns={columns} />
@@ -619,48 +625,48 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           </ResourceFrame>
           {!nodes.error && (
             <Flex justify="end" gap={8}>
-              <Button disabled={cursorHistory.length === 1} onClick={() => setCursorHistory((history) => history.slice(0, -1))}>上一页</Button>
-              <Button disabled={!nodes.data?.nextCursor} onClick={() => nodes.data?.nextCursor && setCursorHistory((history) => [...history, nodes.data!.nextCursor!])}>下一页</Button>
+              <Button disabled={cursorHistory.length === 1} onClick={() => setCursorHistory((history) => history.slice(0, -1))}>{t("assets.previousPage")}</Button>
+              <Button disabled={!nodes.data?.nextCursor} onClick={() => nodes.data?.nextCursor && setCursorHistory((history) => [...history, nodes.data!.nextCursor!])}>{t("assets.nextPage")}</Button>
             </Flex>
           )}
         </Flex>
-		<Modal open={Boolean(nodeModal)} title={nodeModal === "register" ? "登记 Node" : nodeModal === "edit" ? "编辑 Node" : "Replace Node"} okText="保存" cancelText="取消" confirmLoading={nodeBusy} onCancel={() => setNodeModal(undefined)} onOk={() => void nodeForm.submit()} destroyOnHidden>
+		<Modal open={Boolean(nodeModal)} title={nodeModal === "register" ? t("assets.formTitleRegister") : nodeModal === "edit" ? t("assets.formTitleEdit") : t("assets.formTitleReplace")} okText={t("assets.save")} cancelText={t("assets.cancel")} confirmLoading={nodeBusy} onCancel={() => setNodeModal(undefined)} onOk={() => void nodeForm.submit()} destroyOnHidden>
 			<Form form={nodeForm} layout="vertical" onFinish={(values) => void submitNode(values)}>
-				{nodeModal !== "edit" && <Form.Item name="new_instance_id" label="新 Instance ID" extra="自动生成"><Input data-testid={nodeModal === "register" ? "node-register-instance-id" : "node-replace-instance-id"} readOnly /></Form.Item>}
-				<Form.Item name="display_name" label="显示名称" rules={[{ required: true }]}><Input data-testid="node-form-display-name" maxLength={100} /></Form.Item>
-				<Form.Item name="management_endpoint" label="Management endpoint" rules={[{ required: true, message: "请输入有效的 http:// 地址" }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input data-testid="node-form-management-endpoint" placeholder="http://node:8317" /></Form.Item>
+				{nodeModal !== "edit" && <Form.Item name="new_instance_id" label={t("assets.newInstanceId")} extra={t("assets.generated")}><Input data-testid={nodeModal === "register" ? "node-register-instance-id" : "node-replace-instance-id"} readOnly /></Form.Item>}
+				<Form.Item name="display_name" label={t("assets.displayName")} rules={[{ required: true }]}><Input data-testid="node-form-display-name" maxLength={100} /></Form.Item>
+				<Form.Item name="management_endpoint" label={t("assets.endpoint")} rules={[{ required: true, message: t("assets.validHttp") }, { validator: (_, value) => { const message = validateInternalHttpEndpoint(value); return message ? Promise.reject(new Error(message)) : Promise.resolve(); } }]}><Input data-testid="node-form-management-endpoint" placeholder="http://node:8317" /></Form.Item>
 				{nodeModal !== "edit" && <>
-					<Form.Item name="node_type" label="Node 类型" rules={[{ required: true }]}><Select data-testid="node-register-node-type" options={nodeTypeOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === value); nodeForm.setFieldsValue({ driver_contract_version: next?.driverContractVersion ?? "", capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
-					<Form.Item name="driver_contract_version" label="Driver 合约" rules={[{ required: true }]}><Select data-testid="node-register-driver-contract" options={contractOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === nodeTypeValue && driver.driverContractVersion === value); nodeForm.setFieldsValue({ capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
-					<Form.Item name="capabilities" label="Capabilities" rules={[{ required: true }]}><Select data-testid="node-register-capabilities" mode="multiple" options={(selectedDriver?.capabilities ?? []).map((value) => ({ value, label: value }))} /></Form.Item>
+					<Form.Item name="node_type" label={t("assets.nodeTypeLabel")} rules={[{ required: true }]}><Select data-testid="node-register-node-type" options={nodeTypeOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === value); nodeForm.setFieldsValue({ driver_contract_version: next?.driverContractVersion ?? "", capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
+					<Form.Item name="driver_contract_version" label={t("assets.contract")} rules={[{ required: true }]}><Select data-testid="node-register-driver-contract" options={contractOptions} onChange={(value) => { const next = activeDrivers.find((driver) => driver.nodeType === nodeTypeValue && driver.driverContractVersion === value); nodeForm.setFieldsValue({ capabilities: (next?.capabilities ?? []) as NodeCapability[] }); }} /></Form.Item>
+					<Form.Item name="capabilities" label={t("assets.capabilities")} rules={[{ required: true }]}><Select data-testid="node-register-capabilities" mode="multiple" options={(selectedDriver?.capabilities ?? []).map((value) => ({ value, label: value }))} /></Form.Item>
 				</>}
-                <Form.Item name="credential" label="Management credential（可选）" dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (nodeModal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error("请输入新的 credential"); } })]}><Input.Password autoComplete="new-password" /></Form.Item>
-				{nodeModal === "edit" && <Form.Item name="credential_action" label="Credential 操作"><Select options={[{ value: "keep", label: "Keep existing" }, { value: "set", label: "Set new credential" }, { value: "clear", label: "Clear credential" }]} /></Form.Item>}
+				<Form.Item name="credential" label={t("assets.managementCredential")} dependencies={["credential_action"]} rules={[({ getFieldValue }) => ({ validator: async (_, value) => { if (nodeModal === "edit" && getFieldValue("credential_action") === "set" && !value) throw new Error(t("assets.requiredCredential")); } })]}><Input.Password autoComplete="new-password" /></Form.Item>
+				{nodeModal === "edit" && <Form.Item name="credential_action" label={t("assets.credentialAction")}><Select options={[{ value: "keep", label: t("assets.credentialKeep") }, { value: "set", label: t("assets.credentialSet") }, { value: "clear", label: t("assets.credentialClear") }]} /></Form.Item>}
 			</Form>
 		</Modal>
-		<Modal open={Boolean(nodeDetail)} title="Node 详情" footer={null} onCancel={() => { nodeDetailRequestRef.current += 1; setNodeDetail(undefined); setProbeObservation(undefined); setMonitoringResult(undefined); setNodeOperationBusy(undefined); setNodeMessage(undefined); }}>
+		<Modal open={Boolean(nodeDetail)} title={t("assets.nodeDetails")} footer={null} onCancel={() => { nodeDetailRequestRef.current += 1; setNodeDetail(undefined); setProbeObservation(undefined); setMonitoringResult(undefined); setNodeOperationBusy(undefined); setNodeMessage(undefined); }}>
 			{nodeDetail && <>
 			<Descriptions column={1} size="small" bordered>
-				<Descriptions.Item label="Instance ID"><Text code>{nodeDetail.asset.instanceId}</Text></Descriptions.Item>
-				<Descriptions.Item label="状态">{nodeDetail.asset.lifecycleStatus}</Descriptions.Item>
-				<Descriptions.Item label="Revision">{nodeDetail.asset.revision}</Descriptions.Item>
-				<Descriptions.Item label="Secret">{nodeDetail.asset.secretConfigured ? "已配置" : "未配置"}</Descriptions.Item>
-				<Descriptions.Item label="监控">{nodeDetail.asset.monitoringActive ? "已激活" : "未激活"}</Descriptions.Item>
-				<Descriptions.Item label="前驱">{nodeDetail.predecessor?.oldInstanceId ?? "—"}</Descriptions.Item>
-				<Descriptions.Item label="后继">{nodeDetail.successor?.newInstanceId ?? "—"}</Descriptions.Item>
+				<Descriptions.Item label={t("assets.instanceId")}><Text code>{nodeDetail.asset.instanceId}</Text></Descriptions.Item>
+				<Descriptions.Item label={t("assets.status")}>{nodeDetail.asset.lifecycleStatus}</Descriptions.Item>
+				<Descriptions.Item label={t("assets.revision")}>{nodeDetail.asset.revision}</Descriptions.Item>
+				<Descriptions.Item label={t("assets.credential")}>{nodeDetail.asset.secretConfigured ? t("assets.configured") : t("assets.notConfigured")}</Descriptions.Item>
+				<Descriptions.Item label={t("assets.monitoring")}>{nodeDetail.asset.monitoringActive ? t("assets.activated") : t("assets.inactive")}</Descriptions.Item>
+				<Descriptions.Item label={t("assets.predecessorLabel")}>{nodeDetail.predecessor?.oldInstanceId ?? "—"}</Descriptions.Item>
+				<Descriptions.Item label={t("assets.successorLabel")}>{nodeDetail.successor?.newInstanceId ?? "—"}</Descriptions.Item>
 			</Descriptions>
 			{nodeDetail.asset.lifecycleStatus === "active" && <Flex vertical gap={12} data-testid="node-management-operations" style={{ marginTop: 16 }}>
 				<Space wrap>
-					<Button data-testid="node-health-button" loading={nodeOperationBusy === "health"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("health")}>Health</Button>
-					<Button data-testid="node-connection-test-button" loading={nodeOperationBusy === "connection-test"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("connection-test")}>Connection Test</Button>
-					<Button data-testid="node-monitoring-enable-button" loading={nodeOperationBusy === "monitoring-enable"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runMonitoringCommand("monitoring-enable")}>启用监控</Button>
-					<Popconfirm title="确认立即停用监控？" description="这会立即关闭当前监控，并取消已有的未来监控预约。" okText="停用" cancelText="取消" onConfirm={() => void runMonitoringCommand("monitoring-disable")}>
-						<Button data-testid="node-monitoring-disable-button" loading={nodeOperationBusy === "monitoring-disable"} disabled={Boolean(nodeOperationBusy)}>停用监控</Button>
+					<Button data-testid="node-health-button" loading={nodeOperationBusy === "health"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("health")}>{t("assets.health")}</Button>
+					<Button data-testid="node-connection-test-button" loading={nodeOperationBusy === "connection-test"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runProbe("connection-test")}>{t("assets.connectionTest")}</Button>
+					<Button data-testid="node-monitoring-enable-button" loading={nodeOperationBusy === "monitoring-enable"} disabled={Boolean(nodeOperationBusy)} onClick={() => void runMonitoringCommand("monitoring-enable")}>{t("assets.monitoringEnable")}</Button>
+					<Popconfirm title={t("assets.disableMonitoringTitle")} description={t("assets.disableMonitoringDescription")} okText={t("assets.disableMonitoring")} cancelText={t("assets.cancel")} onConfirm={() => void runMonitoringCommand("monitoring-disable")}>
+						<Button data-testid="node-monitoring-disable-button" loading={nodeOperationBusy === "monitoring-disable"} disabled={Boolean(nodeOperationBusy)}>{t("assets.disableMonitoring")}</Button>
 					</Popconfirm>
 				</Space>
-				{probeObservation?.kind === "health" && <Alert data-testid="node-health-result" type={probeObservation.result.result === "success" ? "success" : "warning"} message="Health 结果" description={`${probeObservation.result.reachable ? "reachable" : "unreachable"}；reason=${probeObservation.result.reason}；latency=${probeObservation.result.latencyMs}ms`} showIcon />}
-				{probeObservation?.kind === "connection-test" && <Alert data-testid="node-connection-test-result" type={probeObservation.result.result === "success" ? "success" : "warning"} message="Connection Test 结果" description={`${probeObservation.result.reachable ? "reachable" : "unreachable"}；reason=${probeObservation.result.reason}；latency=${probeObservation.result.latencyMs}ms`} showIcon />}
-				{monitoringResult && <Alert data-testid="node-monitoring-result" type="success" message={`Monitoring ${monitoringResult.result}`} description={`current=${monitoringResult.monitoringActive ? "active" : "inactive"}；closed=${monitoringResult.closedMonitoringCount}；cancelled=${monitoringResult.cancelledFutureMonitoringCount}`} showIcon />}
+				{probeObservation?.kind === "health" && <Alert data-testid="node-health-result" type={probeObservation.result.result === "success" ? "success" : "warning"} message={t("assets.healthResult")} description={t("assets.healthDescription", { reachability: probeObservation.result.reachable ? t("assets.reachable") : t("assets.unreachable"), reason: probeObservation.result.reason, latency: probeObservation.result.latencyMs })} showIcon />}
+				{probeObservation?.kind === "connection-test" && <Alert data-testid="node-connection-test-result" type={probeObservation.result.result === "success" ? "success" : "warning"} message={t("assets.connectionResult")} description={t("assets.healthDescription", { reachability: probeObservation.result.reachable ? t("assets.reachable") : t("assets.unreachable"), reason: probeObservation.result.reason, latency: probeObservation.result.latencyMs })} showIcon />}
+				{monitoringResult && <Alert data-testid="node-monitoring-result" type="success" message={t("assets.monitoringResult", { result: monitoringResult.result })} description={t("assets.monitoringDescription", { state: monitoringResult.monitoringActive ? "active" : "inactive", closed: monitoringResult.closedMonitoringCount, cancelled: monitoringResult.cancelledFutureMonitoringCount })} showIcon />}
 			</Flex>}
 			</>}
 		</Modal>

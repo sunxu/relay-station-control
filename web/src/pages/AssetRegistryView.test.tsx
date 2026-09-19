@@ -1,4 +1,4 @@
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -154,7 +154,7 @@ describe("asset registry read-only view", () => {
     expect(await screen.findByText("Primary Gateway")).toBeInTheDocument();
     expect(screen.getByText("Singapore Node")).toBeInTheDocument();
     expect(screen.getByText("CLIProxyAPI Driver")).toBeInTheDocument();
-    expect(screen.getAllByText(formatDateTime("2026-08-25T09:00:00Z")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatDateTime("2026-08-25T09:00:00Z", "zh-CN")).length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toContain("CANARY-GATEWAY-SECRET");
     expect(document.body.textContent).not.toContain("CANARY-NODE-SECRET");
     expect(document.querySelector('a[href^="https://gateway.invalid"]')).toBeNull();
