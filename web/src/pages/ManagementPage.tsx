@@ -1,4 +1,7 @@
-import { formatDateTime } from "../time";
+import { formatDateTime } from "../foundation/format";
+import { LocaleSwitcher } from "../foundation/LocaleSwitcher";
+import { PageShell } from "../foundation/PageShell";
+import { useAppLocale } from "../foundation/FrontendFoundationProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -24,6 +27,7 @@ import type {
 } from "../api/generated/control";
 import { AuthApiError, userFacingError } from "../api/auth-api";
 import { handleSessionError, useAuth } from "../auth/AuthContext";
+import { useTranslation } from "react-i18next";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -33,6 +37,8 @@ function isFreshReauthentication(until?: string | null): boolean {
 
 export default function ManagementPage() {
   const auth = useAuth();
+  const { locale } = useAppLocale();
+  const { t } = useTranslation();
   const session = auth.session;
   const [administrators, setAdministrators] = useState<Administrator[]>([]);
   const [error, setError] = useState("");
@@ -54,15 +60,15 @@ export default function ManagementPage() {
       handleSessionError(cause, auth.clearSession);
       if (cause instanceof AuthApiError && cause.detail.code === "csrf_invalid") {
         await auth.refreshSession().catch(() => auth.clearSession());
-        setError("安全凭据已刷新。为避免重复执行，本次操作没有自动重放，请确认状态后重试。");
+        setError(t("management.csrfInvalid"));
       } else {
-        setError(userFacingError(cause));
+        setError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
       }
       return undefined;
     } finally {
       setBusy(false);
     }
-  }, [auth]);
+  }, [auth, t]);
 
   const loadAdministrators = useCallback(async () => {
     const response = await run(() => auth.api.administrators());
@@ -76,7 +82,7 @@ export default function ManagementPage() {
   const csrf = session?.csrf_token ?? "";
   const requireFresh = () => {
     if (!isFreshReauthentication(auth.session?.reauthenticated_until)) {
-      setError("此操作需要先在“重新认证”页签验证密码与 MFA，证明有效期为 5 分钟。");
+      setError(t("management.reauthenticationRequired"));
       return false;
     }
     return true;
@@ -87,7 +93,7 @@ export default function ManagementPage() {
     if (response) {
       auth.acceptSession(response);
       reauthForm.resetFields();
-      setNotice("重新认证成功，高风险操作窗口已开启 5 分钟。");
+      setNotice(t("management.reauthenticationSuccess"));
     }
   };
 
@@ -96,7 +102,7 @@ export default function ManagementPage() {
     if (response) {
       auth.acceptSession(response);
       passwordForm.resetFields();
-      setNotice("密码已修改，其他会话已撤销。");
+      setNotice(t("management.passwordChanged"));
     }
   };
 
@@ -122,7 +128,7 @@ export default function ManagementPage() {
     setReason("");
     await loadAdministrators();
     if (kind !== "disable" && "activation_token" in response) auth.showActivationToken(response);
-    else setNotice("管理员已禁用，其会话与未使用令牌均已撤销。");
+    else setNotice(t("management.administratorDisabled"));
   };
 
   const regenerateCodes = async () => {
@@ -143,12 +149,12 @@ export default function ManagementPage() {
   };
 
   const columns = useMemo(() => [
-    { title: "登录名", dataIndex: "login_name", key: "login_name" },
-    { title: "实名", dataIndex: "display_name", key: "display_name" },
-    { title: "角色", dataIndex: "role", key: "role", render: () => <Tag>super_admin</Tag> },
-    { title: "状态", dataIndex: "status", key: "status", render: (status: Administrator["status"]) => <Tag color={status === "enabled" ? "green" : status === "pending" ? "gold" : "default"}>{status}</Tag> },
-    { title: "最近登录", dataIndex: "last_login_at", key: "last_login_at", render: formatDateTime },
-  ], []);
+    { title: t("management.admins.loginName"), dataIndex: "login_name", key: "login_name" },
+    { title: t("management.admins.displayName"), dataIndex: "display_name", key: "display_name" },
+    { title: t("management.admins.role"), dataIndex: "role", key: "role", render: () => <Tag>super_admin</Tag> },
+    { title: t("management.admins.status"), dataIndex: "status", key: "status", render: (status: Administrator["status"]) => <Tag color={status === "enabled" ? "green" : status === "pending" ? "gold" : "default"}>{status}</Tag> },
+    { title: t("management.admins.lastLogin"), dataIndex: "last_login_at", key: "last_login_at", render: (value: string | null) => formatDateTime(value, locale) },
+  ], [locale, t]);
 
   if (!session) return null;
 
@@ -156,27 +162,27 @@ export default function ManagementPage() {
     <Alert
       type={isFreshReauthentication(session.reauthenticated_until) ? "success" : "warning"}
       showIcon
-      message={isFreshReauthentication(session.reauthenticated_until) ? `重新认证有效至 ${formatDateTime(session.reauthenticated_until)}` : "高风险操作当前锁定"}
+      message={isFreshReauthentication(session.reauthenticated_until) ? t("management.highRiskValidUntil", { date: formatDateTime(session.reauthenticated_until, locale) }) : t("management.highRiskLocked")}
     />
   );
 
   return (
-    <main className="management-page" data-testid="management-page">
-      <Flex justify="space-between" align="center" wrap gap={16} className="management-header">
-        <div>
-          <Title level={2}>Relay Station Control</Title>
-          <Text type="secondary">{session.administrator.display_name} · {session.administrator.login_name}</Text>
-        </div>
+    <PageShell
+      className="management-page"
+      testId="management-page"
+      title={t("management.title")}
+      description={t("management.sessionDescription", { displayName: session.administrator.display_name, loginName: session.administrator.login_name })}
+      actions={
         <Space wrap>
-          <Space wrap>
-            <Button data-testid="management-nav-jobs" onClick={() => auth.navigate("jobs")}>持久任务</Button>
-            <Button data-testid="management-nav-assets" onClick={() => auth.navigate("assets")}>资产注册表</Button>
-            <Button onClick={() => auth.navigate("topology")}>Node Topology</Button>
-            <Button data-testid="management-nav-problems" onClick={() => auth.navigate("problems")}>Problems</Button>
-          </Space>
-          <Button danger loading={busy} onClick={() => void logout()}>注销</Button>
+          <Button data-testid="management-nav-jobs" onClick={() => auth.navigate("jobs")}>{t("management.navJobs")}</Button>
+          <Button data-testid="management-nav-assets" onClick={() => auth.navigate("assets")}>{t("management.navAssets")}</Button>
+          <Button data-testid="management-nav-topology" onClick={() => auth.navigate("topology")}>{t("management.navTopology")}</Button>
+          <Button data-testid="management-nav-problems" onClick={() => auth.navigate("problems")}>{t("management.navProblems")}</Button>
+          <LocaleSwitcher />
+          <Button data-testid="management-logout" danger loading={busy} onClick={() => void logout()}>{t("management.logout")}</Button>
         </Space>
-      </Flex>
+      }
+    >
       {error && <Alert type="error" showIcon message={error} className="form-alert" />}
       {notice && <Alert type="success" showIcon message={notice} className="form-alert" />}
       <Card>
@@ -185,68 +191,68 @@ export default function ManagementPage() {
           items={[
             {
               key: "session",
-              label: "会话",
+              label: t("management.tabs.session"),
               children: (
                 <Flex vertical gap={16}>
-                  <Title level={4}>当前会话</Title>
-                  <Text>空闲到期：{formatDateTime(session.idle_expires_at)}</Text>
-                  <Text>绝对到期：{formatDateTime(session.absolute_expires_at)}</Text>
-                  <Text>MFA：{session.mfa.completed ? session.mfa.method ?? "已完成" : "未完成"}</Text>
-                  <Text>剩余恢复码：{session.recovery_codes_remaining}</Text>
-                  <Button onClick={() => void auth.refreshSession()}>刷新会话与 CSRF</Button>
+                  <Title level={4}>{t("management.session.current")}</Title>
+                  <Text>{t("management.session.idleUntil", { date: formatDateTime(session.idle_expires_at, locale) })}</Text>
+                  <Text>{t("management.session.absoluteUntil", { date: formatDateTime(session.absolute_expires_at, locale) })}</Text>
+                  <Text>{t("management.session.mfa", { value: session.mfa.completed ? session.mfa.method ?? t("management.session.completed") : t("management.session.incomplete") })}</Text>
+                  <Text>{t("management.session.recoveryRemaining", { count: session.recovery_codes_remaining })}</Text>
+                  <Button onClick={() => void auth.refreshSession()}>{t("management.session.refresh")}</Button>
                 </Flex>
               ),
             },
             {
               key: "reauth",
-              label: "重新认证",
+              label: t("management.tabs.reauth"),
               children: (
                 <Flex vertical gap={16} className="form-column">
                   {highRisk}
                   <Form form={reauthForm} layout="vertical" preserve={false} onFinish={submitReauthentication}>
-                    <Form.Item label="当前密码" name="password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
-                    <Form.Item label="MFA 方式" name="mfa_method" initialValue="totp"><Select options={[{ label: "TOTP", value: "totp" satisfies MfaMethod }, { label: "恢复码", value: "recovery_code" satisfies MfaMethod }]} /></Form.Item>
-                    <Form.Item label="MFA 验证码" name="mfa_code" rules={[{ required: true }]}><Input.Password visibilityToggle={false} autoComplete="one-time-code" /></Form.Item>
-                    <Button type="primary" htmlType="submit" loading={busy}>重新认证</Button>
+                    <Form.Item label={t("management.reauth.currentPassword")} name="password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
+                    <Form.Item label={t("management.reauth.mfaMethod")} name="mfa_method" initialValue="totp"><Select options={[{ label: "TOTP", value: "totp" satisfies MfaMethod }, { label: "恢复码", value: "recovery_code" satisfies MfaMethod }]} /></Form.Item>
+                    <Form.Item label={t("management.reauth.mfaCode")} name="mfa_code" rules={[{ required: true }]}><Input.Password visibilityToggle={false} autoComplete="one-time-code" /></Form.Item>
+                    <Button type="primary" htmlType="submit" loading={busy}>{t("management.reauth.submit")}</Button>
                   </Form>
                 </Flex>
               ),
             },
             {
               key: "password",
-              label: "修改密码",
+              label: t("management.tabs.password"),
               children: (
                 <Form form={passwordForm} className="form-column" layout="vertical" preserve={false} onFinish={submitPassword}>
-                  <Form.Item label="当前密码" name="current_password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
-                  <Form.Item label="新密码" name="new_password" rules={[{ required: true }, { min: 14 }, { max: 128 }]}><Input.Password autoComplete="new-password" /></Form.Item>
-                  <Form.Item label="MFA 方式" name="mfa_method" initialValue="totp"><Select options={[{ label: "TOTP", value: "totp" }, { label: "恢复码", value: "recovery_code" }]} /></Form.Item>
-                  <Form.Item label="MFA 验证码" name="mfa_code"><Input.Password visibilityToggle={false} autoComplete="one-time-code" /></Form.Item>
-                  <Button type="primary" htmlType="submit" loading={busy}>修改密码并轮换会话</Button>
+                  <Form.Item label={t("management.password.current")} name="current_password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
+                  <Form.Item label={t("management.password.next")} name="new_password" rules={[{ required: true }, { min: 14 }, { max: 128 }]}><Input.Password autoComplete="new-password" /></Form.Item>
+                  <Form.Item label={t("management.password.mfaMethod")} name="mfa_method" initialValue="totp"><Select options={[{ label: "TOTP", value: "totp" }, { label: "恢复码", value: "recovery_code" }]} /></Form.Item>
+                  <Form.Item label={t("management.password.mfaCode")} name="mfa_code"><Input.Password visibilityToggle={false} autoComplete="one-time-code" /></Form.Item>
+                  <Button type="primary" htmlType="submit" loading={busy}>{t("management.password.submit")}</Button>
                 </Form>
               ),
             },
             {
               key: "admins",
-              label: "管理员",
+              label: t("management.tabs.admins"),
               children: (
                 <Flex vertical gap={20}>
                   {highRisk}
                   <Table rowKey="id" size="small" scroll={{ x: 720 }} pagination={false} columns={columns} dataSource={administrators} rowSelection={{ type: "radio", selectedRowKeys: selected ? [selected] : [], onChange: (keys) => setSelected(String(keys[0])), getCheckboxProps: (record) => ({ "aria-label": `选择管理员 ${record.login_name}` }) }} />
-                  <Card size="small" title="创建待激活管理员">
+                  <Card size="small" title={t("management.admins.createTitle")}>
                     <Form form={createForm} layout="vertical" preserve={false} onFinish={createAdmin}>
-                      <Form.Item label="登录名" name="login_name" rules={[{ required: true }, { pattern: /^[a-z0-9._-]{3,64}$/ }]}><Input /></Form.Item>
-                      <Form.Item label="实名显示名" name="display_name" rules={[{ required: true, whitespace: true }, { max: 100 }]}><Input /></Form.Item>
-                      <Form.Item label="操作原因" name="reason" rules={[{ required: true }, { min: 10 }, { max: 500 }]}><Input.TextArea /></Form.Item>
-                      <Button type="primary" htmlType="submit" loading={busy}>创建并显示一次性令牌</Button>
+                      <Form.Item label={t("management.admins.loginName")} name="login_name" rules={[{ required: true }, { pattern: /^[a-z0-9._-]{3,64}$/ }]}><Input /></Form.Item>
+                      <Form.Item label={t("management.admins.createDisplayName")} name="display_name" rules={[{ required: true, whitespace: true }, { max: 100 }]}><Input /></Form.Item>
+                      <Form.Item label={t("management.admins.reason")} name="reason" rules={[{ required: true }, { min: 10 }, { max: 500 }]}><Input.TextArea /></Form.Item>
+                      <Button type="primary" htmlType="submit" loading={busy}>{t("management.admins.create")}</Button>
                     </Form>
                   </Card>
-                  <Card size="small" title="对选中管理员执行高风险操作">
+                  <Card size="small" title={t("management.admins.actionTitle")}>
                     <Flex vertical gap={12}>
-                      <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="操作原因（10–500 字符）" maxLength={500} />
+                      <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("management.admins.reasonPlaceholder")} maxLength={500} />
                       <Space wrap>
-                        <Button data-testid="disable-administrator" danger disabled={!selected || reason.trim().length < 10} onClick={() => Modal.confirm({ title: "确认禁用管理员？", content: "目标的全部会话与未使用令牌将被撤销。", onOk: () => operate("disable") })}>禁用</Button>
-                        <Button disabled={!selected || reason.trim().length < 10} onClick={() => void operate("token")}>重新生成激活令牌</Button>
-                        <Button danger disabled={!selected || reason.trim().length < 10} onClick={() => Modal.confirm({ title: "确认重置 MFA？", content: "目标将回到待激活状态并失去现有会话。", onOk: () => operate("mfa") })}>重置 MFA</Button>
+                        <Button data-testid="disable-administrator" danger disabled={!selected || reason.trim().length < 10} onClick={() => Modal.confirm({ title: t("management.admins.disableConfirmTitle"), content: t("management.admins.disableConfirmContent"), onOk: () => operate("disable") })}>{t("management.admins.disable")}</Button>
+                        <Button disabled={!selected || reason.trim().length < 10} onClick={() => void operate("token")}>{t("management.admins.token")}</Button>
+                        <Button danger disabled={!selected || reason.trim().length < 10} onClick={() => Modal.confirm({ title: t("management.admins.resetConfirmTitle"), content: t("management.admins.resetConfirmContent"), onOk: () => operate("mfa") })}>{t("management.admins.resetMfa")}</Button>
                       </Space>
                     </Flex>
                   </Card>
@@ -255,19 +261,19 @@ export default function ManagementPage() {
             },
             {
               key: "recovery",
-              label: "恢复码",
+              label: t("management.tabs.recovery"),
               children: (
                 <Flex vertical gap={16} className="form-column">
                   {highRisk}
-                  <Paragraph>重新生成会立即撤销全部旧恢复码，新码只显示一次。</Paragraph>
-                  <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="操作原因（10–500 字符）" maxLength={500} />
-                  <Button danger disabled={reason.trim().length < 10} onClick={() => Modal.confirm({ title: "重新生成恢复码？", content: "所有旧恢复码将立即失效。", onOk: regenerateCodes })}>重新生成恢复码</Button>
+                  <Paragraph>{t("management.recovery.description")}</Paragraph>
+                  <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("management.admins.reasonPlaceholder")} maxLength={500} />
+                  <Button danger disabled={reason.trim().length < 10} onClick={() => Modal.confirm({ title: t("management.recovery.confirmTitle"), content: t("management.recovery.confirmContent"), onOk: regenerateCodes })}>{t("management.recovery.regenerate")}</Button>
                 </Flex>
               ),
             },
           ]}
         />
       </Card>
-    </main>
+    </PageShell>
   );
 }

@@ -18,20 +18,22 @@ const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 function AuthShell() {
   const auth = useAuth();
   const { t } = useTranslation();
+  const authenticatedRoute = auth.route === "management" || auth.route === "assets" || auth.route === "jobs" || auth.route === "topology" || auth.route === "problems";
+  const localeControl = auth.route === "management" ? null : <LocaleSwitcher />;
 
   if (auth.route === "loading") {
-    return <><LocaleSwitcher /><main className="centered-page" data-testid="auth-loading"><Spin size="large" tip={t("common.shell.authLoading")} /></main></>;
+    return <>{localeControl}<main className="centered-page" data-testid="auth-loading"><Spin size="large" tip={t("common.shell.authLoading")} /></main></>;
   }
   if (auth.route === "unavailable") {
     return (
-      <><LocaleSwitcher /><main className="centered-page" data-testid="auth-unavailable">
+      <>{localeControl}<main className="centered-page" data-testid="auth-unavailable">
         <Card className="auth-card"><Alert type="error" showIcon message={t("common.shell.authUnavailable")} description={t("common.shell.authUnavailableDescription")} /></Card>
       </main></>
     );
   }
 
   return (
-    <><LocaleSwitcher /><Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" tip={t("common.shell.routeLoading")} /></main>}>
+    <>{localeControl}<Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" tip={t("common.shell.routeLoading")} /></main>}>
       {auth.route === "bootstrap" && <BootstrapPage />}
       {auth.route === "login" && <LoginPage />}
       {auth.route === "activation" && <ActivationPage />}
