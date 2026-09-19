@@ -1,5 +1,13 @@
 # Proposal: 修复 Current Inventory Query 安全执行上下文
 
+## Why
+
+Migration 34 重建 `control_query_current_account_inventory_v1(...)` 时丢失了 Migration 9 compatibility contract 要求的 `TimeZone=UTC`，导致完整 forward schema 无法通过 `control_history_schema_compatibility_v1()`。
+
+## What Changes
+
+新增一个只恢复 function-local `TimeZone=UTC` 的 forward migration，并用 PostgreSQL catalog integration test 覆盖 fresh install 与 `51 → 52` upgrade。既有查询函数 body 与产品语义不变。
+
 ## Outcome
 
 为 `control_query_current_account_inventory_v1(...)` 增加一个不可变的 forward migration，恢复既有 History compatibility contract 要求的 `TimeZone=UTC` function-local 配置。保留现有查询函数 body、字段投影、授权边界和产品语义不变，使完整 forward schema 恢复兼容。

@@ -1,6 +1,6 @@
 # Account Inventory Readonly Query
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: secured current inventory query context
 

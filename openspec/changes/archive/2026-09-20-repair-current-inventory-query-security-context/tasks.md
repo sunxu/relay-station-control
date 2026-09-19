@@ -8,5 +8,5 @@
 - [x] Prove `51 → 52` upgrade is idempotent and preserves existing current inventory state.
 - [x] Run History schema/process focused validation and readonly query regression.
 - [x] Run `make generate`, `make test build`, `go vet ./...`, and `git diff --check`.
-- [ ] Validate and archive this OpenSpec change after all evidence passes.
-- [ ] Verify clean worktree and record commit provenance.
+- [x] Validate and archive this OpenSpec change after all evidence passes.
+- [x] Verify clean worktree and record commit provenance.
