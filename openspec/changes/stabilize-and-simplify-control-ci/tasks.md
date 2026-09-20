@@ -16,4 +16,4 @@
 - [x] 14. Validate docs-only, web-only, Go/control, database, and acceptance/workflow paths.
 - [x] 15. Run final main correctness CI, capacity proof, compatibility proof, and record provenance. Main CI `35493126030` passed on `22691b9`; compatibility `35492812300` passed on `1b682b9`; capacity smoke `35490191704` passed for lifecycle, readonly, and history owners.
 - [x] 16. Reconcile AGENTS.md and validation principles with durable ownership rules.
-- [ ] 17. Capture final evidence, validate this change strictly, archive it, and verify a clean worktree. Strict validation currently passes; archive remains pending final docs/path evidence and clean-worktree verification.
+- [x] 17. Capture final evidence, validate this change strictly, archive it, and verify a clean worktree. OpenSpec-only path `35493383559` passed docs validation, strict OpenSpec validation, and `CI required`; retained correctness, capacity smoke, and compatibility evidence are recorded above.
