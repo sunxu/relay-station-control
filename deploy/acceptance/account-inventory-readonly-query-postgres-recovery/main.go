@@ -731,7 +731,8 @@ func seedFixture(ctx context.Context, owner, runtime *pgxpool.Pool) error {
 			VALUES($1,'Readonly Query Recovery Node',$2,$3,'http://readonly-query-recovery.invalid','docker-secret://synthetic/readonly-query-recovery')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES($1,$2,$3,'management_account_inventory_read')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at)
-			VALUES($1,clock_timestamp(),'deployment_enable','acceptance',clock_timestamp())`, []any{fixtureInstanceID}},
+			SELECT $1,t,'deployment_enable','acceptance',t
+			FROM (SELECT clock_timestamp() AS t) AS boundary`, []any{fixtureInstanceID}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by)
 			VALUES($1,$2,$3,ARRAY['openai'],ARRAY['legacy'],'acceptance')`, []any{fixturePolicyID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO provider_inventory_policy_bindings(node_type,driver_contract_version,policy_version_id,bound_by,bound_at)

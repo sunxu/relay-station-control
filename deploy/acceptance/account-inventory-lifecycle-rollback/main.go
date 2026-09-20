@@ -174,7 +174,8 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 			VALUES ($1,$2,$3,'management_account_inventory_read')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO relay_node_inventory_monitoring_activations(
 			instance_id,effective_from,reason,actor,created_at)
-			VALUES ($1,clock_timestamp(),'deployment_enable','rollback-acceptance',clock_timestamp())`, []any{fixtureInstanceID}},
+			SELECT $1,t,'deployment_enable','rollback-acceptance',t
+			FROM (SELECT clock_timestamp() AS t) AS boundary`, []any{fixtureInstanceID}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,
 			driver_contract_version,active_providers,out_of_scope_providers,created_by)
 			VALUES ($1,$2,$3,ARRAY['openai'],ARRAY['legacy'],'rollback-acceptance')`,

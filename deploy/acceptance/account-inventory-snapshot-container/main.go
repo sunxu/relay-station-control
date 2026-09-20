@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sunxu/relay-station-control/internal/drivers"
@@ -46,11 +47,39 @@ var (
 	fixturePollID     = uuid.MustParse("20000000-0000-4000-8000-000000000003")
 )
 
-type checkpointError struct{ checkpoint string }
+type checkpointError struct {
+	checkpoint string
+	class      string
+}
 
 func (failure *checkpointError) Error() string { return "acceptance_checkpoint" }
 
-func checkpoint(name string) error { return &checkpointError{checkpoint: name} }
+func checkpoint(name string) error {
+	return &checkpointError{checkpoint: name, class: "acceptance_invariant"}
+}
+
+func databaseErrorClass(err error) string {
+	var pgError *pgconn.PgError
+	if !errors.As(err, &pgError) {
+		return "database_failure"
+	}
+	switch pgError.Code {
+	case "23503":
+		return "reference_violation"
+	case "23505":
+		return "duplicate"
+	case "23514", "23P01":
+		return "constraint_violation"
+	case "42501":
+		return "permission_denied"
+	case "57014":
+		return "statement_timeout"
+	case "40001":
+		return "serialization_failure"
+	default:
+		return "sqlstate_" + pgError.Code
+	}
+}
 
 func main() {
 	os.Exit(run())
@@ -71,7 +100,7 @@ func run() (exitCode int) {
 		}
 		var failure *checkpointError
 		if errors.As(err, &failure) {
-			fmt.Fprintf(os.Stderr, "account_inventory_snapshot_official_runtime=failed reason=%s checkpoint=%s\n", reason, failure.checkpoint)
+			fmt.Fprintf(os.Stderr, "account_inventory_snapshot_official_runtime=failed reason=%s checkpoint=%s class=%s\n", reason, failure.checkpoint, failure.class)
 		} else {
 			fmt.Fprintf(os.Stderr, "account_inventory_snapshot_official_runtime=failed reason=%s\n", reason)
 		}
@@ -100,7 +129,7 @@ func execute() error {
 	}
 	defer runtime.Close()
 	if err := seed(setupContext, owner, configuration.endpoint, configuration.secretReference); err != nil {
-		return checkpoint("seed")
+		return err
 	}
 	cancelSetup()
 
@@ -214,7 +243,7 @@ func seed(ctx context.Context, owner *pgxpool.Pool, endpoint, secretReference st
 	}
 	transaction, err := owner.Begin(ctx)
 	if err != nil {
-		return err
+		return &checkpointError{checkpoint: "seed.transaction_begin", class: databaseErrorClass(err)}
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 	statements := []struct {
@@ -231,7 +260,8 @@ func seed(ctx context.Context, owner *pgxpool.Pool, endpoint, secretReference st
 			VALUES ($1,$2,$3,$4)`, []any{fixtureInstanceID, drivers.NodeTypeCLIProxyAPI, drivers.DriverContractCLIProxyAPIAuthFilesV1, drivers.CapabilityManagementAccountInventoryRead}},
 		{`INSERT INTO relay_node_inventory_monitoring_activations(
 			instance_id,effective_from,reason,actor,created_at)
-			VALUES ($1,clock_timestamp(),'deployment_enable','acceptance',clock_timestamp())`, []any{fixtureInstanceID}},
+			SELECT $1,t,'deployment_enable','acceptance',t
+			FROM (SELECT clock_timestamp() AS t) AS boundary`, []any{fixtureInstanceID}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by)
 			VALUES ($1,$2,$3,ARRAY[$4]::text[],ARRAY['legacy']::text[],'acceptance')`, []any{fixturePolicyID, drivers.NodeTypeCLIProxyAPI, drivers.DriverContractCLIProxyAPIAuthFilesV1, fixtureProvider}},
 		{`INSERT INTO provider_inventory_policy_bindings(node_type,driver_contract_version,policy_version_id,bound_by,bound_at)
@@ -243,12 +273,19 @@ func seed(ctx context.Context, owner *pgxpool.Pool, endpoint, secretReference st
 			VALUES ($1,$2,$3,$4,date_bin(interval '5 minutes',clock_timestamp(),timestamptz '1970-01-01'),$5,2,299,clock_timestamp())`,
 			[]any{fixturePollID, fixtureInstanceID, drivers.NodeTypeCLIProxyAPI, drivers.DriverContractCLIProxyAPIAuthFilesV1, fixturePolicyID}},
 	}
-	for _, statement := range statements {
+	checkpoints := []string{
+		"seed.driver", "seed.driver_capability", "seed.asset", "seed.node_capability",
+		"seed.monitoring_activation", "seed.policy", "seed.policy_binding", "seed.policy_activation", "seed.poll_run",
+	}
+	for index, statement := range statements {
 		if _, err := transaction.Exec(ctx, statement.query, statement.args...); err != nil {
-			return err
+			return &checkpointError{checkpoint: checkpoints[index], class: databaseErrorClass(err)}
 		}
 	}
-	return transaction.Commit(ctx)
+	if err := transaction.Commit(ctx); err != nil {
+		return &checkpointError{checkpoint: "seed.commit", class: databaseErrorClass(err)}
+	}
+	return nil
 }
 
 func waitForSafeSlot(ctx context.Context, owner *pgxpool.Pool) error {

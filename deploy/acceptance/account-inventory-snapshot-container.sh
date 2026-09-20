@@ -270,6 +270,11 @@ main() {
     "$golang_image" \
     go run ./deploy/acceptance/account-inventory-snapshot-container >"$harness_log" 2>&1
   then
+    diagnostic="$(grep -Eo 'checkpoint=[a-z0-9_.-]+ class=[a-z0-9_]+' "$harness_log" | tail -n 1 || true)"
+    if [ -n "$diagnostic" ]; then
+      echo "account_inventory_snapshot_official_runtime=failed reason=harness_seed $diagnostic" >&2
+      exit 1
+    fi
     for checkpoint in \
       owner_database runtime_database seed secret_resolver driver repository \
       worker finalize_wait worker_shutdown finalize request_count \
