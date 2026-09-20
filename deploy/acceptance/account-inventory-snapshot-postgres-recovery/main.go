@@ -60,6 +60,10 @@ func checkpointFailure(checkpoint string, err error) error {
 	return acceptanceFailure{checkpoint: checkpoint, class: databaseErrorClass(err)}
 }
 
+func seedCheckpoint(checkpoint string, err error) error {
+	return checkpointFailure("prepare.seed_fixture."+checkpoint, err)
+}
+
 func main() {
 	os.Exit(runMain())
 }
@@ -161,6 +165,10 @@ func runPrepare() error {
 	}
 	defer runtime.Close()
 	if err := seedFixture(ctx, owner); err != nil {
+		var failure acceptanceFailure
+		if errors.As(err, &failure) {
+			return err
+		}
 		return checkpointFailure("prepare.seed_fixture", err)
 	}
 	repository, err := pollstore.NewInventoryPollRepository(runtime)
@@ -624,25 +632,25 @@ func openNamedPool(
 
 func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 	if err := waitForSafeCurrentSlot(ctx, owner, 30); err != nil {
-		return err
+		return seedCheckpoint("current_slot", err)
 	}
 	transaction, err := owner.Begin(ctx)
 	if err != nil {
-		return err
+		return seedCheckpoint("transaction_begin", err)
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 	var existing int
 	if err := transaction.QueryRow(ctx, `SELECT count(*) FROM account_inventory_poll_runs
 		WHERE poll_run_id IN ($1,$2)`, fixturePollID, timeoutPollID).Scan(&existing); err != nil || existing != 0 {
 		if err != nil {
-			return err
+			return seedCheckpoint("existing_poll_runs", err)
 		}
-		return errAcceptanceInvariant
+		return seedCheckpoint("existing_poll_runs", errAcceptanceInvariant)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO node_drivers(
 		node_type,driver_contract_version,display_name
 	) VALUES ($1,$2,'Snapshot Recovery Test Driver')`, fixtureNodeType, fixtureContract); err != nil {
-		return err
+		return seedCheckpoint("driver", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO relay_node_assets(
 		instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref
@@ -654,12 +662,12 @@ func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 		policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by
 	) VALUES ($1,$2,$3,ARRAY[$4]::text[],ARRAY['legacy']::text[],'acceptance')`,
 		fixturePolicyID, fixtureNodeType, fixtureContract, fixtureProvider); err != nil {
-		return err
+		return seedCheckpoint("policy", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO provider_inventory_policy_bindings(
 		node_type,driver_contract_version,policy_version_id,bound_by,bound_at
 	) VALUES ($1,$2,$3,'acceptance',clock_timestamp())`, fixtureNodeType, fixtureContract, fixturePolicyID); err != nil {
-		return err
+		return seedCheckpoint("policy_binding", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO provider_inventory_policy_activations(
 		node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at
@@ -673,9 +681,12 @@ func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 	) VALUES ($1,$2,$3,$4,
 		date_bin(interval '5 minutes',clock_timestamp(),timestamptz '1970-01-01'),
 		$5,2,299,clock_timestamp())`, fixturePollID, fixtureInstanceID, fixtureNodeType, fixtureContract, fixturePolicyID); err != nil {
-		return err
+		return seedCheckpoint("poll_run", err)
 	}
-	return transaction.Commit(ctx)
+	if err := transaction.Commit(ctx); err != nil {
+		return seedCheckpoint("commit", err)
+	}
+	return nil
 }
 
 func databaseErrorClass(err error) string {
