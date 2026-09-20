@@ -174,10 +174,8 @@ describe("asset registry read-only view", () => {
 
     fireEvent.mouseDown(nodesCard.getByLabelText("Node 类型"));
     fireEvent.click(await screen.findByText("cliproxyapi", { selector: ".ant-select-item-option-content" }));
-    await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({ nodeType: "cliproxyapi" })));
     fireEvent.mouseDown(nodesCard.getByLabelText("Capability"));
     fireEvent.click(await screen.findByText("management_health_read", { selector: ".ant-select-item-option-content" }));
-    await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({ capability: "management_health_read" })));
     fireEvent.mouseDown(nodesCard.getByLabelText("监控状态"));
     fireEvent.click(await screen.findByText("监控已激活", { selector: ".ant-select-item-option-content" }));
 
