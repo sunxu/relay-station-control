@@ -10,9 +10,11 @@
 
 ## Secret configuration
 
-- Reuse `gateway_instances.reader_secret_ref`.
-- The secret must resolve to the Directory reader token.
-- Do not store the token in logs, metrics, or response payloads.
+- The current Stage 0 path uses the Gateway asset's protected `directory_credential` state.
+- `secret_configured` means only that the sealed credential column is non-NULL; it does not prove K2 availability or ciphertext usability.
+- The bounded Directory resolver opens the credential with the external K2 only for one authenticated fetch. It must not use `reader_secret_ref`, `SecretResolver`, or `FileSecretResolver` fallback.
+- Missing, wrong, structurally invalid, or mismatched K2 fails closed for credential-dependent fetches while credential-independent Control features remain available. K2 changes require a process restart; there is no hot reload.
+- Do not store plaintext credential, sealed value, K2, commitment, or raw token in logs, metrics, audit, response payloads, or evidence.
 
 ## Retry and failure behavior
 
@@ -32,11 +34,11 @@
 
 - `lost_lease`: another worker won the fence or the lease expired.
 - `source_time_invalid`: the source timestamp is outside the frozen tolerance window.
-- `secret_unavailable`: the reader secret reference could not be resolved.
+- `secret_unavailable`: the protected Directory credential could not be read or opened with the current K2.
 - `contract_invalid`: the response shape, field order, or URL contract is invalid.
 
 ## Rollout and rollback
 
-- Roll out the migration and runtime together.
+- Roll out the Migration 00051 protected credential state and runtime together.
 - Verify scheduler, claim, finalize, and reconciler behavior after deploy.
-- Roll back by stopping the runtime first, then reverting the migration only if no live runs depend on the new schema.
+- A local environment containing non-NULL legacy `reader_secret_ref` must be rebuilt and assets re-registered; do not import or dual-read the legacy reference. Production rollback is stop-forward only and must not rewrite the shipped migration.

@@ -7,6 +7,13 @@ recovery procedures; `register-assets.sql` is `LEGACY / NOT CURRENT DEPLOYMENT
 ENTRY` and must not be used as the normal current deployment path. Do not restore
 old registrar permissions to make that legacy template work.
 
+Stage 0 current deployment does not use these templates as a credential source.
+Current Node/Gateway credentials are supplied through the authenticated Control
+API as `management_credential` and `directory_credential`, then stored as
+protected sealed state with the external K2. The `reader_secret_ref` variables
+below are historical fixture inputs only and must not be restored as a current
+runtime or operator workflow.
+
 Run all templates with the environment-specific LOGIN that inherits the
 `relay_control_asset_registrar` capability role. Each mutation template starts
 an explicit transaction at its documented isolation level, fixes the transaction time zone to UTC,
@@ -42,13 +49,13 @@ identical. Conflicting content fails without partial writes.
   enabled super-admin actor; identical replay is an audited no-op, while a
   different reference or existing Directory/Binding history is rejected.
 
-Never pass credentials as `*_secret_ref`; those parameters accept only opaque
-secret-manager references. `register-assets.sql` reads the two references from
+Never pass credential contents as `*_secret_ref`; those historical parameters
+accept only opaque secret-manager references. `register-assets.sql` reads the two references from
 the fixed `CONTROL_GATEWAY_READER_SECRET_REF` and
 `CONTROL_NODE_READER_SECRET_REF` environment variables, then sends them as
 extended-query bind parameters. They therefore do not appear in the `psql`
 command line, process list, PostgreSQL statement text, or statement logs. Set
-either variable to the empty string when that asset has no reference. Use
+either variable to the empty string when that historical fixture has no reference. Use
 PostgreSQL 18 `psql -X --set=ON_ERROR_STOP=on
 --set=name=value` for the remaining, non-sensitive values documented at the top
 of the selected template.

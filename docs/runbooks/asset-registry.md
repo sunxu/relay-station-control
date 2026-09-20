@@ -8,7 +8,17 @@ registrar SQL 模板保留用于历史隔离 fixture 与 recovery procedure；�
 `register-assets.sql` 是 `LEGACY / NOT CURRENT DEPLOYMENT ENTRY`。不得恢复已
 撤销的历史 registrar 权限，也不得用直接表写入替代当前受控 API。
 
-所有示例值都必须来自目标环境的部署清单或 Secret Manager。不要把数据库口令、Reader Secret、Secret 引用、连接串或带 query 的 URL 写入 Git、工单、终端录屏和验收输出。
+所有示例值都必须来自目标环境的部署清单或 Secret Manager。不要把数据库口令、management credential、Directory credential、Secret 引用、连接串或带 query 的 URL 写入 Git、工单、终端录屏和验收输出。
+
+## Stage 0 protected credential operations
+
+当前部署通过认证 Control API/Asset Registry 管理 Node `management_credential` 与 Gateway `directory_credential`。Control 将批准的 credential 以 asset-bound protected-at-rest sealed state 保存；外部 K2 由 `CONTROL_ASSET_CREDENTIAL_KEY_FILE` 提供，位于 PostgreSQL 外且只在进程启动时读取一次。
+
+- Register：credential 字段省略表示 unconfigured；合法 string 表示 set；显式 null 非法。
+- Edit：字段省略表示 keep；合法 string 表示 set；显式 null 表示 clear。
+- Replace：字段省略表示 unconfigured；合法 string 表示 set；不得继承 predecessor credential；显式 null 非法。
+- `secret_configured` 只表示 sealed credential 非 NULL，不表示当前 K2/Open 可用。K2 缺失、错误或损坏时，clear、Retire、unconfigured Replace 与 credential-independent reads 仍按既有 contract 工作；credential-dependent outbound 必须 fail closed。
+- 不得把 plaintext credential、sealed blob、K2、K2 commitment 或 legacy `reader_secret_ref` 放入 API/UI/query/log/audit/metrics/trace/evidence。不得恢复 `FileSecretResolver` 或 legacy reference fallback。
 
 生产命令不把含口令连接串放入 argv。数据库平台在 workspace 外提供 owner-only 的 `pg_service.conf` 与 `.pgpass`，部署作业只注入 `CONTROL_PGSERVICE_FILE`、`CONTROL_PGPASS_FILE`、`CONTROL_MIGRATOR_PGSERVICE` 和 `CONTROL_ASSET_REGISTRAR_PGSERVICE`。资产参数变量同样是部署作业的临时输入，不是 Control 进程配置；禁止写入仓库内 `.env` 或 shell history，作业结束后立即销毁。
 
@@ -176,7 +186,7 @@ psql -X --no-psqlrc \
 
 登记 endpoint 必须是规范化的绝对 `http`/`https` URL，包含 host，不含 userinfo、query 或 fragment。登记不会执行 DNS、TLS 或 HTTP 探测。
 
-数据库仅保存 Secret Manager 的 opaque Reader Secret 引用，不保存凭证内容。Secret 引用自身同样按 Secret 处理：只可通过登记模板传入，不得出现在 API、页面、日志、指标、Trace、审计或对账输出。只读 API 仅返回 `secret_configured` 布尔值。若怀疑泄露，先轮换引用目标和数据库凭据，再按安全事件流程处理输出副本。
+历史隔离 fixture SQL 仍可能使用 opaque `reader_secret_ref`，但这不是当前部署契约；它只用于明确标注的 historical fixture/recovery，并不得成为生产 runtime 或当前 operator workflow 的 credential source。当前只读 API 仅返回 `secret_configured` 布尔值。若怀疑 credential 泄露，按 K2/asset credential recovery runbook 处理，不在输出中保留明文或 sealed state。
 
 ## Provider 策略
 
@@ -196,7 +206,7 @@ Provider 策略以 `(node_type, driver_contract_version)` 为作用域。`active
 
 Asset Registry 的 Node collection 默认只显示 active Node，并提供 `active|retired|all` lifecycle filter；历史 detail 保留 retired metadata 和 predecessor/successor lineage。Register 创建 revision 1 的新 identity；Edit、Retire 和 Replace 都携带十进制字符串 `expected_revision`。Retire 是 terminal transition；Replace 原子退休旧 identity 并创建 revision 1 的新 identity，禁止复用或复活历史 identity。
 
-Node mutation 使用全局 `command_id` durable receipt。相同 actor、command 和 intent 重放原始 status/body；actor 或 intent 冲突返回固定冲突。Secret reference 是 write-only，产品响应和页面只显示 `secret_configured`。Retire/Replace 会在同一数据库 boundary 关闭旧 current binding、关闭 current monitoring、durable cancel future monitoring，并 fence 或终止旧 Node 的 Inventory work；replacement 不继承这些 runtime truth。
+Node mutation 使用全局 `command_id` durable receipt。相同 actor、command 和 intent 重放原始 status/body；actor 或 intent 冲突返回固定冲突。Management credential 是 write-only protected state，产品响应和页面只显示 `secret_configured`。Retire/Replace 会在同一数据库 boundary 关闭旧 current binding、关闭 current monitoring、durable cancel future monitoring，并 fence 或终止旧 Node 的 Inventory work；replacement 不继承这些 runtime truth，也不继承 predecessor credential。
 
 Node collection cursor 绑定 filter、`node_generation` 和首屏 DB `read_as_of`。真正改变 lifecycle/current collection projection 的事务推进 generation，使旧 cursor 返回 `cursor_stale`；单纯 wall-clock 跨过 monitoring boundary 不改变已签发 cursor chain。legacy `nodes` count 继续表示 total，`node_counts` 分别提供 active、retired 和 total。
 
@@ -220,7 +230,7 @@ Enable/Disable 都需要新的稳定 `command_id`，不接受 Node revision，�
 - 当前策略绑定与当前激活区间同作用域；
 - Node 监控区间不重叠。
 
-对账输出只能包含固定计数和通过/失败状态，不得选择 endpoint、名称、instance ID、Provider 名称或 Secret 引用。随后由实名 `super_admin` 访问 `/assets`，分别检查环境、Gateway、Driver、当前策略和 Node 页面。Node lifecycle 控件只调用 Control 同源 API；浏览器不得请求登记的外部 endpoint，也不得显示 raw Secret reference。retired Node 只提供历史读取和 lineage 导航，不提供 resurrection action。
+对账输出只能包含固定计数和通过/失败状态，不得选择 endpoint、名称、instance ID、Provider 名称、plaintext credential、sealed state、K2、commitment 或 Secret 引用。随后由实名 `super_admin` 访问 `/assets`，分别检查环境、Gateway、Driver、当前策略和 Node 页面。Node lifecycle 控件只调用 Control 同源 API；浏览器不得请求登记的外部 endpoint，也不得显示 raw credential、sealed state 或 legacy reference。retired Node 只提供历史读取和 lineage 导航，不提供 resurrection action。
 
 ### Web 路由与静态资源
 
