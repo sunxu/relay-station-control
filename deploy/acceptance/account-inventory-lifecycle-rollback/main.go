@@ -8,12 +8,45 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sunxu/relay-station-control/internal/drivers"
 	"github.com/sunxu/relay-station-control/internal/inventorypoll"
 	controlstore "github.com/sunxu/relay-station-control/internal/store"
 )
+
+type seedFailure struct {
+	checkpoint string
+	class      string
+	err        error
+}
+
+func (failure *seedFailure) Error() string { return failure.class }
+func (failure *seedFailure) Unwrap() error { return failure.err }
+
+func databaseErrorClass(err error) string {
+	var pgError *pgconn.PgError
+	if !errors.As(err, &pgError) {
+		return "database_failure"
+	}
+	switch pgError.Code {
+	case "23503":
+		return "reference_violation"
+	case "23505":
+		return "duplicate"
+	case "23514", "23P01":
+		return "constraint_violation"
+	case "42501":
+		return "permission_denied"
+	case "57014":
+		return "statement_timeout"
+	case "40001":
+		return "serialization_failure"
+	default:
+		return "sqlstate_" + pgError.Code
+	}
+}
 
 const (
 	ownerURLEnvironment   = "CONTROL_LIFECYCLE_ROLLBACK_OWNER_URL"
@@ -70,6 +103,10 @@ func main() {
 		fail("invalid_mode")
 	}
 	if err != nil {
+		var failure *seedFailure
+		if errors.As(err, &failure) {
+			fmt.Fprintf(os.Stderr, "account_inventory_lifecycle_rollback_harness=diagnostic checkpoint=%s class=%s\n", failure.checkpoint, failure.class)
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			fail(os.Args[1] + "_timeout")
 		}
@@ -114,7 +151,7 @@ func (harness *rollbackHarness) close() {
 func (harness *rollbackHarness) prepare(ctx context.Context) error {
 	transaction, err := harness.owner.Begin(ctx)
 	if err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.transaction_begin", class: databaseErrorClass(err), err: err}
 	}
 	defer transaction.Rollback(context.Background())
 	statements := []struct {
@@ -152,34 +189,41 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 			'email_filter_used',false,'cursor_used',false,'result_count',1))`,
 			[]any{fixtureAuditID, fixtureAuditActor, fixtureInstanceID}},
 	}
-	for _, statement := range statements {
+	checkpoints := []string{
+		"seed.environment", "seed.admin_user", "seed.driver", "seed.asset",
+		"seed.policy", "seed.policy_binding", "seed.policy_activation", "seed.audit",
+	}
+	for index, statement := range statements {
 		if _, err := transaction.Exec(ctx, statement.query, statement.args...); err != nil {
-			return err
+			return &seedFailure{checkpoint: checkpoints[index], class: databaseErrorClass(err), err: err}
 		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.commit", class: databaseErrorClass(err), err: err}
 	}
 
 	var baseSlot time.Time
 	if err := harness.owner.QueryRow(ctx, `SELECT date_bin(
 		interval '5 minutes',clock_timestamp(),timestamptz '1970-01-01'
 	)-interval '15 minutes'`).Scan(&baseSlot); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.base_slot", class: databaseErrorClass(err), err: err}
 	}
 	if err := harness.insertRunningPoll(ctx, baselinePollID, baselineFence, baseSlot); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.baseline_poll", class: databaseErrorClass(err), err: err}
 	}
 	if err := harness.finalize(ctx, baselinePollID, baselineFence, true); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.baseline_finalize", class: databaseErrorClass(err), err: err}
 	}
 	if err := harness.insertRunningPoll(ctx, suspectedPollID, suspectedFence, baseSlot.Add(5*time.Minute)); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.suspected_poll", class: databaseErrorClass(err), err: err}
 	}
 	if err := harness.finalize(ctx, suspectedPollID, suspectedFence, false); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.suspected_finalize", class: databaseErrorClass(err), err: err}
 	}
-	return harness.verifyFrozen(ctx)
+	if err := harness.verifyFrozen(ctx); err != nil {
+		return &seedFailure{checkpoint: "seed.verify", class: "acceptance_invariant", err: err}
+	}
+	return nil
 }
 
 func (harness *rollbackHarness) insertRunningPoll(

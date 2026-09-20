@@ -284,6 +284,11 @@ main() {
     if grep -Fq 'reason=prepare_timeout' "$runtime_directory/prepare.log"; then
       fixed_failure 'fixture_prepare_timeout'
     fi
+    diagnostic="$(grep -Eo 'checkpoint=[a-z0-9_.-]+ class=[a-z0-9_]+' "$runtime_directory/prepare.log" | tail -n 1 || true)"
+    if [ -n "$diagnostic" ]; then
+      echo "account_inventory_lifecycle_rollback=failed reason=fixture_prepare_failed $diagnostic management_requests=0" >&2
+      exit 1
+    fi
     fixed_failure 'fixture_prepare_failed'
   fi
   before_old="$(lifecycle_fingerprint)" || fixed_failure 'fingerprint_failed'

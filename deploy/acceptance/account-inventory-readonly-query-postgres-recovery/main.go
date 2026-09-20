@@ -15,11 +15,44 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	controlauth "github.com/sunxu/relay-station-control/internal/auth"
 	productstore "github.com/sunxu/relay-station-control/internal/store"
 )
+
+type seedFailure struct {
+	checkpoint string
+	class      string
+	err        error
+}
+
+func (failure *seedFailure) Error() string { return failure.class }
+func (failure *seedFailure) Unwrap() error { return failure.err }
+
+func databaseErrorClass(err error) string {
+	var pgError *pgconn.PgError
+	if !errors.As(err, &pgError) {
+		return "database_failure"
+	}
+	switch pgError.Code {
+	case "23503":
+		return "reference_violation"
+	case "23505":
+		return "duplicate"
+	case "23514", "23P01":
+		return "constraint_violation"
+	case "42501":
+		return "permission_denied"
+	case "57014":
+		return "statement_timeout"
+	case "40001":
+		return "serialization_failure"
+	default:
+		return "sqlstate_" + pgError.Code
+	}
+}
 
 const (
 	ownerURLEnvironment    = "CONTROL_READONLY_QUERY_RECOVERY_OWNER_URL"
@@ -94,6 +127,10 @@ func runMain() (exitCode int) {
 		return 2
 	}
 	if err != nil {
+		var failure *seedFailure
+		if errors.As(err, &failure) {
+			fmt.Fprintf(os.Stderr, "account_inventory_readonly_query_recovery=diagnostic checkpoint=%s class=%s\n", failure.checkpoint, failure.class)
+		}
 		reason := "acceptance_invariant"
 		if errors.Is(err, errInvalidConfiguration) {
 			reason = "invalid_configuration"
@@ -366,14 +403,20 @@ func runPrepare() error {
 	}
 	defer runtime.Close()
 	if err := seedFixture(ctx, owner, runtime); err != nil {
-		return errAcceptanceInvariant
+		return err
 	}
 	page, err := queryAndAudit(ctx, runtime, "readonly-query-recovery-prepare")
 	if err != nil || !isCurrentTruth(page) {
-		return errAcceptanceInvariant
+		if err == nil {
+			err = errAcceptanceInvariant
+		}
+		return &seedFailure{checkpoint: "prepare.query_and_audit", class: databaseErrorClass(err), err: err}
 	}
 	if count, err := auditCount(ctx, owner, "readonly-query-recovery-prepare"); err != nil || count != 1 {
-		return errAcceptanceInvariant
+		if err == nil {
+			err = errAcceptanceInvariant
+		}
+		return &seedFailure{checkpoint: "prepare.audit_verify", class: databaseErrorClass(err), err: err}
 	}
 	if err := seedHTTPSession(ctx, owner); err != nil {
 		return errAcceptanceInvariant
@@ -700,16 +743,21 @@ func seedFixture(ctx context.Context, owner, runtime *pgxpool.Pool) error {
 	}
 	transaction, err := owner.Begin(ctx)
 	if err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.transaction_begin", class: databaseErrorClass(err), err: err}
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
-	for _, statement := range statements {
+	checkpoints := []string{
+		"seed.environment", "seed.driver", "seed.driver_capability", "seed.asset",
+		"seed.node_capability", "seed.policy", "seed.policy_binding", "seed.policy_activation",
+		"seed.poll_run", "seed.poll_claim", "seed.admin_user",
+	}
+	for index, statement := range statements {
 		if _, err := transaction.Exec(ctx, statement.sql, statement.args...); err != nil {
-			return err
+			return &seedFailure{checkpoint: checkpoints[index], class: databaseErrorClass(err), err: err}
 		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.commit", class: databaseErrorClass(err), err: err}
 	}
 	providers, err := json.Marshal([]map[string]any{{
 		"provider": fixtureProvider, "identifiable_count": 1, "missing_identity_count": 0,
@@ -732,7 +780,7 @@ func seedFixture(ctx context.Context, owner, runtime *pgxpool.Pool) error {
 	if err := runtime.QueryRow(ctx, `SELECT count(*) FROM public.control_finalize_account_inventory_poll_run_with_lifecycle(
 		$1,$2,true,true,true,'runtime',true,true,false,'success','none',1,1,0,0,0,'v1.0.0','abcdef1',$3::jsonb,$4::jsonb,'[]'::jsonb
 	)`, fixturePollID, fixtureFence, providers, snapshots).Scan(&finalized); err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.finalize", class: databaseErrorClass(err), err: err}
 	}
 	if finalized != 1 {
 		return errAcceptanceInvariant

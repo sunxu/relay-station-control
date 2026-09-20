@@ -307,7 +307,17 @@ build_binaries() {
 }
 
 run_phase() {
-  "$harness" "$1" >>"$phase_log" 2>&1 || fixed_failure "$2"
+  if "$harness" "$1" >>"$phase_log" 2>&1; then
+    return 0
+  fi
+  if [ "$1" = prepare ]; then
+    diagnostic="$(grep -Eo 'checkpoint=[a-z0-9_.-]+ class=[a-z0-9_]+' "$phase_log" | tail -n 1 || true)"
+    if [ -n "$diagnostic" ]; then
+      echo "account_inventory_readonly_query_recovery=failed reason=$2 $diagnostic" >&2
+      exit 1
+    fi
+  fi
+  fixed_failure "$2"
 }
 
 wait_for_outage_ready() {
