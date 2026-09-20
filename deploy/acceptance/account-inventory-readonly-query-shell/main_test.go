@@ -522,7 +522,7 @@ func TestReadonlyQueryCIJobIsPinnedAndComplete(t *testing.T) {
 		"PostgreSQL 18 account inventory readonly query acceptance",
 		"timeout-minutes: 60",
 		"actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
-		"actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+		"actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16",
 		"actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
 		`node-version: "24"`,
 		proxyPrefix + "npm ci",
