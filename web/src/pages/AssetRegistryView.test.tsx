@@ -399,13 +399,13 @@ describe("asset registry read-only view", () => {
 		}));
 		render(<AssetRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
 		await screen.findByText("Tokyo Node");
-		const detailButtons = screen.getAllByRole("button", { name: /详.{0,2}情/ });
-		fireEvent.click(detailButtons[0]!);
-		fireEvent.click(detailButtons[1]!);
+		fireEvent.click(screen.getByTestId(`node-details-${firstNode.instanceId}`));
+		fireEvent.click(screen.getByTestId(`node-details-${secondNode.instanceId}`));
+		await waitFor(() => expect(api.nodeDetail).toHaveBeenCalledTimes(2));
 		resolveSecond({ asset: secondNode, predecessor: null, successor: null });
-		expect(await screen.findByText("Tokyo Node")).toBeInTheDocument();
+		expect(await screen.findByTestId("node-management-operations")).toBeInTheDocument();
 		resolveFirst({ asset: firstNode, predecessor: null, successor: null });
-		await new Promise((resolve) => setTimeout(resolve, 0));
+		await waitFor(() => expect(screen.getByTestId("node-management-operations")).toBeInTheDocument());
 		expect(screen.getByText("Tokyo Node")).toBeInTheDocument();
 		expect(screen.queryByText("Singapore Node", { selector: ".ant-modal-title" })).not.toBeInTheDocument();
 	});
