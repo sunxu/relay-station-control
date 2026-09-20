@@ -164,6 +164,11 @@ wait_for_control() {
     if [ -n "$control_pid" ] && ! kill -0 "$control_pid" >/dev/null 2>&1; then
       wait "$control_pid" >/dev/null 2>&1 || true
       control_pid=''
+      if grep -Eq 'environment identity verification failed|authentication initialization failed|asset registry initialization failed|account inventory poll initialization failed|address already in use' "$control_log"; then
+        reason="$(grep -Eo 'environment identity verification failed|authentication initialization failed|asset registry initialization failed|account inventory poll initialization failed|address already in use' "$control_log" | tail -n 1 | tr ' ' '_' || true)"
+        echo "account_inventory_readonly_query_recovery=failed reason=control_start_failed checkpoint=control.start class=$reason" >&2
+        exit 1
+      fi
       fixed_failure 'control_start_failed'
     fi
     attempts=$((attempts - 1))

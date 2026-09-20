@@ -229,6 +229,9 @@ func seed(ctx context.Context, owner *pgxpool.Pool, endpoint, secretReference st
 			VALUES ($1,'Official Snapshot Acceptance Node',$2,$3,$4,$5)`, []any{fixtureInstanceID, drivers.NodeTypeCLIProxyAPI, drivers.DriverContractCLIProxyAPIAuthFilesV1, endpoint, secretReference}},
 		{`INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability)
 			VALUES ($1,$2,$3,$4)`, []any{fixtureInstanceID, drivers.NodeTypeCLIProxyAPI, drivers.DriverContractCLIProxyAPIAuthFilesV1, drivers.CapabilityManagementAccountInventoryRead}},
+		{`INSERT INTO relay_node_inventory_monitoring_activations(
+			instance_id,effective_from,reason,actor,created_at)
+			VALUES ($1,clock_timestamp(),'deployment_enable','acceptance',clock_timestamp())`, []any{fixtureInstanceID}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by)
 			VALUES ($1,$2,$3,ARRAY[$4]::text[],ARRAY['legacy']::text[],'acceptance')`, []any{fixturePolicyID, drivers.NodeTypeCLIProxyAPI, drivers.DriverContractCLIProxyAPIAuthFilesV1, fixtureProvider}},
 		{`INSERT INTO provider_inventory_policy_bindings(node_type,driver_contract_version,policy_version_id,bound_by,bound_at)

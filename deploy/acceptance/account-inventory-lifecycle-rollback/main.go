@@ -164,10 +164,17 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 			VALUES ($1,'rollback_audit','Rollback Audit Fixture')`, []any{fixtureAuditActor}},
 		{`INSERT INTO node_drivers(node_type,driver_contract_version,display_name)
 			VALUES ($1,$2,'Rollback Snapshot Driver')`, []any{fixtureNodeType, fixtureContract}},
+		{`INSERT INTO driver_capabilities(node_type,driver_contract_version,capability)
+			VALUES ($1,$2,'management_account_inventory_read')`, []any{fixtureNodeType, fixtureContract}},
 		{`INSERT INTO relay_node_assets(instance_id,display_name,node_type,
 			driver_contract_version,management_endpoint,reader_secret_ref)
 			VALUES ($1,'Rollback Snapshot Node',$2,$3,'http://127.0.0.1:9',
 			'docker-secret://synthetic/rollback-reader')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
+		{`INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability)
+			VALUES ($1,$2,$3,'management_account_inventory_read')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
+		{`INSERT INTO relay_node_inventory_monitoring_activations(
+			instance_id,effective_from,reason,actor,created_at)
+			VALUES ($1,clock_timestamp(),'deployment_enable','rollback-acceptance',clock_timestamp())`, []any{fixtureInstanceID}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,
 			driver_contract_version,active_providers,out_of_scope_providers,created_by)
 			VALUES ($1,$2,$3,ARRAY['openai'],ARRAY['legacy'],'rollback-acceptance')`,
@@ -190,8 +197,9 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 			[]any{fixtureAuditID, fixtureAuditActor, fixtureInstanceID}},
 	}
 	checkpoints := []string{
-		"seed.environment", "seed.admin_user", "seed.driver", "seed.asset",
-		"seed.policy", "seed.policy_binding", "seed.policy_activation", "seed.audit",
+		"seed.environment", "seed.admin_user", "seed.driver", "seed.driver_capability", "seed.asset",
+		"seed.node_capability", "seed.monitoring_activation", "seed.policy", "seed.policy_binding",
+		"seed.policy_activation", "seed.audit",
 	}
 	for index, statement := range statements {
 		if _, err := transaction.Exec(ctx, statement.query, statement.args...); err != nil {
@@ -221,7 +229,24 @@ func (harness *rollbackHarness) prepare(ctx context.Context) error {
 		return &seedFailure{checkpoint: "seed.suspected_finalize", class: databaseErrorClass(err), err: err}
 	}
 	if err := harness.verifyFrozen(ctx); err != nil {
-		return &seedFailure{checkpoint: "seed.verify", class: "acceptance_invariant", err: err}
+		var failure *seedFailure
+		if errors.As(err, &failure) {
+			return failure
+		}
+		checkpoint := "seed.verify.query"
+		switch err.Error() {
+		case "rollback lifecycle state mismatch":
+			checkpoint = "seed.verify.lifecycle_state"
+		case "rollback poll pointer mismatch":
+			checkpoint = "seed.verify.poll_pointer"
+		case "rollback durable row count mismatch":
+			checkpoint = "seed.verify.row_counts"
+		case "rollback unexpected audit state":
+			checkpoint = "seed.verify.unexpected_audit"
+		case "rollback readonly audit state mismatch":
+			checkpoint = "seed.verify.readonly_audit"
+		}
+		return &seedFailure{checkpoint: checkpoint, class: "guard_rejected", err: err}
 	}
 	return nil
 }
@@ -293,12 +318,22 @@ func (harness *rollbackHarness) verifyFrozen(ctx context.Context) error {
 		&providerPoll, &lifecycleRows, &pollRows, &finalizedRows, &snapshotRows,
 		&policyRows, &auditRows, &viewAuditRows)
 	if err != nil {
-		return err
+		return &seedFailure{checkpoint: "seed.verify.query", class: databaseErrorClass(err), err: err}
 	}
-	if lifecycle != "suspected_missing" || missing != 1 || accountPoll != baselinePollID ||
-		providerPoll != suspectedPollID || lifecycleRows != 1 || pollRows != 2 || finalizedRows != 2 ||
-		snapshotRows != 1 || policyRows != 1 || auditRows != 0 || viewAuditRows != 1 {
-		return errors.New("rollback state changed")
+	if lifecycle != "suspected_missing" || missing != 1 {
+		return errors.New("rollback lifecycle state mismatch")
+	}
+	if accountPoll != baselinePollID || providerPoll != suspectedPollID {
+		return errors.New("rollback poll pointer mismatch")
+	}
+	if lifecycleRows != 1 || pollRows != 2 || finalizedRows != 2 || snapshotRows != 1 || policyRows != 1 {
+		return errors.New("rollback durable row count mismatch")
+	}
+	if auditRows != 0 {
+		return errors.New("rollback unexpected audit state")
+	}
+	if viewAuditRows != 1 {
+		return errors.New("rollback readonly audit state mismatch")
 	}
 	return nil
 }

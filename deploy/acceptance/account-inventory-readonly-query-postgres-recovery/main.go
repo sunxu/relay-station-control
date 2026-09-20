@@ -406,11 +406,11 @@ func runPrepare() error {
 		return err
 	}
 	page, err := queryAndAudit(ctx, runtime, "readonly-query-recovery-prepare")
-	if err != nil || !isCurrentTruth(page) {
-		if err == nil {
-			err = errAcceptanceInvariant
-		}
+	if err != nil {
 		return &seedFailure{checkpoint: "prepare.query_and_audit", class: databaseErrorClass(err), err: err}
+	}
+	if !isCurrentTruth(page) {
+		return &seedFailure{checkpoint: "prepare.projection", class: "guard_rejected", err: errAcceptanceInvariant}
 	}
 	if count, err := auditCount(ctx, owner, "readonly-query-recovery-prepare"); err != nil || count != 1 {
 		if err == nil {
@@ -730,6 +730,8 @@ func seedFixture(ctx context.Context, owner, runtime *pgxpool.Pool) error {
 		{`INSERT INTO relay_node_assets(instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref)
 			VALUES($1,'Readonly Query Recovery Node',$2,$3,'http://readonly-query-recovery.invalid','docker-secret://synthetic/readonly-query-recovery')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO node_capabilities(instance_id,node_type,driver_contract_version,capability) VALUES($1,$2,$3,'management_account_inventory_read')`, []any{fixtureInstanceID, fixtureNodeType, fixtureContract}},
+		{`INSERT INTO relay_node_inventory_monitoring_activations(instance_id,effective_from,reason,actor,created_at)
+			VALUES($1,clock_timestamp(),'deployment_enable','acceptance',clock_timestamp())`, []any{fixtureInstanceID}},
 		{`INSERT INTO provider_inventory_policy_versions(policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by)
 			VALUES($1,$2,$3,ARRAY['openai'],ARRAY['legacy'],'acceptance')`, []any{fixturePolicyID, fixtureNodeType, fixtureContract}},
 		{`INSERT INTO provider_inventory_policy_bindings(node_type,driver_contract_version,policy_version_id,bound_by,bound_at)
@@ -748,8 +750,8 @@ func seedFixture(ctx context.Context, owner, runtime *pgxpool.Pool) error {
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 	checkpoints := []string{
 		"seed.environment", "seed.driver", "seed.driver_capability", "seed.asset",
-		"seed.node_capability", "seed.policy", "seed.policy_binding", "seed.policy_activation",
-		"seed.poll_run", "seed.poll_claim", "seed.admin_user",
+		"seed.node_capability", "seed.monitoring_activation", "seed.policy", "seed.policy_binding",
+		"seed.policy_activation", "seed.poll_run", "seed.poll_claim", "seed.admin_user",
 	}
 	for index, statement := range statements {
 		if _, err := transaction.Exec(ctx, statement.sql, statement.args...); err != nil {

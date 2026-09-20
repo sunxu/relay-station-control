@@ -129,7 +129,7 @@ func TestLifecycleRollbackPinsOldBinaryAndFreezesBothMutationPaths(t *testing.T)
 	for _, required := range []string{
 		"e482d8eb19896a60b73a4144ee155d1f66a2b1d7",
 		"git archive --format=tar",
-		"CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED=false",
+		`CONTROL_ACCOUNT_INVENTORY_POLL_ENABLED="$lifecycle_enabled"`,
 		"CONTROL_PROVIDER_POLICY_MUTATION_ENABLED=false",
 		"lifecycle_fingerprint",
 		`start_control "$old_binary" false`,
