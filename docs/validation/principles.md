@@ -147,3 +147,21 @@ Design
 
 A runtime PASS without provenance, durable evidence, and record reconciliation is not formal closure.
 
+## 9. Keep evidence classes separate
+
+Validation evidence has distinct ownership classes:
+
+- **Correctness** proves product behavior, persistence, security, recovery, and
+  compatibility contracts.
+- **Capacity** proves bounded scale and performance behavior on its own owner;
+  smoke wiring is not formal capacity evidence.
+- **Compatibility** proves behavior against a pinned upstream dependency and is
+  not evidence for the current production artifact.
+- **Release** proves immutable tag, artifact, candidate, and publication
+  provenance.
+
+Do not move or delete a failed correctness gate instead of fixing it. An old
+owner may be removed only after its replacement owner is defined and has
+actually passed. Formal diagnostics should preserve the earliest actionable
+checkpoint, while remaining sanitized and secret-safe. If impact is uncertain,
+run more validation rather than silently skipping it.

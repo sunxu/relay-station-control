@@ -31,6 +31,13 @@ make test build
 同一次 make 调用会共享 generate 依赖，无需先单独运行 make generate。不要为纯文档变更强制生成客户端或编译整个项目。
 前端 npm run build 自带 generate:api；共享 Make 依赖不代表前端生成只执行一次。
 
+CI validation ownership:
+
+- docs-only changes do not require full runtime or database acceptance;
+- behavior or database changes still require the owning correctness acceptance;
+- capacity and upstream compatibility use independent workflows;
+- uncertain impact expands validation and does not default to skip.
+
 数据库或状态机变更还需运行对应的 `deploy/acceptance/` 验收。使用 README 中的隔离开发数据库和受限 runtime role；产品进程不得持有 migration owner 凭据。
 
 ## Playwright E2E Locator Policy
