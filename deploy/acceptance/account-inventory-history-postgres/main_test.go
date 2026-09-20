@@ -50,8 +50,8 @@ func TestAccountInventoryHistoryPostgresSchemaSmoke(t *testing.T) {
 	registrarPool := openHistoryPool(t, "CONTROL_HISTORY_REGISTRAR_TEST_URL")
 
 	var version int
-	if err := migrator.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil || version != 9 {
-		t.Fatal("Migration 9 is not the current schema")
+	if err := migrator.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil || version < 9 {
+		t.Fatal("Migration 9 history contract is not present on the forward schema")
 	}
 
 	var compatibilityBytes []byte

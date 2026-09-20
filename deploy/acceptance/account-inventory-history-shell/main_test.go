@@ -212,7 +212,7 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"docker compose --project-name", "down --volumes --remove-orphans",
 		"docker ps --all", "docker volume ls", "docker network ls",
 		"label=com.docker.compose.project=", "GOOSE_DBSTRING=", "go tool goose up",
-		"assert_version 51", "migrate",
+		"assert_version 52", "migrate",
 		"TestAccountInventoryHistoryPostgresSchemaSmoke", "core_sha256=covered",
 		"TestAccountInventoryHistoryPostgresPlannerCatalogGate",
 		"TestAccountInventoryHistoryPostgresRollupPublicationMatrix",
@@ -274,10 +274,9 @@ func TestHistoryAcceptanceBundleContract(t *testing.T) {
 		"security_boundary_matrix=covered",
 		"TestAccountInventoryHistoryAggregateSchemaConstraintAndProtectionGateMatrix",
 		"aggregate_schema_constraints_protection_gates=covered",
-		"TestAccountInventoryHistoryCapacityOneTenFifty",
 		"TestAccountInventoryRowsFailClosed",
 		"TestAccountInventoryHTTPRepositoryRetentionNullSourceAndInconsistentCurrentState",
-		"capacity_1_10_50_total_accounts=1000",
+		"capacity_1_10_50=not_run",
 		"retention_planner_lock=covered",
 		"planner_limit_progress=covered",
 		"retired_day_poll_lock=covered",
@@ -332,7 +331,7 @@ func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
 	}
 	workflow := string(contents)
 	for stage, mode := range map[string]string{
-		"history_postgres":   "postgres",
+		"history_schema_store": "postgres",
 		"history_process":    "process",
 		"history_data_plane": "data-plane",
 	} {
@@ -345,19 +344,14 @@ func TestHistoryAcceptanceWorkflowUsesIndependentStageJobs(t *testing.T) {
 		t.Fatal("Docker-heavy history jobs still wait for the static gate")
 	}
 	for _, required := range []string{
-		"  history_static:",
-		"  postgres_history:",
-		"    if: ${{ always() }}",
-		"      - history_static",
-		"      - history_postgres",
-		"      - history_process",
-		"      - history_data_plane",
-		"${{ needs.history_static.result }}",
-		"${{ needs.history_postgres.result }}",
+		"Run history static validation",
+		"  history_schema_store:",
+		"  ci_required:",
+		"${{ needs.history_schema_store.result }}",
 		"${{ needs.history_process.result }}",
 		"${{ needs.history_data_plane.result }}",
-		"account_inventory_history_acceptance=failed reason=stage_dependency_failed",
-		"account_inventory_history_acceptance=success mode=all",
+		"ci_required=failed phase=$name result=",
+		"ci_required=success unexpected_skip=0 coverage_gap=0",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Errorf("history workflow lacks %q", required)
@@ -670,7 +664,7 @@ func TestHistoryAcceptanceCleanupAndReportContract(t *testing.T) {
 		},
 		{
 			"account-inventory-history-postgres.sh", "account_inventory_history_postgres",
-			"account_inventory_history_postgres server_major migration fresh_install core_sha256 canonical_golden compaction_main_path crash_recovery_matrix security_boundary_matrix aggregate_schema_constraints_protection_gates compaction_claim_fencing compaction_reconcile_phases summarize_atomicity summarize_timeout_disconnect_recovery summarize_immutability snapshot_delete_atomicity snapshot_delete_selection snapshot_delete_resume compaction_complete_count_gate final_rollup finalize_atomicity final_immutability metrics_completed_only zero_provider planner_catalog_utc_inclusive_72h planner_eligibility_matrix finalize_catalog_9500 utc_dst_72h_expression slot_provider_matrix incomplete_segment_gates coverage_expression_9499_finalize_9474_9500_10000 last_segment_concurrency policy_boundary metrics_backlog_drain retention_batches retention_child_atomicity poll_candidate_rejections retention_eligibility_boundaries retention_ordered_chain_coverage_omission retention_query_promotion_scope_concurrency retention_query_promotion_scope_race retention_planner_lock planner_limit_progress retired_day_poll_lock legacy_retention_bootstrap zero_poll_lineage_bootstrap retired_day_no_resurrection current_fields_after_retention current_query_after_retention current_health_query_matrix current_http_null_source provider_health_finalize_matrix lease_expiry history_audit_allowlist_retention_atomicity sensitive_canary_database_sinks capacity_1_10_50_total_accounts audit_gate runtime_table_dml runtime_functions " + cleanupKeys,
+			"account_inventory_history_postgres server_major migration fresh_install core_sha256 canonical_golden compaction_main_path crash_recovery_matrix security_boundary_matrix aggregate_schema_constraints_protection_gates compaction_claim_fencing compaction_reconcile_phases summarize_atomicity summarize_timeout_disconnect_recovery summarize_immutability snapshot_delete_atomicity snapshot_delete_selection snapshot_delete_resume compaction_complete_count_gate final_rollup finalize_atomicity final_immutability metrics_completed_only zero_provider planner_catalog_utc_inclusive_72h planner_eligibility_matrix finalize_catalog_9500 utc_dst_72h_expression slot_provider_matrix incomplete_segment_gates coverage_expression_9499_finalize_9474_9500_10000 last_segment_concurrency policy_boundary metrics_backlog_drain retention_batches retention_child_atomicity poll_candidate_rejections retention_eligibility_boundaries retention_ordered_chain_coverage_omission retention_query_promotion_scope_concurrency retention_query_promotion_scope_race retention_planner_lock planner_limit_progress retired_day_poll_lock legacy_retention_bootstrap zero_poll_lineage_bootstrap retired_day_no_resurrection current_fields_after_retention current_query_after_retention current_health_query_matrix current_http_null_source provider_health_finalize_matrix lease_expiry history_audit_allowlist_retention_atomicity sensitive_canary_database_sinks capacity_1_10_50 audit_gate runtime_table_dml runtime_functions " + cleanupKeys,
 			true, false,
 		},
 		{

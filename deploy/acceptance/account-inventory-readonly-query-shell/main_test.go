@@ -512,8 +512,8 @@ func TestReadonlyQueryRecoveryUsesOfficialDataPlane(t *testing.T) {
 
 func TestReadonlyQueryCIJobIsPinnedAndComplete(t *testing.T) {
 	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
-	start := strings.Index(workflow, "  postgres_readonly_query:")
-	end := strings.Index(workflow, "  official_snapshot:")
+	start := strings.Index(workflow, "  postgres_readonly_core:")
+	end := strings.Index(workflow, "  ci_required:")
 	if start < 0 || end <= start {
 		t.Fatal("isolated readonly query CI job is missing")
 	}

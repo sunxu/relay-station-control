@@ -235,9 +235,13 @@ main() {
   require_test ./internal/store TestAccountInventoryReadonlyQuerySeesOnlyCommittedPromotionsScopeAndRollback
   require_test ./internal/store TestAccountInventoryReadonlyQueryAuditCommitAndDisconnectSemantics
   require_test ./internal/store TestAccountInventoryReadonlyQueryDatabaseFaultsFailClosedAndRecover
-  require_test ./internal/store TestAccountInventoryReadonlyQueryCapacityOneTenFifty
   require_test ./internal/api TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping
 
+  capacity_status='not_run'
+  capacity_one=''
+  capacity_ten=''
+  capacity_fifty=''
+  if [ "${CONTROL_READONLY_QUERY_CAPACITY_ACCEPTANCE:-0}" = '1' ]; then
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test -json ./internal/store \
       -run '^TestAccountInventoryReadonlyQuery(MigrationEmptyDownUpRestoresCompatibility|MigrationPreservesExistingLifecycleState|StoreAndPermissionMatrix|RuntimeAndUnauthorizedPermissionMatrix|SeesOnlyCommittedPromotionsScopeAndRollback|AuditCommitAndDisconnectSemantics|DatabaseFaultsFailClosedAndRecover)$' \
@@ -267,6 +271,8 @@ main() {
   if [ -z "$capacity_one" ] || [ -z "$capacity_ten" ] || [ -z "$capacity_fifty" ]; then
     fixed_failure 'capacity_summary_matrix_invalid'
   fi
+  capacity_status='covered'
+  fi
   if ! env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     go test ./internal/api -run '^TestAccountInventoryHTTPAuthorizationPaginationAndErrorMapping$' \
       -count=1 >"$runtime_directory/http.log" 2>&1; then
@@ -280,7 +286,7 @@ main() {
   fi
 
   strict_cleanup
-  echo 'account_inventory_readonly_query_postgres=success server_major=18 permissions=covered runtime_function_execute=allowed runtime_sensitive_table_enumeration=denied runtime_sensitive_table_dml=denied unauthorized_function_execute=denied query_semantics=covered http=covered concurrency=covered atomic_audit=covered database_faults=covered capacity_1_10_50=covered query_external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0'
+  echo "account_inventory_readonly_query_postgres=success server_major=18 permissions=covered runtime_function_execute=allowed runtime_sensitive_table_enumeration=denied runtime_sensitive_table_dml=denied unauthorized_function_execute=denied query_semantics=covered http=covered concurrency=covered atomic_audit=covered database_faults=covered capacity_1_10_50=$capacity_status query_external_requests=0 cleanup_containers=0 cleanup_volumes=0 cleanup_networks=0"
   printf '%s\n' "$capacity_one" "$capacity_ten" "$capacity_fifty"
 }
 

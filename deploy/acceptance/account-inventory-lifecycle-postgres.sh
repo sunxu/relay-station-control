@@ -195,7 +195,8 @@ run_policy_mutation_switch_gate() {
 }
 
 main() {
-  local port test_list test_name failed_test
+  local port test_list test_name failed_test capacity_status
+  capacity_status='not_run'
   trap cleanup EXIT
   trap 'exit 130' HUP INT TERM
   command -v docker >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
@@ -240,8 +241,7 @@ main() {
     TestAccountInventoryLifecycleMigrationDoesNotBackfillSnapshotHistory \
     TestAccountInventoryLifecycleFakeDriverRealStoreSequence \
     TestAccountInventoryLifecycleUncommittedTerminationRollsBackMissingAndUpsert \
-    TestAccountInventoryLifecycleCommitUnknownReplayIsSingleState \
-    TestAccountInventoryLifecycleCapacityOneTenFifty
+    TestAccountInventoryLifecycleCommitUnknownReplayIsSingleState
   do
     if ! grep -Fxq "$test_name" "$test_list"; then
       fixed_failure 'lifecycle_implementation_unavailable'
@@ -284,16 +284,19 @@ main() {
     fi
     fixed_failure 'lifecycle_store_core_gate_failed'
   fi
-  if ! (
-    cd "$repository_root"
-    CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=1 \
-      go test ./internal/store -run '^TestAccountInventoryLifecycleCapacityOneTenFifty$' -count=1
-  ) >"$runtime_directory/store-capacity.log" 2>&1
-  then
-    fixed_failure 'lifecycle_capacity_gate_failed'
+  if [ "${CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE:-0}" = '1' ]; then
+    if ! (
+      cd "$repository_root"
+      CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=1 \
+        go test ./internal/store -run '^TestAccountInventoryLifecycleCapacityOneTenFifty$' -count=1
+    ) >"$runtime_directory/store-capacity.log" 2>&1
+    then
+      fixed_failure 'lifecycle_capacity_gate_failed'
+    fi
+    capacity_status='covered'
   fi
 
-  echo 'account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered fake_driver_real_store=covered uncommitted_termination=covered commit_unknown=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=covered request_count=0 gateway_requests=0 data_plane_requests=0'
+  echo "account_inventory_lifecycle_postgres=success server_major=18 migration_no_backfill=covered baseline=covered consecutive_missing=covered recovery=covered out_of_scope=covered re_add=covered fake_driver_real_store=covered uncommitted_termination=covered commit_unknown=covered permissions=covered policy_mutation_switch=covered capacity_1_10_50=$capacity_status request_count=0 gateway_requests=0 data_plane_requests=0"
 }
 
 main "$@"

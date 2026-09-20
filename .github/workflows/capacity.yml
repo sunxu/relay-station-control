@@ -1,0 +1,77 @@
+name: Capacity validation
+
+on:
+  schedule:
+    - cron: "17 18 * * 0"
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: Capacity scope; smoke validates harness wiring only
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - "864000"
+          - "1152000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capacity-${{ github.event_name }}-${{ inputs.scale || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  GOPROXY: https://goproxy.cn,direct
+
+jobs:
+  lifecycle_capacity:
+    name: Lifecycle capacity
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scale == 'smoke') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Run lifecycle capacity smoke
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy CONTROL_LIFECYCLE_CAPACITY_ACCEPTANCE=1 deploy/acceptance/account-inventory-lifecycle-postgres.sh
+
+  readonly_capacity:
+    name: Readonly query capacity
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scale == 'smoke') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@b7ad1dad31d06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Run readonly query capacity smoke
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy CONTROL_READONLY_QUERY_CAPACITY_ACCEPTANCE=1 deploy/acceptance/account-inventory-readonly-query-postgres.sh
+
+  history_capacity:
+    name: History capacity
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 420
+    strategy:
+      fail-fast: false
+      matrix:
+        scale: ${{ github.event_name == 'schedule' && fromJSON('["864000", "1152000"]') || fromJSON(format('["{0}"]', inputs.scale)) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@b7ad1dad31d06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: Run history capacity
+        env:
+          CONTROL_HISTORY_CAPACITY_KEEP_LOGS: "0"
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy deploy/acceptance/account-inventory-history-capacity.sh '${{ matrix.scale }}'
