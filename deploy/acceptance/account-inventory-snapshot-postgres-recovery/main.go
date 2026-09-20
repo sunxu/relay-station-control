@@ -658,6 +658,16 @@ func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 		'docker-secret://synthetic/snapshot-recovery-reader')`, fixtureInstanceID, fixtureNodeType, fixtureContract); err != nil {
 		return err
 	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO driver_capabilities(
+		node_type,driver_contract_version,capability
+	) VALUES ($1,$2,'management_account_inventory_read')`, fixtureNodeType, fixtureContract); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO node_capabilities(
+		instance_id,node_type,driver_contract_version,capability
+	) VALUES ($1,$2,$3,'management_account_inventory_read')`, fixtureInstanceID, fixtureNodeType, fixtureContract); err != nil {
+		return err
+	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO provider_inventory_policy_versions(
 		policy_version_id,node_type,driver_contract_version,active_providers,out_of_scope_providers,created_by
 	) VALUES ($1,$2,$3,ARRAY[$4]::text[],ARRAY['legacy']::text[],'acceptance')`,
@@ -673,6 +683,12 @@ func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 		node_type,driver_contract_version,policy_version_id,effective_from,activated_by,created_at
 	) VALUES ($1,$2,$3,clock_timestamp(),'acceptance',CURRENT_TIMESTAMP)`,
 		fixtureNodeType, fixtureContract, fixturePolicyID); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) SELECT $1,t,'deployment_enable','acceptance',t
+	FROM (SELECT clock_timestamp() AS t) AS boundary`, fixtureInstanceID); err != nil {
 		return err
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
