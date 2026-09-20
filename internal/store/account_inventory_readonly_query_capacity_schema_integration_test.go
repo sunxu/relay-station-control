@@ -84,7 +84,7 @@ func TestAccountInventoryReadonlyQueryCapacityOneTenFifty(t *testing.T) {
 					)
 					duration := time.Since(started)
 					if err != nil || len(page.Items) != current.want(query) {
-						t.Fatal("readonly query capacity scenario failed")
+						t.Fatalf("readonly query capacity scenario failed scenario=%s sample=%d items=%d want=%d err=%v", current.name, sample, len(page.Items), current.want(query), err)
 					}
 					allDurations = append(allDurations, duration)
 					if current.name == "unfiltered" {
@@ -160,6 +160,7 @@ func newReadonlyQueryCapacityMatrix(
 			instanceID, fixture.nodeType, fixture.contract); err != nil {
 			t.Fatal("readonly query capacity node capability setup failed")
 		}
+		enableCurrentNodeMonitoring(t, ctx, database, instanceID)
 		readonlyQueryCapacityFinalizeNode(t, ctx, database, fixture, instanceID, node, accountsPerNode)
 	}
 	actorIDs := make([]uuid.UUID, readonlyQueryCapacityActors)
