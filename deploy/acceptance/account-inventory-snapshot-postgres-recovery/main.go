@@ -644,7 +644,9 @@ func openNamedPool(
 }
 
 func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
-	if err := waitForSafeCurrentSlot(ctx, owner, 30); err != nil {
+	// Leave enough of the current slot for the isolated acceptance orchestration
+	// to seed and claim the run before its production grace window expires.
+	if err := waitForSafeCurrentSlot(ctx, owner, 180); err != nil {
 		return seedCheckpoint("current_slot", err)
 	}
 	transaction, err := owner.Begin(ctx)
