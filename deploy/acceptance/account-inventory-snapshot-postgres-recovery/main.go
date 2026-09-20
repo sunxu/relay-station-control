@@ -64,6 +64,10 @@ func seedCheckpoint(checkpoint string, err error) error {
 	return checkpointFailure("prepare.seed_fixture."+checkpoint, err)
 }
 
+func transactionTimeoutCheckpoint(checkpoint string, err error) error {
+	return checkpointFailure("transaction_timeout."+checkpoint, err)
+}
+
 func main() {
 	os.Exit(runMain())
 }
@@ -388,30 +392,33 @@ func runTransactionTimeout() error {
 	defer cancel()
 	owner, err := openPool(ctx, ownerURLEnvironment, 3, 2*time.Second, 0)
 	if err != nil {
-		return err
+		return transactionTimeoutCheckpoint("open_owner", err)
 	}
 	defer owner.Close()
 	runtime, err := openPool(ctx, runtimeURLEnvironment, 1, 2*time.Second, 500*time.Millisecond)
 	if err != nil {
-		return err
+		return transactionTimeoutCheckpoint("open_runtime", err)
 	}
 	defer runtime.Close()
 	if err := seedTimeoutPoll(ctx, owner); err != nil {
-		return errAcceptanceInvariant
+		return err
 	}
 	repository, err := pollstore.NewInventoryPollRepository(runtime)
 	if err != nil {
-		return errAcceptanceInvariant
+		return transactionTimeoutCheckpoint("repository_init", err)
 	}
 	claim, err := repository.ClaimRunnable(ctx, inventorypoll.ClaimRequest{
 		Token: timeoutFence, LeaseDuration: 60 * time.Second,
 	})
 	if err != nil || claim == nil || claim.PollRunID != timeoutPollID || claim.Attempt != 1 {
-		return errAcceptanceInvariant
+		if err != nil {
+			return transactionTimeoutCheckpoint("claim", err)
+		}
+		return transactionTimeoutCheckpoint("claim", errAcceptanceInvariant)
 	}
 	blocker, err := owner.Begin(ctx)
 	if err != nil {
-		return errAcceptanceInvariant
+		return transactionTimeoutCheckpoint("blocker_begin", err)
 	}
 	released := false
 	defer func() {
@@ -422,27 +429,33 @@ func runTransactionTimeout() error {
 	if _, err := blocker.Exec(ctx, `SELECT policy_version_id
 		FROM provider_inventory_policy_bindings
 		WHERE node_type=$1 AND driver_contract_version=$2 FOR UPDATE`, fixtureNodeType, fixtureContract); err != nil {
-		return errAcceptanceInvariant
+		return transactionTimeoutCheckpoint("blocker_lock", err)
 	}
 	err = repository.FinalizeFenced(ctx, completeFixture(timeoutFence, timeoutPollID, 12))
 	var databaseError *pgconn.PgError
 	if !errors.As(err, &databaseError) || databaseError.Code != "57014" {
-		return errAcceptanceInvariant
+		return transactionTimeoutCheckpoint("first_finalize", err)
 	}
 	counts, err := pollCounts(ctx, owner, timeoutPollID, timeoutInstanceID)
 	if err != nil || counts != (boundedCounts{runs: 1}) {
-		return errAcceptanceInvariant
+		if err != nil {
+			return transactionTimeoutCheckpoint("rollback_counts", err)
+		}
+		return transactionTimeoutCheckpoint("rollback_counts", errAcceptanceInvariant)
 	}
 	if err := blocker.Rollback(ctx); err != nil {
-		return errAcceptanceInvariant
+		return transactionTimeoutCheckpoint("blocker_release", err)
 	}
 	released = true
 	if err := repository.FinalizeFenced(ctx, completeFixture(timeoutFence, timeoutPollID, 12)); err != nil {
-		return errAcceptanceInvariant
+		return transactionTimeoutCheckpoint("second_finalize", err)
 	}
 	counts, err = pollCounts(ctx, owner, timeoutPollID, timeoutInstanceID)
 	if err != nil || counts != (boundedCounts{runs: 1, finalized: 1, providers: 1, snapshots: 1, states: 1, lifecycles: 1}) {
-		return errAcceptanceInvariant
+		if err != nil {
+			return transactionTimeoutCheckpoint("final_counts", err)
+		}
+		return transactionTimeoutCheckpoint("final_counts", errAcceptanceInvariant)
 	}
 	fmt.Println("account_inventory_snapshot_postgres_recovery=success phase=transaction-timeout timeout_class=statement_timeout rollback_runs=1 rollback_provider_results=0 rollback_snapshot_items=0 finalized_after_release=1")
 	return nil
@@ -717,6 +730,10 @@ func databaseErrorClass(err error) string {
 		return "database_failure"
 	}
 	switch databaseError.Code {
+	case "57014":
+		return "statement_timeout"
+	case "40001":
+		return "serialization_failure"
 	case "23505":
 		return "duplicate"
 	case "23503":
@@ -734,18 +751,18 @@ func databaseErrorClass(err error) string {
 
 func seedTimeoutPoll(ctx context.Context, owner *pgxpool.Pool) error {
 	if err := waitForSafeCurrentSlot(ctx, owner, 10); err != nil {
-		return err
+		return transactionTimeoutCheckpoint("seed.current_slot", err)
 	}
 	transaction, err := owner.Begin(ctx)
 	if err != nil {
-		return err
+		return transactionTimeoutCheckpoint("seed.transaction_begin", err)
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 	if _, err := transaction.Exec(ctx, `INSERT INTO relay_node_assets(
 		instance_id,display_name,node_type,driver_contract_version,management_endpoint,reader_secret_ref
 	) VALUES ($1,'Snapshot Recovery Timeout Node',$2,$3,'http://snapshot-timeout.invalid',
 		'docker-secret://synthetic/snapshot-timeout-reader')`, timeoutInstanceID, fixtureNodeType, fixtureContract); err != nil {
-		return err
+		return transactionTimeoutCheckpoint("seed.asset", err)
 	}
 	command, err := transaction.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
 		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
@@ -755,9 +772,15 @@ func seedTimeoutPoll(ctx context.Context, owner *pgxpool.Pool) error {
 		provider_policy_version,2,299,clock_timestamp()
 	FROM account_inventory_poll_runs WHERE poll_run_id=$3`, timeoutPollID, timeoutInstanceID, fixturePollID)
 	if err != nil || command.RowsAffected() != 1 {
-		return errAcceptanceInvariant
+		if err != nil {
+			return transactionTimeoutCheckpoint("seed.poll_run", err)
+		}
+		return transactionTimeoutCheckpoint("seed.poll_run", errAcceptanceInvariant)
 	}
-	return transaction.Commit(ctx)
+	if err := transaction.Commit(ctx); err != nil {
+		return transactionTimeoutCheckpoint("seed.commit", err)
+	}
+	return nil
 }
 
 func waitForSafeCurrentSlot(ctx context.Context, owner *pgxpool.Pool, minimumRemainingSeconds int) error {
