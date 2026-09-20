@@ -170,14 +170,15 @@ describe("asset registry read-only view", () => {
     }));
     render(<AssetRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
     await screen.findByText("Singapore Node");
+    const nodesCard = within(screen.getByTestId("nodes-card"));
 
-    fireEvent.mouseDown(screen.getByLabelText("Node 类型"));
+    fireEvent.mouseDown(nodesCard.getByLabelText("Node 类型"));
     fireEvent.click(await screen.findByText("cliproxyapi", { selector: ".ant-select-item-option-content" }));
     await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({ nodeType: "cliproxyapi" })));
-    fireEvent.mouseDown(screen.getByLabelText("Capability"));
+    fireEvent.mouseDown(nodesCard.getByLabelText("Capability"));
     fireEvent.click(await screen.findByText("management_health_read", { selector: ".ant-select-item-option-content" }));
     await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({ capability: "management_health_read" })));
-    fireEvent.mouseDown(screen.getByLabelText("监控状态"));
+    fireEvent.mouseDown(nodesCard.getByLabelText("监控状态"));
     fireEvent.click(await screen.findByText("监控已激活", { selector: ".ant-select-item-option-content" }));
 
     await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -188,11 +189,11 @@ describe("asset registry read-only view", () => {
       limit: 50,
     })));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await waitFor(() => expect(nodesCard.getByRole("button", { name: "下一页" })).toBeEnabled());
+    fireEvent.click(nodesCard.getByRole("button", { name: "下一页" }));
     await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: "cursor-page-two" })));
-    expect(screen.getByRole("button", { name: "上一页" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+    expect(nodesCard.getByRole("button", { name: "上一页" })).toBeEnabled();
+    fireEvent.click(nodesCard.getByRole("button", { name: "上一页" }));
     await waitFor(() => expect(api.nodes).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: undefined })));
   });
 
