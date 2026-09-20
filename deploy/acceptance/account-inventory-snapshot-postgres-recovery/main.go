@@ -644,9 +644,9 @@ func openNamedPool(
 }
 
 func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
-	// Leave enough of the current slot for the isolated acceptance orchestration
-	// to seed and claim the run before its production grace window expires.
-	if err := waitForSafeCurrentSlot(ctx, owner, 180); err != nil {
+	// Avoid starting the fixture in the final part of the current slot; the
+	// production grace contract leaves only one second there.
+	if err := waitForSafeCurrentSlot(ctx, owner, 30); err != nil {
 		return seedCheckpoint("current_slot", err)
 	}
 	transaction, err := owner.Begin(ctx)
@@ -798,7 +798,7 @@ func seedTimeoutPoll(ctx context.Context, owner *pgxpool.Pool) error {
 
 func waitForSafeCurrentSlot(ctx context.Context, owner *pgxpool.Pool, minimumRemainingSeconds int) error {
 	var remainingSeconds int
-	if err := owner.QueryRow(ctx, `SELECT 300-mod(extract(epoch FROM clock_timestamp())::bigint,300)`).Scan(&remainingSeconds); err != nil {
+	if err := owner.QueryRow(ctx, `SELECT 300-mod(floor(extract(epoch FROM clock_timestamp()))::bigint,300)`).Scan(&remainingSeconds); err != nil {
 		return err
 	}
 	if remainingSeconds >= minimumRemainingSeconds {
