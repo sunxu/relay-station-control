@@ -559,7 +559,15 @@ verify_terminal_internal_source_preserved() {
       fixed_failure "${label}_daily_summary_not_ready"
     fi
     if grep -Fq 'class=rollup_row_count_invalid' "$runtime_directory/${label}-terminal-internal.log"; then
-      fixed_failure "${label}_row_count_invalid"
+      local rollup_counts
+      rollup_counts="$(sed -n 's/.*counts=\([0-9][0-9]*,[0-9][0-9]*,[0-9][0-9]*\).*/\1/p' \
+        "$runtime_directory/${label}-terminal-internal.log" | head -n 1)"
+      case "$rollup_counts" in
+        0,0,0) fixed_failure "${label}_rollup_not_created checkpoint=rollup_terminal_internal" ;;
+        1,0,0) fixed_failure "${label}_rollup_state_invalid checkpoint=rollup_terminal_internal" ;;
+        *,*,*) fixed_failure "${label}_rollup_row_count_invalid checkpoint=rollup_terminal_internal" ;;
+        *) fixed_failure "${label}_rollup_row_count_invalid checkpoint=rollup_terminal_internal" ;;
+      esac
     fi
     if grep -Fq 'class=rollup_unexpected_completed' "$runtime_directory/${label}-terminal-internal.log"; then
       fixed_failure "${label}_unexpected_completed"
