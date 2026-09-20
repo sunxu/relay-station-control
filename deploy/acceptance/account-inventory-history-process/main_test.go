@@ -813,7 +813,8 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 						if detailErr == nil {
 							switch {
 							case rollupCount != 1:
-								t.Fatal("history process terminal internal timed out class=rollup_row_count_invalid")
+								t.Fatalf("history process terminal internal timed out class=rollup_row_count_invalid counts=%d,%d,%d",
+									rollupCount, completedCount, failureReasonCount)
 							case completedCount != 0:
 								t.Fatal("history process terminal internal timed out class=rollup_unexpected_completed")
 							case failureReasonCount != 0:
