@@ -59,6 +59,16 @@ fixed_failure() {
   exit 1
 }
 
+seed_failure() {
+  local mismatch="${3:-}"
+  if [ -n "$mismatch" ]; then
+    echo "account_inventory_history_process=failed reason=eligible_source_seed_$1 checkpoint=$2 mismatch=$mismatch" >&2
+  else
+    echo "account_inventory_history_process=failed reason=eligible_source_seed_$1 checkpoint=$2" >&2
+  fi
+  exit 1
+}
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fixed_failure 'required_command_unavailable'
 }
@@ -418,9 +428,17 @@ seed_eligible_source() {
     do
       if grep -Fq "class=${class}" \
         "$runtime_directory/seed-eligible-source.log"; then
-        fixed_failure "eligible_source_seed_${class}"
+        checkpoint="$(grep -Eo 'checkpoint=seed\.[a-z_]+' "$runtime_directory/seed-eligible-source.log" | head -1 || true)"
+        mismatch="$(grep -Eo 'mismatch=[a-z_,]+' "$runtime_directory/seed-eligible-source.log" | head -1 || true)"
+        seed_failure "$class" "${checkpoint#checkpoint=}" "${mismatch#mismatch=}"
       fi
     done
+    checkpoint="$(grep -Eo 'checkpoint=seed\.[a-z_]+' "$runtime_directory/seed-eligible-source.log" | head -1 || true)"
+    class="$(grep -Eo 'class=[a-z0-9_]+' "$runtime_directory/seed-eligible-source.log" | head -1 || true)"
+    if [ -n "$checkpoint" ] && [ -n "$class" ]; then
+      mismatch="$(grep -Eo 'mismatch=[a-z_,]+' "$runtime_directory/seed-eligible-source.log" | head -1 || true)"
+      seed_failure "${class#class=}" "${checkpoint#checkpoint=}" "${mismatch#mismatch=}"
+    fi
     class="$(grep -Eo 'class=sqlstate_[A-Z0-9]{5}' \
       "$runtime_directory/seed-eligible-source.log" | head -1 || true)"
     case "$class" in

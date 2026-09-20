@@ -312,7 +312,7 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 		seeded.dayStart).Scan(
 		&policyActivations, &monitoringActivations, &pollRows, &snapshotRows, &existingRuns, &currentRows,
 	); err != nil {
-		t.Fatal("history process seed verification failed")
+		failSeedCheckpoint(t, "seed.verify", err)
 	}
 	expectedPollRows := 0
 	if sourceSnapshots > 0 {
@@ -331,7 +331,30 @@ func TestAccountInventoryHistoryProcessSeedEligibleSource(t *testing.T) {
 	if policyActivations != 1 || monitoringActivations != 1 || pollRows != expectedPollRows ||
 		snapshotRows != sourceSnapshots || existingRuns != 0 || currentRows != expectedCurrentRows ||
 		!currentEquivalent {
-		t.Fatal("history process seed evidence invalid")
+		mismatches := make([]string, 0, 7)
+		if policyActivations != 1 {
+			mismatches = append(mismatches, "policy_activation")
+		}
+		if monitoringActivations != 1 {
+			mismatches = append(mismatches, "monitoring_activation")
+		}
+		if pollRows != expectedPollRows {
+			mismatches = append(mismatches, "poll")
+		}
+		if snapshotRows != sourceSnapshots {
+			mismatches = append(mismatches, "snapshot")
+		}
+		if existingRuns != 0 {
+			mismatches = append(mismatches, "existing_runs")
+		}
+		if currentRows != expectedCurrentRows {
+			mismatches = append(mismatches, "current_rows")
+		}
+		if !currentEquivalent {
+			mismatches = append(mismatches, "current_projection")
+		}
+		t.Fatalf("history process seed failed checkpoint=seed.verify class=fixture_verification mismatch=%s",
+			strings.Join(mismatches, ","))
 	}
 	if sourceSnapshots > 0 {
 		runtimePool := requireProcessPool(t, runtimeDatabaseEnvironment)
@@ -891,7 +914,7 @@ func seedZeroPollActivationFixture(
 			> clock_timestamp() - interval '30 days'`, fixture.summaryDate).Scan(
 		&dayStart, &eligible, &retained,
 	); err != nil {
-		t.Fatal("history process seed date calculation failed")
+		failSeedCheckpoint(t, "seed.date", err)
 	}
 	if !eligible || !retained && sourceSnapshots == 0 {
 		t.Fatal("history process seed date is outside the eligible retained window")
@@ -899,16 +922,16 @@ func seedZeroPollActivationFixture(
 
 	transaction, err := ownerPool.Begin(ctx)
 	if err != nil {
-		t.Fatal("history process seed transaction failed")
+		failSeedCheckpoint(t, "seed.transaction_begin", err)
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 	if _, err := transaction.Exec(ctx, `SET LOCAL TimeZone = 'UTC'`); err != nil {
-		t.Fatal("history process seed transaction failed")
+		failSeedCheckpoint(t, "seed.timezone", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.node_drivers(
 		node_type,driver_contract_version,display_name,created_at
 	) VALUES($1,$2,'History Process Driver',$3)`, nodeType, contract, dayStart); err != nil {
-		t.Fatal("history process seed driver write failed")
+		failSeedCheckpoint(t, "seed.driver", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.relay_node_assets(
 		instance_id,display_name,node_type,driver_contract_version,
@@ -916,31 +939,31 @@ func seedZeroPollActivationFixture(
 	) VALUES($1,'History Process Node',$2,$3,$4,
 		'docker-secret://synthetic/history-process-reader',$5,$5)`,
 		fixture.instanceID, nodeType, contract, networkCounter, dayStart); err != nil {
-		t.Fatal("history process seed asset write failed")
+		failSeedCheckpoint(t, "seed.asset", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.driver_capabilities(
 		node_type,driver_contract_version,capability
 	) VALUES($1,$2,'management_account_inventory_read')`, nodeType, contract); err != nil {
-		t.Fatal("history process seed driver capability write failed")
+		failSeedCheckpoint(t, "seed.driver_capability", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.node_capabilities(
 		instance_id,node_type,driver_contract_version,capability,created_at
 	) VALUES($1,$2,$3,'management_account_inventory_read',$4)`,
 		fixture.instanceID, nodeType, contract, dayStart); err != nil {
-		t.Fatal("history process seed node capability write failed")
+		failSeedCheckpoint(t, "seed.node_capability", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.provider_inventory_policy_versions(
 		policy_version_id,node_type,driver_contract_version,active_providers,
 		out_of_scope_providers,created_by,created_at
 	) VALUES($1,$2,$3,ARRAY[$4]::text[],ARRAY[]::text[],
 		'history-process-seed',$5)`, policyID, nodeType, contract, fixture.provider, dayStart); err != nil {
-		t.Fatal("history process seed policy write failed")
+		failSeedCheckpoint(t, "seed.policy", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.provider_inventory_policy_bindings(
 		node_type,driver_contract_version,policy_version_id,bound_by,bound_at
 	) VALUES($1,$2,$3,'history-process-seed',$4)`,
 		nodeType, contract, policyID, dayStart); err != nil {
-		t.Fatal("history process seed policy binding write failed")
+		failSeedCheckpoint(t, "seed.policy_binding", err)
 	}
 	effectiveTo := any(nil)
 	if sourceSnapshots > 0 {
@@ -951,7 +974,7 @@ func seedZeroPollActivationFixture(
 		effective_to,activated_by,created_at
 	) VALUES($1,$2,$3,$4,$5::timestamptz,'history-process-seed',$4)`,
 		nodeType, contract, policyID, dayStart, effectiveTo); err != nil {
-		t.Fatal("history process seed policy activation write failed")
+		failSeedCheckpoint(t, "seed.policy_activation", err)
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.relay_node_inventory_monitoring_activations(
 		instance_id,effective_from,effective_to,reason,actor,end_reason,end_actor,
@@ -960,7 +983,7 @@ func seedZeroPollActivationFixture(
 		CASE WHEN $3::timestamptz IS NULL THEN NULL ELSE 'reconciliation' END,
 		CASE WHEN $3::timestamptz IS NULL THEN NULL ELSE 'history-process-seed' END,
 		$3,$2)`, fixture.instanceID, dayStart, effectiveTo); err != nil {
-		t.Fatal("history process seed monitoring activation write failed")
+		failSeedCheckpoint(t, "seed.monitoring_activation", err)
 	}
 	if sourceSnapshots > 0 {
 		pollID := uuid.New()
@@ -969,7 +992,7 @@ func seedZeroPollActivationFixture(
 			DISABLE TRIGGER account_inventory_poll_provider_results_guard;
 			ALTER TABLE public.account_inventory_snapshot_items
 			DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
-			t.Fatalf("history process source guard disable failed class=%s", processDatabaseErrorClass(err))
+			failSeedCheckpoint(t, "seed.source_guard_disable", err)
 		}
 		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory_poll_runs(
 			poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
@@ -985,7 +1008,7 @@ func seedZeroPollActivationFixture(
 			$5::timestamptz+interval '3 seconds',true,true,true,'runtime',
 			true,true,false,'success','none',$7,$7,0,0,0,'unknown','unknown')`,
 			pollID, fixture.instanceID, nodeType, contract, slot, policyID, sourceSnapshots); err != nil {
-			t.Fatalf("history process source poll write failed class=%s", processDatabaseErrorClass(err))
+			failSeedCheckpoint(t, "seed.poll", err)
 		}
 		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory_poll_provider_results(
 			poll_run_id,provider,identifiable_count,missing_identity_count,
@@ -993,7 +1016,7 @@ func seedZeroPollActivationFixture(
 			promotion_applied,promotion_skipped_reason
 		) VALUES($1,$2,$3,0,0,true,true,false,'complete',true,NULL)`,
 			pollID, fixture.provider, sourceSnapshots); err != nil {
-			t.Fatalf("history process source provider result write failed class=%s", processDatabaseErrorClass(err))
+			failSeedCheckpoint(t, "seed.provider_result", err)
 		}
 		for index := range sourceSnapshots {
 			account := "history-process-" + strconv.Itoa(index) + "@example.invalid"
@@ -1003,18 +1026,18 @@ func seedZeroPollActivationFixture(
 			) VALUES($1,$2,$3,$3::text||':'||$4::text,$4,'active',$5,0,0,
 				$6::timestamptz+interval '3 seconds')`,
 				pollID, fixture.instanceID, fixture.provider, account, index+1, slot); err != nil {
-				t.Fatalf("history process source snapshot write failed class=%s", processDatabaseErrorClass(err))
+				failSeedCheckpoint(t, "seed.snapshot", err)
 			}
 		}
 		if _, err := transaction.Exec(ctx, `ALTER TABLE public.account_inventory_poll_provider_results
 			ENABLE TRIGGER account_inventory_poll_provider_results_guard;
 			ALTER TABLE public.account_inventory_snapshot_items
 			ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
-			t.Fatalf("history process source guard enable failed class=%s", processDatabaseErrorClass(err))
+			failSeedCheckpoint(t, "seed.source_guard_enable", err)
 		}
 		if _, err := transaction.Exec(ctx,
 			`SELECT set_config('relay_control.lifecycle_write','finalize',true)`); err != nil {
-			t.Fatalf("history process lifecycle gate set failed class=%s", processDatabaseErrorClass(err))
+			failSeedCheckpoint(t, "seed.lifecycle_gate", err)
 		}
 		promotedAccount := "history-process-0@example.invalid"
 		sourceAt := slot.Add(3 * time.Second)
@@ -1023,8 +1046,7 @@ func seedZeroPollActivationFixture(
 			source_observed_at,source_node_version,source_node_commit,updated_at
 		) VALUES($1,$2,$3,$5,$4,$4,'unknown','unknown',$4)`,
 			fixture.instanceID, fixture.provider, pollID, sourceAt, slot); err != nil {
-			t.Fatalf("history process promoted provider state write failed class=%s detail=%v",
-				processDatabaseErrorClass(err), err)
+			failSeedCheckpoint(t, "seed.provider_state", err)
 		}
 		if _, err := transaction.Exec(ctx, `INSERT INTO public.account_inventory(
 			instance_id,provider,account_key,normalized_email,basic_status,
@@ -1035,14 +1057,18 @@ func seedZeroPollActivationFixture(
 		) VALUES($1,$2,$2::text||':'||$3,$3,'active',1,0,0,$5,NULL,$5,'present',0,NULL,NULL,
 			$5,$5,$4,$6,$5,'unknown','unknown',$5)`,
 			fixture.instanceID, fixture.provider, promotedAccount, pollID, sourceAt, slot); err != nil {
-			t.Fatalf("history process promoted current account write failed class=%s detail=%v",
-				processDatabaseErrorClass(err), err)
+			failSeedCheckpoint(t, "seed.current_account", err)
 		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		t.Fatal("history process seed transaction commit failed")
+		failSeedCheckpoint(t, "seed.commit", err)
 	}
 	return seededZeroPollFixture{processFixture: fixture, policyID: policyID, dayStart: dayStart}
+}
+
+func failSeedCheckpoint(t *testing.T, checkpoint string, err error) {
+	t.Helper()
+	t.Fatalf("history process seed failed checkpoint=%s class=%s", checkpoint, processDatabaseErrorClass(err))
 }
 
 func requireNetworkCounterEndpoint(t *testing.T) string {
