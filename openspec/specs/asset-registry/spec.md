@@ -70,12 +70,16 @@ lifecycle edit 改写。
 - **THEN** 允许创建新的 active Node，retired Node 的历史 row、revision 与 lineage FK 保留，
   不复活为 active
 
-### Requirement: Endpoint 与 Secret 引用安全隔离
-资产 endpoint MUST 是规范化的绝对 `http` 或 `https` URL，包含 host，且不得包含 userinfo、query 或 fragment。Control MAY 在数据库保存 opaque Secret 引用以供后续 Adapter 使用，但 MUST NOT 保存引用所指向的凭证内容；API、UI、日志、指标、Trace 和审计 MUST NOT 返回或记录 Secret 引用值，且 API 只能用布尔值表示 Secret 是否已配置。
+### Requirement: Endpoint 与 protected credential state SHALL remain isolated
+资产 endpoint MUST 是规范化的绝对 `http` 或 `https` URL，包含 host，且不得包含 userinfo、query 或 fragment。Control MAY 仅为 Relay Node management credential 与 Gateway Directory credential 保存 approved protected-at-rest representation，但 MUST NOT 保存 plaintext credential；其他 Secret 继续仅允许既有引用模式。API、UI、ordinary query、日志、指标、Trace、审计与业务 surface MUST NOT 返回或记录 plaintext、sealed blob、K2、K2 identity commitment、legacy reference 或 crypto metadata，且 API 只能用布尔值表示 Secret 是否已配置。`secret_configured` MUST 精确定义为 `sealed_credential IS NOT NULL`，不得 decrypt，也不得依赖 K2 availability、Open success 或 blob authenticity。
 
 #### Scenario: 读取已配置 Secret 的资产
-- **WHEN** 管理员读取包含 Secret 引用的 Gateway 或 Node
-- **THEN** 响应仅包含 `secret_configured: true`，不包含引用值、凭证内容或可逆派生值
+- **WHEN** 管理员读取包含 approved protected credential state 的 Gateway 或 Node
+- **THEN** 响应仅包含 `secret_configured: true`，不包含 plaintext、sealed blob、K2、K2 commitment、legacy reference、crypto metadata或可逆派生值
+
+#### Scenario: configured projection is independent of credential usability
+- **WHEN** sealed credential存在但K2 missing、K2 wrong或ciphertext corrupt
+- **THEN** ordinary store/API读取仍返回`secret_configured=true`，不得尝试Open；credential-dependent operation在其owning layer独立fail closed
 
 #### Scenario: 非法 endpoint
 - **WHEN** 受控部署流程提交相对 URL、不受支持的 scheme、缺少 host 或包含 userinfo、query、fragment 的 endpoint
@@ -340,45 +344,33 @@ Control SHALL 暴露资产种类数量和读取结果的聚合指标，并 MUST 
 - **WHEN** 资产查询失败
 - **THEN** Control 增加固定 `result` 的读取计数并记录脱敏原因码，不记录 SQL 参数、连接串或资产 Secret 引用
 
-### Requirement: Gateway Directory reader reference SHALL 仅通过受控操作首次补填
+### Requirement: Gateway Directory credential state SHALL use the protected asset lifecycle
 
-Control SHALL 提供独立 registrar 操作，只为从未产生任何 Directory run/observation/snapshot/current state 且没有任何 Binding 历史的既有 Gateway 将NULL reader_secret_ref补填为合法非空opaque reference；MUST NOT修改management endpoint或替换非NULL reference。稳定 instance ID、环境身份和名称 MUST 保留，既有 register signature 与严格重放语义 MUST 不变。操作 MUST 以NULL为唯一可写前置值并以原子事务提交；必须防止与首次调度/绑定竞争，拒绝已有采集历史后的首次补填。上述零历史限制仅约束真实变更；授权调用的相同reference重放 SHALL 返回无写入、无新增审计的 no-op，即使其后已有历史。此能力 MUST NOT 成为 runtime 直接 UPDATE 或产品 HTTP/UI mutation。
+Gateway Directory credential MUST be represented by the approved protected-at-rest state and managed through the existing authenticated asset command flow. Register missing means unconfigured; Edit missing means keep and explicit null means clear; Replace missing means unconfigured and MUST NOT inherit the predecessor credential. Set, clear, Retire and Replace predecessor erase MUST preserve command identity, revision, lineage, receipt and audit atomicity. Runtime and registrar MUST NOT directly update credential state outside the owning protected path.
 
-#### Scenario: 未接入的既有 Gateway
-- **WHEN** registrar 为无任何采集/绑定历史的 Gateway 为NULL reader reference提交合法非空reference
-- **THEN** 原子补填reference，endpoint保持不变，保留 UUID、环境和名称；之后启用采集可获得 fresh Directory
+#### Scenario: unconfigured Gateway
+- **WHEN** a Gateway has no protected Directory credential
+- **THEN** scheduler returns no-work without creating a Directory run, resolving a credential or sending a request; the Gateway may later be configured through the authenticated asset flow
 
-#### Scenario: 有历史或并发竞争
-- **WHEN** 请求将补填NULL reference且已存在成功、失败或未完成的 Directory run、任一 snapshot/observation/current state、任一 Binding 历史，或已配置Gateway已有调度记录
-- **THEN** 补全操作拒绝且不修改资产；不能删除历史或失效证据来绕过条件
+#### Scenario: configured Gateway
+- **WHEN** a Gateway has a non-NULL protected Directory credential and is active
+- **THEN** Directory scheduling may create a run and the fenced resolver may Open the credential only for the bounded authenticated fetch
 
-#### Scenario: 并发补全与重放
-- **WHEN** 两个不同reference的补填竞争同一个NULL字段，或原操作被重放
-- **THEN** 不允许丢失更新；已达到完全相同reference时返回幂等 no-op，不重复审计，非NULL且不同的reference请求拒绝
+#### Scenario: credential erase and replacement
+- **WHEN** an administrator clears, Retires, or Replaces a Gateway with an unconfigured successor
+- **THEN** sealed credential state is erased atomically with the lifecycle command, no K2 is required for the erase, and no credential is inherited
 
-### Requirement: Gateway 配置补全 SHALL 保持最小权限与原子审计
+### Requirement: Gateway protected credential access SHALL remain least-privilege and auditable
 
-新增操作 MUST 使用 migrator 所有的 SECURITY DEFINER 函数、fixed search_path、全限定对象名，撤销 PUBLIC 执行权，仅授予 registrar；runtime 不获得 endpoint/reference UPDATE 或函数 EXECUTE。成功变更与 append-only audit MUST 在同一事务；审计仅包含固定 action、管理员 actor、Gateway UUID、操作时间及非敏感变更标志。失败不得部分更新，审计不得包含 endpoint、reference、token 或其可逆派生值。
+Protected credential reads and writes MUST use the approved narrow internal access path with fixed owner/search_path and grants. Runtime MUST receive only the ephemeral plaintext needed for one bounded outbound; ordinary runtime, registrar and PUBLIC roles MUST NOT directly read or write protected columns. Successful mutation and append-only audit MUST commit atomically, and audit must not contain endpoint, plaintext, sealed value, K2, commitment or legacy reference.
 
-#### Scenario: Runtime 和 PUBLIC 拒绝
-- **WHEN** runtime 或未授权角色调用补全函数或直接修改 endpoint/reference
-- **THEN** permission denied，资产与审计均不改变
+#### Scenario: unauthorized protected access
+- **WHEN** runtime, registrar or PUBLIC attempts direct protected-column access or an unapproved mutation
+- **THEN** permission is denied and asset/audit state is unchanged
 
-#### Scenario: 审计失败
-- **WHEN** 合法补全过程的 audit 写入失败
-- **THEN** 整个事务回滚；恢复后可安全重试，不出现没有审计的配置修改
-
-#### Scenario: 非法目标与凭据泄漏
-- **WHEN** 输入非法或空reference、错误UUID，或尝试替换非NULL reference
-- **THEN** 操作拒绝，错误/日志/审计不回显输入，原身份及配置保留
-
-#### Scenario: HTTP登记与补填
-- **WHEN** registrar为既有HTTP endpoint补填reference
-- **THEN** 资产补全本身不发网络请求；启用Directory后直接使用该endpoint，无额外HTTP许可配置
-
-#### Scenario: NULL reference调度先取得锁
-- **WHEN** 无历史Gateway尚未补填，scheduler先取得Gateway行锁
-- **THEN** scheduler不建run；registrar随后仍能原子补填，不因启用runtime而锁死首次接入
+#### Scenario: audit failure
+- **WHEN** a valid credential mutation cannot write its audit record
+- **THEN** the complete transaction rolls back without a partially applied credential change
 
 ### Requirement: Management endpoint UI SHALL validate internal HTTP URLs
 

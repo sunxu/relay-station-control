@@ -29,7 +29,9 @@ MUST be rejected.
 - **THEN** the command returns `duplicate_identity` and no row, capability, audit or receipt
   transition is committed
 
-### Requirement: Node canonical intent SHALL reuse shared v1 encoding exactly
+### Historical Requirement: Node canonical intent SHALL reuse shared v1 encoding exactly
+
+The historical v1 `secret_triplet` and its `reader_secret_ref` terminology are retained only for immutable receipt/replay compatibility. Current Stage 0 new commands use protected `management_credential` state and the v2 contribution defined below.
 
 Node action canonical intent arrays MUST reuse the Gateway Stage 1 shared v1 fixed-order
 UTF-8 JSON array encoding, SHA-256 `canonical_intent_hash` and K1/version HMAC secret
@@ -365,3 +367,27 @@ A lifecycle override MUST persist `lifecycle_override_at`, `lifecycle_override_b
 #### Scenario: Risk is explicitly accepted
 - **WHEN** a super_admin submits the typed high-risk confirmation and `risk_accepted` override
 - **THEN** lifecycle may proceed while the operation remains unresolved and no automatic redispatch occurs
+
+### Requirement: Relay Node lifecycle SHALL own exact management credential state
+
+Node Register/Edit/Replace MUST 按冻结 tri-state 写入 `management_credential` sealed state。Register missing=unconfigured、string=set、null invalid；Edit missing=keep、string=set、null=clear；Replace missing=unconfigured、string=set、null invalid且不得继承predecessor。Credential validation MUST 覆盖 0/1/4096/4097 UTF-8 bytes、multibyte boundary、NUL/CR/LF 与 leading/trailing spaces；有效 spaces 作为 exact bytes 保留。
+
+#### Scenario: Edit clear removes configured state
+- **WHEN** 管理员 Edit active Node 并显式提交 `management_credential=null`
+- **THEN** lifecycle 保持 active、revision 按既有规则推进、sealed credential 被原子清除且读模型返回 `secret_configured=false`
+
+#### Scenario: Node credential exact validation
+- **WHEN** Register/Edit/Replace 提交边界或禁止字符 credential
+- **THEN** 仅 1..4096 UTF-8 bytes 且无 NUL/CR/LF 被接受，输入不 trim、不 normalize
+
+### Requirement: Node Retire and Replace predecessor SHALL erase credential atomically
+
+Retire 与 Replace predecessor MUST 在同一 Node lifecycle transaction 中清除 sealed credential，并保持既有 monitoring closure、binding closure、account-operation blocker/override、revision、receipt 与 audit 语义。K2 unavailable 时 keep、clear、Retire 和 Replace-with-unconfigured MUST 仍可执行且不得 Open/Seal 或 require K2；只有 Set、Replace-with-new-credential 与 authenticated outbound 需要 K2。
+
+#### Scenario: blocked Retire leaves credential unchanged
+- **WHEN** Node Retire 被既有 account operation blocker 拒绝且没有有效 override
+- **THEN** lifecycle、revision 与 sealed credential 均不改变，错误仍为既有 exact contract
+
+#### Scenario: K2 unavailable does not block credential erasure
+- **WHEN** K2 unavailable 且管理员 Retire Node 或 Replace 为 unconfigured successor
+- **THEN** lifecycle command 与 credential erase 原子完成，不调用 Open/Seal 且不要求 K2

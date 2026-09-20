@@ -99,14 +99,14 @@ Control MUST 实现下列固定HTTP契约；不得在OpenAPI implementation时�
 
 | Action | Method/path | JSON request | Success |
 |---|---|---|---|
-| Register | POST /api/assets/gateways | command_id,new_instance_id,display_name,management_endpoint；reader_secret_ref可省略/string/null | 201 RegisterResult |
-| Edit | PATCH /api/assets/gateways/{instance_id} | command_id,expected_revision；display_name/management_endpoint/reader_secret_ref为显式patch字段 | 200 EditResult |
+| Register | POST /api/assets/gateways | command_id,new_instance_id,display_name,management_endpoint；directory_credential可省略/string，null非法 | 201 RegisterResult |
+| Edit | PATCH /api/assets/gateways/{instance_id} | command_id,expected_revision；display_name/management_endpoint/directory_credential为显式patch字段 | 200 EditResult |
 | Retire | POST /api/assets/gateways/{instance_id}/retire | command_id,expected_revision；machine reason由server固定administrator_retire，无free-text reason | 200 RetireResult |
-| Replace | POST /api/assets/gateways/{instance_id}/replace | command_id,expected_revision,new_instance_id,display_name,management_endpoint；reader_secret_ref可省略/string/null | 200 ReplaceResult |
+| Replace | POST /api/assets/gateways/{instance_id}/replace | command_id,expected_revision,new_instance_id,display_name,management_endpoint；directory_credential可省略/string，null非法 | 200 ReplaceResult |
 | Health | GET /api/assets/gateways/{instance_id}/health | 无body，无command_id/revision | 200 ProbeResult |
 | Connection Test | POST /api/assets/gateways/{instance_id}/connection-test | 空object；无command_id/revision | 200 ProbeResult |
 
-command_id在body中为UUID；expected_revision在body中为规范正int64十进制string，范围1..9223372036854775807，response revision同型。Register没有expected_revision。path identity为UUID，body不可另传冲突identity。display_name/endpoint必须有效非null，`management_endpoint` 必须是 `http://` origin；`https://` 返回400 invalid_endpoint且零 outbound。Edit省略表示不修改；reader_secret_ref省略/显式null/合法string分别为absent/clear/set。第一版不提供operator note。Gateway无DELETE能力。revision溢出返回409 revision_exhausted且无mutation。
+command_id在body中为UUID；expected_revision在body中为规范正int64十进制string，范围1..9223372036854775807，response revision同型。Register没有expected_revision。path identity为UUID，body不可另传冲突identity。display_name/endpoint必须有效非null，`management_endpoint` 必须是 `http://` origin；`https://` 返回400 invalid_endpoint且零 outbound。Edit省略directory_credential表示keep、显式null表示clear、合法string表示set；Register/Replace省略表示unconfigured、合法string表示set、显式null非法，Replace不得继承predecessor credential。Credential string MUST是非空、至多4096 UTF-8 bytes，且不得包含NUL、CR或LF；Control MUST保留exact bytes，不trim、不normalize。第一版不提供operator note。Gateway无DELETE能力。revision溢出返回409 revision_exhausted且无mutation。
 
 Exact success bodies and receipt projection：
 
@@ -176,6 +176,18 @@ GetAssetCounts原gateways继续表示total rows（不静默改成active）；新
 #### Scenario: 分页一致性
 - **WHEN** 同cursor链查询且registry generation未变
 - **THEN** UUID升序无重复遗漏；generation变化返回409 cursor_stale要求重启
+
+### Requirement: Gateway Retire and Replace predecessor SHALL erase credential atomically
+
+Retire与Replace predecessor MUST在同一asset lifecycle transaction中清除sealed credential，并保持既有revision、lineage、command replay、receipt与audit语义。K2 unavailable时keep、clear、Retire和Replace-with-unconfigured MUST仍可执行且MUST NOT Open/Seal或要求K2；只有Set、Replace-with-new-credential和authenticated outbound需要K2。
+
+#### Scenario: Retire transaction rolls back
+- **WHEN** Gateway Retire transaction在提交前失败
+- **THEN** lifecycle、revision与sealed credential全部保持原值，不出现retired asset仍携带credential或active asset credential被单独清除
+
+#### Scenario: Replace does not inherit predecessor credential
+- **WHEN** 管理员Replace Gateway且省略`directory_credential`
+- **THEN** predecessor在同一transaction被retired并清除credential，replacement为`secret_configured=false`，即使K2 unavailable也不读取或写入credential material
 
 ### Requirement: Gateway audit and metrics SHALL use bounded taxonomy
 

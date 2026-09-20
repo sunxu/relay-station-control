@@ -21,7 +21,9 @@ Control SHALL 使用代码定义的 Node Driver registry，并 MUST 只为已登
 - **WHEN** 启动代码尝试为同一 node type 注册第二个 Driver
 - **THEN** Control 在提供 Driver 服务前拒绝该 registry，不能按注册顺序静默覆盖实现
 
-### Requirement: Management Secret 仅在运行时受保护地解析
+### Historical Requirement: Management Secret 仅在运行时受保护地解析
+
+This pre-Stage 0 reference-based requirement is retained as historical context. The current production contract is the protected resolver requirement below; `FileSecretResolver` and legacy reference lookup are not current production paths.
 
 CLIProxyAPI Driver MUST 只把数据库中的 opaque Secret 引用交给受控 runtime resolver，并 MUST NOT 把引用文本当作 Management Key。Management Key MUST 只进入单次 auth-files 请求的 `X-Management-Key` header，不得进入数据库、URL、query、cookie、健康请求、API、UI、日志、指标、Trace、审计、错误或测试证据。
 
@@ -36,6 +38,14 @@ CLIProxyAPI Driver MUST 只把数据库中的 opaque Secret 引用交给受控 r
 #### Scenario: 健康探测
 - **WHEN** Driver 调用 `/healthz`
 - **THEN** 请求不携带 Management Key、cookie 或其他管理凭证
+
+### Requirement: Management credential SHALL be opened only through the protected Node resolver
+
+CLIProxyAPI Driver MUST 通过 Node protected credential resolver 读取 owning asset 的 sealed `management_credential`，并在有界内存生命周期中 Open 为 ephemeral Management Key。Production MUST NOT 读取 legacy opaque reference、Secret 文件或使用 `FileSecretResolver` fallback。Management Key MUST 只进入单次 auth-files 请求的 `X-Management-Key` header，不得进入数据库 plaintext、URL、query、cookie、健康请求、API、UI、日志、指标、Trace、审计、错误或测试证据。现有 transport、timeouts、no proxy、no redirect、response limits、parsing 与 Provider policy 语义保持不变。
+
+#### Scenario: protected credential unavailable
+- **WHEN** sealed credential 未配置、损坏、protected read 被拒或 K2 不可用
+- **THEN** Driver 在任何 DNS/网络调用前返回既有 validation/unavailable 错误分类，且不包含 plaintext、sealed blob、K2、filesystem content 或 crypto-specific public code
 
 ### Requirement: 每次连接都执行目标 allowlist 与 SSRF 防护
 

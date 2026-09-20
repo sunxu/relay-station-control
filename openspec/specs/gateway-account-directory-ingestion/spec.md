@@ -84,8 +84,8 @@ Control SHALL 将以下情况视为 retryable：transport/network failure、time
 - **THEN** Control 视为 non-retryable 并直接 failed
 
 #### Scenario: Secret unavailable
-- **WHEN** SecretResolver 无法解析现有 reference
-- **THEN** Control 视为 non-retryable 并直接 failed
+- **WHEN** protected Directory credential 缺失、损坏、protected read 被拒或 K2 不可用
+- **THEN** Control 视为 non-retryable 并直接 failed，不使用 legacy reference fallback
 
 gateway_retired 与 gateway_replaced MUST 是 non-retryable lifecycle failure；不得因既有 retry budget 尚有余量而重启 old fetch。
 
@@ -181,7 +181,11 @@ Control SHALL 以 `schema_version` 加上按 `id` 升序排列的 `id`、`name`�
 - **WHEN** 某 Gateway 的 fingerprint 依次变化为 A、B、再回到 A
 - **THEN** Control 复用已有 A snapshot，仅更新 current pointer，不创建重复 snapshot
 
-### Requirement: Control SHALL 使用固定 HTTP fetch contract
+### Requirement: Control SHALL use the protected Directory credential in the fixed HTTP fetch contract
+
+Stage 0 current contract: Bearer tokens MUST be opened from the fenced Gateway protected `directory_credential` using K2. `reader_secret_ref` and `SecretResolver` are historical v1 terms only and MUST NOT be used by the current production path. All existing endpoint, response validation, retry, timeout, freshness and data-plane isolation scenarios in this requirement remain unchanged.
+
+> Historical v1 wording below describes the pre-Stage 0 reference path only; it is not current production behavior.
 
 Control SHALL 仅通过 HTTP 对已配置 Gateway management/Directory endpoint 执行 `GET /internal/v1/api-account-directory`。该 endpoint MUST 使用 `http://`；`https://` MUST 在配置验证或 client construction 阶段被拒绝，且 MUST 发出零个 outbound request。Control MUST 使用 `Authorization: Bearer token`，其中 token 由现有 `gateway_instances.reader_secret_ref` 经 `SecretResolver` resolve 后获得；reference 本身不得被当作 token/path。HTTP fetch MUST NOT follow redirects；single response body 的读取上限 MUST be 4 MiB；`accounts` 上限 MUST be 10,000；非 200、timeout、partial body、retryable failure 以及读取超限 MUST 先记录 attempt failure，再按 retryability 分类；raw body MUST NOT 被持久化。该 internal management transport 约束不改变 Gateway Account/upstream 或 request data-plane endpoint 的 scheme。
 
@@ -305,7 +309,9 @@ Control SHALL 为 ingestion run 使用 lease/fencing、数据库短事务和幂�
 - **WHEN** 旧worker恢复或持旧token回写
 - **THEN** 不得retarget到new；old不fetch、不promotion、不刷新freshness
 
-### Requirement: Control SHALL 仅保存 Secret reference 且不得泄露 raw response
+### Historical Requirement: Control SHALL 仅保存 Secret reference 且不得泄露 raw response
+
+This historical v1 requirement is superseded by the Stage 0 protected Directory credential requirement above. Its reference-based behavior is retained only to explain the pre-Stage 0 contract and Migration 00051 guard.
 
 Control SHALL 只保存指向 service token 的 opaque reference，并 MUST 复用既有 `gateway_instances.reader_secret_ref`；reference 必须先经现有 `SecretResolver` resolve 成 Bearer token，resolve 失败时 Control MUST failed。Control MUST NOT 新增 Directory 专用 Secret 表或字段，也不得保存 service token 原文或 Gateway DB credential。raw response、原始错误、endpoint userinfo、query string、body、Secret、日志、指标标签、审计 detail 和测试 artifact MUST NOT 包含可逆凭证内容。若响应出现 contract 外敏感字段或无法安全处理的额外字段，Control MUST fail closed。
 
@@ -433,7 +439,9 @@ HTTP 明文传输依赖受限内部网络与 service authentication；不提供�
 
 ### Requirement: 未配置Gateway SHALL 不创建Directory run且不阻断有序工作项
 
-所有ScheduleCurrent入口 MUST 在与首次补填共用的Gateway行锁内检查reader_secret_ref；NULL SHALL 返回no-work且不创建run、不解析Secret、不发请求。非NULL引用的Secret或认证故障 MUST 走正常durable failure，不得归类为未配置。单Gateway失败不得终止其他Gateway遍历；父context取消或共享DB不可用可以结束本轮。历史NULL run MUST 保留并由既有reconciler处理，不绕过首次补填的零历史限制。
+For the current Stage 0 contract, “configured” means `directory_credential_sealed IS NOT NULL`; the projection is `secret_configured` and is independent of K2 availability or ciphertext authenticity. A non-NULL protected value may still fail closed when K2/Open is unavailable.
+
+历史 v1 scheduler semantics below are retained only for compatibility history. Current Stage 0 scheduling MUST check protected `directory_credential` state and MUST NOT resolve a legacy reference.
 
 #### Scenario: 合成未配置A与已配置B
 - **WHEN** 合成有序工作项中A排在B之前，A返回NULL对应no-work，B返回成功；真实单Gateway PG分别执行NULL及已配置fixture
@@ -448,6 +456,8 @@ HTTP 明文传输依赖受限内部网络与 service authentication；不提供�
 - **THEN** 合成遍历继续处理B；真实PG证明非NULL故障保留durable失败证据且不刷新freshness
 
 ### Requirement: Directory runtime SHALL 通过受限有效lease读取目标
+
+The current Stage 0 narrow read returns protected `directory_credential` sealed state, not a legacy reference. Only the resolver may Open it for one bounded authenticated request; ordinary runtime and registrar roles MUST NOT directly select the protected column. The legacy reference-based wording below is historical compatibility context.
 
 Control runtime MUST 通过SECURITY DEFINER只读函数获取instance_id、management_endpoint和opaque reader_secret_ref，且仅在run/Gateway/fencing匹配、running、lease未过期及reference非NULL时返回。函数 MUST STABLE、固定search_path、migrator owner，只有runtime可EXECUTE。runtime MUST NOT 获得reader_secret_ref直接SELECT；数据只供采集及Secret解析。共同调度 SHALL 使用已有reader_secret_configured列判断NULL等价条件。
 

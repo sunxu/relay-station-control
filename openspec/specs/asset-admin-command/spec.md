@@ -140,3 +140,43 @@ Change B MUST use a separate immutable `account_admin_command_receipts` relation
 #### Scenario: Ambiguous native server error
 - **WHEN** a native request may have reached mutation and returns an ambiguous 500 or loses its response
 - **THEN** execution becomes `outcome_unknown` and Control creates no terminal receipt or inferred execution result
+
+### Requirement: Stage 0 credential command semantics SHALL preserve actor-first precedence
+
+Stage 0 genuinely new Node/Gateway asset commands MUST use reviewed intent encoding v2 while preserving K1 version 1 and the existing SHA-256 canonical intent mechanism. Receipt actor lookup and existing-command classification MUST precede credential validation and K2 access. Raw credential, recoverable sealed ciphertext and K2 MUST NOT enter canonical durable bytes, registry, receipt or audit.
+
+#### Scenario: same-actor semantic-invalid credential preserves command precedence
+- **WHEN** same actor以existing Node或Gateway command_id提交syntactically parseable但semantic-invalid credential
+- **THEN** 系统先按existing durable command intent分类replay或command_conflict，不提前返回credential validation error且不访问K2
+
+### Requirement: Credential values SHALL have one exact validation contract
+
+Node `management_credential` 与 Gateway `directory_credential` string MUST 非空、UTF-8 encoded length 不超过4096 bytes，且不得包含 NUL、CR 或 LF。系统 MUST 保留 exact bytes，不得 trim 或 normalization。
+
+#### Scenario: boundary values are classified by exact UTF-8 bytes
+- **WHEN** credential分别为0、1、4096、4097 UTF-8 bytes，或multibyte input跨越4096-byte boundary
+- **THEN** 仅1..4096 bytes且不含禁止字符的值通过验证，leading/trailing spaces按exact bytes保留
+
+### Requirement: Asset and credential mutation SHALL commit atomically
+
+Credential set/clear MUST 与既有 asset mutation、command registry、receipt 与 audit 在同一 transaction 提交或回滚；失败不得留下 asset/credential/command 的部分状态。
+
+#### Scenario: credential sealing or durable write fails
+- **WHEN** 新 command 的 Seal 或 protected state 写入失败
+- **THEN** asset revision、credential state、command terminal result、receipt 与 audit 均不得部分提交
+
+### Requirement: K2-unavailable command behavior SHALL be operation-specific
+
+K2 unavailable时，keep、clear、Retire（包括 credential erase）、Replace with unconfigured replacement及不需credential的terminal replay MUST继续按既有command contract工作且 MUST NOT Open/Seal/require K2。Set new credential 与 Replace with new credential MUST fail closed。
+
+#### Scenario: unconfigured replacement does not require K2
+- **WHEN** cipher unavailable 且 Replace 明确创建 unconfigured replacement
+- **THEN** Replace 按既有 lifecycle/atomicity contract 执行，不 Open、不 Seal 且不要求 K2
+
+### Requirement: Stage 0 SHALL NOT expose crypto-specific public errors
+
+Stage 0 MUST NOT 新增 `k2_*`、`aes_*`、`decrypt_*` 或 `cipher_*` 等 crypto-specific public error code；K2 unavailable、Seal/Open 或 decrypt failure MUST 映射到既有 validation/unavailable family，且不得泄露 cryptographic detail。
+
+#### Scenario: credential cipher failure is externally bounded
+- **WHEN** API operation 因 K2 unavailable 或 credential Open failure 无法继续
+- **THEN** response 使用既有批准的 validation/unavailable family，且 body 不包含 K2、ciphertext、algorithm 或 filesystem detail
