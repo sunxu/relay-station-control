@@ -74,6 +74,96 @@ func TestNodeAssetLifecycleMigrationPG18(t *testing.T) {
 	}
 }
 
+func TestAccountInventoryLifecycleMigrationDoesNotBackfillSnapshotHistory(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	databaseURL, database, cleanup := newGatewayLifecycleMigrationDatabase(t, ctx)
+	defer cleanup()
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "33"); err != nil {
+		t.Fatal(err)
+	}
+
+	instanceID, policyID, pollID := uuid.New(), uuid.New(), uuid.New()
+	if _, err := database.Exec(ctx, `INSERT INTO node_drivers(
+		node_type,driver_contract_version,display_name
+	) VALUES ('migration-proof','v1','Migration Proof Driver')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(ctx, `INSERT INTO relay_node_assets(
+		instance_id,display_name,node_type,driver_contract_version,
+		management_endpoint,reader_secret_ref
+	) VALUES ($1,'Migration Proof Node','migration-proof','v1',
+		'http://migration-proof.example','docker-secret://synthetic/migration-proof')`, instanceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(ctx, `INSERT INTO provider_inventory_policy_versions(
+		policy_version_id,node_type,driver_contract_version,active_providers,
+		out_of_scope_providers,created_by
+	) VALUES ($1,'migration-proof','v1',ARRAY['openai'],ARRAY['legacy'],'integration-test')`, policyID); err != nil {
+		t.Fatal(err)
+	}
+	var scheduledAt time.Time
+	if err := database.QueryRow(ctx, `SELECT date_bin(interval '5 minutes',clock_timestamp(),timestamptz '1970-01-01')`).Scan(&scheduledAt); err != nil {
+		t.Fatal(err)
+	}
+	fence := uuid.New()
+	if _, err := database.Exec(ctx, `WITH boundary AS (SELECT clock_timestamp() AS ts)
+	INSERT INTO account_inventory_poll_runs(
+		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
+		provider_policy_version,status,attempt_count,first_started_at,last_started_at,
+		lease_expires_at,lease_fencing_token,created_at
+	) SELECT $1,$2,'migration-proof','v1',$3,$4,'running',1,ts,ts,ts+interval '5 minutes',$5,$3
+	FROM boundary`, pollID, instanceID, scheduledAt, policyID, fence); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(ctx, `INSERT INTO account_inventory_poll_provider_results(
+		poll_run_id,provider,identifiable_count,missing_identity_count,
+		duplicate_identity_count,identity_complete,snapshot_complete,degraded,reason
+	) VALUES ($1,'openai',1,0,0,true,true,false,'complete')`, pollID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		DISABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(ctx, `INSERT INTO account_inventory_snapshot_items(
+		poll_run_id,instance_id,provider,account_key,normalized_email,basic_status,
+		success_count,failed_count,recent_request_count,observed_at
+	) VALUES ($1,$2,'openai','openai:migration-proof@example.invalid',
+		'migration-proof@example.invalid','active',1,0,0,$3)`, pollID, instanceID, scheduledAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(ctx, `ALTER TABLE account_inventory_snapshot_items
+		ENABLE TRIGGER account_inventory_snapshot_items_insert_guard`); err != nil {
+		t.Fatal(err)
+	}
+
+	var before int
+	if err := database.QueryRow(ctx, `SELECT count(*) FROM account_inventory_snapshot_items`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	database.Close(ctx)
+	if err := applyGatewayLifecycleMigration(t, ctx, databaseURL, "34"); err != nil {
+		t.Fatal(err)
+	}
+	databaseConfig, err := pgx.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err = pgx.ConnectConfig(ctx, databaseConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close(ctx)
+	var after int
+	if err := database.QueryRow(ctx, `SELECT count(*) FROM account_inventory_snapshot_items`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("migration 34 fabricated snapshot history: before=%d after=%d", before, after)
+	}
+}
+
 func TestNodeLifecycleCommandsReplayAndLineagePG18(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
