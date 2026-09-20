@@ -50,6 +50,7 @@ jobs:
           fi
           mapfile -t files < <(git diff --name-only "$base" HEAD)
           if [ "${#files[@]}" -eq 0 ]; then
+            # Empty or unclassifiable changes fail closed to correctness validation.
             files=(.github/workflows/ci.yml)
           fi
           docs_only=true
