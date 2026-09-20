@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      run_openspec: ${{ steps.classify.outputs.run_openspec }}
       run_quality: ${{ steps.classify.outputs.run_quality }}
       run_race: ${{ steps.classify.outputs.run_race }}
       run_postgres: ${{ steps.classify.outputs.run_postgres }}
@@ -54,6 +55,7 @@ jobs:
             files=(.github/workflows/ci.yml)
           fi
           docs_only=true
+          run_openspec=false
           run_quality=false
           run_race=false
           run_postgres=false
@@ -62,6 +64,9 @@ jobs:
             case "$file" in
               *.md|docs/*|openspec/*) ;;
               *) docs_only=false ;;
+            esac
+            case "$file" in
+              openspec/*) run_openspec=true ;;
             esac
             case "$file" in
               web/*|api/*|cmd/*|internal/*|go.mod|go.sum|tools/*|Makefile|database/*|migrations/*|queries/*|sqlc.yaml|deploy/acceptance/*|.github/workflows/*) run_quality=true ;;
@@ -84,6 +89,7 @@ jobs:
           fi
           {
             echo "docs_only=$docs_only"
+            echo "run_openspec=$run_openspec"
             echo "run_quality=$run_quality"
             echo "run_race=$run_race"
             echo "run_postgres=$run_postgres"
@@ -176,6 +182,21 @@ jobs:
           test -f docs/validation/principles.md
           test -f docs/testing/ACCEPTANCE_E2E_POLICY.md
           git diff --check
+
+  openspec_validate:
+    name: OpenSpec strict validation
+    needs: changes
+    if: ${{ needs.changes.outputs.run_openspec == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+      - name: Validate all OpenSpec specifications
+        run: env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy npx --yes @fission-ai/openspec@1.10.0 validate --all --strict
 
   race:
     needs: changes
@@ -380,6 +401,7 @@ jobs:
     needs:
       - changes
       - docs_validate
+      - openspec_validate
       - quality
       - race
       - postgres_snapshot_core
@@ -402,6 +424,8 @@ jobs:
           LIFECYCLE: ${{ needs.postgres_lifecycle_core.result }}
           READONLY: ${{ needs.postgres_readonly_core.result }}
           DOCS_VALIDATE: ${{ needs.docs_validate.result }}
+          OPENSPEC_VALIDATE: ${{ needs.openspec_validate.result }}
+          RUN_OPENSPEC: ${{ needs.changes.outputs.run_openspec }}
           RUN_QUALITY: ${{ needs.changes.outputs.run_quality }}
           RUN_RACE: ${{ needs.changes.outputs.run_race }}
           RUN_POSTGRES: ${{ needs.changes.outputs.run_postgres }}
@@ -413,6 +437,7 @@ jobs:
           else
             [ "$DOCS_VALIDATE" = success ] || { echo "ci_required=failed phase=docs_validate result=$DOCS_VALIDATE"; exit 1; }
           fi
+          if [ "$RUN_OPENSPEC" = true ] && [ "$OPENSPEC_VALIDATE" != success ]; then echo "ci_required=failed phase=openspec_validate result=$OPENSPEC_VALIDATE"; exit 1; fi
           if [ "$RUN_RACE" = true ] && [ "$RACE" != success ]; then echo "ci_required=failed phase=race result=$RACE"; exit 1; fi
           if [ "$RUN_POSTGRES" = true ]; then
             for pair in "snapshot_core:$SNAPSHOT" "history_schema_store:$HISTORY_POSTGRES" "history_process:$HISTORY_PROCESS" "history_data_plane:$HISTORY_DATA_PLANE" "lifecycle_core:$LIFECYCLE" "readonly_core:$READONLY"; do
