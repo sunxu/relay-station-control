@@ -976,13 +976,20 @@ func seedZeroPollActivationFixture(
 		nodeType, contract, policyID, dayStart, effectiveTo); err != nil {
 		failSeedCheckpoint(t, "seed.policy_activation", err)
 	}
+	monitoringEffectiveTo := effectiveTo
+	if sourceSnapshots > 0 {
+		// Historical source data still needs a currently eligible Node for the
+		// production current-query equivalence check. The policy interval remains
+		// historical; monitoring remains active through the verification boundary.
+		monitoringEffectiveTo = nil
+	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO public.relay_node_inventory_monitoring_activations(
 		instance_id,effective_from,effective_to,reason,actor,end_reason,end_actor,
 		end_recorded_at,created_at
 	) VALUES($1,$2,$3::timestamptz,'reconciliation','history-process-seed',
 		CASE WHEN $3::timestamptz IS NULL THEN NULL ELSE 'reconciliation' END,
 		CASE WHEN $3::timestamptz IS NULL THEN NULL ELSE 'history-process-seed' END,
-		$3,$2)`, fixture.instanceID, dayStart, effectiveTo); err != nil {
+		$3,$2)`, fixture.instanceID, dayStart, monitoringEffectiveTo); err != nil {
 		failSeedCheckpoint(t, "seed.monitoring_activation", err)
 	}
 	if sourceSnapshots > 0 {
