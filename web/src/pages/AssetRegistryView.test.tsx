@@ -169,7 +169,7 @@ describe("asset registry read-only view", () => {
       nextCursor: filters.cursor ? null : "cursor-page-two",
     }));
     render(<AssetRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
-    await screen.findByText("Singapore Node");
+    await waitFor(() => expect(api.nodes).toHaveBeenCalledWith(expect.objectContaining({ limit: 50 })));
     const nodesCard = within(screen.getByTestId("nodes-card"));
 
     fireEvent.mouseDown(nodesCard.getByLabelText("Node 类型"));
