@@ -828,18 +828,23 @@ func TestAccountInventoryHistoryProcessTerminalInternalPreservesSource(t *testin
 				}
 			}
 			if stateObserved {
+				metricsContext, metricsCancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+				families, _ := readProcessMetrics(t, metricsContext, processURL)
+				metricsCancel()
+				stopped, stoppedExists := metricValue(families,
+					"relay_control_account_inventory_history_enabled",
+					map[string]string{"reason": "runtime_stopped"})
 				if faultStage == "retention" {
-					metricsContext, metricsCancel := context.WithTimeout(context.Background(), httpRequestTimeout)
-					families, _ := readProcessMetrics(t, metricsContext, processURL)
-					metricsCancel()
 					failureDuration, exists := metricValue(families,
 						"relay_control_account_inventory_history_delete_duration_seconds_total",
 						map[string]string{"result": "failure"})
 					if !exists || failureDuration == 0 {
-						t.Fatal("history process terminal internal timed out class=retention_worker_not_observed")
+						t.Fatalf("history process terminal internal timed out class=retention_worker_not_observed runtime_stopped_present=%t runtime_stopped_value=%.0f retention_failure_present=%t retention_failure_value=%.0f",
+							stoppedExists, stopped, exists, failureDuration)
 					}
 				}
-				t.Fatal("history process terminal internal timed out class=runtime_not_stopped")
+				t.Fatalf("history process terminal internal timed out class=runtime_not_stopped runtime_stopped_present=%t runtime_stopped_value=%.0f",
+					stoppedExists, stopped)
 			}
 			t.Fatal("history process terminal internal timed out class=state_not_ready")
 		case <-ticker.C:
