@@ -248,14 +248,14 @@ describe("asset registry read-only view", () => {
 		api.replaceNode = vi.fn().mockResolvedValue(undefined);
 		render(<AssetRegistryView api={api} csrfToken="csrf-proof" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
 
-		expect(await screen.findByRole("button", { name: "登记 Node" })).toBeInTheDocument();
 		await screen.findByText("Singapore Node");
-		expect(screen.getByRole("button", { name: /编\s*辑/ })).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Replace" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "登记 Node" })).toBeInTheDocument();
+		expect(screen.getByTestId(`node-edit-${firstNode.instanceId}`)).toBeInTheDocument();
+		expect(screen.getByTestId(`node-replace-${firstNode.instanceId}`)).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Retire" })).toBeInTheDocument();
 		expect(screen.queryByTestId("node-management-operations")).not.toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: /详.{0,2}情/ }));
+		fireEvent.click(screen.getByTestId(`node-details-${firstNode.instanceId}`));
 		expect(await screen.findByText("Node 详情")).toBeInTheDocument();
 		expect(screen.getByTestId("node-health-button")).toBeInTheDocument();
 		expect(screen.getByTestId("node-connection-test-button")).toBeInTheDocument();
