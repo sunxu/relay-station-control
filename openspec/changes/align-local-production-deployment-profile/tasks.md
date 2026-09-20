@@ -5,7 +5,7 @@
 - [x] Create OpenSpec proposal.
 - [x] Define ownership boundaries.
 - [x] Define runtime acceptance plan.
-- [ ] Commit OpenSpec change.
+- [x] Commit OpenSpec change.
 
 ## Phase 2 Implementation
 
@@ -29,3 +29,10 @@
 - [ ] Capture evidence.
 - [ ] Validate OpenSpec.
 - [ ] Archive change.
+
+## Phase 2 — Implementation Authorization
+
+- [ ] Refresh current repository HEADs.
+- [ ] Verify Control deployment contracts unchanged.
+- [ ] Merge Ops implementation commits.
+- [ ] Run isolated runtime acceptance.
