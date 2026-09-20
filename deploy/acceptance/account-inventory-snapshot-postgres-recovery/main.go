@@ -47,6 +47,19 @@ var (
 	timeoutFence      = uuid.MustParse("10000000-0000-4000-8000-000000000007")
 )
 
+type acceptanceFailure struct {
+	checkpoint string
+	class      string
+}
+
+func (failure acceptanceFailure) Error() string {
+	return failure.class
+}
+
+func checkpointFailure(checkpoint string, err error) error {
+	return acceptanceFailure{checkpoint: checkpoint, class: databaseErrorClass(err)}
+}
+
 func main() {
 	os.Exit(runMain())
 }
@@ -56,7 +69,7 @@ func runMain() (exitCode int) {
 	phase := "invalid"
 	defer func() {
 		if recover() != nil {
-			fmt.Fprintf(os.Stderr, "account_inventory_snapshot_postgres_recovery=failed phase=%s reason=acceptance_invariant\n", phase)
+			fmt.Fprintf(os.Stderr, "account_inventory_snapshot_postgres_recovery=failed phase=%s checkpoint=unknown reason=acceptance_invariant\n", phase)
 			exitCode = 1
 		}
 	}()
@@ -92,6 +105,12 @@ func runMain() (exitCode int) {
 		return 2
 	}
 	if err != nil {
+		var failure acceptanceFailure
+		if errors.As(err, &failure) {
+			fmt.Fprintf(os.Stderr, "account_inventory_snapshot_postgres_recovery=failed phase=%s checkpoint=%s reason=%s\n",
+				phase, failure.checkpoint, failure.class)
+			return 1
+		}
 		reason := "acceptance_invariant"
 		if errors.Is(err, errInvalidConfiguration) {
 			reason = "invalid_configuration"
@@ -133,27 +152,35 @@ func runPrepare() error {
 	defer cancel()
 	owner, err := openPool(ctx, ownerURLEnvironment, 2, 2*time.Second, 0)
 	if err != nil {
-		return err
+		return checkpointFailure("prepare.open_owner", err)
 	}
 	defer owner.Close()
 	runtime, err := openPool(ctx, runtimeURLEnvironment, 2, 2*time.Second, 0)
 	if err != nil {
-		return err
+		return checkpointFailure("prepare.open_runtime", err)
 	}
 	defer runtime.Close()
 	if err := seedFixture(ctx, owner); err != nil {
-		return errAcceptanceInvariant
+		return checkpointFailure("prepare.seed_fixture", err)
 	}
 	repository, err := pollstore.NewInventoryPollRepository(runtime)
 	if err != nil {
-		return errAcceptanceInvariant
+		return checkpointFailure("prepare.repository_init", err)
 	}
 	claim, err := repository.ClaimRunnable(ctx, inventorypoll.ClaimRequest{
 		Token: firstFence, LeaseDuration: 5 * time.Second,
 	})
-	if err != nil || claim == nil || claim.PollRunID != fixturePollID || claim.Attempt != 1 ||
-		claim.FencingToken != firstFence {
-		return errAcceptanceInvariant
+	if err != nil {
+		return checkpointFailure("prepare.claim_runnable", err)
+	}
+	if claim == nil {
+		return checkpointFailure("prepare.claim_runnable", nil)
+	}
+	if claim.PollRunID != fixturePollID || claim.Attempt != 1 {
+		return checkpointFailure("prepare.claim_identity", nil)
+	}
+	if claim.FencingToken != firstFence {
+		return checkpointFailure("prepare.claim_fence", nil)
 	}
 	fmt.Println("account_inventory_snapshot_postgres_recovery=success phase=prepare poll_count=1 attempt=1 lease_class=short")
 	return nil
@@ -607,6 +634,9 @@ func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 	var existing int
 	if err := transaction.QueryRow(ctx, `SELECT count(*) FROM account_inventory_poll_runs
 		WHERE poll_run_id IN ($1,$2)`, fixturePollID, timeoutPollID).Scan(&existing); err != nil || existing != 0 {
+		if err != nil {
+			return err
+		}
 		return errAcceptanceInvariant
 	}
 	if _, err := transaction.Exec(ctx, `INSERT INTO node_drivers(
@@ -646,6 +676,33 @@ func seedFixture(ctx context.Context, owner *pgxpool.Pool) error {
 		return err
 	}
 	return transaction.Commit(ctx)
+}
+
+func databaseErrorClass(err error) string {
+	if err == nil {
+		return "acceptance_invariant"
+	}
+	if errors.Is(err, inventorypoll.ErrNoWork) || errors.Is(err, inventorypoll.ErrInvalidRepositoryResult) {
+		return "acceptance_invariant"
+	}
+	var databaseError *pgconn.PgError
+	if !errors.As(err, &databaseError) {
+		return "database_failure"
+	}
+	switch databaseError.Code {
+	case "23505":
+		return "duplicate"
+	case "23503":
+		return "reference_violation"
+	case "42501":
+		return "permission_denied"
+	case "23514", "23502", "23504", "23P01":
+		return "constraint_violation"
+	case "55000", "P0001", "P0002", "P0003", "P0004", "P0005":
+		return "guard_rejected"
+	default:
+		return "sqlstate_" + databaseError.Code
+	}
 }
 
 func seedTimeoutPoll(ctx context.Context, owner *pgxpool.Pool) error {
