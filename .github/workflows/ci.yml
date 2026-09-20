@@ -49,7 +49,7 @@ jobs:
             base="HEAD^"
           fi
           mapfile -t files < <(git diff --name-only "$base" HEAD)
-          if [ "${#files[@]}" -eq 0 ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "${#files[@]}" -eq 0 ]; then
             # Empty or unclassifiable changes fail closed to correctness validation.
             files=(.github/workflows/ci.yml)
           fi
