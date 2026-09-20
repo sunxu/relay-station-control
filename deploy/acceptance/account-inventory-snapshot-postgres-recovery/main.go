@@ -764,6 +764,17 @@ func seedTimeoutPoll(ctx context.Context, owner *pgxpool.Pool) error {
 		'docker-secret://synthetic/snapshot-timeout-reader')`, timeoutInstanceID, fixtureNodeType, fixtureContract); err != nil {
 		return transactionTimeoutCheckpoint("seed.asset", err)
 	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO node_capabilities(
+		instance_id,node_type,driver_contract_version,capability
+	) VALUES ($1,$2,$3,'management_account_inventory_read')`, timeoutInstanceID, fixtureNodeType, fixtureContract); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO relay_node_inventory_monitoring_activations(
+		instance_id,effective_from,reason,actor,created_at
+	) SELECT $1,t,'deployment_enable','acceptance',t
+	FROM (SELECT clock_timestamp() AS t) AS boundary`, timeoutInstanceID); err != nil {
+		return err
+	}
 	command, err := transaction.Exec(ctx, `INSERT INTO account_inventory_poll_runs(
 		poll_run_id,instance_id,node_type,driver_contract_version,scheduled_at,
 		provider_policy_version,max_attempts,poll_start_grace_seconds,created_at
