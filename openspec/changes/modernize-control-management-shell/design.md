@@ -52,17 +52,22 @@ Phase 10 不引入第二套路由框架。
 
 旧 route 的 alias 删除必须等 Stage 4 unified acceptance 后独立评审，Phase 10 初始实现不删除。
 
-## 4. Gateway auxiliary surface
+所有 Phase 10 product route MUST 采用统一 pathname normalization：canonical path 使用无 trailing slash 形式，但直接访问单个 trailing slash（例如 `/accounts/`、`/nodes/`、`/operations/`、`/monitoring/`、`/problems/`、`/settings/`）必须解析为相同 product route，而不是 fallback 到 Dashboard。不得引入 React Router 或 site-wide rewrite framework。
 
-一级 Sidebar 不包含 Gateway，但既有 Gateway lifecycle 管理不能丢失。
+## 4. Asset / Gateway auxiliary surface
 
-第一阶段保留 `/assets`：
+一级 Sidebar 不包含 Gateway / Assets，但既有 Asset Registry 中未获得一级导航的能力不能丢失。
 
-- Gateway 与 Relay Node presentation 分区；
-- 从 Command / Navigation Search 可达；
-- Dashboard/Monitoring 中存在真实 Gateway 上下文时可提供跳转；
-- 不把 Gateway 作为 Relay Node 子类型；
-- 不新增 Gateway API。
+第一阶段 `/assets` 继续承担：
+
+- Environment identity 只读展示；
+- Gateway lifecycle management；
+- Driver catalog 只读展示；
+- Current Provider Policy 只读展示。
+
+Relay Node lifecycle / monitoring 的 presentation ownership 迁移到 `/nodes`。Stage 3B 完成后，`/assets` 不得保留第二套可执行 Node lifecycle / health / monitoring 控件；Node 区域应删除或变为 navigation-only link。
+
+`/assets` 从 Command / Navigation Search 可达；Dashboard / Monitoring 中存在真实 Gateway、environment 或 policy context 时可跳转。该拆分不改变 Asset/Gateway/Node API、安全、revision、credential 或 lifecycle contract。
 
 ## 5. App Shell composition
 
@@ -146,6 +151,8 @@ Durable Jobs first。Account Operation 无全局 list，因此从 Account contex
 
 只读 composition。不得拥有 mutation 或状态机。
 
+`/monitoring` 在 Phase 10 成为既有 `node-centric-topology-ui` 诊断能力的主要 presentation owner；迁移期 `/topology` 作为兼容 alias。现有 Inventory evidence、Binding truth/resolution、Duplicate Ownership、Provider state、Account Quality 等 read-only contracts 必须继续满足，不得因改名或重组页面而丢失。
+
 ### Problems
 
 保持现有 Problems domain / route / taxonomy。
@@ -159,6 +166,12 @@ Durable Jobs first。Account Operation 无全局 list，因此从 Account contex
 第一阶段 search index 来自静态 navigation entries 与明确允许的当前页面 loaded entities。
 
 结果项 MUST 标记来源，不得给局部实体结果“Global”语义。
+
+若实现当前页面 entity search：
+- search query / result state 仅驻留当前页面内存，不写 browser history、URL query、LocalStorage 或其他持久存储；
+- canonical `account_key` MUST NOT 因 Search 进入 navigation URL/storage/logs/metrics；
+- Secret / credential / token 永远不进入 Search index；
+- entity jump 只能复用既有安全 selection/detail flow；没有安全 deep-link identity 时只在当前页面内选择，不创造新 URL contract。
 
 不新增搜索 API。
 

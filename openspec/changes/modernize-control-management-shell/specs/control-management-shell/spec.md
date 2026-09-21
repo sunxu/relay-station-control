@@ -87,6 +87,12 @@ Global Header 第一阶段 SHALL 提供 Command / Navigation Search，而不是�
 - **WHEN** 当前只加载了某一分页 Accounts 或 Problems 结果
 - **THEN** Header search MUST NOT 将该局部结果标记为全局完整结果
 
+#### Scenario: entity search does not create unsafe identity persistence
+- **WHEN** 可选的当前页面 entity search 命中 account / Node / Gateway 等当前已加载实体
+- **THEN** Search MUST NOT 把 credential、Secret 或 token 纳入 index
+- **AND** canonical `account_key` MUST NOT 因 Search 写入 URL、browser history、LocalStorage、log 或 metrics
+- **AND** 没有既有安全 deep-link identity 时，entity jump 仅改变当前页面内存 selection/detail state
+
 ### Requirement: Dashboard SHALL only present summaries with registered truth semantics
 每个 Dashboard metric / summary MUST 在 `dashboard-truth-source-matrix.md` 登记 source API、authoritative/navigation-only classification、aggregation semantics、time window、denominator 与 pagination completeness。前端 MUST NOT 从分页结果推导 global count、rate、trend 或 comparison。若现有 API 不提供完整语义，Dashboard SHALL 只提供 Navigation Summary、明确 unavailable，或等待新的 Backend/OpenSpec contract。
 
@@ -190,6 +196,11 @@ Phase 10 SHALL 继续使用 React 19、TypeScript、Vite、Ant Design 6、TanSta
 - **WHEN** 用户访问既有 `/jobs` deep link
 - **THEN** 迁移期 SHALL 仍能到达 Operations / Durable Jobs 语义
 - **AND** 不因 Phase 10 IA 重命名返回无关页面
+
+#### Scenario: canonical route trailing slash normalization
+- **WHEN** 用户直接访问 `/accounts/`、`/nodes/`、`/operations/`、`/monitoring/`、`/problems/` 或 `/settings/`
+- **THEN** frontend route resolver MUST 解析为对应无 trailing slash 的 canonical product route
+- **AND** MUST NOT fallback 到 Dashboard/default route
 
 ### Requirement: Existing i18n contract SHALL remain compatible
 Phase 10 MUST 保持 `AppLocale = "zh-CN" | "en"`、fallback `zh-CN`、`relay-control.locale`、valid persisted locale -> browser locale -> zh-CN 的 resolution、zh/en normalization，以及“只有用户显式选择时持久化”的现有 contract。新增普通产品文案 MUST 同时提供 zh-CN 和 en。Machine value MUST 保持原始值，仅在 presentation 层转换。

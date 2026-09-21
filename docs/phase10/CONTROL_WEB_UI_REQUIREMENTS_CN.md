@@ -780,17 +780,28 @@ Gateway 与 Node 必须保持领域边界。
 不得把 Gateway 当成一种 Relay Node。
 
 
-### 18.1 Gateway 辅助管理入口归属
+### 18.1 Asset / Gateway 辅助管理入口归属
 
-Phase 10 一级 Sidebar 不新增 `Gateway` 项，也不得把 Gateway 当成 Relay Node。为避免 UI 重构丢失既有 Gateway 生命周期管理能力，第一阶段保留现有 `/assets` 作为 **辅助管理入口**：
+Phase 10 一级 Sidebar 不新增 `Gateway` 或 `Assets` 项，也不得把 Gateway 当成 Relay Node。为避免 UI 重构丢失现有 Asset Registry 中已经存在但未分配一级导航的能力，第一阶段保留 `/assets` 作为 **辅助资产与运行配置入口**。
+
+`/assets` 第一阶段继续拥有：
+
+- Environment identity 的只读展示；
+- Gateway lifecycle management；
+- Driver catalog 的只读展示；
+- Current Provider Policy 的只读展示。
+
+`/nodes` 成为 Relay Node lifecycle / monitoring 的唯一主要页面 ownership。Stage 3B 完成后，`/assets` MUST NOT 继续提供第二套可执行 Node Register / Edit / Retire / Replace / Health / Connection Test / Monitoring Enable / Monitoring Disable 控件；原 Node 区域应移除或收敛为指向 `/nodes` 的 navigation-only 入口。
+
+`/assets`：
 
 - 不进入一级 Sidebar；
 - 可由 Command / Navigation Search 跳转；
-- 可从 Dashboard / Monitoring 中真实存在的 Gateway 上下文进入；
-- Gateway 与 Relay Node 在该入口中继续保持独立领域、独立标题和独立操作语义；
-- Phase 10 不以此决定新增 Gateway 后端能力，也不改变现有 Gateway API / lifecycle contract。
+- 可从 Dashboard / Monitoring 中真实存在的 Gateway / environment / policy context 进入；
+- Gateway、Driver / Provider Policy 与 Relay Node 保持独立领域语义；
+- 不新增后端能力，也不改变既有 Asset / Gateway / Node API contract。
 
-后续若产品要求 Gateway 成为一级导航，必须另行更新信息架构需求；不得在实现中自行增加。
+后续若产品要求 Gateway 或 Assets 成为一级导航，必须另行更新信息架构需求；不得在实现中自行增加。
 
 ------------------------------------------------------------------------
 

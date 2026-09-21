@@ -11,9 +11,11 @@
 - [x] 0.5 冻结 Operations = Durable Jobs first、Monitoring = read-only composition、Settings browser-local preference。
 - [x] 0.6 盘点当前手写 AuthContext routing，并冻结“不引入 React Router”与旧 deep-link alias。
 - [x] 0.7 完成 Test Contract Coverage Review。
-- [x] 0.8 完成 planning validation；确认 Backend/DB/Gateway/Node change = NO。
-- [ ] 0.9 在仓库运行 `openspec validate modernize-control-management-shell --strict` 并记录 PASS。
-- [ ] 0.10 独立 Architecture Review PASS 后授权 Stage 1 implementation。
+- [x] 0.8 完成 planning validation；确认 Backend/DB/Gateway/Node business contract change = NO。
+- [x] 0.9 Architecture Review Round 1 识别并修正 canonical UI contract 冲突：`asset-registry` page ownership 与 `node-centric-topology-ui` 390px acceptance。
+- [x] 0.10 冻结 `/assets` Environment/Gateway/Driver/Policy ownership、`/nodes` sole executable Node lifecycle ownership、route trailing-slash normalization 与 Search identity safety。
+- [ ] 0.11 在真实仓库运行 `openspec validate modernize-control-management-shell --strict` 与 `openspec show modernize-control-management-shell --json --deltas-only` 并记录 PASS。
+- [ ] 0.12 独立 Architecture Re-review PASS 后授权 Stage 1 implementation。
 
 ## 1. Stage 1 — Foundation
 

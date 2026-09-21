@@ -9,8 +9,8 @@
 | 七项 Sidebar IA | component | exact nav model keys/routes/testids | zh-CN/en Browser sidebar assertions | OWNED |
 | Problems 英文命名 | translation resource | resource key exact `Problems`; source audit rejects `Issues` nav | en Browser no `Issues` nav | OWNED |
 | zh-CN 英文泄漏 ZERO | translation audit | source/resource exception allowlist | 1280/1440 DOM text audit | OWNED |
-| Gateway ≠ Relay Node | page/domain component | `/nodes` fixtures不包含 Gateway lifecycle controls；`/assets` 独立辅助 surface | navigation + route assertions | OWNED |
-| Command Search != global entity search | component/transport | search index unit tests只含静态 nav/allowed loaded entities；无 search API call | Browser query confirms scope labels | OWNED |
+| Asset/Node ownership split | component + transport | `/assets` owns Environment/Gateway/Driver/Policy；`/nodes` is sole executable Node lifecycle owner after Stage 3B；同一 fixture 证明 `/assets` 不再有第二套 Node mutation controls | navigation + direct/reload assertions | OWNED |
+| Command Search != global entity search | component/transport/security | search index unit tests只含静态 nav/allowed loaded entities；无 search API call；account_key/Secret 不进入 URL/history/storage/log/metrics | Browser query confirms scope labels + unsafe identity persistence ZERO | OWNED |
 | Dashboard truth source | adapter/component | 每个 authoritative card 使用 matrix-approved API；paginated fixture不能生成 totals | Dashboard Browser no fake totals | OWNED |
 | Dashboard no auto probe | transport/unit | mount 时 fetch calls不包含 gateway/node health/connection-test | Browser request capture = ZERO probes | OWNED |
 | Accounts preserve API semantics | existing API adapters + page tests | existing Orval clients/filters/body preserved | relevant account E2E | OWNED |
@@ -20,6 +20,8 @@
 | UI preference browser-local | unit | local state/storage only；network call count zero | reload/session behavior | OWNED |
 | no fake Audit Logs/API Keys | nav/page component | no route/nav entries | Sidebar/Search assertions | OWNED |
 | no Mock production data | component/transport review | production components require API state; mock only tests | Browser stack uses controlled real/mocked API according to existing E2E policy, not shipped UI | OWNED |
+| route/deep-link compatibility | routing unit + embedded-handler | all canonical paths accept optional one trailing slash；`/assets`/`/jobs`/`/topology` legacy compatibility；unknown static/API precedence unchanged | direct navigation + reload + Back/Forward | OWNED |
+| canonical spec reconciliation | OpenSpec strict validation | `asset-registry` MODIFIED delta + `node-centric-topology-ui` MODIFIED delta parse successfully；no contradictory 390px required contract remains for Phase 10 | N/A | OWNED |
 | i18n parity | translation validation | RESOURCE_PARITY / REFERENCED_KEY_COMPLETENESS / TRANSLATION_SOURCE_AUDIT | live locale switch | OWNED |
 | machine values unchanged | formatter/presentation unit | mappings do not rewrite API enum; unknown/outcome_unknown distinct | status rendering assertions | OWNED |
 | timestamp/number formatting boundary | foundation unit | all new formatting via `foundation/format.ts`; source scan for stray patterns in new files | locale Browser checks | OWNED |

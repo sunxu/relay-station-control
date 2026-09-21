@@ -6,9 +6,10 @@
 REQUIREMENTS_SOURCE = docs/phase10/CONTROL_WEB_UI_REQUIREMENTS_CN.md
 OPEN_SPEC_CHANGE = modernize-control-management-shell
 
-PHASE10_STAGE0 = FROZEN CANDIDATE
+PHASE10_STAGE0 = CORRECTED FROZEN CANDIDATE
 TEST_COVERAGE_CONTRACT_GAP = NONE
-ARCHITECTURE_REVIEW_READINESS = READY
+ARCHITECTURE_REVIEW_ROUND1 = CHANGES_REQUIRED
+ARCHITECTURE_REVIEW_REVIEW_CANDIDATE = READY
 
 BACKEND_CHANGE = NO
 DATABASE_CHANGE = NO
@@ -156,3 +157,33 @@ Test Contract Coverage Review = PASS
 Architecture Review readiness = READY
 Implementation = NOT STARTED
 ```
+
+## 11. Architecture Review Round 1 corrective reconciliation
+
+Round 1 findings：
+
+```text
+P0 = 0
+P1 = 2
+P2 = 2
+DISPOSITION = CHANGES_REQUIRED
+```
+
+P1-1：canonical `asset-registry` 仍要求 Environment / Gateway / Node / Driver / Policy 在单一 Asset Registry 中呈现，并明确“不新增第二套页面”；Phase 10 `/nodes` 会形成 contract 冲突。已新增 `specs/asset-registry/spec.md` 的 `MODIFIED Requirements`，冻结 `/assets` = Environment/Gateway/Driver/Policy auxiliary，`/nodes` = sole executable Node lifecycle / monitoring owner，底层 API/安全/事务语义不变。
+
+P1-2：canonical `node-centric-topology-ui` 仍要求 `390px` 窄屏可辨识；与 Phase 10 PC-only contract 冲突。已新增 `specs/node-centric-topology-ui/spec.md` 的 `MODIFIED Requirements`，正式 supersede 390px release gate，并保留 keyboard/accessibility/read-only truth semantics；`/topology` 作为 `/monitoring` compatibility alias。
+
+P2-1：新 canonical routes 未明确 trailing slash normalization。已冻结 `/accounts/`、`/nodes/`、`/operations/`、`/monitoring/`、`/problems/`、`/settings/` 与无 trailing slash route 等价。
+
+P2-2：可选 current-page entity search 未明确 identity persistence 安全边界。已冻结 Search 不得把 Secret/credential/token 或 canonical `account_key` 写入 URL/history/storage/log/metrics；无安全 deep-link identity 时只改变当前页面内存 selection。
+
+Corrective 后仍保持：
+
+```text
+Backend API change = NO
+Database/Migration change = NO
+Gateway source change = NO
+Relay Node source change = NO
+```
+
+上述 `asset-registry` / `node-centric-topology-ui` 为 canonical **UI presentation contract** delta，不是 backend/business capability 变更。
