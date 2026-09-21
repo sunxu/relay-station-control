@@ -1,0 +1,158 @@
+# Phase 10 Stage 0 Planning Validation
+
+## Status
+
+```text
+REQUIREMENTS_SOURCE = docs/phase10/CONTROL_WEB_UI_REQUIREMENTS_CN.md
+OPEN_SPEC_CHANGE = modernize-control-management-shell
+
+PHASE10_STAGE0 = FROZEN CANDIDATE
+TEST_COVERAGE_CONTRACT_GAP = NONE
+ARCHITECTURE_REVIEW_READINESS = READY
+
+BACKEND_CHANGE = NO
+DATABASE_CHANGE = NO
+GATEWAY_CHANGE = NO
+RELAY_NODE_CHANGE = NO
+```
+
+## 1. Source reconciliation
+
+用户提供的 v3 Requirements 中存在英文问题域命名冲突：
+
+- 早期导航与 §21 使用 `Issues`；
+- §33 后部明确冻结 `Problems`，并给出 `/problems`、ProblemsPage、ProblemsView 兼容理由。
+
+Stage 0 按后部明确命名约定统一为：
+
+```text
+zh-CN = 问题
+en = Problems
+route = /problems
+```
+
+`Issues` 仅在文档中作为“禁止使用/未来独立 Issue Tracking”说明存在。
+
+## 2. Current executable baseline review
+
+已核对当前前端：
+
+- `App.tsx` lazy-loads Bootstrap/Login/Activation/Management/Assets/Jobs/Topology/Problems/OneTimeMaterial；
+- `AuthContext.tsx` 使用 pathname + pushState + popstate，无 React Router；
+- `FrontendFoundationProvider` 已提供 i18next + Ant Design ConfigProvider；
+- `foundationTheme` 当前为空，适合作为 Phase 10 theme token 入口；
+- `PageShell` / `PageHeader` 已存在，可扩展；
+- `LocaleSwitcher` 与 `relay-control.locale` foundation 已存在；
+- Phase 8 evidence 仍含 `390×844` responsive acceptance，需要由 Phase 10 PC-only contract 正式 supersede。
+
+## 3. IA reconciliation
+
+七项一级 Sidebar 不包含 Gateway，但现有 Gateway management 不能丢失。
+
+冻结：
+
+```text
+Gateway /assets = auxiliary management route
+not a Sidebar primary item
+not a Relay Node subtype
+reachable from Command/Nav Search and real Gateway context
+```
+
+该决定不新增后端能力。
+
+## 4. Dashboard truth-source review
+
+第一阶段可以安全作为 Authoritative Summary 的现有来源：
+
+- `/api/healthz`
+- `/api/assets/gateways` -> `gateway_counts`
+- `/api/assets/nodes` -> `node_counts`
+- `/api/account-inventory/poll-capacity`
+
+Jobs、Problems、Account Inventory、Account Quality 等现有 surface 为 paginated/query-scoped；没有足够契约支持全局 totals/rates/trends。
+
+因此：
+
+```text
+Global Success Rate = NOT AUTHORIZED
+Last Week Comparison = NOT AUTHORIZED
+Global Operations Trend = NOT AUTHORIZED
+Global Alerts Trend = NOT AUTHORIZED
+Global Recent Account Operations = NOT AUTHORIZED
+```
+
+## 5. Routing impact
+
+Phase 10 可扩展手写 AuthContext routing，不引入 React Router。
+
+目标 canonical routes：
+
+```text
+/            Dashboard
+/accounts    Accounts
+/nodes       Relay Nodes
+/operations  Operations
+/monitoring  Monitoring
+/problems    Problems
+/settings    Settings
+```
+
+兼容 routes：
+
+```text
+/assets     Gateway auxiliary
+/jobs       Operations alias
+/topology   Monitoring alias during migration
+```
+
+旧 deep links 初始 rollout 不删除。
+
+## 6. Security / truth-source impact
+
+保持：
+
+- Browser 只调用 Control；
+- OpenAPI 是 API truth；
+- PostgreSQL 仍为 Control durable truth；
+- UI aggregate 不成为 execution truth；
+- Authentication / Authorization / MFA / CSRF / Reauthentication 不变；
+- Secret 不进入 Search/Dashboard/DOM/log；
+- Gateway / Relay Node 原生职责不变。
+
+## 7. Test contract
+
+`test-contract-coverage-review.md` 已为所有 frozen MUST/MUST NOT 指定 owning layer。
+
+```text
+TEST_COVERAGE_CONTRACT_GAP = NONE
+```
+
+若 Architecture Review 增加 backend/search/aggregate/preference contract，必须重新执行 TCCR。
+
+## 8. Implementation stages
+
+Stage 1 Foundation -> Stage 2 Dashboard -> Stage 3 domain slices -> Stage 4 unified acceptance -> Stage 5 independent closeout。
+
+Accounts 明确细分，避免一次性重写最大业务 surface。
+
+## 9. Remaining executable validation
+
+本交付是 planning artifact bundle，未在用户本地 Git worktree 执行 OpenSpec CLI。提交前必须在真实仓库运行：
+
+```bash
+openspec validate modernize-control-management-shell --strict
+git diff --check
+```
+
+纯 planning 文档无需因此运行完整 `make test build`；Stage 1 implementation 前需取得独立 Architecture Review PASS。
+
+## 10. Readiness
+
+```text
+Requirements = READY
+Information Architecture = READY
+Dashboard truth-source = READY
+Test Contract Coverage Review = PASS
+Architecture Review readiness = READY
+Implementation = NOT STARTED
+```
