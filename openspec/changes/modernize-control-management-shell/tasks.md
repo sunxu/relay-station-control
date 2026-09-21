@@ -90,10 +90,15 @@ Stage 3C = READY FOR AUTHORIZATION
 
 ## 5. Stage 3C — Operations
 
-- [ ] 3C.1 建立 `/operations`，Durable Jobs 为主列表。
-- [ ] 3C.2 保留 `/jobs` alias。
-- [ ] 3C.3 Account Operations 仅从 Account context / command lookup 进入；不得伪造 global list。
-- [ ] 3C.4 focused proof + commit。
+- [x] 3C.1 建立 `/operations`，Durable Jobs 为主列表。
+- [x] 3C.2 保留 `/jobs` alias。
+- [x] 3C.3 Account Operations 仅从 Account context / command lookup 进入；不得伪造 global list。
+- [x] 3C.4 focused proof + commit。
+
+```text
+Stage 3C = COMPLETE / PASS
+Stage 3D = READY FOR AUTHORIZATION
+```
 
 ## 6. Stage 3D — Monitoring
 
