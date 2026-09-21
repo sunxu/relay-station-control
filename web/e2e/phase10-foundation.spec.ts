@@ -24,6 +24,24 @@ async function proveShell(page: Page, locale: "zh-CN" | "en", width: number, hei
   await expect(page.getByTestId("app-shell")).toBeVisible();
   await expect(page.getByTestId("dashboard-page")).toBeVisible();
   await expect(page.getByTestId("locale-selector")).toHaveValue(locale);
+  const layout = await page.evaluate(() => {
+    const sidebar = document.querySelector<HTMLElement>("[data-testid='app-sidebar']");
+    const header = document.querySelector<HTMLElement>("[data-testid='global-header']");
+    return {
+      sidebarWidth: sidebar?.getBoundingClientRect().width ?? 0,
+      headerHeight: header?.getBoundingClientRect().height ?? 0,
+      scrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  expect(layout.sidebarWidth).toBeGreaterThanOrEqual(220);
+  expect(layout.sidebarWidth).toBeLessThanOrEqual(260);
+  expect(layout.headerHeight).toBeGreaterThanOrEqual(56);
+  expect(layout.headerHeight).toBeLessThanOrEqual(64);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("global-header")).toBeVisible();
+  await expect(page.getByTestId("foundation-placeholder")).toBeAttached();
 
   const labels = locale === "zh-CN"
     ? ["仪表盘", "账号", "节点", "操作", "监控", "问题", "设置"]

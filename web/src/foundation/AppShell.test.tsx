@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
 import { FrontendFoundationProvider } from "./FrontendFoundationProvider";
+import type { AuthenticatedRoute } from "./navigation";
 
 const navigate = vi.fn();
 const logout = vi.fn().mockResolvedValue(undefined);
@@ -19,10 +20,10 @@ vi.mock("../auth/AuthContext", () => ({
   }),
 }));
 
-function renderShell(locale: "zh-CN" | "en" = "zh-CN") {
+function renderShell(locale: "zh-CN" | "en" = "zh-CN", route: AuthenticatedRoute = "dashboard") {
   return render(
     <FrontendFoundationProvider initialLocale={locale}>
-      <AppShell route="dashboard">
+      <AppShell route={route}>
         <div data-testid="foundation-content">content</div>
       </AppShell>
     </FrontendFoundationProvider>,
@@ -41,7 +42,22 @@ describe("AppShell", () => {
     expect(screen.getByTestId("sidebar-monitoring")).toHaveTextContent("监控");
     expect(screen.getByTestId("sidebar-problems")).toHaveTextContent("问题");
     expect(screen.getByTestId("sidebar-settings")).toHaveTextContent("设置");
+    for (const item of ["dashboard", "accounts", "nodes", "operations", "monitoring", "problems", "settings"]) {
+      expect(screen.getByTestId(`sidebar-icon-${item}`)).toBeInTheDocument();
+    }
+    expect(screen.getByText("Relay Station")).toBeInTheDocument();
+    expect(screen.getByText("控制台")).toBeInTheDocument();
     expect(screen.queryByText("Gateway")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["jobs", "operations"],
+    ["topology", "monitoring"],
+    ["settings", "settings"],
+    ["management", "settings"],
+  ] as const)("maps %s to the %s active item", (route, active) => {
+    renderShell("zh-CN", route);
+    expect(screen.getByTestId(`sidebar-${active}`)).toHaveAttribute("aria-current", "page");
   });
 
   it("uses static navigation search without calling a business API", () => {

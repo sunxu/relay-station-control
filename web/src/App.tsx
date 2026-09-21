@@ -5,8 +5,8 @@ import type { AuthApi } from "./api/auth-api";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LocaleSwitcher } from "./foundation/LocaleSwitcher";
 import { AppShell } from "./foundation/AppShell";
-import { FoundationPage } from "./foundation/FoundationPage";
-import { isAuthenticatedRoute, type AuthenticatedRoute, type NavigationRoute } from "./foundation/navigation";
+import { FoundationPage, type FoundationPlaceholderRoute } from "./foundation/FoundationPage";
+import { isAuthenticatedRoute, type AuthenticatedRoute } from "./foundation/navigation";
 
 const BootstrapPage = lazy(() => import("./pages/BootstrapPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -44,7 +44,7 @@ function AuthShell() {
       {auth.route === "jobs" && <JobsPage />}
       {auth.route === "topology" && <TopologyPage />}
       {auth.route === "problems" && <ProblemsPage />}
-      {authenticated && ["dashboard", "accounts", "nodes", "operations", "monitoring"].includes(auth.route) && <FoundationPage route={auth.route as NavigationRoute} />}
+      {authenticated && ["dashboard", "accounts", "nodes", "operations", "monitoring"].includes(auth.route) && <FoundationPage route={auth.route as FoundationPlaceholderRoute} />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
     </Suspense>;
 

@@ -20,7 +20,6 @@ describe("FrontendFoundationProvider", () => {
   it("exposes the foundation shell token contract through Ant Design", () => {
     expect(foundationTheme.token?.colorPrimary).toBe("#2563eb");
     expect(foundationTheme.token?.controlHeight).toBe(40);
-    expect(foundationTheme.components?.Layout?.headerHeight).toBe(60);
     expect(foundationTheme.components?.Table?.cellPaddingBlockSM).toBe(10);
   });
 

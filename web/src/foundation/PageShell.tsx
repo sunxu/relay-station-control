@@ -1,7 +1,7 @@
-import type { PropsWithChildren, ReactNode } from "react";
+import type { PropsWithChildren } from "react";
 import { PageHeader, type PageHeaderProps } from "./PageHeader";
 
-export type PageShellProps = PropsWithChildren<PageHeaderProps & { className?: string; testId?: string; breadcrumb?: ReactNode }>;
+export type PageShellProps = PropsWithChildren<PageHeaderProps & { className?: string; testId?: string }>;
 
 export function PageShell({ title, description, actions, breadcrumb, className, testId, children }: PageShellProps) {
   return (

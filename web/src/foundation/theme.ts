@@ -22,7 +22,6 @@ export const foundationTheme: ThemeConfig = {
     colorError: "#c53030",
   },
   components: {
-    Layout: { headerHeight: 60 },
     Table: { cellPaddingBlockSM: 10, cellPaddingInlineSM: 12 },
   },
 };

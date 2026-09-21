@@ -1,7 +1,8 @@
 import { Input } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../auth/AuthContext";
+import { AuthApiError, userFacingError } from "../api/auth-api";
+import { handleSessionError, useAuth } from "../auth/AuthContext";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { searchNavigation } from "./navigation";
 
@@ -9,6 +10,7 @@ export function GlobalHeader() {
   const auth = useAuth();
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const results = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return [];
@@ -19,10 +21,18 @@ export function GlobalHeader() {
   }, [query, t]);
 
   const logout = async () => {
+    setLogoutError(null);
     try {
       await auth.api.logout(auth.session?.csrf_token ?? "");
-    } finally {
       auth.clearSession();
+    } catch (cause) {
+      if (cause instanceof AuthApiError && cause.detail.code === "csrf_invalid") {
+        await auth.refreshSession().catch(() => null);
+      } else {
+        handleSessionError(cause, auth.clearSession);
+        if (cause instanceof AuthApiError && cause.status === 401) return;
+      }
+      setLogoutError(userFacingError(cause, (key, requestId) => t(key, { requestId: requestId ?? "" })));
     }
   };
 
@@ -52,6 +62,7 @@ export function GlobalHeader() {
         ) : null}
       </div>
       <div className="global-header-actions">
+        {logoutError ? <div role="alert" data-testid="global-logout-error">{logoutError}</div> : null}
         <span data-testid="admin-identity">{auth.session?.administrator.display_name} · {auth.session?.administrator.login_name}</span>
         <LocaleSwitcher />
         <button type="button" data-testid="global-logout" onClick={() => void logout()}>{t("common.shell.logout")}</button>
