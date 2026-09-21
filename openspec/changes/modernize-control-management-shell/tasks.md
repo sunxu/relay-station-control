@@ -64,12 +64,17 @@ Stage 3A = READY FOR AUTHORIZATION
 
 ## 3. Stage 3A — Accounts
 
-- [ ] 3A.1 Accounts IA / 页面骨架。
-- [ ] 3A.2 迁移 Account Inventory。
-- [ ] 3A.3 迁移 Account list/detail。
-- [ ] 3A.4 迁移 Quality / Availability / Request History / Incidents。
-- [ ] 3A.5 迁移 Account Operation entry/result presentation，保持原 command semantics。
-- [ ] 3A.6 每个 slice 单独 unit/component + Browser proof + commit。
+- [x] 3A.1 Accounts IA / 页面骨架。
+- [x] 3A.2 迁移 Account Inventory。
+- [x] 3A.3 迁移 Account list/detail。
+- [x] 3A.4 迁移 Quality / Availability / Request History / Incidents。
+- [x] 3A.5 迁移 Account Operation entry/result presentation，保持原 command semantics。
+- [x] 3A.6 每个 slice 单独 unit/component + Browser proof + commit。
+
+```text
+Stage 3A = COMPLETE / PASS
+Stage 3B = READY FOR AUTHORIZATION
+```
 
 ## 4. Stage 3B — Relay Nodes and Gateway auxiliary surface
 
