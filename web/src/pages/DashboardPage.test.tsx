@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
+import { formatDateTime, formatNumber } from "../foundation/format";
 import { DashboardApiError } from "../api/dashboard-api";
 import DashboardPage from "./DashboardPage";
 
@@ -56,5 +57,18 @@ describe("DashboardPage", () => {
     const api = makeApi({ health: vi.fn().mockRejectedValue(new DashboardApiError(401)) });
     renderDashboard(api);
     await waitFor(() => expect(clearSession).toHaveBeenCalledOnce());
+  });
+
+  it.each(["zh-CN", "en"] as const)("uses the foundation locale formatter for %s numbers and dates", async (locale) => {
+    const evaluatedAt = "2026-09-21T00:00:00.000Z";
+    const api = makeApi({
+      gatewayCounts: vi.fn().mockResolvedValue({ active: 1234567, retired: 0, total: 1234567 }),
+      pollCapacity: vi.fn().mockResolvedValue({ status: "ready" as const, enabled: true, eligibleNodeCount: 1234567, effectiveCapacity: 1234567, evaluatedSlot: "slot-1", evaluatedAt }),
+    });
+    renderDashboard(api, locale);
+    await waitFor(() => expect(screen.getByTestId("dashboard-gateway-summary")).toHaveTextContent(formatNumber(1234567, locale)));
+    expect(screen.getByTestId("dashboard-poll-capacity-summary")).toHaveTextContent(formatNumber(1234567, locale));
+    expect(screen.getByTestId("dashboard-poll-capacity-summary")).toHaveTextContent(formatDateTime(evaluatedAt, locale));
+    expect(screen.getByTestId("dashboard-poll-capacity-summary")).not.toHaveTextContent(evaluatedAt);
   });
 });

@@ -39,6 +39,11 @@ async function assertDesktop(page: Page, locale: "zh-CN" | "en", width: number, 
   await expect(page.getByTestId("dashboard-page")).toBeVisible();
   await expect(page.getByTestId("dashboard-gateway-summary")).toContainText("37");
   await expect(page.getByTestId("dashboard-node-summary")).toContainText("19");
+  if (locale === "zh-CN") {
+    for (const leakedLabel of ["Inventory", "Dashboard", "Accounts", "Relay Nodes", "Operations", "Problems", "Settings"]) {
+      await expect(page.getByTestId("dashboard-page")).not.toContainText(leakedLabel);
+    }
+  }
   const layout = await page.evaluate(() => ({
     sidebar: document.querySelector<HTMLElement>("[data-testid='app-sidebar']")?.getBoundingClientRect().width ?? 0,
     header: document.querySelector<HTMLElement>("[data-testid='global-header']")?.getBoundingClientRect().height ?? 0,
@@ -51,11 +56,12 @@ async function assertDesktop(page: Page, locale: "zh-CN" | "en", width: number, 
   expect(layout.header).toBeLessThanOrEqual(64);
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
   await expect(page.getByTestId("dashboard-nav-accounts")).toBeVisible();
+  const dashboardPaths = requests.map((request) => request.split(" ")[1]);
+  expect(dashboardPaths.filter((path) => path === "/api/account-inventory/query" || path === "/api/jobs" || path === "/api/problem-accounts/query")).toEqual([]);
+  expect(dashboardPaths.every((path) => allowed.has(path))).toBe(true);
   await page.getByTestId("dashboard-nav-accounts").click();
   await expect(page).toHaveURL(/\/accounts$/);
-  expect(requests.filter((request) => request.includes("/api/")).every((request) => allowed.has(request.split(" ")[1]))).toBe(true);
   expect(requests.some((request) => request.startsWith("POST "))).toBe(false);
-  expect(requests.some((request) => /health|connection-test|jobs|problem-accounts|account-inventory\/query/.test(request) && !request.includes("/api/healthz"))).toBe(false);
 }
 
 test("Dashboard desktop zh-CN 1280x720", async ({ page }) => assertDesktop(page, "zh-CN", 1280, 720));
@@ -68,7 +74,7 @@ test("Dashboard isolates one unavailable source and retries only it", async ({ p
   await page.goto("/");
   await expect(page.getByTestId("dashboard-gateway-summary")).toContainText("Unavailable");
   await expect(page.getByTestId("dashboard-node-summary")).toContainText("19");
-  await page.getByTestId("dashboard-gateway-summary").getByRole("button", { name: "Retry" }).click();
+  await page.getByTestId("dashboard-retry-gateway").click();
   await expect(page.getByTestId("dashboard-gateway-summary")).toContainText("37");
   expect(requests.filter((request) => request.includes("/api/assets/gateways")).length).toBe(3);
 });
@@ -77,10 +83,13 @@ test("Dashboard work entries navigate without domain reads", async ({ page }) =>
   await page.setViewportSize({ width: 1280, height: 720 });
   const { requests } = await installDashboardFixture(page);
   await page.goto("/");
+  await expect(page.getByTestId("dashboard-page")).toBeVisible();
+  const dashboardPaths = requests.map((request) => request.split(" ")[1]);
+  expect(dashboardPaths.filter((path) => path === "/api/account-inventory/query" || path === "/api/jobs" || path === "/api/problem-accounts/query")).toEqual([]);
   for (const [testId, path] of [["dashboard-nav-operations", "/operations"], ["dashboard-nav-problems", "/problems"]] as const) {
-    await page.goto("/");
     await page.getByTestId(testId).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await page.goto("/");
+    await expect(page.getByTestId("dashboard-page")).toBeVisible();
   }
-  expect(requests.some((request) => /jobs|problem-accounts|account-inventory\/query/.test(request))).toBe(false);
 });

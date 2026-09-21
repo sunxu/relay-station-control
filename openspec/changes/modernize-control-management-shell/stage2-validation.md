@@ -54,7 +54,7 @@ representative locale = PASS (6/6)
 ## Validation
 
 ```text
-Unit/component = PASS (42 files, 317 tests)
+Unit/component = PASS (42 files, 319 tests)
 Typecheck = PASS
 Build = PASS
 Translation audit = PASS (resource parity and locale owning proof)
@@ -86,3 +86,44 @@ P2 = 0
 Review covered truth-source boundaries, no fabricated metrics, no automatic
 remote probes or mutation, session/401 handling, i18n parity, accessible
 status text and retry controls, desktop layout, and Stage 3 scope leakage.
+
+## Independent review corrective
+
+The independent review corrective preserved the Stage 2 contract without
+changing any application API, backend, database, Gateway, or Relay Node
+behavior:
+
+```text
+Foundation formatter reuse = PASS
+Dashboard date/time formatting = PASS (browser-local timezone)
+Dashboard number formatting = PASS (zh-CN/en locale)
+Playwright interaction locator policy = PASS (stable test IDs)
+Dashboard mount domain-query boundary = PASS
+Navigation destination ownership = PASS
+zh-CN Dashboard unintended English leak = ZERO
+Foundation exact read allowlist = PASS
+Gateway/Node health probes = ZERO
+Connection tests = ZERO
+Unit/component corrective proof = PASS
+Full frontend unit suite = PASS (42 files, 319 tests)
+Typecheck = PASS
+Build = PASS
+Translation/resource audit = PASS (resource parity and locale owning proof)
+Browser proof = PASS
+Authentication/legacy owning regression = PASS (6/6)
+Generated drift = NONE
+Backend/API change = NO
+Database/Migration change = NO
+Gateway change = NO
+Relay Node source change = NO
+
+P0 = 0
+P1 = 0
+P2 = 0
+```
+
+The broad Playwright entry point was not used as a Stage 2 verdict because it
+also owns separate Stage 3 acceptance suites that require dedicated
+`ACCEPTANCE_*` fixtures. The repository-defined `general` owning harness was
+run instead and passed authentication, Gateway, Node, Problems, and Topology
+regressions end to end.

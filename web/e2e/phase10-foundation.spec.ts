@@ -57,6 +57,11 @@ async function proveShell(page: Page, locale: "zh-CN" | "en", width: number, hei
   await page.getByTestId("navigation-search-input").fill(locale === "zh-CN" ? "Gateway" : "Assets");
   await expect(page.getByTestId("search-result-assets")).toBeVisible();
 
+  const allowed = new Set(["/api/bootstrap/status", "/api/auth/session", "/api/healthz", "/api/assets/gateways", "/api/assets/nodes", "/api/account-inventory/poll-capacity"]);
+  const foundationPaths = requests.map((request) => new URL(request.split(" ").slice(1).join(" ")).pathname.replace(/^\/static/, ""));
+  expect(foundationPaths.every((path) => allowed.has(path))).toBe(true);
+  expect(foundationPaths.filter((path) => path.endsWith("/health") || path.endsWith("/connection-test"))).toEqual([]);
+
   await page.getByTestId("sidebar-accounts").click();
   await expect(page).toHaveURL(/\/accounts$/);
   await expect(page.getByTestId("accounts-page")).toBeVisible();
@@ -68,9 +73,6 @@ async function proveShell(page: Page, locale: "zh-CN" | "en", width: number, hei
   await expect(page.getByTestId("accounts-page")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Issues");
 
-  const allowed = ["/api/bootstrap/status", "/api/auth/session", "/api/healthz", "/api/assets/gateways", "/api/assets/nodes", "/api/account-inventory/poll-capacity"];
-  expect(requests.every((request) => allowed.some((path) => request.includes(path)))).toBe(true);
-  expect(requests.some((request) => /connection-test|jobs|problem-accounts|account-inventory\/query/.test(request))).toBe(false);
 }
 
 test("ZH_CN_PC_BROWSER at 1280x720", async ({ page }) => {

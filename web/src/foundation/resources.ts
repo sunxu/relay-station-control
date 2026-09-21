@@ -58,7 +58,7 @@ const canonicalTranslation = {
     settings: "设置",
     assets: "资产 / Gateway 辅助管理",
   },
-  dashboard: { title: "仪表盘", description: "系统概览与主要工作入口", overview: "权威概览", control: "控制服务", gatewayAssets: "网关资产", nodeAssets: "节点资产", pollCapacity: "采集容量", status: "状态", available: "正常", version: "版本", total: "总数", active: "活跃", retired: "已退役", eligibleNodes: "符合采集条件的节点", effectiveCapacity: "有效容量", evaluatedAt: "评估时间", workEntries: "工作入口", open: "打开", retry: "重试", unavailable: "暂不可用", entries: { accounts: { title: "账号", description: "查看账号和 Inventory" }, operations: { title: "操作", description: "查看持久任务和操作入口" }, problems: { title: "问题", description: "查看已确认问题" } }, capacityStatus: { ready: "可用", capacity_exceeded: "容量不足", disabled: "已禁用" } },
+  dashboard: { title: "仪表盘", description: "系统概览与主要工作入口", overview: "权威概览", control: "控制服务", gatewayAssets: "网关资产", nodeAssets: "节点资产", pollCapacity: "采集容量", status: "状态", available: "正常", version: "版本", total: "总数", active: "活跃", retired: "已退役", eligibleNodes: "符合采集条件的节点", effectiveCapacity: "有效容量", evaluatedAt: "评估时间", workEntries: "工作入口", open: "打开", retry: "重试", unavailable: "暂不可用", entries: { accounts: { title: "账号", description: "查看账号和清单" }, operations: { title: "操作", description: "查看持久任务和操作入口" }, problems: { title: "问题", description: "查看已确认问题" } }, capacityStatus: { ready: "可用", capacity_exceeded: "容量不足", disabled: "已禁用" } },
   nodes: { title: "节点", description: "Relay Node 管理页面基础结构" },
   monitoring: { title: "监控", description: "只读诊断页面基础结构" },
   settings: { title: "设置", description: "管理员设置页面基础结构" },
