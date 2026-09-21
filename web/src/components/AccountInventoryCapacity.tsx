@@ -16,12 +16,13 @@ function capacityStatusLabel(value: AccountInventoryPollCapacity["status"], copy
   return copy.disabled;
 }
 
-export function AccountInventoryCapacity({ api, csrfToken, onUnauthorized }: {
+export function AccountInventoryCapacity({ api, csrfToken, onUnauthorized, copyOverrides }: {
   api: AccountInventoryApi; csrfToken: string; onUnauthorized: () => void;
+  copyOverrides?: Partial<TranslationResource["accounts"]>;
 }) {
   const capacity = useAccountInventoryPollCapacity(api, csrfToken);
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
-  const copy = resources[locale].translation.accounts;
+  const copy = { ...resources[locale].translation.accounts, ...copyOverrides };
   useEffect(() => {
     if (capacity.error instanceof AccountInventoryApiError && capacity.error.status === 401) onUnauthorized();
   }, [capacity.error, onUnauthorized]);

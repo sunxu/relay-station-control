@@ -8,7 +8,8 @@ import { useNodeAsset, useNodeAssets } from "../api/asset-hooks";
 import { generatedTopologyApi } from "../api/topology-api";
 import { useTopologyProviders } from "../api/topology-hooks";
 import { useAuth } from "../auth/AuthContext";
-import type { AssetApiError } from "../api/asset-types";
+import { AssetApiError } from "../api/asset-types";
+import { TopologyApiError } from "../api/topology-types";
 import { AccountInventoryCapacity } from "../components/AccountInventoryCapacity";
 import { AccountWorkspace } from "../components/AccountWorkspace";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
@@ -24,7 +25,30 @@ export default function AccountsPage() {
   const cache = useQueryClient();
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const copy = resources[locale].translation.accounts;
-  const nodeCopy = resources[locale].translation.topology;
+  const topologyCopy = resources[locale].translation.topology;
+  const nodeCopy = locale === "zh-CN" ? {
+    ...topologyCopy,
+    node: "节点",
+    selectNode: "选择节点",
+    nodeListUnavailable: "节点清单读取不可用",
+    nodeNotFound: "节点不存在",
+    empty: "当前没有登记节点",
+    nodeFirstPage: "节点首页",
+    nodeNextPage: "下一页节点",
+  } : topologyCopy;
+  const accountCopyOverrides = locale === "zh-CN" ? {
+    noInstance: "请选择节点查看账号",
+    selectedNodeNotFound: "所选节点不存在",
+    unsupportedAccountList: "所选节点不支持账号清单查询。",
+    eligibleNodes: "符合采集条件的节点",
+    capacityExceededDescription: "请调整采集并发，或通过监控管理流程减少监控节点；完成后刷新容量诊断。已有账号证据保留。",
+  } : undefined;
+  const operationCopyOverrides = locale === "zh-CN" ? {
+    uploadAccount: "上传新账号",
+    uploadDescription: "无需已有采集账号。服务端会根据逻辑身份生成并验证远端目标。",
+    uploadProvider: "上传新 Provider",
+    uploadEmail: "上传新邮箱",
+  } : undefined;
   const [instanceId, setInstanceId] = useState(initialInstanceId);
   const [nodeCursor, setNodeCursor] = useState<string>();
   const nodes = useNodeAssets(generatedAssetApi, { limit: 200, cursor: nodeCursor });
@@ -35,6 +59,12 @@ export default function AccountsPage() {
     cache.clear();
     auth.clearSession();
   }, [auth, cache]);
+
+  useEffect(() => {
+    const assetUnauthorized = [nodes.error, selectedNode.error].some((error) => error instanceof AssetApiError && error.status === 401);
+    const topologyUnauthorized = providers.error instanceof TopologyApiError && providers.error.status === 401;
+    if (assetUnauthorized || topologyUnauthorized) expireSession();
+  }, [expireSession, nodes.error, providers.error, selectedNode.error]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -71,8 +101,8 @@ export default function AccountsPage() {
         </Flex>
         {selectedNode.error && (selectedNode.error as AssetApiError).status === 404 && <Alert type="warning" message={nodeCopy.nodeNotFound} />}
       </Card>
-      <AccountInventoryCapacity api={generatedAccountInventoryApi} csrfToken={auth.session.csrf_token} onUnauthorized={expireSession} />
-      <AccountWorkspace key={instanceId ?? "none"} api={generatedTopologyApi} accountOperationsApi={generatedAccountOperationsApi} csrfToken={auth.session.csrf_token} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} />
+      <AccountInventoryCapacity api={generatedAccountInventoryApi} csrfToken={auth.session.csrf_token} onUnauthorized={expireSession} copyOverrides={accountCopyOverrides} />
+      <AccountWorkspace key={instanceId ?? "none"} api={generatedTopologyApi} accountOperationsApi={generatedAccountOperationsApi} csrfToken={auth.session.csrf_token} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} copyOverrides={accountCopyOverrides} operationCopyOverrides={operationCopyOverrides} />
     </Flex>
   </PageShell>;
 }

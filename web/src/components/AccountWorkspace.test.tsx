@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FrontendFoundationProvider } from "../foundation/FrontendFoundationProvider";
 import type { TopologyApi } from "../api/topology-types";
+import { TopologyApiError } from "../api/topology-types";
 import { AccountWorkspace } from "./AccountWorkspace";
 
 const A = "11111111-1111-4111-8111-111111111111";
@@ -55,5 +56,13 @@ describe("AccountWorkspace", () => {
     await waitFor(() => expect(api.accountList).toHaveBeenCalledWith(B, expect.objectContaining({ cursor: undefined }), "csrf", expect.any(AbortSignal)));
     await act(async () => { resolveA({ instance_id: A, window: "15m", items: [], next_cursor: null }); });
     expect(screen.getByTestId("accounts-no-results")).toBeInTheDocument();
+  });
+
+  it("hands an account query 401 to the shared session boundary", async () => {
+    const api = apiFixture();
+    api.accountList = vi.fn().mockRejectedValue(new TopologyApiError(401)) as never;
+    const onUnauthorized = vi.fn();
+    render(<FrontendFoundationProvider><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AccountWorkspace api={api} instanceId={A} csrfToken="csrf" providers={[]} providerError={false} onUnauthorized={onUnauthorized} /></QueryClientProvider></FrontendFoundationProvider>);
+    await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
   });
 });

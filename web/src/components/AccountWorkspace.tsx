@@ -58,7 +58,7 @@ function toAccountRow(item: TopologyApi["accountList"] extends (...args: never[]
   };
 }
 
-export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanceId, providers, providerError, onUnauthorized, copyOverrides, queryTestId = "accounts-query" }: {
+export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanceId, providers, providerError, onUnauthorized, copyOverrides, operationCopyOverrides, queryTestId = "accounts-query" }: {
   api: TopologyApi;
   accountOperationsApi?: AccountOperationsApi;
   csrfToken: string;
@@ -67,6 +67,7 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
   providerError: boolean;
   onUnauthorized: () => void;
   copyOverrides?: Partial<Record<keyof typeof resources["zh-CN"]["translation"]["accounts"], string>>;
+  operationCopyOverrides?: Partial<Record<keyof typeof resources["zh-CN"]["translation"]["operations"], string>>;
   queryTestId?: string;
 }) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
@@ -140,7 +141,7 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
 
   return <Flex vertical gap={16} data-testid="accounts-workspace">
     <Card title={copy.accountQuality} role="region" aria-label={copy.accountQuality} data-testid="accounts-list-card">
-      {accountOperationsApi && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={onUnauthorized} /></Flex>}
+      {accountOperationsApi && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={onUnauthorized} copyOverrides={operationCopyOverrides} /></Flex>}
       <Flex gap={8} wrap>
         <Input data-testid="accounts-provider-filter" aria-label={copy.providerExact} placeholder={copy.providerPlaceholder} value={qualityProvider ?? ""} disabled={accountQuery.isPending} maxLength={64} onChange={(event) => updateFilter(setQualityProvider, event.target.value || undefined)} style={{ width: 190 }} />
         <Select data-testid="accounts-lifecycle-filter" allowClear aria-label={copy.lifecycle} placeholder={copy.allLifecycle} value={qualityLifecycle} disabled={accountQuery.isPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => updateFilter(setQualityLifecycle, value)} style={{ width: 180 }} />

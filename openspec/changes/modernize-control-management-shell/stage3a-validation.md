@@ -109,3 +109,38 @@ cursor semantics, stale-response and 401 cache/session boundaries,
 `outcome_unknown`, credential lifecycle, URL/storage leakage, transport
 boundaries, i18n/formatting, accessibility, locator stability, desktop scope,
 and Stage 3B scope leakage.
+
+## Independent review corrective
+
+The corrective keeps the existing six Stage 3A commits intact and adds no
+backend or cross-repository changes.
+
+```text
+Node-list 401 boundary = PASS
+Selected-node 401 boundary = PASS
+Provider-state 401 boundary = PASS
+Account-query 401 boundary = PASS
+Stale prior-context response isolation = PASS
+Full-origin Control transport proof = PASS
+Direct Node/Gateway browser calls = ZERO
+Automatic health/connection probes = ZERO
+Accounts operation Browser wiring = PASS
+outcome_unknown presentation = PASS
+Override visibility contract = PASS
+zh-CN Accounts ordinary English leak = ZERO
+```
+
+Focused Browser proof passed 4/4 cases (zh-CN 1280×720, English 1280×720,
+zh-CN 1440×900, and the canonical account-operation flow). Full Vitest passed
+44 files / 325 tests; typecheck and production build passed, and generated
+client drift remained zero.
+
+The repository production-like general harness was also attempted with the
+recorded Stage 1 rebuilt Node artifact. Its runtime reached secret
+initialization, Node identity, database migration, Control/TLS startup, but
+stopped at the pre-existing deployment contract check:
+`bootstrap status lacks Cache-Control: no-store`. This corrective does not
+change Control HTTP behavior; fixing that backend contract is outside the
+Stage 3A frontend scope. Existing accepted production evidence above remains
+unchanged; this run is recorded as a revalidation environment blocker rather
+than a new PASS claim.
