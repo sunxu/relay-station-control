@@ -155,3 +155,33 @@ PRODUCTION_LIKE_HTTPS = PASS
 The run verified secret initialization, Node runtime identity, TLS/HTTPS
 browser transport, same-origin Control API traffic, and Gateway/Node owning
 regressions. No backend, database, Gateway, or Relay Node source was changed.
+
+## Auxiliary regression corrective
+
+The auxiliary `/assets` surface retains its authenticated-session and Gateway
+credential contracts without reintroducing Node ownership:
+
+```text
+AUXILIARY_READ_401_BOUNDARY = PASS
+ENVIRONMENT_401 = PASS
+GATEWAY_READ_401 = PASS
+DRIVER_401 = PASS
+PROVIDER_POLICY_401 = PASS
+AUXILIARY_NON_401_SESSION_PRESERVATION = PASS
+
+GATEWAY_CREDENTIAL_KEEP = PASS
+GATEWAY_CREDENTIAL_SET_VALIDATION = PASS
+GATEWAY_CREDENTIAL_CLEAR = PASS
+EMPTY_SET_MUTATION = ZERO
+
+ASSET_NODE_LOGIC = ZERO
+NODE_COMPONENT_OWNERSHIP = PASS
+```
+
+Focused component proof covers each auxiliary read returning 401, a
+representative 503 that does not expire the session, and the Gateway edit
+tri-state contract: keep and clear require no new credential, while set is
+validated before mutation and sends only the intended credential patch once a
+value is provided. The full 45-file/325-test frontend suite, typecheck, build,
+and the existing production-like HTTPS general harness (6/6) passed after the
+corrective. Generated drift remains NONE.
