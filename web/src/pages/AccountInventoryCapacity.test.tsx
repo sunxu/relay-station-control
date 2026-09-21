@@ -40,8 +40,9 @@ describe("account inventory poll capacity", () => {
     expect(screen.getByText("监控规模超过采集容量，整轮新采集暂停")).toBeInTheDocument();
     expect(screen.getByText(/请调整采集并发/)).toBeInTheDocument();
     expect(query).not.toHaveBeenCalled();
-    for (const text of ["请求 1000ms", "落库预算 2000ms", "生命周期 3000ms", "任务认领预算 400ms", "调度余量 100ms", "启动宽限 500ms"]) {
-      expect(screen.getByText(text)).toBeInTheDocument();
+    const summary = screen.getByTestId("account-inventory-capacity-summary");
+    for (const text of ["请求 1,000ms", "落库预算 2,000ms", "生命周期 3,000ms", "任务认领预算 400ms", "调度余量 100ms", "启动宽限 500ms"]) {
+      expect(summary).toHaveTextContent(text);
     }
     expect(screen.getByText(`评估槽位：${formatDateTime(capacity.evaluatedSlot, "zh-CN")}；时间：${formatDateTime(capacity.evaluatedAt, "zh-CN")}`)).toBeInTheDocument();
   });

@@ -143,7 +143,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Text>{copy.monitoring}：{node ? node.monitoringActive ? "active" : "inactive" : copy.unknown}</Text>
         </Flex>
       </Card>
-      <AccountWorkspace key={instanceId} api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} copyOverrides={{
+      <AccountWorkspace key={instanceId} api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} queryTestId="account-query" copyOverrides={{
         accountQuality: copy.accountQuality,
         providerExact: copy.providerExact,
         providerPlaceholder: copy.providerPlaceholder,

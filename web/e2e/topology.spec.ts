@@ -13,6 +13,7 @@ test("Account detail preserves server Token projection and occurrence history", 
   await page.route("**/api/**", async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
+    if (!path.startsWith("/api/")) return route.continue();
     if (req.method() === "POST" && path === `/api/topology/nodes/${nodes[0]}/account-quality/query`) {
       qualityReads++;
       return route.fulfill({ json: { instance_id: nodes[0], window: "15m", next_cursor: null, items: [{
@@ -39,9 +40,9 @@ test("Account detail preserves server Token projection and occurrence history", 
   const drawer = page.getByRole("dialog");
   await page.getByTestId("account-inventory-tab").click();
   await expect(drawer.getByText("INVALID", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("Expected Valid Until", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Expected valid until", { exact: true })).toBeVisible();
   // Browser and test runner share the host system timezone; no bespoke UI formatter.
-  await expect(drawer.getByText(formatDateTime(expected, "zh-CN"), { exact: true })).toBeVisible();
+  await expect(drawer.getByText(formatDateTime(expected, "en"), { exact: true })).toBeVisible();
   await page.getByTestId("account-availability-tab").click();
   await expect(drawer.getByText("token_invalid", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Critical", { exact: true })).toBeVisible();
@@ -49,7 +50,7 @@ test("Account detail preserves server Token projection and occurrence history", 
 });
 
 test("Topology covers navigation, independent reads, pagination, and readonly recovery", async ({ page }) => {
-  const requests: string[] = []; let bProviderReads = 0; let expireEvidence = false;
+    const requests: string[] = []; let bProviderReads = 0; let expireEvidence = false;
   await page.route("**/*", async (route) => {
     const request = route.request(); const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) return route.continue();
@@ -77,7 +78,7 @@ test("Topology covers navigation, independent reads, pagination, and readonly re
   const historyCard = page.getByTestId("topology-history-ownership");
   await test.step("current/history have independent pagination and status", async () => {
     await page.getByTestId("topology-current-next").click();
-    await expect(currentCard.getByText("没有符合条件的 occurrence")).toBeVisible();
+    await expect(currentCard.getByText("No matching occurrence")).toBeVisible();
     await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
     await page.getByTestId("topology-current-first").click();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
@@ -87,7 +88,7 @@ test("Topology covers navigation, independent reads, pagination, and readonly re
     await expect.poll(() => requests.some((r) => r.includes("duplicate-history?status=RESOLVED"))).toBe(true);
     await expect(historyCard.getByText("RESOLVED", { exact: true }).last()).toBeVisible();
     await page.getByTestId("topology-history-next").click();
-    await expect(historyCard.getByText("没有符合条件的 occurrence")).toBeVisible();
+    await expect(historyCard.getByText("No matching occurrence")).toBeVisible();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
     await page.getByTestId("topology-history-first").click();
     await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
@@ -115,7 +116,7 @@ test("Topology covers navigation, independent reads, pagination, and readonly re
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(page.getByText(`Instance ID：${nodes[1]}`)).toBeVisible();
-    await expect(page.getByText("读取不可用（unavailable）")).toBeVisible();
+    await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
     await expect(page.getByText("unbound", { exact: true })).toBeVisible();
     await page.getByTestId("topology-refresh-provider").click();
     await expect(page.getByText("fresh", { exact: true }).first()).toBeVisible();

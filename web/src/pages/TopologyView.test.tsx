@@ -162,9 +162,9 @@ it("renders account quality metrics and an unknown zero-request row", async () =
   ] });
   renderView(api, assetApi);
   expect(await screen.findByText("a@example.invalid")).toBeInTheDocument();
-  expect(screen.getByText("100.0%")).toBeInTheDocument();
+  expect(screen.getByText("100%")).toBeInTheDocument();
   expect(screen.getByText("120 ms")).toBeInTheDocument();
-  expect(screen.getByText("Unknown")).toBeInTheDocument();
+  expect(screen.getByText("未知")).toBeInTheDocument();
   const unknownRow = screen.getByText("b@example.invalid").closest("tr")!;
   expect(within(unknownRow).getByText("0")).toBeInTheDocument();
   expect(within(unknownRow).getAllByText("—")).toHaveLength(7);
@@ -327,8 +327,8 @@ it("opens request history for the selected account row", async () => {
   expect(api.requestHistory).toHaveBeenCalledWith(A, "antigravity:a@example.invalid", undefined, expect.any(AbortSignal));
   fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
   expect(screen.getByText("VALID")).toBeInTheDocument();
-  expect(screen.getByText("Expected Valid Until")).toBeInTheDocument();
-  expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent(formatDateTime(observedAt, "zh-CN"));
+  expect(screen.getByText("预计有效至")).toBeInTheDocument();
+  expect(screen.getByText("预计有效至").parentElement?.parentElement).toHaveTextContent(formatDateTime(observedAt, "zh-CN"));
   expect(api.accountQuality).toHaveBeenCalledTimes(1);
 });
 

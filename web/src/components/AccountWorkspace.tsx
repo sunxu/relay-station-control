@@ -58,7 +58,7 @@ function toAccountRow(item: TopologyApi["accountList"] extends (...args: never[]
   };
 }
 
-export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanceId, providers, providerError, onUnauthorized, copyOverrides }: {
+export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanceId, providers, providerError, onUnauthorized, copyOverrides, queryTestId = "accounts-query" }: {
   api: TopologyApi;
   accountOperationsApi?: AccountOperationsApi;
   csrfToken: string;
@@ -67,6 +67,7 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
   providerError: boolean;
   onUnauthorized: () => void;
   copyOverrides?: Partial<Record<keyof typeof resources["zh-CN"]["translation"]["accounts"], string>>;
+  queryTestId?: string;
 }) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const copy = { ...resources[locale].translation.accounts, ...copyOverrides };
@@ -138,7 +139,7 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
   if (!instanceId) return <Empty data-testid="accounts-no-node" description={copy.noInstance} />;
 
   return <Flex vertical gap={16} data-testid="accounts-workspace">
-    <Card title={copy.accountQuality} data-testid="accounts-list-card">
+    <Card title={copy.accountQuality} role="region" aria-label={copy.accountQuality} data-testid="accounts-list-card">
       {accountOperationsApi && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={onUnauthorized} /></Flex>}
       <Flex gap={8} wrap>
         <Input data-testid="accounts-provider-filter" aria-label={copy.providerExact} placeholder={copy.providerPlaceholder} value={qualityProvider ?? ""} disabled={accountQuery.isPending} maxLength={64} onChange={(event) => updateFilter(setQualityProvider, event.target.value || undefined)} style={{ width: 190 }} />
@@ -148,7 +149,7 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
         <Select data-testid="accounts-quality-window" aria-label={copy.qualityWindow} value={qualityWindow} disabled={accountQuery.isPending} options={[{ value: "15m", label: copy.recent15m }, { value: "1h", label: copy.recent1h }]} onChange={(value) => updateFilter(setQualityWindow, value)} />
         <Select data-testid="accounts-quality-filter" allowClear aria-label={copy.quality} placeholder={copy.allQuality} value={qualityFilter} disabled={accountQuery.isPending} options={[{ value: "good", label: copy.good }, { value: "degraded", label: copy.degraded }, { value: "bad", label: copy.bad }, { value: "unknown", label: copy.unknown }]} onChange={(value) => updateFilter(setQualityFilter, value)} />
         <Select data-testid="accounts-page-size" aria-label={copy.perPage} value={qualityPageSize} disabled={accountQuery.isPending} options={[25, 50, 100].map((value) => ({ value, label: `${value}${copy.pageSuffix}` }))} onChange={(value) => updateFilter(setQualityPageSize, value)} />
-        <Button data-testid="accounts-query" type="primary" loading={accountQuery.isPending} onClick={() => { resetQuery(); executeAccountQuery(); }}>{copy.query}</Button>
+        <Button data-testid={queryTestId} type="primary" loading={accountQuery.isPending} onClick={() => { resetQuery(); executeAccountQuery(); }}>{copy.query}</Button>
       </Flex>
       {accountQuery.isPending && <Flex role="status" aria-label={copy.readingAccounts} justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
       {accountQuery.error && !accountQuery.isPending && <Alert type="error" title={accountReadError(accountQuery.error, copy)} action={<Button data-testid="accounts-retry" onClick={() => executeAccountQuery(qualityCursor)}>{copy.retry}</Button>} />}

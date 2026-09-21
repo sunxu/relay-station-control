@@ -89,6 +89,7 @@ async function installAuthenticatedRoutes(page: Page) {
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (!url.pathname.startsWith("/api/")) return route.continue();
     if (url.pathname === "/api/bootstrap/status") return json(route, { status: "completed" });
     if (url.pathname === "/api/auth/session") return json(route, session);
     if (url.pathname === "/api/admins") return json(route, { items: [], next_cursor: null });
