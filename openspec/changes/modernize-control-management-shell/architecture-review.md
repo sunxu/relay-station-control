@@ -97,7 +97,9 @@ RELAY NODE SOURCE = NO CHANGE
 RE-REVIEW READINESS = READY
 ```
 
-Final Architecture Review PASS is contingent on the real worktree proving:
+The following was the historical pre-final-gate condition; it is superseded by
+the authoritative final gate below. Final Architecture Review PASS was
+contingent on the real worktree proving:
 
 ```bash
 openspec validate modernize-control-management-shell --strict
@@ -105,13 +107,17 @@ openspec show modernize-control-management-shell --json --deltas-only
 git diff --check
 ```
 
-and showing the three delta capabilities:
+and showing the then-current three-capability candidate:
 
 ```text
 control-management-shell
 asset-registry
 node-centric-topology-ui
 ```
+
+This three-capability count is historical/superseded. The final corrective
+added the Node operations presentation delta and the authoritative current
+count is four.
 
 ## Re-review — Residual Contract Scan
 
@@ -157,12 +163,12 @@ Gateway source change = NO
 Relay Node source change = NO
 ```
 
-### Final Architecture Review disposition
+### Historical pre-execution disposition
 
 Document/source architecture re-review:
 
 ```text
-PASS CANDIDATE
+PASS CANDIDATE (HISTORICAL / SUPERSEDED)
 ```
 
 Repository-level final PASS requires the actual local commit/worktree to prove:
@@ -174,3 +180,44 @@ git diff --check
 ```
 
 The `--deltas-only` output MUST contain all four capabilities above. If strict validation passes and no unreviewed files are present, Architecture Review MAY be recorded as `PASS` and Stage 1 implementation authorized.
+
+## Current Authoritative Final Gate
+
+The Round 1 finding and the pre-execution candidate disposition above are
+historical records. Round 1 was `CHANGES_REQUIRED`; the external
+implementation gate was retained and later satisfied by the deploy-v0.9.3
+release closeout and immutable tag. It was not deleted or bypassed.
+
+```text
+FINAL_ARCHITECTURE_REVIEW = PASS
+
+P0 = 0
+P1 = 0
+P2 = 0
+
+DELTA_CAPABILITIES = 4
+control-management-shell
+asset-registry
+node-centric-topology-ui
+relay-node-management-operations
+
+TEST_COVERAGE_CONTRACT_GAP = NONE
+
+EXTERNAL_IMPLEMENTATION_GATE = deploy-v0.9.3
+EXTERNAL_IMPLEMENTATION_GATE_STATUS = PASS
+RELEASE_CLOSEOUT = PASS
+PRODUCTION_HTTPS_ACCEPTANCE = PASS
+TAG = deploy-v0.9.3
+TAG_TARGET = d022481df65822fe277fe749b115bb290eb1cd16
+
+BACKEND_API_CHANGE = NO
+DATABASE_MIGRATION_CHANGE = NO
+GATEWAY_SOURCE_CHANGE = NO
+RELAY_NODE_SOURCE_CHANGE = NO
+
+IMPLEMENTATION_READINESS = READY
+STAGE_1_FOUNDATION = AUTHORIZED
+```
+
+The final gate was verified in the local worktree with strict OpenSpec
+validation, JSON delta parsing, and `git diff --check`.

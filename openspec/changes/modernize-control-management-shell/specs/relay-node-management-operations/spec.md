@@ -6,7 +6,7 @@ Control SHALL 仅提供 Node Health / Connection Test、immediate Monitoring Ena
 
 `/nodes` 页面 SHALL 继续要求所有 Health / Connection Test / Monitoring action 由管理员显式触发；page mount、reload、Sidebar navigation、Dashboard mount、Monitoring mount 与 Control startup MUST NOT 自动调用 Node Health / Connection Test，也 MUST NOT 新增后台 health polling。`/assets` 在 Stage 3B 完成后 MUST NOT 保留第二套可执行 Node operation controls，可仅保留 navigation-only Node 入口。
 
-#### Scenario: Relay Nodes 页面加载与 Control 启动
+#### Scenario: 页面加载和Control启动
 - **WHEN** 用户进入/刷新 `/nodes`、打开 Dashboard/Monitoring，或 Control 启动
 - **THEN** 不自动调用 Node Health / Connection Test，不新增后台健康任务，不修改 monitoring
 - **AND** Gateway/CLIProxyAPI 数据面不受影响

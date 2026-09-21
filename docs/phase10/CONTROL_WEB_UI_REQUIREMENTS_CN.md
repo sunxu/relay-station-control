@@ -501,7 +501,7 @@ navigation.accounts
 navigation.nodes
 navigation.operations
 navigation.monitoring
-navigation.issues
+navigation.problems
 navigation.settings
 
 dashboard.title
@@ -1375,10 +1375,13 @@ pixel-perfect gate。只有确有稳定价值的局部视觉 contract
 
 ## 33. OpenSpec 要求
 
-当前 `control/openspec/changes/` 中正在进行的
-`simplify-node-gateway-management-credentials` 与此次 UI 重构无关。
+已归档的
+`openspec/changes/archive/2026-09-20-simplify-node-gateway-management-credentials`
+属于此前 Phase 8 credential work，与 Phase 10 UI modernization 无关。
 
-**不得把 UI 重构塞入该 change。**
+**不得把 Phase 10 UI 重构并入该历史 change。**
+Phase 10 独立 change 为：
+`modernize-control-management-shell`。
 
 此次工作实施前应建立一个新的独立 OpenSpec change：
 

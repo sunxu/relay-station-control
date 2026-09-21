@@ -6,10 +6,23 @@
 REQUIREMENTS_SOURCE = docs/phase10/CONTROL_WEB_UI_REQUIREMENTS_CN.md
 OPEN_SPEC_CHANGE = modernize-control-management-shell
 
-PHASE10_STAGE0 = CORRECTED FROZEN CANDIDATE
+PHASE10_STAGE0 = FROZEN / PASS
+REQUIREMENTS = FROZEN
+INFORMATION_ARCHITECTURE = FROZEN
+DASHBOARD_TRUTH_SOURCE = FROZEN
 TEST_COVERAGE_CONTRACT_GAP = NONE
 ARCHITECTURE_REVIEW_ROUND1 = CHANGES_REQUIRED
-ARCHITECTURE_REVIEW_REVIEW_CANDIDATE = READY
+ARCHITECTURE_REVIEW = PASS
+
+EXTERNAL_IMPLEMENTATION_GATE = deploy-v0.9.3
+EXTERNAL_IMPLEMENTATION_GATE_STATUS = PASS
+RELEASE_CLOSEOUT = PASS
+PRODUCTION_HTTPS_ACCEPTANCE = PASS
+TAG = deploy-v0.9.3
+TAG_TARGET = d022481df65822fe277fe749b115bb290eb1cd16
+
+IMPLEMENTATION_READINESS = READY
+STAGE_1_FOUNDATION = AUTHORIZED
 
 BACKEND_CHANGE = NO
 DATABASE_CHANGE = NO
@@ -136,27 +149,73 @@ Stage 1 Foundation -> Stage 2 Dashboard -> Stage 3 domain slices -> Stage 4 unif
 
 Accounts 明确细分，避免一次性重写最大业务 surface。
 
-## 9. Remaining executable validation
+## 9. Executed final gate
 
-本交付是 planning artifact bundle，未在用户本地 Git worktree 执行 OpenSpec CLI。提交前必须在真实仓库运行：
+已在真实仓库执行并通过：
 
 ```bash
 openspec validate modernize-control-management-shell --strict
+```
+
+结果：`PASS`。
+
+随后执行：
+
+```bash
+openspec show modernize-control-management-shell --json --deltas-only
+```
+
+结果：实际解析出四个 delta capabilities：
+
+```text
+control-management-shell
+asset-registry
+node-centric-topology-ui
+relay-node-management-operations
+```
+
+并执行：
+
+```bash
 git diff --check
 ```
 
-纯 planning 文档无需因此运行完整 `make test build`；Stage 1 implementation 前需取得独立 Architecture Review PASS。
+结果：`PASS`。
 
-## 10. Readiness
+Sibling Ops immutable tag provenance 只读核验结果：
 
 ```text
-Requirements = READY
-Information Architecture = READY
-Dashboard truth-source = READY
-Test Contract Coverage Review = PASS
-Architecture Review readiness = READY
-Implementation = NOT STARTED
+deploy-v0.9.3 -> d022481df65822fe277fe749b115bb290eb1cd16
 ```
+
+纯 planning 文档不运行完整 `make test build`；Stage 1 implementation
+仍不得在本 change 中开始。
+
+## 10. Current final readiness
+
+```text
+PHASE10_STAGE0 = FROZEN / PASS
+REQUIREMENTS = FROZEN
+INFORMATION_ARCHITECTURE = FROZEN
+DASHBOARD_TRUTH_SOURCE = FROZEN
+TEST_COVERAGE_CONTRACT_GAP = NONE
+ARCHITECTURE_REVIEW = PASS
+EXTERNAL_IMPLEMENTATION_GATE = deploy-v0.9.3
+EXTERNAL_IMPLEMENTATION_GATE_STATUS = PASS
+RELEASE_CLOSEOUT = PASS
+PRODUCTION_HTTPS_ACCEPTANCE = PASS
+TAG = deploy-v0.9.3
+TAG_TARGET = d022481df65822fe277fe749b115bb290eb1cd16
+IMPLEMENTATION_READINESS = READY
+STAGE_1_FOUNDATION = AUTHORIZED
+BACKEND_CHANGE = NO
+DATABASE_CHANGE = NO
+GATEWAY_CHANGE = NO
+RELAY_NODE_CHANGE = NO
+```
+
+Historical Round 1 `CHANGES_REQUIRED` and the corrected-candidate readiness
+records remain above as provenance; they are not the current status.
 
 ## 11. Architecture Review Round 1 corrective reconciliation
 

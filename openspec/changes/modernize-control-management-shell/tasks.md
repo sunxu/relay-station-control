@@ -15,8 +15,14 @@
 - [x] 0.9 Architecture Review Round 1 识别并修正 canonical UI contract 冲突：`asset-registry` page ownership 与 `node-centric-topology-ui` 390px acceptance。
 - [x] 0.10 冻结 `/assets` Environment/Gateway/Driver/Policy ownership、`/nodes` sole executable Node lifecycle ownership、route trailing-slash normalization 与 Search identity safety。
 - [x] 0.11 Re-review 补齐 `relay-node-management-operations` presentation delta，并冻结 Dashboard/Monitoring/Node page mount 零自动 probe。
-- [ ] 0.12 在真实仓库运行 `openspec validate modernize-control-management-shell --strict` 与 `openspec show modernize-control-management-shell --json --deltas-only` 并记录 PASS。
-- [ ] 0.13 独立 Architecture Final Re-review PASS 后授权 Stage 1 implementation。
+- [x] 0.12 在真实仓库运行 `openspec validate modernize-control-management-shell --strict` 与 `openspec show modernize-control-management-shell --json --deltas-only`，实际解析四个 delta capabilities 并记录 PASS。
+- [x] 0.13 独立 Architecture Final Re-review PASS 后授权 Stage 1 implementation。
+- [x] 0.14 Verify deploy-v0.9.3 production HTTPS acceptance / release closeout / immutable tag gate PASS before implementation authorization。
+
+```text
+Stage 0 = COMPLETE / PASS
+Stage 1 Foundation = AUTHORIZED
+```
 
 ## 1. Stage 1 — Foundation
 

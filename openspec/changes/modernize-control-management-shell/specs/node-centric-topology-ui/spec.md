@@ -12,7 +12,7 @@ Phase 10 supersede 本 requirement 的历史 `390px` Mobile presentation accepta
 - **WHEN** B已选中而A请求迟到，或History失败但Binding成功
 - **THEN** A结果不覆盖B；History显示unavailable且不清除独立成功Binding，更不发mutation
 
-#### Scenario: 会话与 Desktop / keyboard
+#### Scenario: 会话与窄屏
 - **WHEN** 会话失效，或在 `1280×720`、`1440×900`、keyboard 模式查看
 - **THEN** 失效清理会话和内存；有权限时各区和两个Provider badge均可辨识，可操作控件有可访问名称且状态不只靠颜色，时间按系统时区以固定格式显示
 

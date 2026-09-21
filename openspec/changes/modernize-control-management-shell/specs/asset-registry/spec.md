@@ -12,8 +12,8 @@ Health 与 Connection Test 均仅显式点击执行，各自独立展示安全�
 
 `/assets` 与 `/assets/` 直达及 reload MUST 继续渲染 Asset Registry auxiliary surface；`/nodes` 与 `/nodes/` MUST 通过同一 SPA fallback 与 frontend route normalization 渲染 Relay Nodes surface。API router 与 `/static/` namespace 行为保持。
 
-#### Scenario: 首次进入辅助资产页面
-- **WHEN** 已认证管理员打开 `/assets`
+#### Scenario: 首次进入资产页面
+- **WHEN** 已认证管理员打开资产页面
 - **THEN** 页面按需加载 Environment、Gateway、Driver catalog 与 Current Provider Policy，并通过 Control API 获取数据
 - **AND** 浏览器不向已登记 endpoint 发出直接请求
 
@@ -30,16 +30,15 @@ Health 与 Connection Test 均仅显式点击执行，各自独立展示安全�
 - **WHEN** 任一资产 API 返回可重试故障
 - **THEN** owning 页面显示不含内部错误或 Secret 的失败状态和显式重试入口，不将旧数据冒充当前状态
 
-#### Scenario: Gateway 管理入口
+#### Scenario: Gateway管理入口
 - **WHEN** 管理员在 `/assets` 操作 Gateway
 - **THEN** 复用既有生成客户端、CSRF、revision、command 与 credential contract
 - **AND** Phase 10 不新增第二套 Gateway mutation owner
 
-#### Scenario: Node lifecycle mutation 唯一 presentation owner
-- **WHEN** Stage 3B 已完成且管理员发起 Node Register、Edit、Retire、Replace、Health、Connection Test 或 Monitoring mutation
-- **THEN** 可执行控件位于 `/nodes` owning surface
-- **AND** `/assets` MUST NOT 同时保留另一套可执行 Node 控件
-- **AND** underlying API / transaction / replay / audit semantics 不变
+#### Scenario: Node lifecycle mutation 控件范围
+- **WHEN** 管理员在资产页面发起 Node Register、Edit、Retire 或 Replace
+- **THEN** 可执行控件位于 `/nodes` owning surface，并继续使用既有 lifecycle、revision、transaction 与 audit contract
+- **AND** Stage 3 operations 通过独立的已声明路径执行，不改变这些 lifecycle 流程
 
 #### Scenario: retired 历史详情导航
 - **WHEN** 管理员在 `/nodes` 查看一个 retired Node 的详情
@@ -50,3 +49,7 @@ Health 与 Connection Test 均仅显式点击执行，各自独立展示安全�
 - **WHEN** 管理员仅打开或刷新 `/nodes`
 - **THEN** 页面 MUST NOT 自动执行 Health 或 Connection Test
 - **AND** 只有管理员显式点击对应操作才调用既有 probe/action endpoint
+
+#### Scenario: Stage 3 operations additive surface
+- **WHEN** active Node 管理员通过受保护的 Stage 3 路径执行健康或立即监控操作
+- **THEN** 仅发生该 operation 规定的结果，Stage 1/2 lifecycle、安全、history 和分页语义均保留，retired 无可执行 operation
