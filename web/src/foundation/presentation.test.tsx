@@ -22,6 +22,11 @@ describe("PageShell and PageHeader", () => {
     expect(screen.getByRole("button", { name: "Action" })).toBeInTheDocument();
     expect(screen.getByText("Content")).toBeInTheDocument();
   });
+
+  it("keeps breadcrumb optional and preserves existing props", () => {
+    render(<PageShell title="Settings" breadcrumb={<span data-testid="breadcrumb">Home / Settings</span>}><p>Content</p></PageShell>);
+    expect(screen.getByTestId("breadcrumb")).toHaveTextContent("Home / Settings");
+  });
 });
 
 describe("ReadState", () => {

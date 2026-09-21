@@ -4,6 +4,9 @@ import { useTranslation } from "react-i18next";
 import type { AuthApi } from "./api/auth-api";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LocaleSwitcher } from "./foundation/LocaleSwitcher";
+import { AppShell } from "./foundation/AppShell";
+import { FoundationPage } from "./foundation/FoundationPage";
+import { isAuthenticatedRoute, type AuthenticatedRoute, type NavigationRoute } from "./foundation/navigation";
 
 const BootstrapPage = lazy(() => import("./pages/BootstrapPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -18,7 +21,7 @@ const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 function AuthShell() {
   const auth = useAuth();
   const { t } = useTranslation();
-  const localeControl = auth.route === "management" ? null : <LocaleSwitcher />;
+  const localeControl = auth.route === "management" || auth.route === "settings" ? null : <LocaleSwitcher />;
 
   if (auth.route === "loading") {
     return <>{localeControl}<main className="centered-page" data-testid="auth-loading"><Spin size="large" tip={t("common.shell.authLoading")} /></main></>;
@@ -31,19 +34,22 @@ function AuthShell() {
     );
   }
 
-  return (
-    <>{localeControl}<Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" tip={t("common.shell.routeLoading")} /></main>}>
+  const authenticated = isAuthenticatedRoute(auth.route);
+  const content = <Suspense fallback={<main className="centered-page" data-testid="route-loading"><Spin size="large" tip={t("common.shell.routeLoading")} /></main>}>
       {auth.route === "bootstrap" && <BootstrapPage />}
       {auth.route === "login" && <LoginPage />}
       {auth.route === "activation" && <ActivationPage />}
-      {auth.route === "management" && <ManagementPage />}
+      {(auth.route === "management" || auth.route === "settings") && <ManagementPage />}
       {auth.route === "assets" && <AssetsPage />}
       {auth.route === "jobs" && <JobsPage />}
       {auth.route === "topology" && <TopologyPage />}
       {auth.route === "problems" && <ProblemsPage />}
+      {authenticated && ["dashboard", "accounts", "nodes", "operations", "monitoring"].includes(auth.route) && <FoundationPage route={auth.route as NavigationRoute} />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
-    </Suspense></>
-  );
+    </Suspense>;
+
+  if (authenticated) return <AppShell route={auth.route as AuthenticatedRoute}>{content}</AppShell>;
+  return <>{localeControl}{content}</>;
 }
 
 export default function App({ api }: { api?: AuthApi }) {

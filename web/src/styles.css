@@ -16,6 +16,129 @@ body {
   min-height: 100vh;
 }
 
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: #f4f7fb;
+}
+
+.app-sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 24px 16px;
+  color: #eaf2ff;
+  background: #172033;
+}
+
+.app-sidebar-brand {
+  padding: 0 12px 24px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.app-sidebar-nav {
+  display: grid;
+  gap: 6px;
+}
+
+.app-sidebar-item {
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.app-sidebar-item:hover,
+.app-sidebar-item.active {
+  color: #ffffff;
+  background: #2d5b9d;
+}
+
+.app-shell-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.global-header {
+  display: flex;
+  min-height: 60px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 28px;
+  border-bottom: 1px solid #d9e2ef;
+  background: #ffffff;
+}
+
+.global-header-search {
+  position: relative;
+  width: min(420px, 100%);
+}
+
+.navigation-search-results {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: grid;
+  padding: 4px;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(24 39 75 / 12%);
+}
+
+.navigation-search-results button {
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.navigation-search-results button:hover {
+  background: #f0f5ff;
+}
+
+.global-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  white-space: nowrap;
+}
+
+.global-header-actions > button {
+  padding: 7px 10px;
+  border: 1px solid #d9e2ef;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.app-shell-content {
+  min-width: 0;
+}
+
+.foundation-page {
+  min-height: calc(100vh - 60px);
+  padding: 32px 36px 64px;
+}
+
+.page-header-breadcrumb {
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .centered-page {
   display: grid;
   min-height: 100vh;

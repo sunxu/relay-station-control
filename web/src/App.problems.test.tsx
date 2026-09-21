@@ -54,9 +54,9 @@ afterEach(() => {
 
 it("does not load the Problems chunk before authenticated navigation selects /problems", async () => {
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(chunk.loaded).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Problems" }));
+  fireEvent.click(screen.getByTestId("sidebar-problems"));
   expect(await screen.findByTestId("mock-problems-page")).toBeInTheDocument();
   expect(chunk.loaded).toHaveBeenCalledTimes(1);
   expect(window.location.pathname).toBe("/problems");
@@ -72,19 +72,19 @@ it("restores an authenticated direct visit to /problems", async () => {
 it.each(["/problem", "/probs"])("does not treat %s as the Problems route", async (path) => {
   window.history.replaceState(null, "", path);
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(chunk.loaded).not.toHaveBeenCalled();
 });
 
 it("follows browser history for /problems", async () => {
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "Problems" }));
+  fireEvent.click(screen.getByTestId("sidebar-problems"));
   expect(await screen.findByTestId("mock-problems-page")).toBeInTheDocument();
 
   window.history.pushState(null, "", "/");
   fireEvent(window, new PopStateEvent("popstate"));
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(window.location.pathname).toBe("/");
 });

@@ -12,6 +12,11 @@ function render(ui: ReactElement, locale: "zh-CN" | "en" = "zh-CN") {
   return rtlRender(<FrontendFoundationProvider initialLocale={locale}>{ui}</FrontendFoundationProvider>);
 }
 
+function renderSettings(ui: ReactElement, locale: "zh-CN" | "en" = "zh-CN") {
+  window.history.replaceState(null, "", "/settings");
+  return render(ui, locale);
+}
+
 const administrator: Administrator = {
   id: "00000000-0000-4000-8000-000000000001", login_name: "admin.one", display_name: "测试管理员",
   auth_source: "local", role: "super_admin", status: "enabled",
@@ -74,14 +79,14 @@ describe("authentication shell routing", () => {
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
   });
 
-  it("routes an authenticated session to the lazy management chunk", async () => {
+  it("routes an authenticated session to the dashboard shell", async () => {
     render(<App api={makeApi("completed", session)} />);
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
     expect(screen.getByText("测试管理员 · admin.one")).toBeInTheDocument();
   });
 
   it("localizes both management MFA selectors in English", async () => {
-    render(<App api={makeApi("completed", session)} />, "en");
+    renderSettings(<App api={makeApi("completed", session)} />, "en");
     await screen.findByTestId("management-page");
 
     fireEvent.click(screen.getByRole("tab", { name: "Reauthentication" }));
@@ -175,7 +180,7 @@ describe("login MFA", () => {
   it("supports recovery-code MFA and exposes only the remaining count", async () => {
     const api = makeApi("completed");
     vi.mocked(api.completeMfa).mockResolvedValue({ ...session, recovery_codes_remaining: 7, mfa: { required: true, completed: true, method: "recovery_code" } });
-    render(<App api={api} />);
+    renderSettings(<App api={api} />);
     await screen.findByTestId("login-page");
     fireEvent.change(screen.getByLabelText("登录名"), { target: { value: "admin.one" } });
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "correct horse battery staple" } });
@@ -194,7 +199,7 @@ describe("login MFA", () => {
   it("expires a stale challenge locally and returns to password login", async () => {
     const api = makeApi("completed");
     vi.mocked(api.login).mockResolvedValue({ state: "mfa_required", expires_at: "2020-01-01T00:00:00Z", methods: ["totp"] });
-    render(<App api={api} />);
+    renderSettings(<App api={api} />);
     await screen.findByTestId("login-page");
     fireEvent.change(screen.getByLabelText("登录名"), { target: { value: "admin.one" } });
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "correct horse battery staple" } });
@@ -211,7 +216,7 @@ describe("login MFA", () => {
       message: "expired",
       request_id: "request-expired",
     }));
-    render(<App api={api} />);
+    renderSettings(<App api={api} />);
     await screen.findByTestId("login-page");
     fireEvent.change(screen.getByLabelText("登录名"), { target: { value: "admin.one" } });
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "correct horse battery staple" } });
@@ -232,7 +237,7 @@ describe("session rotation and high-risk operations", () => {
     vi.mocked(api.reauthenticate).mockResolvedValue(rotated);
     vi.mocked(api.administrators).mockResolvedValue({ items: [administrator, secondAdministrator], next_cursor: null });
     vi.mocked(api.createAdministrator).mockResolvedValue({ administrator: secondAdministrator, activation_token: "activation-once-".repeat(4), expires_at: "2099-08-26T00:00:00Z" });
-    render(<App api={api} />);
+    renderSettings(<App api={api} />);
     await screen.findByTestId("management-page");
 
     fireEvent.click(screen.getByRole("tab", { name: "重新认证" }));
@@ -266,7 +271,7 @@ describe("session rotation and high-risk operations", () => {
       message: "bounded backend detail",
       request_id: "request-protected",
     }));
-    render(<App api={api} />);
+    renderSettings(<App api={api} />);
     await screen.findByTestId("management-page");
     fireEvent.click(screen.getByRole("tab", { name: "管理员" }));
     fireEvent.click(await screen.findByRole("radio", { name: "选择管理员 admin.one" }));

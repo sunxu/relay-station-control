@@ -54,9 +54,10 @@ afterEach(() => {
 
 it("does not load the jobs chunk before authenticated navigation selects /jobs", async () => {
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(chunk.loaded).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "持久任务" }));
+  window.history.replaceState(null, "", "/jobs");
+  fireEvent(window, new PopStateEvent("popstate"));
   expect(await screen.findByTestId("mock-jobs-page")).toBeInTheDocument();
   expect(chunk.loaded).toHaveBeenCalledTimes(1);
   expect(window.location.pathname).toBe("/jobs");

@@ -50,9 +50,10 @@ afterEach(() => {
 
 it("keeps account inventory out of the management navigation", async () => {
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "账号清单" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Node Topology" }));
+  window.history.replaceState(null, "", "/topology");
+  fireEvent(window, new PopStateEvent("popstate"));
   expect(window.location.pathname).toBe("/topology");
 });
 
@@ -60,7 +61,7 @@ it.each(["/account-inventory", "/account-inventory?instance_id=node-a"]) (
   "does not load the removed account inventory route (%s)", async (path) => {
     window.history.replaceState(null, "", path);
     render(<App api={api()} />);
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
     expect(screen.queryByTestId("account-inventory-page")).not.toBeInTheDocument();
     expect(screen.queryByTestId("mock-topology-page")).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/account-inventory");

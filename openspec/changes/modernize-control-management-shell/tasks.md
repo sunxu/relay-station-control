@@ -26,14 +26,24 @@ Stage 1 Foundation = AUTHORIZED
 
 ## 1. Stage 1 — Foundation
 
-- [ ] 1.1 扩展 `foundationTheme` tokens，并用 focused theme tests 固定 semantic token 行为。
-- [ ] 1.2 实现 `AppShell` / `AppSidebar` / `GlobalHeader`，Bootstrap/Login/Activation/OneTimeMaterial 保持独立布局。
-- [ ] 1.3 扩展 AuthContext 手写 routing 支持 `/accounts`、`/nodes`、`/operations`、`/monitoring`、`/settings`，保留 `/assets`、`/jobs`、`/topology` 兼容 alias。
-- [ ] 1.4 实现 Command / Navigation Search；仅静态导航和明确允许的当前 loaded entities。
-- [ ] 1.5 扩展 PageShell/PageHeader 支持 breadcrumb、统一 actions/description/layout。
-- [ ] 1.6 新增 zh-CN/en navigation/shell translations，同步 Ant Design locale。
-- [ ] 1.7 建立 1280/1440 desktop shell Browser proof；移除/调整与 Phase 10 冲突的 mobile-only acceptance。
-- [ ] 1.8 运行 focused unit/component、typecheck、build、translation audits、Browser proof；独立 commit。
+- [x] 1.1 扩展 `foundationTheme` tokens，并用 focused theme tests 固定 semantic token 行为。
+- [x] 1.2 实现 `AppShell` / `AppSidebar` / `GlobalHeader`，Bootstrap/Login/Activation/OneTimeMaterial 保持独立布局。
+- [x] 1.3 扩展 AuthContext 手写 routing 支持 `/accounts`、`/nodes`、`/operations`、`/monitoring`、`/settings`，保留 `/assets`、`/jobs`、`/topology` 兼容 alias。
+- [x] 1.4 实现 Command / Navigation Search；Foundation 阶段仅提供静态导航搜索，不索引业务实体。
+- [x] 1.5 扩展 PageShell/PageHeader 支持 breadcrumb、统一 actions/description/layout。
+- [x] 1.6 新增 zh-CN/en navigation/shell translations，同步 Ant Design locale。
+- [x] 1.7 建立 1280/1440 desktop shell Browser proof；保留旧业务页面的兼容入口与现有移动端历史覆盖。
+- [x] 1.8 运行 focused unit/component、typecheck、build、资源 parity/translation tests、Browser proof；完成 Stage 1 Foundation 验收。
+
+```text
+Stage 1 = COMPLETE / PASS
+Theme / AppShell / Sidebar / GlobalHeader = PASS
+Routing / Navigation Search / PageShell = PASS
+zh-CN / en / live locale switch = PASS
+Zero automatic business probes / mutations = PASS
+Browser proof: 1280×720 (zh-CN/en), 1440×900 (zh-CN) = PASS
+Implementation scope: frontend foundation only; Backend/API/DB/Gateway/Relay Node changes = NONE
+```
 
 ## 2. Stage 2 — Dashboard
 

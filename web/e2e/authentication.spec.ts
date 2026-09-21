@@ -339,7 +339,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
 
   const secondaryContext = await browser.newContext({ baseURL });
   const secondary = await secondaryContext.newPage();
-  await secondary.goto("/");
+  await secondary.goto("/settings");
   await secondary.getByRole("button", { name: "使用激活令牌设置新账号" }).click();
   await secondary.getByTestId("activation-token").fill(activationToken);
   const activationStartPromise = secondary.waitForResponse((response) => response.url().endsWith("/api/admin-activations/complete"));

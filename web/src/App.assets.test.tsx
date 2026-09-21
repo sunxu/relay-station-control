@@ -54,10 +54,11 @@ afterEach(() => {
 
 it("does not load the assets chunk until authenticated navigation selects /assets", async () => {
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(chunk.loaded).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "资产注册表" }));
+  fireEvent.change(screen.getByTestId("navigation-search-input"), { target: { value: "Gateway" } });
+  fireEvent.click(screen.getByTestId("search-result-assets"));
   expect(await screen.findByTestId("mock-assets-page")).toBeInTheDocument();
   expect(chunk.loaded).toHaveBeenCalledTimes(1);
   expect(window.location.pathname).toBe("/assets");
@@ -70,9 +71,9 @@ it.each(["/assets", "/assets/"])("restores an authenticated direct visit to %s",
   expect(screen.queryByTestId("management-page")).not.toBeInTheDocument();
 });
 
-it("keeps the existing default route on the management page", async () => {
+it("keeps the canonical default route on the dashboard shell", async () => {
   window.history.replaceState(null, "", "/");
   render(<App api={api()} />);
-  expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("dashboard-page")).toBeInTheDocument();
   expect(screen.queryByTestId("mock-assets-page")).not.toBeInTheDocument();
 });

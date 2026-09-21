@@ -1,5 +1,4 @@
 import { formatDateTime } from "../foundation/format";
-import { LocaleSwitcher } from "../foundation/LocaleSwitcher";
 import { PageShell } from "../foundation/PageShell";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -144,14 +143,6 @@ export default function ManagementPage() {
     }
   };
 
-  const logout = async () => {
-    const response = await run(async () => {
-      await auth.api.logout(csrf);
-      return true;
-    });
-    if (response) auth.clearSession();
-  };
-
   const columns = useMemo(() => [
     { title: t("management.admins.loginName"), dataIndex: "login_name", key: "login_name" },
     { title: t("management.admins.displayName"), dataIndex: "display_name", key: "display_name" },
@@ -182,8 +173,6 @@ export default function ManagementPage() {
           <Button data-testid="management-nav-assets" onClick={() => auth.navigate("assets")}>{t("management.navAssets")}</Button>
           <Button data-testid="management-nav-topology" onClick={() => auth.navigate("topology")}>{t("management.navTopology")}</Button>
           <Button data-testid="management-nav-problems" onClick={() => auth.navigate("problems")}>{t("management.navProblems")}</Button>
-          <LocaleSwitcher />
-          <Button data-testid="management-logout" danger loading={busy} onClick={() => void logout()}>{t("management.logout")}</Button>
         </Space>
       }
     >

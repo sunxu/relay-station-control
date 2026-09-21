@@ -91,6 +91,7 @@ test("Problems is a lazy read-only view with one query per page", async ({ page 
   await page.getByLabel("登录名").fill("e2e");
   await page.getByLabel("密码").fill("password");
   await page.getByRole("button", { name: /继\s*续/ }).click();
+  await page.goto("/settings");
   await expect(page.getByTestId("management-page")).toBeVisible();
   await page.getByTestId("management-nav-problems").click();
   await expect(page.getByTestId("problems-page")).toBeVisible();

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { describe, expect, it } from "vitest";
 import { useTranslation } from "react-i18next";
 import { FrontendFoundationProvider, useAppLocale } from "./FrontendFoundationProvider";
-import { antdLocales } from "./theme";
+import { antdLocales, foundationTheme } from "./theme";
 
 function FoundationProbe() {
   const { i18n, t } = useTranslation();
@@ -17,6 +17,13 @@ function FoundationProbe() {
 }
 
 describe("FrontendFoundationProvider", () => {
+  it("exposes the foundation shell token contract through Ant Design", () => {
+    expect(foundationTheme.token?.colorPrimary).toBe("#2563eb");
+    expect(foundationTheme.token?.controlHeight).toBe(40);
+    expect(foundationTheme.components?.Layout?.headerHeight).toBe(60);
+    expect(foundationTheme.components?.Table?.cellPaddingBlockSM).toBe(10);
+  });
+
   it("renders children and binds zh-CN to i18next and Ant Design", () => {
     render(
       <FrontendFoundationProvider initialLocale="zh-CN">

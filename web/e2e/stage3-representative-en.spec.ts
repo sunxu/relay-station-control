@@ -115,7 +115,7 @@ test.describe("Stage 3 representative English surfaces", () => {
   test("renders the Auth surface in English", async ({ page }) => {
     await page.route("**/api/bootstrap/status", (route) => json(route, { status: "completed" }));
     await page.route("**/api/auth/session", (route) => json(route, { code: "unauthorized", message: "unauthorized", request_id: "english-auth" }, 401));
-    await page.goto("/");
+    await page.goto("/settings");
     await expect(page.getByTestId("login-page")).toBeVisible();
     await expect(page.getByTestId("locale-selector")).toHaveValue("en");
     await page.getByTestId("login-activation-link").click();
@@ -125,7 +125,7 @@ test.describe("Stage 3 representative English surfaces", () => {
 
   test("renders Management, data, operation, and Jobs surfaces in English", async ({ page }) => {
     await installAuthenticatedRoutes(page);
-    await page.goto("/");
+    await page.goto("/settings");
     await expect(page.getByTestId("management-page")).toBeVisible();
     await expect(page.getByTestId("locale-selector")).toHaveValue("en");
     await expect(page.getByTestId("management-page")).toContainText("Persistent jobs");
@@ -154,7 +154,7 @@ test.describe("Stage 3 live locale transition", () => {
 
   test("updates a mounted management shell from Chinese to English", async ({ page }) => {
     await installAuthenticatedRoutes(page);
-    await page.goto("/");
+    await page.goto("/settings");
     await expect(page.getByTestId("management-page")).toBeVisible();
     await expect(page.getByTestId("management-nav-jobs")).toHaveText("持久任务");
 
