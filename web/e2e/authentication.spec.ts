@@ -273,25 +273,25 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   browserAssetRequests.length = 0;
   await primary.goto("/assets");
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(6);
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
   console.log("[e2e] authenticated direct /assets rendered Asset Registry");
 
   browserAssetRequests.length = 0;
   await primary.goto("/assets/");
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(6);
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
   console.log("[e2e] authenticated direct /assets/ rendered Asset Registry");
 
   browserAssetRequests.length = 0;
   await primary.reload();
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(6);
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
   console.log("[e2e] authenticated /assets/ reload rendered Asset Registry");
 
   await expect(primary.getByTestId("gateway-management-card").getByRole("cell", { name: "E2E Gateway" })).toBeVisible();
-  await expect(primary.getByTestId("nodes-card").getByRole("cell", { name: "E2E Node" })).toBeVisible();
+  await expect(primary.getByTestId("nodes-card")).toHaveCount(0);
   await expect(primary.getByText("尚未配置当前 Provider 策略")).toBeVisible();
-  await expect.poll(() => browserAssetRequests.length).toBe(6);
+  await expect.poll(() => browserAssetRequests.length).toBe(5);
   const controlOrigin = new URL(baseURL!).origin;
   expect(browserAssetRequests.every((request) => request.method === "GET" && new URL(request.url).origin === controlOrigin)).toBe(true);
   expect(staticResponses.length).toBeGreaterThan(0);

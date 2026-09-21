@@ -147,6 +147,11 @@ test.describe("Stage 3 representative English surfaces", () => {
     await page.getByTestId("account-operation-read").click();
     await expect(page.getByTestId("account-operation-result")).toContainText("Outcome unknown");
     await expect(page.locator("body")).not.toContainText(/\b(?:translation|operations|topology)\.[a-z0-9_.-]+\b/u);
+
+    await page.goto("/nodes");
+    await expect(page.getByTestId("nodes-page")).toBeVisible();
+    await expect(page.getByTestId("nodes-page")).toContainText("Relay Nodes");
+    await expect(page.getByTestId("nodes-registry")).toBeVisible();
   });
 });
 

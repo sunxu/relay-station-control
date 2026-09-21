@@ -78,10 +78,15 @@ Stage 3B = READY FOR AUTHORIZATION
 
 ## 4. Stage 3B — Relay Nodes and Gateway auxiliary surface
 
-- [ ] 3B.1 建立 `/nodes` Relay Nodes 页面，迁移 Node asset/health/monitoring/lifecycle/context。
-- [ ] 3B.2 保留 `/assets` Gateway auxiliary management；不得把 Gateway 作为 Node 子类型。
-- [ ] 3B.3 验证 Node/Gateway credential 不进入 DOM、log、Search、Dashboard。
-- [ ] 3B.4 focused proof + commit。
+- [x] 3B.1 建立 `/nodes` Relay Nodes 页面，迁移 Node asset/health/monitoring/lifecycle/context。
+- [x] 3B.2 保留 `/assets` Gateway auxiliary management；不得把 Gateway 作为 Node 子类型。
+- [x] 3B.3 验证 Node/Gateway credential 不进入 DOM、log、Search、Dashboard。
+- [x] 3B.4 focused proof + commit。
+
+```text
+Stage 3B = COMPLETE / PASS
+Stage 3C = READY FOR AUTHORIZATION
+```
 
 ## 5. Stage 3C — Operations
 

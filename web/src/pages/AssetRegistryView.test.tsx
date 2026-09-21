@@ -120,6 +120,7 @@ describe("asset registry read-only view", () => {
 
 		expect(await screen.findByTestId("nodes-card")).toBeInTheDocument();
 		expect(screen.getByTestId("nodes-registry")).toBeInTheDocument();
+		expect(screen.getByLabelText("节点类型")).toBeInTheDocument();
 		expect(screen.queryByTestId("gateway-card")).not.toBeInTheDocument();
 		expect(screen.queryByTestId("environment-card")).not.toBeInTheDocument();
 		expect(screen.queryByTestId("policy-card")).not.toBeInTheDocument();
