@@ -32,8 +32,9 @@ Stage 1 Foundation = AUTHORIZED
 - [x] 1.4 实现 Command / Navigation Search；Foundation 阶段仅提供静态导航搜索，不索引业务实体。
 - [x] 1.5 扩展 PageShell/PageHeader 支持 breadcrumb、统一 actions/description/layout。
 - [x] 1.6 新增 zh-CN/en navigation/shell translations，同步 Ant Design locale。
-- [x] 1.7 建立 1280/1440 desktop shell Browser proof；保留旧业务页面的兼容入口与现有移动端历史覆盖。
+- [x] 1.7 建立 1280/1440 desktop shell Browser proof；保留旧业务页面的兼容入口，历史 390px Mobile presentation gate 按 Phase 10 PC-only contract supersede。
 - [x] 1.8 运行 focused unit/component、typecheck、build、资源 parity/translation tests、Browser proof；完成 Stage 1 Foundation 验收。
+- [x] 1.9 按 `control-management-shell` 与 `node-centric-topology-ui` 的 Phase 10 PC-only reconciliation，移除 Problems/Topology active Browser suite 中 superseded 的 390px overflow gate，并完成 rebuilt Node acceptance regression。
 
 ```text
 Stage 1 = COMPLETE / PASS
@@ -42,6 +43,9 @@ Routing / Navigation Search / PageShell = PASS
 zh-CN / en / live locale switch = PASS
 Zero automatic business probes / mutations = PASS
 Browser proof: 1280×720 (zh-CN/en), 1440×900 (zh-CN) = PASS
+Authentication / Problems / Topology / representative locale regression = PASS
+Mobile / Tablet acceptance = SUPERSEDED; historical 390px assertions are non-blocking
+Stage 2 readiness = READY FOR AUTHORIZATION
 Implementation scope: frontend foundation only; Backend/API/DB/Gateway/Relay Node changes = NONE
 ```
 

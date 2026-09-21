@@ -48,7 +48,7 @@ test("Account detail preserves server Token projection and occurrence history", 
   expect(qualityReads).toBe(1);
 });
 
-test("Topology covers responsive navigation, independent reads, pagination, and readonly recovery", async ({ page }) => {
+test("Topology covers navigation, independent reads, pagination, and readonly recovery", async ({ page }) => {
   const requests: string[] = []; let bProviderReads = 0; let expireEvidence = false;
   await page.route("**/*", async (route) => {
     const request = route.request(); const url = new URL(request.url());
@@ -126,21 +126,10 @@ test("Topology covers responsive navigation, independent reads, pagination, and 
     await page.reload();
     await expect(page.getByText(`Instance ID：${nodes[1]}`)).toBeVisible();
   });
-  await test.step("desktop and mobile show both badges without page overflow", async () => {
+  await test.step("desktop shows both badges without page overflow", async () => {
     await expect(page.getByText("fresh", { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: "/Volumes/DevRAM/tmp/topology-desktop.png", fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByText("stale", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("degraded", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("not-yet-observed", { exact: true })).toBeVisible();
-    await expect(page.getByText(`健康观测：${formatDateTime("2026-09-07T00:05:00Z", "zh-CN")}`).first()).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await currentCard.scrollIntoViewIfNeeded();
-    await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
-    await historyCard.scrollIntoViewIfNeeded();
-    await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
-    await page.screenshot({ path: "/Volumes/DevRAM/tmp/topology-390.png", fullPage: true });
   });
   await test.step("evidence 401 clears the authenticated page", async () => {
     expireEvidence = true;

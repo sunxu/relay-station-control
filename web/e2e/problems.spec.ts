@@ -121,10 +121,6 @@ test("Problems is a lazy read-only view with one query per page", async ({ page 
   await expect(page.getByText("TOKEN_INVALID", { exact: true })).toBeVisible();
   expect(problemRequests[3].body).toEqual({ email: "user@example.invalid", limit: 25 });
   expect(problemRequests.every(({ body }) => !("node" in body))).toBe(true);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByText("TOKEN_INVALID", { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("problems-mobile.png"), fullPage: true });
   expired = true;
   await page.getByRole("button", { name: "Query" }).click();
   await expect(page.getByTestId("login-page")).toBeVisible();
