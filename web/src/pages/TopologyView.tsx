@@ -8,18 +8,11 @@ import type { AssetApi } from "../api/asset-types";
 import { useTopologyBinding, useTopologyCurrentDuplicates, useTopologyEvidence, useTopologyHistory, useTopologyProviders } from "../api/topology-hooks";
 import { TopologyApiError } from "../api/topology-types";
 import type { TopologyApi, TopologyOccurrence, TopologyProviderState } from "../api/topology-types";
-import type { AccountQualityFilter, AccountQualityItem, AccountQualityLifecycle, AccountQualityWindow } from "../api/account-quality-types";
-import { AccountQualityIncidentsSection } from "./AccountQualityIncidentsSection";
-import { AccountList, type AccountListRow } from "../components/AccountList";
-import { AccountDetailsDrawer } from "../components/AccountDetailsDrawer";
-import { useAccountListQuery } from "../api/account-list-hooks";
-import type { AccountInventoryApi, AccountInventoryBasicStatus } from "../api/account-inventory-types";
-import { accountInventoryBasicStatuses, accountInventoryLifecycles } from "../api/account-inventory-types";
-import type { AccountListFilters } from "../api/account-quality-types";
+import type { AccountInventoryApi } from "../api/account-inventory-types";
 import { AccountInventoryCapacity } from "../components/AccountInventoryCapacity";
 import { formatDateTime } from "../foundation/format";
 import type { AccountOperationsApi } from "../api/account-operations-api";
-import { UploadNewAccountAction } from "../components/AccountOperationsPanel";
+import { AccountWorkspace } from "../components/AccountWorkspace";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
 import type { TranslationResource } from "../foundation/resources";
@@ -30,16 +23,6 @@ function unauthorized(error: unknown) {
 }
 function ReadError({ retry, message, retryLabel }: { retry: () => void; message: string; retryLabel: string }) {
   return <Alert type="error" title={message} action={<Button onClick={retry}>{retryLabel}</Button>} />;
-}
-function accountReadError(error: unknown, copy: TranslationResource["topology"]): string {
-  if (error instanceof TopologyApiError) {
-    if (error.status === 400) return copy.invalidAccountFilter;
-    if (error.status === 403) return copy.forbiddenAccountList;
-    if (error.status === 404) return copy.selectedNodeNotFound;
-    if (error.status === 409) return copy.unsupportedAccountList;
-    if (error.status === 503) return copy.readUnavailable;
-  }
-  return copy.unavailableAccountList;
 }
 function Evidence({ api, occurrenceId, onUnauthorized, copy }: { api: TopologyApi; occurrenceId: string; onUnauthorized: () => void; copy: TranslationResource["topology"] }) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
@@ -77,24 +60,12 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
   const [historyStatus, setHistoryStatus] = useState<"ACTIVE" | "RESOLVED">();
   const [historyCursor, setHistoryCursor] = useState<string>();
   const [currentCursor, setCurrentCursor] = useState<string>();
-  const [qualityWindow, setQualityWindow] = useState<AccountQualityWindow>("15m");
-  const [qualityProvider, setQualityProvider] = useState<string>();
-  const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
-  const [qualityLifecycle, setQualityLifecycle] = useState<AccountQualityLifecycle | undefined>("present");
-  const [qualityBasicStatus, setQualityBasicStatus] = useState<AccountInventoryBasicStatus>();
-  const [qualityEmail, setQualityEmail] = useState("");
-  const [qualityPageSize, setQualityPageSize] = useState<25 | 50 | 100>(25);
-  const [qualityCursor, setQualityCursor] = useState<string>();
-  const [qualityCursorHistory, setQualityCursorHistory] = useState<Array<string | undefined>>([undefined]);
-  const [detailsRow, setDetailsRow] = useState<AccountListRow>();
-  const [detailsAccountKey, setDetailsAccountKey] = useState<string>();
   const nodes = useNodeAssets(assetApi, { limit: 200, cursor: nodeCursor });
   const selected = useNodeAsset(assetApi, instanceId);
   const providers = useTopologyProviders(api, instanceId);
   const binding = useTopologyBinding(api, instanceId);
   const current = useTopologyCurrentDuplicates(api, instanceId, currentCursor);
   const history = useTopologyHistory(api, instanceId, historyStatus, historyCursor);
-  const accountQualityView = useAccountListQuery(api, csrfToken);
   const node = selected.error ? undefined : selected.data;
 
   const expireSession = () => {
@@ -105,18 +76,13 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     onUnauthorized();
   };
   useEffect(() => {
-    if ([providers.error, binding.error, current.error, history.error, accountQualityView.error, nodes.error, selected.error].some(unauthorized)) expireSession();
-  }, [providers.error, binding.error, current.error, history.error, accountQualityView.error, nodes.error, selected.error]);
+    if ([providers.error, binding.error, current.error, history.error, nodes.error, selected.error].some(unauthorized)) expireSession();
+  }, [providers.error, binding.error, current.error, history.error, nodes.error, selected.error]);
   useEffect(() => {
     const onPop = () => {
       setInstanceId(new URLSearchParams(window.location.search).get("instance_id") ?? undefined);
       setHistoryCursor(undefined);
       setCurrentCursor(undefined);
-      setQualityCursor(undefined); setQualityCursorHistory([undefined]);
-      setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
-      setQualityBasicStatus(undefined); setQualityEmail(""); setQualityPageSize(25);
-      setDetailsRow(undefined);
-      setDetailsAccountKey(undefined);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -125,29 +91,8 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     setInstanceId(id);
     setHistoryCursor(undefined);
     setCurrentCursor(undefined);
-    setQualityCursor(undefined); setQualityCursorHistory([undefined]);
-    setQualityWindow("15m"); setQualityProvider(undefined); setQualityFilter(undefined); setQualityLifecycle("present");
-    setQualityBasicStatus(undefined); setQualityEmail(""); setQualityPageSize(25);
-    setDetailsRow(undefined);
-    setDetailsAccountKey(undefined);
     window.history.pushState(null, "", `/topology?instance_id=${encodeURIComponent(id)}`);
   };
-  const executeAccountQuery = (cursor?: string) => {
-    if (!instanceId) return;
-    const filters: AccountListFilters = {
-      instanceId, window: qualityWindow, provider: qualityProvider?.trim().toLowerCase() || undefined, quality: qualityFilter,
-      lifecycle: qualityLifecycle, basicStatus: qualityBasicStatus,
-      email: qualityEmail.trim().toLowerCase() || undefined, cursor, limit: qualityPageSize,
-    };
-    accountQualityView.mutate(filters);
-  };
-  const resetAccountResult = () => { setQualityCursor(undefined); setQualityCursorHistory([undefined]); setDetailsRow(undefined); setDetailsAccountKey(undefined); accountQualityView.reset(); };
-  useEffect(() => {
-    let active = true;
-    accountQualityView.reset();
-    queueMicrotask(() => { if (active) executeAccountQuery(); });
-    return () => { active = false; accountQualityView.reset(); };
-  }, [instanceId]);
   const providerColumns: ColumnsType<TopologyProviderState> = [
     { title: copy.provider, dataIndex: "provider", width: 120 },
     { title: copy.monitoringScope, dataIndex: "monitoring_status", width: 130, render: (v) => <Tag>{v}</Tag> },
@@ -175,30 +120,6 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
     }}
     locale={{ emptyText: copy.emptyOccurrence }}
   />;
-  const accountRows: AccountListRow[] = (accountQualityView.data?.items ?? []).map((item) => {
-    const extended = item as AccountQualityItem & { inventory?: Record<string, unknown>; recent_requests?: AccountListRow["recent_requests"] };
-    const inventory = extended.inventory ?? {};
-    return {
-      account_key: item.account_key, email: item.email, provider: item.provider,
-      basic_status: String(inventory.basic_status ?? "unknown"),
-      lifecycle: String(inventory.lifecycle ?? qualityLifecycle), quality: item.quality,
-      request_count: item.request_count, success_count: item.success_count, failure_count: item.failure_count,
-      success_rate: item.success_rate, p95_latency_ms: item.p95_latency_ms,
-      last_success_at: item.last_success_at, last_failure_at: item.last_failure_at,
-      last_failure_class: item.last_failure_class, recent_requests: extended.recent_requests ?? [],
-      consecutive_missing_count: Number(inventory.consecutive_missing_count ?? 0),
-      first_seen_at: typeof inventory.first_seen_at === "string" ? inventory.first_seen_at : undefined,
-      last_seen_at: typeof inventory.last_seen_at === "string" ? inventory.last_seen_at : undefined,
-      last_refresh_at: typeof inventory.last_refresh_at === "string" ? inventory.last_refresh_at : null,
-      next_retry_at: typeof inventory.next_retry_at === "string" ? inventory.next_retry_at : null,
-      provider_last_complete_at: typeof inventory.provider_last_complete_at === "string" ? inventory.provider_last_complete_at : null,
-      provider_degraded: inventory.provider_degraded === true,
-      snapshot_freshness: typeof inventory.snapshot_freshness === "string" ? inventory.snapshot_freshness : undefined,
-      availability: (item as AccountQualityItem & { availability?: AccountListRow["availability"] }).availability,
-      token_state: item.token_state,
-      expected_valid_until: item.expected_valid_until,
-    };
-  });
   return <Flex vertical gap={16} data-testid="topology-view" className="topology-view" style={{ minWidth: 0 }}>
     <Card className="topology-card" title={copy.node}>
       {nodes.isPending && <Spin />}
@@ -222,29 +143,40 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Text>{copy.monitoring}：{node ? node.monitoringActive ? "active" : "inactive" : copy.unknown}</Text>
         </Flex>
       </Card>
-      <Card className="topology-card" title={copy.accountQuality} role="region" aria-label={copy.accountQuality}>
-        {accountOperationsApi && csrfToken && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={expireSession} /></Flex>}
-        <Flex gap={8} wrap>
-          <Input aria-label={copy.providerExact} placeholder={copy.providerPlaceholder} value={qualityProvider ?? ""} disabled={accountQualityView.isPending} maxLength={64} onChange={(event) => { setQualityProvider(event.target.value || undefined); resetAccountResult(); }} style={{ width: 190 }} />
-          <Select allowClear aria-label={copy.lifecycle} placeholder={copy.allLifecycle} value={qualityLifecycle} disabled={accountQualityView.isPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => { setQualityLifecycle(value); resetAccountResult(); }} style={{ width: 180 }} />
-          <Select allowClear aria-label={copy.basicStatus} placeholder={copy.allBasicStatus} value={qualityBasicStatus} disabled={accountQualityView.isPending} options={accountInventoryBasicStatuses.map((value) => ({ value, label: value }))} onChange={(value) => { setQualityBasicStatus(value); resetAccountResult(); }} style={{ width: 200 }} />
-          <Input aria-label={copy.emailExact} placeholder={copy.emailPlaceholder} value={qualityEmail} disabled={accountQualityView.isPending} maxLength={320} autoComplete="off" onChange={(event) => { setQualityEmail(event.target.value); resetAccountResult(); }} style={{ width: 240 }} />
-          <Select aria-label={copy.qualityWindow} value={qualityWindow} disabled={accountQualityView.isPending} options={[{ value: "15m", label: copy.recent15m }, { value: "1h", label: copy.recent1h }]} onChange={(value) => { setQualityWindow(value); resetAccountResult(); }} />
-          <Select allowClear aria-label={copy.quality} placeholder={copy.allQuality} value={qualityFilter} disabled={accountQualityView.isPending} options={[{ value: "good", label: copy.good }, { value: "degraded", label: copy.degraded }, { value: "bad", label: copy.bad }, { value: "unknown", label: copy.unknown }]} onChange={(value) => { setQualityFilter(value); resetAccountResult(); }} />
-          <Select aria-label={copy.perPage} value={qualityPageSize} disabled={accountQualityView.isPending} options={[25, 50, 100].map((value) => ({ value, label: `${value}${copy.pageSuffix}` }))} onChange={(value) => { setQualityPageSize(value); resetAccountResult(); }} />
-          <Button data-testid="account-query" type="primary" disabled={!instanceId} loading={accountQualityView.isPending} onClick={() => { resetAccountResult(); executeAccountQuery(); }}>{copy.query}</Button>
-        </Flex>
-
-        {accountQualityView.isPending && <Flex role="status" aria-label={copy.readingQuality} justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
-        {accountQualityView.error && !accountQualityView.isPending && <ReadError message={accountReadError(accountQualityView.error, copy)} retryLabel={copy.retry} retry={() => executeAccountQuery(qualityCursor)} />}
-        {accountQualityView.data && !accountQualityView.error && <>
-          {accountQualityView.data.items.length === 0 && <Empty description={copy.noAccounts} />}
-          {accountQualityView.data.items.length > 0 && <AccountList rows={accountRows} onSelectAccount={(row) => { setDetailsAccountKey(row.account_key); setDetailsRow(row); }} />}
-          <Flex justify="end" gap={8} style={{ marginTop: 8 }}><Button disabled={qualityCursorHistory.length === 1 || accountQualityView.isPending} onClick={() => { const previous = qualityCursorHistory.slice(0, -1); const cursor = previous.at(-1); setQualityCursorHistory(previous); setQualityCursor(cursor); executeAccountQuery(cursor); }}>{copy.previousAccounts}</Button><Button disabled={!accountQualityView.data.next_cursor || accountQualityView.isPending} onClick={() => { const next = accountQualityView.data.next_cursor ?? undefined; setQualityCursorHistory((items) => [...items, next]); setQualityCursor(next); executeAccountQuery(next); }}>{copy.nextAccounts}</Button></Flex>
-        </>}
-      </Card>
-      <AccountDetailsDrawer api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} row={detailsRow} accountKey={detailsAccountKey} onClose={() => { setDetailsRow(undefined); setDetailsAccountKey(undefined); }} onUnauthorized={expireSession} />
-      <AccountQualityIncidentsSection key={instanceId} api={api} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onSelectAccount={(accountKey) => { setDetailsAccountKey(accountKey); setDetailsRow(accountRows.find((item) => item.account_key === accountKey)); }} onUnauthorized={expireSession} />
+      <AccountWorkspace key={instanceId} api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} copyOverrides={{
+        accountQuality: copy.accountQuality,
+        providerExact: copy.providerExact,
+        providerPlaceholder: copy.providerPlaceholder,
+        lifecycle: copy.lifecycle,
+        allLifecycle: copy.allLifecycle,
+        basicStatus: copy.basicStatus,
+        allBasicStatus: copy.allBasicStatus,
+        emailExact: copy.emailExact,
+        emailPlaceholder: copy.emailPlaceholder,
+        qualityWindow: copy.qualityWindow,
+        recent15m: copy.recent15m,
+        recent1h: copy.recent1h,
+        quality: copy.quality,
+        allQuality: copy.allQuality,
+        good: copy.good,
+        degraded: copy.degraded,
+        bad: copy.bad,
+        unknown: copy.unknown,
+        perPage: copy.perPage,
+        pageSuffix: copy.pageSuffix,
+        query: copy.query,
+        readingAccounts: copy.readingQuality,
+        readUnavailable: copy.readUnavailable,
+        unavailableAccountList: copy.unavailableAccountList,
+        invalidAccountFilter: copy.invalidAccountFilter,
+        forbiddenAccountList: copy.forbiddenAccountList,
+        selectedNodeNotFound: "所选 Node 不存在",
+        unsupportedAccountList: copy.unsupportedAccountList,
+        noAccounts: copy.noAccounts,
+        previousAccounts: copy.previousAccounts,
+        nextAccounts: copy.nextAccounts,
+        retry: copy.retry,
+      }} />
       <Card className="topology-card" title={copy.providerSnapshot} extra={<Button data-testid="topology-refresh-provider" onClick={() => void providers.refetch()} loading={providers.isFetching}>{copy.refreshProvider}</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void providers.refetch()} />}

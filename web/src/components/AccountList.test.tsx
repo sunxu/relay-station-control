@@ -14,10 +14,10 @@ describe("AccountList", () => {
     for (const state of states) expect(screen.getByText(state)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /bind|rebind|unbind|删除|修改/i })).not.toBeInTheDocument();
   });
-  it.each(["good", "degraded", "bad", "unknown"] as const)("renders quality %s", (quality) => { render(<AccountList rows={[row({ quality })]} />); expect(screen.getByText(quality.charAt(0).toUpperCase() + quality.slice(1))).toBeInTheDocument(); });
-  it("renders success and failed outcomes", () => { render(<AccountList rows={[row({ recent_requests: requests([true, false]) })]} />); expect(screen.getByLabelText("Success")).toBeInTheDocument(); expect(screen.getByLabelText("Failed auth")).toBeInTheDocument(); });
-  it("caps outcomes at ten", () => { render(<AccountList rows={[row({ recent_requests: requests(Array(12).fill(true)) })]} />); expect(screen.getAllByLabelText("Success")).toHaveLength(10); });
-  it("orders newest API results oldest to newest", () => { render(<AccountList rows={[row({ recent_requests: requests([true, false]) })]} />); const values = screen.getAllByTestId("recent-request-strip")[0]!.querySelectorAll(".ant-tag"); expect([...values].map((v) => v.getAttribute("aria-label"))).toEqual(["Failed auth", "Success"]); });
+  it.each([["good", "良好"], ["degraded", "降级"], ["bad", "异常"], ["unknown", "未知"]] as const)("renders quality %s", (quality, label) => { render(<AccountList rows={[row({ quality })]} />); expect(screen.getByText(label)).toBeInTheDocument(); });
+  it("renders success and failed outcomes", () => { render(<AccountList rows={[row({ recent_requests: requests([true, false]) })]} />); expect(screen.getByLabelText("成功")).toBeInTheDocument(); expect(screen.getByLabelText("失败 auth")).toBeInTheDocument(); });
+  it("caps outcomes at ten", () => { render(<AccountList rows={[row({ recent_requests: requests(Array(12).fill(true)) })]} />); expect(screen.getAllByLabelText("成功")).toHaveLength(10); });
+  it("orders newest API results oldest to newest", () => { render(<AccountList rows={[row({ recent_requests: requests([true, false]) })]} />); const values = screen.getAllByTestId("recent-request-strip")[0]!.querySelectorAll(".ant-tag"); expect([...values].map((v) => v.getAttribute("aria-label"))).toEqual(["失败 auth", "成功"]); });
   it("shows no request for empty array", () => { render(<AccountList rows={[row()]} />); expect(screen.getByText("无请求")).toBeInTheDocument(); });
   it("shows empty state", () => { render(<AccountList rows={[]} />); expect(screen.getByText("当前过滤条件下没有账号")).toBeInTheDocument(); });
   it("uses locale-aware defaults and preserves an explicit empty override", () => {
@@ -27,7 +27,7 @@ describe("AccountList", () => {
     expect(screen.getByText("Custom empty state")).toBeInTheDocument();
   });
   it("shows loading state", () => { render(<AccountList rows={[]} loading />); expect(screen.getByRole("status")).toBeInTheDocument(); });
-  it("shows unavailable state and retry", () => { const retry = vi.fn(); render(<AccountList rows={[]} unavailable onRetry={retry} />); expect(screen.getByText("读取不可用（unavailable）")).toBeInTheDocument(); fireEvent.click(screen.getByRole("button", { name: /重\s*试/ })); expect(retry).toHaveBeenCalled(); });
+  it("shows unavailable state and retry", () => { const retry = vi.fn(); render(<AccountList rows={[]} unavailable onRetry={retry} />); expect(screen.getByText("读取不可用")).toBeInTheDocument(); fireEvent.click(screen.getByRole("button", { name: /重\s*试/ })); expect(retry).toHaveBeenCalled(); });
   it("uses account key as row identity", () => { render(<AccountList rows={[row({ account_key: "openai:a@example.invalid" })]} />); expect(screen.getByText("openai:a@example.invalid")).toBeInTheDocument(); });
   it("exposes detail callback", () => { const select = vi.fn(); render(<AccountList rows={[row()]} onSelectAccount={select} />); screen.getByText("查看详情").click(); expect(select).toHaveBeenCalledWith(expect.objectContaining({ account_key: row().account_key })); });
 });

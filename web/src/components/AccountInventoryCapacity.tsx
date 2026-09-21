@@ -3,7 +3,7 @@ import { Alert, Button, Card, Flex, Space, Spin, Tag, Typography } from "antd";
 import { useAccountInventoryPollCapacity } from "../api/account-inventory-hooks";
 import { AccountInventoryApiError } from "../api/account-inventory-types";
 import type { AccountInventoryApi, AccountInventoryPollCapacity } from "../api/account-inventory-types";
-import { formatDateTime } from "../foundation/format";
+import { formatDateTime, formatNumber } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
 import type { TranslationResource } from "../foundation/resources";
@@ -28,7 +28,7 @@ export function AccountInventoryCapacity({ api, csrfToken, onUnauthorized }: {
   return <Card title={copy.capacityTitle} data-testid="account-inventory-capacity">
     <Flex justify="space-between" align="center" gap={12} wrap>
       <Text type="secondary">{copy.capacityDescription}</Text>
-      <Button onClick={() => capacity.mutate()} loading={capacity.isPending}>{copy.refreshCapacity}</Button>
+      <Button data-testid="account-inventory-capacity-refresh" onClick={() => capacity.mutate()} loading={capacity.isPending}>{copy.refreshCapacity}</Button>
     </Flex>
     {capacity.isPending && <Flex role="status" aria-label={copy.readingCapacity} justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
     {capacity.error && <Alert style={{ marginTop: 12 }} type="error" showIcon message={copy.capacityUnavailable} />}
@@ -43,17 +43,17 @@ function CapacitySummary({ value, copy, locale }: { value: AccountInventoryPollC
     <Space wrap>
       <Tag color={value.status === "ready" ? "green" : value.status === "capacity_exceeded" ? "orange" : "default"}>{capacityStatusLabel(value.status, copy)}</Tag>
       <Text>{copy.enabled}: {value.enabled ? copy.yes : copy.no}</Text>
-      <Text>{copy.eligibleNodes}：{value.eligibleNodeCount}</Text>
-      <Text>{copy.effectiveCapacity}：{value.effectiveCapacity}</Text>
-      <Text>{copy.concurrency}: {value.concurrency}</Text>
+      <Text>{copy.eligibleNodes}：{formatNumber(value.eligibleNodeCount, locale)}</Text>
+      <Text>{copy.effectiveCapacity}：{formatNumber(value.effectiveCapacity, locale)}</Text>
+      <Text>{copy.concurrency}: {formatNumber(value.concurrency, locale)}</Text>
     </Space>
     <Space wrap>
-      <Text type="secondary">{copy.requestBudget} {value.requestTimeoutMs}ms</Text>
-      <Text type="secondary">{copy.finalizeBudget} {value.finalizeTimeoutMs}ms</Text>
-      <Text type="secondary">{copy.lifecycleBudget} {value.lifecycleTimeoutMs}ms</Text>
-      <Text type="secondary">{copy.claimBudget} {value.claimTimeoutMs}ms</Text>
-      <Text type="secondary">{copy.dispatchMargin} {value.dispatchMarginMs}ms</Text>
-      <Text type="secondary">{copy.pollGrace} {value.pollStartGraceMs}ms</Text>
+      <Text type="secondary">{copy.requestBudget} {formatNumber(value.requestTimeoutMs, locale)}ms</Text>
+      <Text type="secondary">{copy.finalizeBudget} {formatNumber(value.finalizeTimeoutMs, locale)}ms</Text>
+      <Text type="secondary">{copy.lifecycleBudget} {formatNumber(value.lifecycleTimeoutMs, locale)}ms</Text>
+      <Text type="secondary">{copy.claimBudget} {formatNumber(value.claimTimeoutMs, locale)}ms</Text>
+      <Text type="secondary">{copy.dispatchMargin} {formatNumber(value.dispatchMarginMs, locale)}ms</Text>
+      <Text type="secondary">{copy.pollGrace} {formatNumber(value.pollStartGraceMs, locale)}ms</Text>
     </Space>
     <Text type="secondary">{copy.evaluatedSlot}：{formatDateTime(value.evaluatedSlot, locale)}；{copy.evaluatedAt}：{formatDateTime(value.evaluatedAt, locale)}</Text>
   </Flex>;

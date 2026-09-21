@@ -18,6 +18,7 @@ const TopologyPage = lazy(() => import("./pages/TopologyPage"));
 const ProblemsPage = lazy(() => import("./pages/ProblemsPage"));
 const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const AccountsPage = lazy(() => import("./pages/AccountsPage"));
 
 function AuthShell() {
   const auth = useAuth();
@@ -46,7 +47,8 @@ function AuthShell() {
       {auth.route === "topology" && <TopologyPage />}
       {auth.route === "problems" && <ProblemsPage />}
       {auth.route === "dashboard" && <DashboardPage />}
-      {authenticated && ["accounts", "nodes", "operations", "monitoring"].includes(auth.route) && <FoundationPage route={auth.route as FoundationPlaceholderRoute} />}
+      {auth.route === "accounts" && <AccountsPage />}
+      {authenticated && ["nodes", "operations", "monitoring"].includes(auth.route) && <FoundationPage route={auth.route as FoundationPlaceholderRoute} />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
     </Suspense>;
 

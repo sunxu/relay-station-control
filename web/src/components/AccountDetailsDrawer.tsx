@@ -2,7 +2,7 @@ import { Alert, Button, Descriptions, Drawer, Empty, Flex, Select, Spin, Table, 
 import type { AccountRequestHistoryApi } from "../api/account-request-history-types";
 import { AccountRequestHistorySection } from "../pages/AccountRequestHistorySection";
 import type { AccountListRow } from "./AccountList";
-import { formatDateTime } from "../foundation/format";
+import { formatDateTime, formatNumber } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
 import { useAccountAvailabilityOccurrences } from "../api/account-availability-hooks";
@@ -34,7 +34,7 @@ export function AccountDetailsDrawer({ api, accountOperationsApi, csrfToken, ins
         <Descriptions.Item label={copy.lifecycle}>{row.lifecycle}</Descriptions.Item>
         <Descriptions.Item label={copy.basicStatus}>{row.basic_status}</Descriptions.Item>
         <Descriptions.Item label={copy.quality}><Tag>{row.quality}</Tag></Descriptions.Item>
-        <Descriptions.Item label={copy.consecutiveMissing}>{row.consecutive_missing_count ?? 0}</Descriptions.Item>
+        <Descriptions.Item label={copy.consecutiveMissing}>{formatNumber(row.consecutive_missing_count ?? 0, locale)}</Descriptions.Item>
         <Descriptions.Item label={copy.firstSeen}>{formatDateTime(row.first_seen_at, locale)}</Descriptions.Item>
         <Descriptions.Item label={copy.lastSeen}>{formatDateTime(row.last_seen_at, locale)}</Descriptions.Item>
         <Descriptions.Item label={copy.lastRefresh}>{formatDateTime(row.last_refresh_at, locale)}</Descriptions.Item>
@@ -69,18 +69,18 @@ function AvailabilityOccurrences({ api, instanceId, accountKey, onUnauthorized }
   }, [query.error, onUnauthorized]);
   const columns = [
     { title: copy.reason, dataIndex: "reason" },
-    { title: "Severity", dataIndex: "severity", render: (value: string) => <Tag color={value === "Critical" ? "red" : "orange"}>{value}</Tag> },
+    { title: copy.severity, dataIndex: "severity", render: (value: string) => <Tag color={value === "Critical" ? "red" : "orange"}>{value}</Tag> },
     { title: copy.status, dataIndex: "status" },
     { title: copy.firstSeen, dataIndex: "first_seen_at", render: (value: string | null) => formatDateTime(value, locale) },
     { title: copy.recentFailure, dataIndex: "last_failure_at", render: (value: string | null) => formatDateTime(value, locale) },
-    { title: "Confirmed", dataIndex: "confirmed_at", render: (value: string | null) => formatDateTime(value, locale) },
-    { title: "Resolved", dataIndex: "resolved_at", render: (value: string | null) => formatDateTime(value, locale) },
+    { title: copy.confirmed, dataIndex: "confirmed_at", render: (value: string | null) => formatDateTime(value, locale) },
+    { title: copy.resolved, dataIndex: "resolved_at", render: (value: string | null) => formatDateTime(value, locale) },
   ];
   return <Flex vertical gap={8}>
-    <Select aria-label={copy.eventStatus} value={status} onChange={(value: AccountAvailabilityOccurrenceStatus) => { setStatus(value); setCursor(undefined); }} options={[{ value: "ACTIVE", label: copy.active }, { value: "RESOLVED", label: copy.resolved }]} />
+    <Select data-testid="account-availability-status" aria-label={copy.eventStatus} value={status} onChange={(value: AccountAvailabilityOccurrenceStatus) => { setStatus(value); setCursor(undefined); }} options={[{ value: "ACTIVE", label: copy.active }, { value: "RESOLVED", label: copy.resolved }]} />
     {query.isPending && <Flex role="status" aria-label={copy.readingEvents} justify="center"><Spin /></Flex>}
-    {query.error && !query.isPending && <Alert type="error" message={copy.unavailable} action={<Button onClick={() => void query.refetch()}>{copy.retry}</Button>} />}
+    {query.error && !query.isPending && <Alert type="error" message={copy.unavailable} action={<Button data-testid="account-availability-retry" onClick={() => void query.refetch()}>{copy.retry}</Button>} />}
     {query.data && !query.error && (query.data.items.length === 0 ? <Empty description={status === "ACTIVE" ? copy.activeEmpty : copy.resolvedEmpty} /> : <Table<AccountAvailabilityOccurrence> size="small" pagination={false} rowKey="occurrence_id" dataSource={query.data.items} columns={columns} scroll={{ x: 900 }} />)}
-    {query.data && !query.error && <Flex justify="end" gap={8}><Button disabled={!cursor} onClick={() => setCursor(undefined)}>{copy.firstPage}</Button><Button disabled={!query.data.next_cursor || query.isFetching} onClick={() => setCursor(query.data.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>}
+    {query.data && !query.error && <Flex justify="end" gap={8}><Button data-testid="account-availability-first" disabled={!cursor} onClick={() => setCursor(undefined)}>{copy.firstPage}</Button><Button data-testid="account-availability-next" disabled={!query.data.next_cursor || query.isFetching} onClick={() => setCursor(query.data.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>}
   </Flex>;
 }

@@ -14,8 +14,10 @@ export function useAccountListQuery(api: AccountListApi, csrfToken: string) {
     gcTime: 0,
     retry: false,
   });
+  const mutationRef = useRef(mutation);
+  mutationRef.current = mutation;
   useEffect(() => () => controller.current?.abort(), []);
-  const mutate = useCallback((filters: AccountListFilters) => mutation.mutate(filters), [mutation]);
-  const reset = useCallback(() => { controller.current?.abort(); mutation.reset(); }, [mutation]);
+  const mutate = useCallback((filters: AccountListFilters) => mutationRef.current.mutate(filters), []);
+  const reset = useCallback(() => { controller.current?.abort(); mutationRef.current.reset(); }, []);
   return { ...mutation, mutate, reset };
 }

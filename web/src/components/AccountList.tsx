@@ -1,6 +1,6 @@
 import { Button, Empty, Flex, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { formatDateTime } from "../foundation/format";
+import { formatDateTime, formatNumber, formatPercent } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
 import type { TranslationResource } from "../foundation/resources";
@@ -68,9 +68,9 @@ function RecentRequestStrip({ requests, locale, copy }: { requests: AccountListR
   const ordered = requests.slice(0, 10).reverse();
   if (ordered.length === 0) return <Text type="secondary">{copy.noRequests}</Text>;
   return <Flex gap={3} align="center" aria-label={copy.recentRequestsAria} data-testid="recent-request-strip">
-    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? copy.success : `${copy.failed}${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}><Tag
+    {ordered.map((request, index) => <Tooltip key={`${request.occurred_at}:${request.request_id}:${index}`} title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? copy.success : `${copy.failed}${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${formatNumber(request.duration_ms, locale)} ms`}`}><Tag
       color={request.success ? "green" : "red"}
-      title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? copy.success : `${copy.failed}${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${request.duration_ms} ms`}`}
+      title={`${formatDateTime(request.occurred_at, locale)} · ${request.model || "—"} · ${request.success ? copy.success : `${copy.failed}${request.failure_class ? ` · ${request.failure_class}` : ""}`} · ${request.duration_ms == null ? "—" : `${formatNumber(request.duration_ms, locale)} ms`}`}
       aria-label={`${request.success ? copy.success : copy.failed}${request.failure_class ? ` ${request.failure_class}` : ""}`}
       style={{ width: 9, height: 18, padding: 0, margin: 0, borderRadius: 2 }}
       tabIndex={0}
@@ -90,9 +90,9 @@ export function AccountList({ rows, loading = false, unavailable = false, onSele
     { title: copy.reason, key: "availability-reason", render: (_, row) => row.availability?.reason || "—" },
     { title: copy.since, key: "availability-since", render: (_, row) => formatDateTime(row.availability?.since, locale) },
     { title: copy.recentRequests, key: "recent", render: (_, row) => <Flex vertical gap={4}><RecentRequestStrip requests={row.recent_requests} locale={locale} copy={copy} />{row.recent_requests[0] && <Text type="secondary">{formatDateTime(row.recent_requests[0].occurred_at, locale)}</Text>}</Flex> },
-    { title: copy.successRate, dataIndex: "success_rate", render: (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%` },
-    { title: copy.requests, dataIndex: "request_count" },
-    { title: copy.p95, dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
+    { title: copy.successRate, dataIndex: "success_rate", render: (value: number | null) => formatPercent(value, locale) },
+    { title: copy.requests, dataIndex: "request_count", render: (value: number) => formatNumber(value, locale) },
+    { title: copy.p95, dataIndex: "p95_latency_ms", render: (value: number | null) => value == null ? "—" : `${formatNumber(value, locale)} ms` },
     { title: copy.recentFailure, key: "failure", render: (_, row) => <Flex vertical><Text>{row.last_failure_class ?? "—"}</Text><Text type="secondary">{formatDateTime(row.last_failure_at, locale)}</Text></Flex> },
     ...(onSelectAccount ? [{ title: copy.details, key: "details", render: (_: unknown, row: AccountListRow) => <Button data-testid={`account-details-${encodeURIComponent(row.account_key)}`} type="link" onClick={() => onSelectAccount(row)}>{copy.viewDetails}</Button> }] : []),
   ];

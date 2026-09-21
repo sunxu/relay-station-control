@@ -13,12 +13,12 @@ function renderSection(a: AccountQualityIncidentsApi, onSelect=vi.fn()) { return
 it("shows loading independently", () => {
   const a = { incidents: vi.fn().mockReturnValue(new Promise(() => {})) };
   renderSection(a);
-  expect(screen.getByRole("status", { name: "正在读取 Incidents" })).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "正在读取问题" })).toBeInTheDocument();
 });
 it("renders active incidents and opens account history", async () => {
   const a = { incidents: vi.fn().mockResolvedValue({ instance_id: NODE, items: [row], next_cursor: null }) };
   const x = renderSection(a);
-  expect(await screen.findByText("Active")).toBeInTheDocument();
+  expect(await screen.findByText("活动")).toBeInTheDocument();
   expect(screen.getByText(formatDateTime(row.first_seen, "zh-CN"))).toBeInTheDocument();
   expect(screen.getByText(formatDateTime(row.last_seen, "zh-CN"))).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: ACCOUNT }));
@@ -27,7 +27,7 @@ it("renders active incidents and opens account history", async () => {
 it("shows empty state", async () => {
   const a = { incidents: vi.fn().mockResolvedValue({ instance_id: NODE, items: [], next_cursor: null }) };
   renderSection(a);
-  expect(await screen.findByText("当前没有 Active incidents")).toBeInTheDocument();
+  expect(await screen.findByText("当前没有活动问题")).toBeInTheDocument();
 });
 it("clears the session on 401", async () => {
   const onUnauthorized = vi.fn();
@@ -38,10 +38,10 @@ it("clears the session on 401", async () => {
 it("shows unavailable for a 503", async () => {
   const a = { incidents: vi.fn().mockRejectedValue(new TopologyApiError(503)) };
   renderSection(a);
-  expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
-  expect(screen.queryByText("当前没有 Active incidents")).not.toBeInTheDocument();
+  expect(await screen.findByText("读取不可用")).toBeInTheDocument();
+  expect(screen.queryByText("当前没有活动问题")).not.toBeInTheDocument();
 });
-it("passes provider and reason filters and resets cursor",async()=>{const a={incidents:vi.fn().mockResolvedValue({instance_id:NODE,items:[row],next_cursor:"next"})};renderSection(a);await screen.findByText("Active");fireEvent.click(screen.getByRole("button",{name:"Incidents 下一页"}));await waitFor(()=>expect(a.incidents).toHaveBeenLastCalledWith(NODE,undefined,undefined,"next",expect.any(AbortSignal)));fireEvent.mouseDown(screen.getByRole("combobox",{name:"Incident Provider"}));fireEvent.click((await screen.findAllByText("openai")).at(-1)!);fireEvent.mouseDown(screen.getByRole("combobox",{name:"Incident Reason"}));fireEvent.click((await screen.findAllByText("auth")).at(-1)!);await waitFor(()=>expect(a.incidents).toHaveBeenLastCalledWith(NODE,"openai","auth",undefined,expect.any(AbortSignal)));});
+it("passes provider and reason filters and resets cursor",async()=>{const a={incidents:vi.fn().mockResolvedValue({instance_id:NODE,items:[row],next_cursor:"next"})};renderSection(a);await screen.findByText("活动");fireEvent.click(screen.getByRole("button",{name:"问题下一页"}));await waitFor(()=>expect(a.incidents).toHaveBeenLastCalledWith(NODE,undefined,undefined,"next",expect.any(AbortSignal)));fireEvent.mouseDown(screen.getByRole("combobox",{name:"问题 Provider"}));fireEvent.click((await screen.findAllByText("openai")).at(-1)!);fireEvent.mouseDown(screen.getByRole("combobox",{name:"问题原因"}));fireEvent.click((await screen.findAllByText("auth")).at(-1)!);await waitFor(()=>expect(a.incidents).toHaveBeenLastCalledWith(NODE,"openai","auth",undefined,expect.any(AbortSignal)));});
 
 it("cancels old Node incidents and ignores a late 401", async()=>{
   const oldNode = NODE, newNode = "22222222-2222-4222-8222-222222222222";
@@ -52,8 +52,8 @@ it("cancels old Node incidents and ignores a late 401", async()=>{
   const view=render(<QueryClientProvider client={client}><AccountQualityIncidentsSection api={api} instanceId={oldNode} providers={providers} providerError={false} onSelectAccount={vi.fn()} onUnauthorized={onUnauthorized}/></QueryClientProvider>);
   await waitFor(()=>expect(api.incidents).toHaveBeenCalledWith(oldNode,undefined,undefined,undefined,expect.any(AbortSignal)));
   view.rerender(<QueryClientProvider client={client}><AccountQualityIncidentsSection api={api} instanceId={newNode} providers={providers} providerError={false} onSelectAccount={vi.fn()} onUnauthorized={onUnauthorized}/></QueryClientProvider>);
-  expect(oldSignal.aborted).toBe(true); expect(await screen.findByText("Active")).toBeInTheDocument(); rejectOld(new TopologyApiError(401)); await new Promise(resolve=>setTimeout(resolve,0)); expect(onUnauthorized).not.toHaveBeenCalled();
+  expect(oldSignal.aborted).toBe(true); expect(await screen.findByText("活动")).toBeInTheDocument(); rejectOld(new TopologyApiError(401)); await new Promise(resolve=>setTimeout(resolve,0)); expect(onUnauthorized).not.toHaveBeenCalled();
 });
-it("paginates with cursor",async()=>{const a={incidents:vi.fn().mockResolvedValueOnce({instance_id:NODE,items:[row],next_cursor:"next"}).mockResolvedValue({instance_id:NODE,items:[],next_cursor:null})};renderSection(a);await screen.findByText("Active");fireEvent.click(screen.getByRole("button",{name:"Incidents 下一页"}));await waitFor(()=>expect(a.incidents).toHaveBeenLastCalledWith(NODE,undefined,undefined,"next",expect.any(AbortSignal)));});
+it("paginates with cursor",async()=>{const a={incidents:vi.fn().mockResolvedValueOnce({instance_id:NODE,items:[row],next_cursor:"next"}).mockResolvedValue({instance_id:NODE,items:[],next_cursor:null})};renderSection(a);await screen.findByText("活动");fireEvent.click(screen.getByRole("button",{name:"问题下一页"}));await waitFor(()=>expect(a.incidents).toHaveBeenLastCalledWith(NODE,undefined,undefined,"next",expect.any(AbortSignal)));});
 it("keeps provider source failure explicit",async()=>{const a={incidents:vi.fn().mockResolvedValue({instance_id:NODE,items:[],next_cursor:null})};render(<QueryClientProvider client={new QueryClient()}><AccountQualityIncidentsSection api={a} instanceId={NODE} providers={[]} providerError onSelectAccount={vi.fn()} onUnauthorized={vi.fn()}/></QueryClientProvider>);expect(await screen.findByText("Provider 筛选来源不可用")).toBeInTheDocument();});
-it("has no mutation actions",async()=>{const a={incidents:vi.fn().mockResolvedValue({instance_id:NODE,items:[row],next_cursor:null})};renderSection(a);await screen.findByText("Active");expect(screen.queryByRole("button",{name:/bind|rebind|unbind|删除|修改/i})).not.toBeInTheDocument();});
+it("has no mutation actions",async()=>{const a={incidents:vi.fn().mockResolvedValue({instance_id:NODE,items:[row],next_cursor:null})};renderSection(a);await screen.findByText("活动");expect(screen.queryByRole("button",{name:/bind|rebind|unbind|删除|修改/i})).not.toBeInTheDocument();});

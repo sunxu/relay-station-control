@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccountRequestHistory } from "../api/account-request-history-hooks";
 import type { AccountRequestHistoryApi, AccountRequestHistoryItem } from "../api/account-request-history-types";
 import { TopologyApiError } from "../api/topology-types";
-import { formatDateTime } from "../foundation/format";
+import { formatDateTime, formatNumber } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
 
@@ -27,7 +27,7 @@ export function AccountRequestHistorySection({ api, instanceId, accountKey, onUn
     { title: copy.model, dataIndex: "model", render: (value: string) => value || "—" },
     { title: copy.result, dataIndex: "success", render: (value: boolean) => <Tag color={value ? "green" : "red"}>{value ? copy.success : copy.failed}</Tag> },
     { title: copy.failure, dataIndex: "failure_class", render: (value: string | null, row) => row.success ? "—" : value ?? "—" },
-    { title: copy.latency, dataIndex: "duration_ms", render: (value: number | null) => value == null ? "—" : `${value} ms` },
+    { title: copy.latency, dataIndex: "duration_ms", render: (value: number | null) => value == null ? "—" : `${formatNumber(value, locale)} ms` },
     { title: copy.requestId, dataIndex: "request_id", render: (value: string | null) => value || "—" },
   ];
   return <Card title={copy.requestHistoryCard} role="region" aria-label={copy.requestHistoryCard}>

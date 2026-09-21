@@ -33,8 +33,8 @@ it("renders populated success and failed records with nullable fields", async ()
   const historyApi = api({ instance_id: NODE, account_key: ACCOUNT, next_cursor: null, items: [event, { occurred_at: "2026-09-08T01:03:03Z", model: "", success: false, failure_class: "rate_limit", duration_ms: null, request_id: "" }] });
   renderSection(historyApi, ACCOUNT);
   expect(await screen.findByText("gpt-5")).toBeInTheDocument();
-  expect(screen.getByText("Success")).toBeInTheDocument();
-  expect(screen.getByText("Failed")).toBeInTheDocument();
+  expect(screen.getByText("成功")).toBeInTheDocument();
+  expect(screen.getAllByText("失败").length).toBeGreaterThan(0);
   expect(screen.getByText("rate_limit")).toBeInTheDocument();
   expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
   expect(screen.getByText("123 ms")).toBeInTheDocument();
@@ -49,7 +49,7 @@ it("shows a successful empty result", async () => {
 it("shows unavailable and retries", async () => {
   const historyApi = { requestHistory: vi.fn().mockRejectedValueOnce(new TopologyApiError(503)).mockResolvedValue({ instance_id: NODE, account_key: ACCOUNT, items: [], next_cursor: null }) };
   renderSection(historyApi, ACCOUNT);
-  const alert = await screen.findByText("读取不可用（unavailable）");
+  const alert = await screen.findByText("读取不可用");
   fireEvent.click(alert.closest(".ant-alert")!.querySelector("button")!);
   await waitFor(() => expect(screen.getByText("最近 7 天暂无请求历史")).toBeInTheDocument());
   expect(historyApi.requestHistory).toHaveBeenCalledTimes(2);

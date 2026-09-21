@@ -48,11 +48,11 @@ describe("AccountDetailsDrawer availability", () => {
     const emptyApi = api();
     renderDrawer(emptyApi);
     fireEvent.click(await screen.findByRole("tab", { name: "可用性事件" }));
-    expect(await screen.findByText("当前没有 Active 可用性事件")).toBeInTheDocument();
+    expect(await screen.findByText("当前没有活动可用性事件")).toBeInTheDocument();
     const unavailableApi = api({ accountAvailabilityOccurrences: vi.fn().mockRejectedValue(new Error("unavailable")) });
     renderDrawer(unavailableApi);
     fireEvent.click(await screen.findAllByRole("tab", { name: "可用性事件" }).then((tabs) => tabs.at(-1)!));
-    expect(await screen.findAllByText("读取不可用（unavailable）")).not.toHaveLength(0);
+    expect(await screen.findAllByText("读取不可用")).not.toHaveLength(0);
   });
 
   it("does not expose actions", async () => {
@@ -94,7 +94,7 @@ describe("AccountDetailsDrawer token diagnostics", () => {
       access_token: canary, refresh_token: canary, authorization: canary, auth_file: canary };
     renderDrawer(api(), ACCOUNT, selectedRow);
     fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
-    expect(screen.getByText("Token Health")).toBeInTheDocument();
+    expect(screen.getByText("Token 状态")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(canary);
     expect(screen.queryByRole("button", { name: /refresh|repair|reauth|upload|delete|disable|刷新|修复|认证|上传|删除|禁用/i })).not.toBeInTheDocument();
     expect(document.querySelector('input[type="file"]')).toBeNull();
@@ -111,7 +111,7 @@ describe("AccountDetailsDrawer token diagnostics", () => {
     const token = screen.getByText(tokenState);
     expect(token).toBeInTheDocument();
     if (color) expect(token.closest(".ant-tag")).toHaveClass(`ant-tag-${color}`);
-    expect(screen.getByText("Expected Valid Until")).toBeInTheDocument();
+    expect(screen.getByText("预计有效至")).toBeInTheDocument();
     expect(screen.getByText(formatDateTime("2026-09-11T01:00:00Z", "zh-CN"))).toBeInTheDocument();
   });
 
@@ -119,8 +119,8 @@ describe("AccountDetailsDrawer token diagnostics", () => {
     renderDrawer(api(), ACCOUNT, { ...row, provider: "antigravity", token_state: "UNKNOWN", expected_valid_until: null, last_refresh_at: "2000-01-01T00:00:00Z" });
     fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
     expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
-    expect(screen.getByText("Token Health").parentElement?.parentElement).toHaveTextContent("UNKNOWN");
-    expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent("—");
+    expect(screen.getByText("Token 状态").parentElement?.parentElement).toHaveTextContent("UNKNOWN");
+    expect(screen.getByText("预计有效至").parentElement?.parentElement).toHaveTextContent("—");
   });
 
   it("preserves server INVALID even when Expected Valid Until is in the future", async () => {
@@ -149,7 +149,7 @@ describe("AccountDetailsDrawer token diagnostics", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "采集信息" }));
     expect(screen.queryByText("INVALID")).not.toBeInTheDocument();
     expect(screen.queryByText(formatDateTime(second.expected_valid_until, "zh-CN"))).not.toBeInTheDocument();
-    expect(screen.getByText("Expected Valid Until").parentElement?.parentElement).toHaveTextContent("—");
+    expect(screen.getByText("预计有效至").parentElement?.parentElement).toHaveTextContent("—");
     expect(clientApi.requestHistory).toHaveBeenCalledTimes(2);
     expect(clientApi.accountAvailabilityOccurrences).not.toHaveBeenCalled();
   });
