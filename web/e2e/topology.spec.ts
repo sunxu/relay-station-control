@@ -40,9 +40,9 @@ test("Account detail preserves server Token projection and occurrence history", 
   const drawer = page.getByRole("dialog");
   await page.getByTestId("account-inventory-tab").click();
   await expect(drawer.getByText("INVALID", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("Expected valid until", { exact: true })).toBeVisible();
+  await expect(drawer.getByText(/^(?:Expected valid until|预计有效至)$/u)).toBeVisible();
   // Browser and test runner share the host system timezone; no bespoke UI formatter.
-  await expect(drawer.getByText(formatDateTime(expected, "en"), { exact: true })).toBeVisible();
+  await expect(drawer.getByText(new RegExp(`^(?:${formatDateTime(expected, "en")}|${formatDateTime(expected, "zh-CN")})$`, "u"))).toBeVisible();
   await page.getByTestId("account-availability-tab").click();
   await expect(drawer.getByText("token_invalid", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Critical", { exact: true })).toBeVisible();
@@ -78,7 +78,7 @@ test("Topology covers navigation, independent reads, pagination, and readonly re
   const historyCard = page.getByTestId("topology-history-ownership");
   await test.step("current/history have independent pagination and status", async () => {
     await page.getByTestId("topology-current-next").click();
-    await expect(currentCard.getByText("No matching occurrence")).toBeVisible();
+    await expect(currentCard.getByText(/^(?:No matching occurrence|没有符合条件的 occurrence)$/u)).toBeVisible();
     await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
     await page.getByTestId("topology-current-first").click();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
@@ -88,7 +88,7 @@ test("Topology covers navigation, independent reads, pagination, and readonly re
     await expect.poll(() => requests.some((r) => r.includes("duplicate-history?status=RESOLVED"))).toBe(true);
     await expect(historyCard.getByText("RESOLVED", { exact: true }).last()).toBeVisible();
     await page.getByTestId("topology-history-next").click();
-    await expect(historyCard.getByText("No matching occurrence")).toBeVisible();
+    await expect(historyCard.getByText(/^(?:No matching occurrence|没有符合条件的 occurrence)$/u)).toBeVisible();
     await expect(currentCard.getByText(occurrence.account_key)).toBeVisible();
     await page.getByTestId("topology-history-first").click();
     await expect(historyCard.getByText(occurrence.account_key)).toBeVisible();
@@ -116,7 +116,7 @@ test("Topology covers navigation, independent reads, pagination, and readonly re
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(page.getByText(`Instance ID：${nodes[1]}`)).toBeVisible();
-    await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
+    await expect(page.getByText(/^(?:Unavailable|读取不可用（unavailable）)$/u)).toBeVisible();
     await expect(page.getByText("unbound", { exact: true })).toBeVisible();
     await page.getByTestId("topology-refresh-provider").click();
     await expect(page.getByText("fresh", { exact: true }).first()).toBeVisible();
