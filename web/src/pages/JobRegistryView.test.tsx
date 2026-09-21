@@ -184,4 +184,37 @@ describe("durable job read-only view", () => {
     expect(await screen.findByText("读取失败")).toBeInTheDocument();
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
+
+  it("does not let a late Job A detail replace the selected Job B", async () => {
+    const jobA = { ...summary, jobId: "00000000-0000-4000-8000-000000000111" };
+    const jobB = { ...summary, jobId: "00000000-0000-4000-8000-000000000222" };
+    let resolveA!: (value: JobDetail) => void;
+    let resolveB!: (value: JobDetail) => void;
+    const api = makeApi();
+    vi.mocked(api.jobs).mockResolvedValue({ items: [jobA, jobB], nextCursor: null });
+    vi.mocked(api.job).mockImplementation((jobId) => new Promise((resolve) => {
+      if (jobId === jobA.jobId) resolveA = resolve;
+      else resolveB = resolve;
+    }));
+    render(<JobRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    await screen.findByTestId(`job-row-${jobA.jobId}`);
+
+    fireEvent.click(screen.getByTestId(`job-details-${jobA.jobId}`));
+    fireEvent.click(screen.getByTestId(`job-details-${jobB.jobId}`));
+    resolveB({ ...detail, jobId: jobB.jobId });
+    const drawer = await screen.findByTestId("job-detail");
+    expect(within(drawer).getByText(jobB.jobId)).toBeInTheDocument();
+
+    resolveA({ ...detail, jobId: jobA.jobId });
+    await waitFor(() => expect(within(screen.getByTestId("job-detail")).getByText(jobB.jobId)).toBeInTheDocument());
+    expect(within(screen.getByTestId("job-detail")).queryByText(jobA.jobId)).not.toBeInTheDocument();
+  });
+
+  it("omits invalid datetime values instead of sending a fabricated instant", async () => {
+    const api = makeApi();
+    render(<JobRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+    await screen.findByText(summary.jobKind);
+    fireEvent.change(screen.getByTestId("job-created-from"), { target: { value: "not-a-datetime" } });
+    await waitFor(() => expect(api.jobs).toHaveBeenLastCalledWith(expect.objectContaining({ createdFrom: undefined, createdTo: undefined })));
+  });
 });

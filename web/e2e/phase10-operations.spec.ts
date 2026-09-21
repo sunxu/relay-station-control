@@ -57,24 +57,58 @@ async function installFixture(page: Page, locale: "zh-CN" | "en") {
   return requests;
 }
 
+async function assertDesktopSurface(page: Page, locale: "zh-CN" | "en") {
+  await expect(page.getByTestId("operations-page")).toBeVisible();
+  await expect(page.getByTestId("durable-jobs-view")).toBeVisible();
+  await expect(page.getByTestId(`job-row-${JOB}`)).toBeVisible();
+  await expect(page.getByTestId("job-kind-filter")).toHaveAttribute("aria-label", locale === "zh-CN" ? "任务类型" : "Job type");
+  await expect(page.getByTestId("job-status-filter").locator("input")).toHaveAttribute("aria-label", locale === "zh-CN" ? "任务状态" : "Job status");
+  await expect(page.getByTestId("job-created-from")).toHaveAttribute("aria-label", locale === "zh-CN" ? "创建时间起点" : "Created from");
+  await expect(page.getByTestId("job-created-to")).toHaveAttribute("aria-label", locale === "zh-CN" ? "创建时间终点" : "Created to");
+  await expect(page.getByTestId("job-page-size").locator("input")).toHaveAttribute("aria-label", locale === "zh-CN" ? "每页任务数" : "Jobs per page");
+  expect(await page.locator("html").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function assertFilterQueryTransport(page: Page, requests: Array<{ method: string; url: string; origin: string; pathname: string }>) {
+  await page.getByTestId("job-kind-filter").fill("dingtalk_alert_delivery");
+  await page.getByTestId("job-created-from").fill("2026-09-20T00:00");
+  await page.getByTestId("job-created-to").fill("2026-09-20T02:00");
+  await page.getByTestId("job-status-filter").click();
+  await page.getByTestId("job-status-option-running").click();
+  await page.getByTestId("job-page-size").click();
+  await page.getByTestId("job-page-size-option-200").click();
+  await expect.poll(() => requests.filter((request) => request.pathname === "/api/jobs").length).toBeGreaterThan(1);
+  const latest = new URL(requests.filter((request) => request.pathname === "/api/jobs").at(-1)!.url);
+  const expectedFrom = await page.evaluate(() => new Date("2026-09-20T00:00").toISOString());
+  const expectedTo = await page.evaluate(() => new Date("2026-09-20T02:00").toISOString());
+  expect(latest.searchParams.get("job_kind")).toBe("dingtalk_alert_delivery");
+  expect(latest.searchParams.get("status")).toBe("running");
+  expect(latest.searchParams.get("created_from")).toBe(expectedFrom);
+  expect(latest.searchParams.get("created_to")).toBe(expectedTo);
+  expect(latest.searchParams.get("limit")).toBe("200");
+}
+
+function assertZhCnOrdinaryCopy(body: string) {
+  for (const forbidden of ["Jobs", "Job", "Retry", "Previous", "Next", "View Details", "Lifecycle Events", "Cancel Requested", "Job ID", "Operation ID", "Outbox"]) {
+    expect(body).not.toMatch(new RegExp(`\\b${forbidden}\\b`, "u"));
+  }
+}
+
 test.describe("Phase 10 Operations", () => {
-  test("renders zh-CN Durable Jobs, filters, detail, and Control-only read transport", async ({ page }) => {
+  test("renders zh-CN Durable Jobs at 1280x720 with filters and Control-only read transport", async ({ page }) => {
     test.setTimeout(30_000);
     const requests = await installFixture(page, "zh-CN");
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/operations");
-    await expect(page.getByTestId("operations-page")).toBeVisible();
-    await expect(page.getByTestId("durable-jobs-view")).toBeVisible();
     await expect(page.getByTestId("operations-page")).toContainText("操作");
-    await expect(page.getByTestId(`job-row-${JOB}`)).toBeVisible();
-    await page.getByTestId("job-kind-filter").fill("dingtalk_alert_delivery");
-    await page.getByTestId("job-created-from").fill("2026-09-20T00:00");
-    await page.getByTestId("job-created-to").fill("2026-09-20T02:00");
-    await page.getByTestId("job-status-filter").click();
-    await page.getByTestId("job-status-option-running").click();
+    await assertDesktopSurface(page, "zh-CN");
+    assertZhCnOrdinaryCopy(await page.getByTestId("operations-page").innerText());
+    await assertFilterQueryTransport(page, requests);
     await page.getByTestId(`job-details-${JOB}`).click();
     await expect(page.getByTestId("job-detail")).toBeVisible();
     await expect(page.getByTestId("job-event-1")).toBeVisible();
+    await expect(page.getByTestId("job-detail-drawer")).toBeVisible();
+    await expect(page.getByTestId("job-detail-close")).toBeVisible();
     await page.getByTestId("job-detail-close").click();
     const controlOrigin = new URL(page.url()).origin;
     expect(requests.every((request) => request.origin === controlOrigin)).toBe(true);
@@ -84,17 +118,26 @@ test.describe("Phase 10 Operations", () => {
     expect(requests.some((request) => request.pathname === `/api/jobs/${JOB}`)).toBe(true);
   });
 
-  test("renders equivalent English and 1440 desktop alias without a second Jobs surface", async ({ page }) => {
+  test("renders English Durable Jobs at 1280x720", async ({ page }) => {
     test.setTimeout(30_000);
     const requests = await installFixture(page, "en");
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto("/jobs/");
-    await expect(page.getByTestId("operations-page")).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/operations/");
+    await assertDesktopSurface(page, "en");
     await expect(page.getByTestId("durable-jobs-view")).toContainText("Persistent jobs");
     await expect(page.getByTestId("app-sidebar").getByTestId("sidebar-operations")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("html")).toHaveJSProperty("scrollWidth", 1440);
-    const body = await page.getByTestId("operations-page").innerText();
-    expect(body).not.toContain("基础结构");
+    const controlOrigin = new URL(page.url()).origin;
+    expect(requests.every((request) => request.origin === controlOrigin)).toBe(true);
+  });
+
+  test("renders zh-CN Durable Jobs at 1440x900 without page overflow", async ({ page }) => {
+    test.setTimeout(30_000);
+    const requests = await installFixture(page, "zh-CN");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/jobs/");
+    await expect(page.getByTestId("operations-page")).toContainText("操作");
+    await assertDesktopSurface(page, "zh-CN");
+    assertZhCnOrdinaryCopy(await page.getByTestId("operations-page").innerText());
     const controlOrigin = new URL(page.url()).origin;
     expect(requests.every((request) => request.origin === controlOrigin)).toBe(true);
   });

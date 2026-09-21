@@ -182,7 +182,7 @@ const canonicalTranslation = {
     ...stage3OperationsZh, ...stage3OperationsCanonicalZh,
   },
   accounts: { title: "账号", description: "账号页面基础结构", ...stage3AccountsZh, ...stage3AccountsCanonicalZh, readingEvents: "正在读取请求历史", nodeNotFound: "账号不存在（not found）", requestFirstPage: "History 首页", requestNextPage: "History 下一页" },
-  jobs: { title: "持久任务", description: "PostgreSQL 真相源的只读运行视图", management: "管理员控制台", ...stage3JobsZh, jobId: "Job ID", operationId: "Operation ID", outbox: "Outbox", availableAt: "可执行时间", startedAt: "开始时间", completedAt: "完成时间", createdAt: "创建时间", updatedAt: "更新时间", initial: "初始" },
+  jobs: { title: "持久任务", description: "PostgreSQL 真相源的只读运行视图", management: "管理员控制台", ...stage3JobsZh, jobId: "任务 ID", operationId: "操作 ID", outbox: "发件箱状态", availableAt: "可执行时间", startedAt: "开始时间", completedAt: "完成时间", createdAt: "创建时间", updatedAt: "更新时间", initial: "初始" },
   problems: { title: "Problems", description: "已确认账号问题的只读运行观察", management: "管理员控制台", ...stage3ProblemsZh, pageSuffix: " / 页" },
   auth: {
     errors: {

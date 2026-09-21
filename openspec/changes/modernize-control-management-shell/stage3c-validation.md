@@ -33,6 +33,13 @@ typecheck = PASS
 build = PASS
 translation audit = PASS
 Browser proof = PASS
+ZH_CN_1280 = PASS
+EN_1280 = PASS
+ZH_CN_1440 = PASS
+ZH_CN_OPERATIONS_UNINTENDED_ENGLISH_LEAK = ZERO
+FILTER_QUERY_TRANSPORT = PASS
+TIME_FILTER_INSTANT_SEMANTICS = PASS
+STALE_JOB_DETAIL_ISOLATION = PASS
 production-like HTTPS regression = PASS 6/6
 generated drift = NONE
 Backend/API change = NO
@@ -59,10 +66,13 @@ read requests for bootstrap/session and Durable Jobs are observed.
 
 Durable Jobs user-facing date/time and numeric values use the shared
 `formatDateTime()` and `formatNumber()` foundation formatters. Raw job and
-lifecycle machine values remain unchanged. The focused Operations Browser
-suite passed 2/2 and covered filters, time conversion, detail/lifecycle
-presentation, `/jobs/` alias ownership, Control-origin transport, and the
-absence of mutation/probe traffic.
+lifecycle machine values remain unchanged. The Operations Browser matrix
+passed all three required cases independently: zh-CN 1280×720, en 1280×720,
+and zh-CN 1440×900. It covered the Chinese ordinary-copy audit, filters,
+time-to-instant conversion, detail/lifecycle presentation, `/jobs/` alias
+ownership, Control-origin transport, and the absence of mutation/probe
+traffic. A focused component regression also proves a late Job A detail
+cannot replace the currently selected Job B.
 
 The repository-owned isolated production-like HTTPS general harness passed:
 
