@@ -9,6 +9,10 @@ const session = {
 async function installFoundationSession(page: Page) {
   await page.route("**/api/bootstrap/status", (route) => route.fulfill({ json: { status: "completed" } }));
   await page.route("**/api/auth/session", (route) => route.fulfill({ json: session }));
+  await page.route("**/api/healthz", (route) => route.fulfill({ json: { status: "ok", version: "0.9.3" } }));
+  await page.route("**/api/assets/gateways**", (route) => route.fulfill({ json: { items: [{ instance_id: "gateway-1" }], next_cursor: null, gateway_counts: { active: 1, retired: 0, total: 1 } } }));
+  await page.route("**/api/assets/nodes**", (route) => route.fulfill({ json: { items: [{ instance_id: "node-1" }], next_cursor: null, node_counts: { active: 1, retired: 0, total: 1 } } }));
+  await page.route("**/api/account-inventory/poll-capacity", (route) => route.fulfill({ json: { status: "disabled", enabled: false, eligible_node_count: 0, effective_capacity: 0, concurrency: 0, request_timeout_ms: 0, finalize_timeout_ms: 0, lifecycle_timeout_ms: 0, claim_timeout_ms: 0, evaluated_slot: "slot-1", evaluated_at: "2026-09-21T00:00:00Z" } }));
 }
 
 async function proveShell(page: Page, locale: "zh-CN" | "en", width: number, height: number) {
@@ -41,7 +45,7 @@ async function proveShell(page: Page, locale: "zh-CN" | "en", width: number, hei
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
   await expect(page.getByTestId("global-header")).toBeVisible();
-  await expect(page.getByTestId("foundation-placeholder")).toBeAttached();
+  await expect(page.getByTestId("dashboard-control-summary")).toBeVisible();
 
   const labels = locale === "zh-CN"
     ? ["仪表盘", "账号", "节点", "操作", "监控", "问题", "设置"]
@@ -64,10 +68,9 @@ async function proveShell(page: Page, locale: "zh-CN" | "en", width: number, hei
   await expect(page.getByTestId("accounts-page")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Issues");
 
-  const businessRequests = requests.filter((request) =>
-    !request.includes("/api/bootstrap/status") && !request.includes("/api/auth/session"),
-  );
-  expect(businessRequests).toEqual([]);
+  const allowed = ["/api/bootstrap/status", "/api/auth/session", "/api/healthz", "/api/assets/gateways", "/api/assets/nodes", "/api/account-inventory/poll-capacity"];
+  expect(requests.every((request) => allowed.some((path) => request.includes(path)))).toBe(true);
+  expect(requests.some((request) => /connection-test|jobs|problem-accounts|account-inventory\/query/.test(request))).toBe(false);
 }
 
 test("ZH_CN_PC_BROWSER at 1280x720", async ({ page }) => {

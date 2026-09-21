@@ -51,11 +51,16 @@ Implementation scope: frontend foundation only; Backend/API/DB/Gateway/Relay Nod
 
 ## 2. Stage 2 — Dashboard
 
-- [ ] 2.1 实现 Dashboard skeleton 与 Navigation Summary。
-- [ ] 2.2 只接入 truth-source matrix 标记为 Authoritative 的 API。
-- [ ] 2.3 对 Jobs/Problems/Accounts 保持 navigation-only，不根据当前页推导 totals/rates。
-- [ ] 2.4 验证 Dashboard mount 不自动执行 Gateway/Node connection/health probe。
-- [ ] 2.5 双语、1280/1440、loading/empty/error/accessibility focused proof；独立 commit。
+- [x] 2.1 实现 Dashboard skeleton 与 Navigation Summary。
+- [x] 2.2 只接入 truth-source matrix 标记为 Authoritative 的 API。
+- [x] 2.3 对 Jobs/Problems/Accounts 保持 navigation-only，不根据当前页推导 totals/rates。
+- [x] 2.4 验证 Dashboard mount 不自动执行 Gateway/Node connection/health probe。
+- [x] 2.5 双语、1280/1440、loading/empty/error/accessibility focused proof；独立 commit。
+
+```text
+Stage 2 = COMPLETE / PASS
+Stage 3A = READY FOR AUTHORIZATION
+```
 
 ## 3. Stage 3A — Accounts
 
