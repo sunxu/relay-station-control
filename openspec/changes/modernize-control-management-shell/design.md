@@ -153,6 +153,8 @@ Durable Jobs first。Account Operation 无全局 list，因此从 Account contex
 
 `/monitoring` 在 Phase 10 成为既有 `node-centric-topology-ui` 诊断能力的主要 presentation owner；迁移期 `/topology` 作为兼容 alias。现有 Inventory evidence、Binding truth/resolution、Duplicate Ownership、Provider state、Account Quality 等 read-only contracts 必须继续满足，不得因改名或重组页面而丢失。
 
+现有 Node Health / Gateway Health 都是显式 bounded remote observation，不是持久 current-health truth。Monitoring mount / refresh MUST NOT 自动调用 Node/Gateway Health 或 Connection Test。Monitoring 可以展示已有持久观察/上下文并跳转到 owning surface；若提供显式“检查健康”动作，必须清楚标识为用户触发 remote observation，并继续复用原 owning API/security/audit contract。
+
 ### Problems
 
 保持现有 Problems domain / route / taxonomy。

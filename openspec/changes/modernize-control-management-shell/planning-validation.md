@@ -187,3 +187,33 @@ Relay Node source change = NO
 ```
 
 上述 `asset-registry` / `node-centric-topology-ui` 为 canonical **UI presentation contract** delta，不是 backend/business capability 变更。
+
+## 12. Architecture Re-review residual reconciliation
+
+Round 1 corrective cross-spec scan found one additional residual canonical reference in `relay-node-management-operations`: the requirement `Node operations SHALL remain explicit and isolated` still pinned Health / Connection Test / Monitoring presentation to the historical Asset Registry.
+
+This is the same ownership family as P1-1, but it requires its own exact-capability delta to avoid leaving a contradictory canonical requirement after archive.
+
+Corrective adds:
+
+```text
+specs/relay-node-management-operations/spec.md
+```
+
+as `MODIFIED Requirements`:
+
+- `/nodes` owns Node Health / Connection Test / Monitoring presentation;
+- `/assets` has no duplicate executable Node operations after Stage 3B;
+- `/nodes`, Dashboard and Monitoring mount/reload do not automatically probe;
+- explicit Node observations/actions keep existing API / Driver.Probe / CSRF / receipt / audit / metrics / lifecycle semantics.
+
+Cross-repository/source scan after this correction found no additional canonical spec that pins Node operation UI to Asset Registry, and no additional canonical `390px` product requirement outside `node-centric-topology-ui`.
+
+Expected delta capabilities after final correction:
+
+```text
+control-management-shell
+asset-registry
+node-centric-topology-ui
+relay-node-management-operations
+```

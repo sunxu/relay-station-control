@@ -27,6 +27,7 @@ Phase 10 需要在不改变 Relay Station 业务模型、API、安全边界和�
 
 - `asset-registry`：仅修改既有 Web presentation ownership。`/assets` 保留 Environment / Gateway / Driver catalog / Current Provider Policy 辅助入口；Relay Node lifecycle / monitoring presentation 迁移到 `/nodes`，既有 API、CSRF、revision、credential、lifecycle 与 operation contract 不变。
 - `node-centric-topology-ui`：仅修改历史窄屏 presentation acceptance；Phase 10 supersede `390px` Mobile requirement，以 Desktop PC contract 验收。其 read-only truth、identity protection、Inventory / Binding / Duplicate / Provider / Account Quality semantics 不变。
+- `relay-node-management-operations`：仅将历史 Asset Registry 中的 Node Health / Connection Test / Monitoring presentation ownership 迁移到 `/nodes`，并把 Dashboard/Monitoring/page mount 零自动 probe 明确为 Phase 10 shell contract；所有 Node operation API、Driver.Probe、安全、receipt、audit、metrics 与 lifecycle semantics 不变。
 
 Backend/API/Database/Gateway/Relay Node business capability contract 不因本 change 修改；上述 modified capability 仅用于正式 reconciliation 已存在的 UI canonical contracts。
 

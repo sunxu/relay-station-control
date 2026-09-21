@@ -112,3 +112,65 @@ control-management-shell
 asset-registry
 node-centric-topology-ui
 ```
+
+## Re-review — Residual Contract Scan
+
+Re-review scanned current canonical `openspec/specs/**` for:
+
+```text
+Asset Registry + Node operation ownership
+/assets + Node UI ownership
+390px / narrow-screen mandatory acceptance
+/topology UI route coupling
+automatic health probe semantics
+```
+
+One residual requirement was found:
+
+```text
+relay-node-management-operations
+Requirement: Node operations SHALL remain explicit and isolated
+```
+
+It explicitly bound Node Health / Connection Test / Monitoring UI to the historical Asset Registry. A fourth `MODIFIED` delta is therefore required and has been added.
+
+No separate residual Mobile product gate was found outside `node-centric-topology-ui`.
+
+Monitoring is additionally frozen to zero automatic remote probes: existing Node/Gateway Health remains explicit bounded observation; mount/refresh cannot manufacture a health dashboard by probing every asset.
+
+### Final corrected candidate
+
+```text
+Delta capabilities:
+1. control-management-shell
+2. asset-registry
+3. node-centric-topology-ui
+4. relay-node-management-operations
+
+Known P0 = 0
+Known P1 = 0
+Known P2 = 0
+
+Backend/API change = NO
+Database/Migration change = NO
+Gateway source change = NO
+Relay Node source change = NO
+```
+
+### Final Architecture Review disposition
+
+Document/source architecture re-review:
+
+```text
+PASS CANDIDATE
+```
+
+Repository-level final PASS requires the actual local commit/worktree to prove:
+
+```bash
+openspec validate modernize-control-management-shell --strict
+openspec show modernize-control-management-shell --json --deltas-only
+git diff --check
+```
+
+The `--deltas-only` output MUST contain all four capabilities above. If strict validation passes and no unreviewed files are present, Architecture Review MAY be recorded as `PASS` and Stage 1 implementation authorized.

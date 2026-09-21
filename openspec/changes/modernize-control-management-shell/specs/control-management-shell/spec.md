@@ -140,10 +140,16 @@ Operations 第一阶段 SHALL 以现有 `/api/jobs` 与 `/api/jobs/{job_id}` 为
 ### Requirement: Monitoring SHALL be a read-only cross-domain diagnostic composition
 Monitoring SHALL 仅组合现有 Node health、Gateway context、Provider Inventory state、Account Quality、Poll Capacity、Inventory freshness、Problems、Request evidence 与其他可用诊断。Monitoring MUST NOT 修改 Gateway routing、数据面调度、自动 drain、自动 repair duplicate ownership、自动改变 account selection，也 MUST NOT 成为任何领域状态机或执行动作的 owner。
 
-#### Scenario: monitoring page observes without mutating
-- **WHEN** 管理员打开 Monitoring 并浏览诊断信息
-- **THEN** 页面只调用既有 read/query diagnostic surfaces
+#### Scenario: monitoring page observes without mutating or probing automatically
+- **WHEN** 管理员打开或刷新 Monitoring 并浏览诊断信息
+- **THEN** 页面只自动调用既有持久 read/query diagnostic surfaces
 - **AND** MUST NOT 因页面 mount 或 refresh 触发业务 mutation
+- **AND** MUST NOT 自动调用 Node/Gateway Health、Connection Test 或其它 remote probe
+
+#### Scenario: explicit health observation remains user-triggered
+- **WHEN** Monitoring 提供跳转或明确的“检查健康”入口
+- **THEN** remote observation 仅在管理员显式触发后发生
+- **AND** 继续复用原 Node/Gateway owning API、安全与 audit contract，不产生新的 Monitoring-owned health truth
 
 ### Requirement: Problems presentation SHALL preserve existing business taxonomy
 Problems 页面 MAY 优化 Severity badge、Reason、Provider、Node、Account、First seen、Last seen、Related evidence、filter toolbar 与 read-state presentation。UI MUST NOT 将 `unknown`、`unavailable`、`outcome_unknown` 映射为 `success`、`failed` 或其他不同业务语义。

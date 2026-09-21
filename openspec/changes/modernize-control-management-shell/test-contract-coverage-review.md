@@ -9,13 +9,13 @@
 | 七项 Sidebar IA | component | exact nav model keys/routes/testids | zh-CN/en Browser sidebar assertions | OWNED |
 | Problems 英文命名 | translation resource | resource key exact `Problems`; source audit rejects `Issues` nav | en Browser no `Issues` nav | OWNED |
 | zh-CN 英文泄漏 ZERO | translation audit | source/resource exception allowlist | 1280/1440 DOM text audit | OWNED |
-| Asset/Node ownership split | component + transport | `/assets` owns Environment/Gateway/Driver/Policy；`/nodes` is sole executable Node lifecycle owner after Stage 3B；同一 fixture 证明 `/assets` 不再有第二套 Node mutation controls | navigation + direct/reload assertions | OWNED |
+| Asset/Node ownership split | component + transport | `/assets` owns Environment/Gateway/Driver/Policy；`/nodes` is sole executable Node lifecycle/Health/Connection Test/Monitoring owner after Stage 3B；同一 fixture 证明 `/assets` 不再有第二套 Node controls | navigation + direct/reload assertions | OWNED |
 | Command Search != global entity search | component/transport/security | search index unit tests只含静态 nav/allowed loaded entities；无 search API call；account_key/Secret 不进入 URL/history/storage/log/metrics | Browser query confirms scope labels + unsafe identity persistence ZERO | OWNED |
 | Dashboard truth source | adapter/component | 每个 authoritative card 使用 matrix-approved API；paginated fixture不能生成 totals | Dashboard Browser no fake totals | OWNED |
 | Dashboard no auto probe | transport/unit | mount 时 fetch calls不包含 gateway/node health/connection-test | Browser request capture = ZERO probes | OWNED |
 | Accounts preserve API semantics | existing API adapters + page tests | existing Orval clients/filters/body preserved | relevant account E2E | OWNED |
 | Operations Jobs-first | component | default list uses `/api/jobs`; no account-op global list adapter | Browser Operations shows Durable Jobs | OWNED |
-| Monitoring read-only | transport | page transport allowlist仅 GET/read-query；无 admin mutation API | Browser network capture no mutation | OWNED |
+| Monitoring read-only / zero auto-probe | transport | mount/refresh allowlist仅持久 read/query；Node/Gateway health/connection-test auto calls = ZERO；显式 probe 复用 owning API | Browser network capture no mutation + no automatic probe | OWNED |
 | Settings preserves security | existing auth integration + frontend | current auth API tests, reauth/MFA/CSRF regression | high-risk Browser flows | OWNED |
 | UI preference browser-local | unit | local state/storage only；network call count zero | reload/session behavior | OWNED |
 | no fake Audit Logs/API Keys | nav/page component | no route/nav entries | Sidebar/Search assertions | OWNED |
