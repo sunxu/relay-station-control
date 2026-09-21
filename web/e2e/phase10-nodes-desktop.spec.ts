@@ -12,6 +12,7 @@ const session = {
 test("renders the canonical Node workspace at the 1440 desktop contract", async ({ page }) => {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    if (!url.pathname.startsWith("/api/")) return route.continue();
     const json = (body: unknown) => route.fulfill({ status: 200, headers: { "Cache-Control": "no-store", "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (url.pathname === "/api/bootstrap/status") return json({ status: "completed" });
     if (url.pathname === "/api/auth/session") return json(session);

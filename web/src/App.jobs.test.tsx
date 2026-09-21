@@ -12,9 +12,9 @@ function render(ui: ReactElement) {
 
 const chunk = vi.hoisted(() => ({ loaded: vi.fn() }));
 
-vi.mock("./pages/JobsPage", () => {
+vi.mock("./pages/OperationsPage", () => {
   chunk.loaded();
-  return { default: () => <main data-testid="mock-jobs-page">持久任务 chunk</main> };
+  return { default: () => <main data-testid="mock-operations-page">持久任务 chunk</main> };
 });
 
 const session: SessionResponse = {
@@ -58,7 +58,7 @@ it("does not load the jobs chunk before authenticated navigation selects /jobs",
   expect(chunk.loaded).not.toHaveBeenCalled();
   window.history.replaceState(null, "", "/jobs");
   fireEvent(window, new PopStateEvent("popstate"));
-  expect(await screen.findByTestId("mock-jobs-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("mock-operations-page")).toBeInTheDocument();
   expect(chunk.loaded).toHaveBeenCalledTimes(1);
   expect(window.location.pathname).toBe("/jobs");
 });
@@ -66,6 +66,6 @@ it("does not load the jobs chunk before authenticated navigation selects /jobs",
 it("restores an authenticated direct visit to /jobs", async () => {
   window.history.replaceState(null, "", "/jobs");
   render(<App api={api()} />);
-  expect(await screen.findByTestId("mock-jobs-page")).toBeInTheDocument();
+  expect(await screen.findByTestId("mock-operations-page")).toBeInTheDocument();
   expect(screen.queryByTestId("management-page")).not.toBeInTheDocument();
 });

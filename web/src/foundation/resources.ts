@@ -168,7 +168,7 @@ const canonicalTranslation = {
   },
   operations: {
     title: "操作",
-    description: "持久操作页面基础结构",
+    description: "持久任务运行历史与操作入口",
     guidance: "操作只提交逻辑账号身份；物理目标由服务端基于最新 Node 快照选择。",
     applied: "已应用", noop: "无需变更", unknown: "远端结果不确定", failed: "执行失败",
     unknownTitle: "执行结果未知", unknownDescription: "请求可能已被远端应用，也可能未应用。系统不会自动重试，以避免重复操作。请结合当前账户状态人工判断后再决定是否发起新的命令。",
@@ -371,7 +371,7 @@ export const resources = {
       },
       operations: {
         title: "Operations",
-        description: "Durable operations foundation",
+        description: "Durable job history and operation entry points",
         guidance: "Operations submit only the logical account identity; the server selects the physical target from the latest Node snapshot.",
         applied: "Applied", noop: "No change", unknown: "Remote outcome unknown", failed: "Failed",
         unknownTitle: "Outcome unknown", unknownDescription: "The request may or may not have been applied remotely. The system will not retry automatically to avoid duplicate operations. Inspect the current account state before issuing a new command.",

@@ -13,7 +13,7 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ActivationPage = lazy(() => import("./pages/ActivationPage"));
 const ManagementPage = lazy(() => import("./pages/ManagementPage"));
 const AssetsPage = lazy(() => import("./pages/AssetsPage"));
-const JobsPage = lazy(() => import("./pages/JobsPage"));
+const OperationsPage = lazy(() => import("./pages/OperationsPage"));
 const TopologyPage = lazy(() => import("./pages/TopologyPage"));
 const ProblemsPage = lazy(() => import("./pages/ProblemsPage"));
 const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
@@ -44,13 +44,13 @@ function AuthShell() {
       {auth.route === "activation" && <ActivationPage />}
       {(auth.route === "management" || auth.route === "settings") && <ManagementPage />}
       {auth.route === "assets" && <AssetsPage />}
-      {auth.route === "jobs" && <JobsPage />}
+      {(auth.route === "operations" || auth.route === "jobs") && <OperationsPage />}
       {auth.route === "topology" && <TopologyPage />}
       {auth.route === "problems" && <ProblemsPage />}
       {auth.route === "dashboard" && <DashboardPage />}
       {auth.route === "accounts" && <AccountsPage />}
       {auth.route === "nodes" && <NodesPage />}
-      {authenticated && ["operations", "monitoring"].includes(auth.route) && <FoundationPage route={auth.route as FoundationPlaceholderRoute} />}
+      {authenticated && auth.route === "monitoring" && <FoundationPage route={auth.route as FoundationPlaceholderRoute} />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
     </Suspense>;
 

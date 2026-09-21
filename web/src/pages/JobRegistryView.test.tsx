@@ -52,7 +52,19 @@ function Wrapper({ children }: { children: ReactNode }) {
   return <FrontendFoundationProvider initialLocale="zh-CN"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
 }
 
+function EnglishWrapper({ children }: { children: ReactNode }) {
+  return <FrontendFoundationProvider initialLocale="en"><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider></FrontendFoundationProvider>;
+}
+
 describe("durable job read-only view", () => {
+  it("formats user-facing counts and timestamps through the foundation contract", async () => {
+    const api = makeApi();
+    vi.mocked(api.jobs).mockResolvedValue({ items: [{ ...summary, attemptCount: 1234, maxAttempts: 5678 }], nextCursor: null });
+    render(<JobRegistryView api={api} onUnauthorized={vi.fn()} />, { wrapper: EnglishWrapper });
+    expect(await screen.findByText("1,234 / 5,678")).toBeInTheDocument();
+    expect(screen.queryByText(summary.createdAt)).not.toBeInTheDocument();
+  });
+
   it("renders an empty state and bounded page request without task mutations", async () => {
     const api = makeApi();
     vi.mocked(api.jobs).mockResolvedValue({ items: [], nextCursor: null });
@@ -93,11 +105,12 @@ describe("durable job read-only view", () => {
     expect(screen.getAllByText(formatDateTime("2026-08-25T10:00:00Z", "zh-CN")).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: "synthetic.noop" } });
     fireEvent.mouseDown(screen.getByLabelText("任务状态"));
-    fireEvent.click(await screen.findByText("running", { selector: ".ant-select-item-option-content" }));
+    fireEvent.click(await screen.findByTestId("job-status-option-running"));
     fireEvent.change(screen.getByLabelText("创建时间起点"), { target: { value: "2026-08-25T09:00" } });
     fireEvent.change(screen.getByLabelText("创建时间终点"), { target: { value: "2026-08-25T11:00" } });
     fireEvent.mouseDown(screen.getByLabelText("每页任务数"));
-    fireEvent.click(await screen.findByText("200 / 页", { selector: ".ant-select-item-option-content" }));
+    fireEvent.mouseDown(screen.getByTestId("job-page-size"));
+    fireEvent.click(await screen.findByTestId("job-page-size-option-200"));
     await waitFor(() => expect(api.jobs).toHaveBeenLastCalledWith(expect.objectContaining({
       jobKind: "synthetic.noop", status: "running", createdFrom: expect.stringContaining("2026-08-25"),
       createdTo: expect.stringContaining("2026-08-25"), cursor: undefined, limit: 200,
@@ -150,5 +163,25 @@ describe("durable job read-only view", () => {
     vi.mocked(api.jobs).mockRejectedValue(new JobApiError(401));
     await client.refetchQueries({ queryKey: ["durable-jobs", "list"] });
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
+  });
+
+  it("hands a detail 401 to authentication without treating it as an empty list", async () => {
+    const api = makeApi();
+    const onUnauthorized = vi.fn();
+    vi.mocked(api.job).mockRejectedValue(new JobApiError(401));
+    render(<JobRegistryView api={api} onUnauthorized={onUnauthorized} />, { wrapper: Wrapper });
+    await screen.findByText(summary.jobKind);
+    fireEvent.click(screen.getByTestId(`job-details-${summary.jobId}`));
+    await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(summary.jobKind)).toBeInTheDocument();
+  });
+
+  it("preserves the session for a representative list 503", async () => {
+    const api = makeApi();
+    const onUnauthorized = vi.fn();
+    vi.mocked(api.jobs).mockRejectedValue(new JobApiError(503));
+    render(<JobRegistryView api={api} onUnauthorized={onUnauthorized} />, { wrapper: Wrapper });
+    expect(await screen.findByText("读取失败")).toBeInTheDocument();
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
