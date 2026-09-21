@@ -88,7 +88,7 @@ image ID = sha256:0d927726081869825f4ac444a3f83687e560b01c207de7e22032fb33efccac
 ## Validation
 
 ```text
-Unit/component = PASS (44 files, 327 tests)
+Unit/component = PASS (full suite: 44 files; focused ownership/resources: 21 tests)
 Typecheck = PASS
 Build = PASS
 Translation audit = PASS
