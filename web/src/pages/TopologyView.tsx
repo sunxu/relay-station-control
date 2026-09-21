@@ -1,7 +1,7 @@
 import { Alert, Button, Card, Empty, Flex, Grid, Input, Select, Spin, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNodeAsset, useNodeAssets } from "../api/asset-hooks";
 import { AssetApiError } from "../api/asset-types";
 import type { AssetApi } from "../api/asset-types";
@@ -68,13 +68,13 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
   const history = useTopologyHistory(api, instanceId, historyStatus, historyCursor);
   const node = selected.error ? undefined : selected.data;
 
-  const expireSession = () => {
+  const expireSession = useCallback(() => {
     // Cancel in-flight reads before clearing so a late response cannot repopulate
     // administrator evidence after a 401. The authenticated page then unmounts.
     void cache.cancelQueries();
     cache.clear();
     onUnauthorized();
-  };
+  }, [cache, onUnauthorized]);
   useEffect(() => {
     if ([providers.error, binding.error, current.error, history.error, nodes.error, selected.error].some(unauthorized)) expireSession();
   }, [providers.error, binding.error, current.error, history.error, nodes.error, selected.error]);

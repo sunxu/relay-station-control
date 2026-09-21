@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Flex, Select, Spin } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { generatedAccountInventoryApi } from "../api/account-inventory-api";
 import { generatedAccountOperationsApi } from "../api/account-operations-api";
 import { generatedAssetApi } from "../api/asset-api";
@@ -30,11 +30,11 @@ export default function AccountsPage() {
   const nodes = useNodeAssets(generatedAssetApi, { limit: 200, cursor: nodeCursor });
   const selectedNode = useNodeAsset(generatedAssetApi, instanceId);
   const providers = useTopologyProviders(generatedTopologyApi, instanceId);
-  const expireSession = () => {
+  const expireSession = useCallback(() => {
     void cache.cancelQueries();
     cache.clear();
     auth.clearSession();
-  };
+  }, [auth, cache]);
 
   useEffect(() => {
     const onPopState = () => {

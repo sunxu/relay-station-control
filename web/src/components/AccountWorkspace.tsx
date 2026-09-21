@@ -109,6 +109,9 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
   }, [resetAccountQuery]);
 
   useEffect(() => {
+    if (accountQuery.error instanceof TopologyApiError && accountQuery.error.status === 401) onUnauthorized();
+  }, [accountQuery.error, onUnauthorized]);
+  useEffect(() => {
     let active = true;
     resetQuery();
     if (instanceId) {
