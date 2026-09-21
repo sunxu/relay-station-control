@@ -60,20 +60,20 @@ async function json(response: APIResponse): Promise<Record<string, unknown>> {
 }
 
 async function leaveOneTimePage(page: Page): Promise<void> {
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "确认并离开" }).click();
+  await page.getByTestId("one-time-confirmation").check();
+  await page.getByTestId("one-time-leave").click();
   await expect(page.getByTestId("management-page")).toBeVisible();
 }
 
 async function logout(page: Page): Promise<void> {
-  const button = page.getByRole("button", { name: /注\s*销/u });
+  const button = page.getByTestId("global-logout");
   if (await button.isVisible()) await button.click();
   await expect(page.getByTestId("login-page")).toBeVisible();
 }
 
 async function passwordLogin(page: Page, login: string, password: string): Promise<void> {
-  await page.getByLabel("登录名").fill(login);
-  await page.getByLabel("密码").fill(password);
+  await page.getByTestId("login-login-name").fill(login);
+  await page.getByTestId("login-password").fill(password);
   await page.getByTestId("login-submit").click();
   await expect(page.getByText("需要第二步验证")).toBeVisible();
 }
@@ -117,20 +117,20 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await expect(primary.getByTestId("bootstrap-page")).toBeVisible();
 
   await primary.getByTestId("bootstrap-secret").fill(bootstrapSecret);
-  await primary.getByLabel("登录名").fill(bootstrapLogin);
-  await primary.getByLabel("实名显示名").fill("E2E Primary Operator");
-  await primary.getByLabel("密码").fill(primaryPassword);
+  await primary.getByTestId("bootstrap-login").fill(bootstrapLogin);
+  await primary.getByTestId("bootstrap-display-name").fill("E2E Primary Operator");
+  await primary.getByTestId("bootstrap-password").fill(primaryPassword);
   const bootstrapStartPromise = primary.waitForResponse((response) => response.url().endsWith("/api/bootstrap/start") && response.request().method() === "POST");
-  await primary.getByRole("button", { name: "开始或继续初始化" }).click();
+  await primary.getByTestId("bootstrap-start").click();
   const bootstrapStart = await json(await bootstrapStartPromise);
   const bootstrapEnrollment = bootstrapStart.totp_enrollment as Record<string, unknown>;
   const primaryTotpURI = String(bootstrapEnrollment.otpauth_uri);
   expect(primaryTotpURI.startsWith("otpauth://totp/")).toBe(true);
 
   const bootstrapTotp = totp(primaryTotpURI);
-  await primary.getByLabel("TOTP 验证码").fill(bootstrapTotp);
+  await primary.getByTestId("bootstrap-totp").fill(bootstrapTotp);
   const bootstrapCompletePromise = primary.waitForResponse((response) => response.url().endsWith("/api/bootstrap/complete"));
-  await primary.getByRole("button", { name: "确认并永久完成" }).click();
+  await primary.getByTestId("bootstrap-complete").click();
   const bootstrapCompleteResponse = await bootstrapCompletePromise;
   expect(bootstrapCompleteResponse.headers()["cache-control"]).toBe("no-store");
   await expect(primary.getByTestId("one-time-page")).toBeVisible();
@@ -159,16 +159,16 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await expect(primary.getByTestId("login-page")).toBeVisible();
 
   await passwordLogin(primary, bootstrapLogin, primaryPassword);
-  await primary.getByLabel("TOTP 验证码").fill(await freshTotp(primaryTotpURI, bootstrapTotp));
-  await primary.getByRole("button", { name: "验证并登录" }).click();
+  await primary.getByTestId("login-totp").fill(await freshTotp(primaryTotpURI, bootstrapTotp));
+  await primary.getByTestId("login-mfa-submit").click();
   await expect(primary.getByTestId("management-page")).toBeVisible();
   console.log("[e2e] TOTP login completed");
   await logout(primary);
 
   await passwordLogin(primary, bootstrapLogin, primaryPassword);
-  await primary.getByText("恢复码", { exact: true }).click();
-  await primary.getByRole("textbox", { name: "恢复码" }).fill(recoveryCodes[0]);
-  await primary.getByRole("button", { name: "验证并登录" }).click();
+  await primary.getByTestId("login-method-recovery_code").click();
+  await primary.getByTestId("recovery-code").fill(recoveryCodes[0]);
+  await primary.getByTestId("login-mfa-submit").click();
   await expect(primary.getByTestId("management-page")).toBeVisible();
   console.log("[e2e] recovery-code login completed");
 
@@ -273,25 +273,29 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   browserAssetRequests.length = 0;
   await primary.goto("/assets");
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(4);
+  expect(browserAssetRequests.some((request) => request.url.includes("/api/assets/nodes"))).toBe(false);
   console.log("[e2e] authenticated direct /assets rendered Asset Registry");
 
   browserAssetRequests.length = 0;
   await primary.goto("/assets/");
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(4);
+  expect(browserAssetRequests.some((request) => request.url.includes("/api/assets/nodes"))).toBe(false);
   console.log("[e2e] authenticated direct /assets/ rendered Asset Registry");
 
   browserAssetRequests.length = 0;
   await primary.reload();
   await expectAssetRegistry();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect.poll(() => browserAssetRequests.length).toBe(4);
+  expect(browserAssetRequests.some((request) => request.url.includes("/api/assets/nodes"))).toBe(false);
   console.log("[e2e] authenticated /assets/ reload rendered Asset Registry");
 
   await expect(primary.getByTestId("gateway-management-card").getByRole("cell", { name: "E2E Gateway" })).toBeVisible();
   await expect(primary.getByTestId("nodes-card")).toHaveCount(0);
-  await expect(primary.getByText("尚未配置当前 Provider 策略")).toBeVisible();
-  await expect.poll(() => browserAssetRequests.length).toBe(5);
+  await expect(primary.getByTestId("policy-card")).toBeVisible();
+  await expect.poll(() => browserAssetRequests.length).toBe(4);
+  expect(browserAssetRequests.some((request) => request.url.includes("/api/assets/nodes"))).toBe(false);
   const controlOrigin = new URL(baseURL!).origin;
   expect(browserAssetRequests.every((request) => request.method === "GET" && new URL(request.url).origin === controlOrigin)).toBe(true);
   expect(staticResponses.length).toBeGreaterThan(0);
@@ -307,7 +311,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   const APIHealth = await primary.request.get("/api/healthz");
   expect(APIHealth.status()).toBe(200);
   expect(await APIHealth.text()).not.toContain('<div id="root">');
-  await primary.getByRole("button", { name: "管理员控制台" }).click();
+  await primary.getByTestId("assets-management").click();
   await expect(primary.getByTestId("management-page")).toBeVisible();
   await primary.unrouteAll({ behavior: "wait" });
   console.log("[e2e] assets page stayed on same-origin read APIs and omitted Secret references");
@@ -340,10 +344,10 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   const secondaryContext = await browser.newContext({ baseURL });
   const secondary = await secondaryContext.newPage();
   await secondary.goto("/settings");
-  await secondary.getByRole("button", { name: "使用激活令牌设置新账号" }).click();
+  await secondary.getByTestId("login-activation-link").click();
   await secondary.getByTestId("activation-token").fill(activationToken);
   const activationStartPromise = secondary.waitForResponse((response) => response.url().endsWith("/api/admin-activations/complete"));
-  await secondary.getByRole("button", { name: "开始激活" }).click();
+  await secondary.getByTestId("activation-start").click();
   const activationStart = await json(await activationStartPromise);
   const secondEnrollment = activationStart.totp_enrollment as Record<string, unknown>;
   const secondTotpURI = String(secondEnrollment.otpauth_uri);
@@ -375,8 +379,8 @@ test("real administrator lifecycle survives restart and keeps one-time material 
 
   await secondary.reload();
   await expect(secondary.getByTestId("login-page")).toBeVisible();
-  await secondary.getByLabel("登录名").fill(secondLogin);
-  await secondary.getByLabel("密码").fill(secondPassword);
+  await secondary.getByTestId("login-login-name").fill(secondLogin);
+  await secondary.getByTestId("login-password").fill(secondPassword);
   const disabledLoginPromise = secondary.waitForResponse((response) => response.url().endsWith("/api/auth/login"));
   await secondary.getByTestId("login-submit").click();
   const disabledLogin = await disabledLoginPromise;

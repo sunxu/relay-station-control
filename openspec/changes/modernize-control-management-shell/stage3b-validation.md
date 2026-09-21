@@ -88,7 +88,7 @@ image ID = sha256:0d927726081869825f4ac444a3f83687e560b01c207de7e22032fb33efccac
 ## Validation
 
 ```text
-Unit/component = PASS (full suite: 44 files; focused ownership/resources: 21 tests)
+Unit/component = PASS (full suite: 45 files; 319 tests; focused ownership/resources: 19 tests)
 Typecheck = PASS
 Build = PASS
 Translation audit = PASS
@@ -119,3 +119,39 @@ locator stability, desktop layout, and Stage 3C/3D scope leakage.
 
 The existing deployment revalidation gate for bootstrap response cache policy
 was exercised by the production-like harness and passed in this candidate.
+
+## Final independent review corrective
+
+```text
+NODE_COMPONENT_OWNERSHIP = PASS
+ASSET_NODE_LOGIC = ZERO
+NODE_ASSET_MODE_SWITCH = ZERO
+ZH_CN_NODES_ENGLISH_LEAK = ZERO
+NODE_SESSION_BOUNDARY = PASS
+STALE_DETAIL_PROTECTION = PASS
+PLAYWRIGHT_INTERACTION_TESTID_POLICY = PASS
+```
+
+`AssetRegistryView` now has a physical auxiliary-only boundary and no longer
+contains Node types, hooks, lifecycle controls, probes, or a combined-surface
+mode. `NodeManagementView` owns the Node registry and all Node lifecycle,
+credential, lineage, observation, and monitoring presentation. Node and Driver
+401 focused tests cover the shared authenticated-session callback; detail,
+lifecycle mutation, explicit health, and monitoring 401 cases are also covered.
+
+The full repository-owned production-like HTTPS general harness was rerun with
+the recorded rebuilt Node artifact and passed 6/6:
+
+```text
+authentication = PASS
+gateway-management = PASS
+node-lifecycle = PASS
+problems = PASS
+topology-account-detail = PASS
+topology-navigation/recovery = PASS
+PRODUCTION_LIKE_HTTPS = PASS
+```
+
+The run verified secret initialization, Node runtime identity, TLS/HTTPS
+browser transport, same-origin Control API traffic, and Gateway/Node owning
+regressions. No backend, database, Gateway, or Relay Node source was changed.

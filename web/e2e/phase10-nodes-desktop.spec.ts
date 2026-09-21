@@ -25,5 +25,9 @@ test("renders the canonical Node workspace at the 1440 desktop contract", async 
   await expect(page.getByTestId("nodes-registry")).toBeVisible();
   await expect(page.getByTestId("nodes-page")).toContainText("节点");
   await expect(page.getByTestId("node-register")).toBeVisible();
+  const ordinaryCopy = await page.getByTestId("nodes-page").innerText();
+  for (const forbidden of ["Node", "Replace", "Retire", "Health", "Connection Test", "Monitoring", "Credential", "Keep existing", "Set new credential", "Clear credential"]) {
+    expect(ordinaryCopy).not.toContain(forbidden);
+  }
   expect(await page.locator("html").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBe(true);
 });

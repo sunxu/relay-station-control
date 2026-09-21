@@ -49,6 +49,7 @@ const stage3NodesZh = {
   formTitleRegister: "登记节点", formTitleEdit: "编辑节点", formTitleReplace: "替换节点", requiredCredential: "请输入新的凭据", credentialKeep: "保留现有凭据", credentialSet: "设置新凭据", credentialClear: "清除凭据",
   drivers: "驱动", nodes: "节点", nodeTypeLabel: "节点类型", operationLabel: "操作", healthDescription: "{{reachability}}；原因={{reason}}；延迟={{latency}}ms", monitoringDescription: "当前状态={{state}}；已关闭={{closed}}；已取消={{cancelled}}",
   emptyNodes: "当前筛选条件下没有节点", previousPage: "上一页", nextPage: "下一页", all: "全部", activated: "已启用", inactive: "未启用", configured: "已配置", notConfigured: "未配置", reachable: "可达", unreachable: "不可达",
+  details: "详情", edit: "编辑", replace: "替换", retire: "退役", retireNodeTitle: "确认退役此节点？", confirmRetire: "确认退役", status: "状态", displayName: "显示名称", newInstanceId: "新实例 ID", generated: "自动生成", operation: "操作", predecessorLabel: "前置节点", successorLabel: "后继节点", disableMonitoringTitle: "确认停用监控？", disableMonitoringDescription: "这会立即关闭当前监控，并取消已有的未来监控预约。", disableMonitoring: "停用监控", operationCompleted: "操作已完成：{{result}}", errorConflict: "节点已被其他管理员修改，请刷新后重试。", errorConfig: "节点配置无效，请检查字段后重试。", errorExpired: "认证已过期，请重新登录。", errorForbidden: "当前账号没有执行该操作的权限。", errorOperation: "节点操作未完成，请刷新后重试。", monitoring: "监控", credentialAction: "凭据操作",
 } as const;
 const stage3NodesEn = {
   readFailed: "Read failed", unavailable: "The current data is unavailable; stale data and internal errors are not shown.", retry: "Retry", cancel: "Cancel", save: "Save", validHttp: "Enter a valid http:// address",
@@ -60,6 +61,7 @@ const stage3NodesEn = {
   formTitleRegister: "Register node", formTitleEdit: "Edit node", formTitleReplace: "Replace node", requiredCredential: "Enter a new credential", credentialKeep: "Keep existing credential", credentialSet: "Set new credential", credentialClear: "Clear credential",
   drivers: "Drivers", nodes: "Nodes", nodeTypeLabel: "Node type", operationLabel: "Action", healthDescription: "{{reachability}}; reason={{reason}}; latency={{latency}}ms", monitoringDescription: "current={{state}}; closed={{closed}}; cancelled={{cancelled}}",
   emptyNodes: "No node matches the current filters", previousPage: "Previous", nextPage: "Next", all: "All", activated: "Enabled", inactive: "Disabled", configured: "Configured", notConfigured: "Not configured", reachable: "reachable", unreachable: "unreachable",
+  details: "Details", edit: "Edit", replace: "Replace", retire: "Retire", retireNodeTitle: "Retire this node?", confirmRetire: "Retire", status: "Status", displayName: "Display name", newInstanceId: "New instance ID", generated: "Generated automatically", operation: "Action", predecessorLabel: "Predecessor", successorLabel: "Successor", disableMonitoringTitle: "Disable monitoring now?", disableMonitoringDescription: "This closes current monitoring and cancels future monitoring reservations.", disableMonitoring: "Disable monitoring", operationCompleted: "Operation completed: {{result}}", errorConflict: "The node changed; refresh and try again.", errorConfig: "The node configuration is invalid.", errorExpired: "The session expired; sign in again.", errorForbidden: "You are not allowed to perform this operation.", errorOperation: "The node operation did not complete; refresh and try again.", monitoring: "Monitoring", credentialAction: "Credential action",
 } as const;
 
 const canonicalTranslation = {
@@ -96,7 +98,7 @@ const canonicalTranslation = {
     assets: "资产 / Gateway 辅助管理",
   },
   dashboard: { title: "仪表盘", description: "系统概览与主要工作入口", overview: "权威概览", control: "控制服务", gatewayAssets: "网关资产", nodeAssets: "节点资产", pollCapacity: "采集容量", status: "状态", available: "正常", version: "版本", total: "总数", active: "活跃", retired: "已退役", eligibleNodes: "符合采集条件的节点", effectiveCapacity: "有效容量", evaluatedAt: "评估时间", workEntries: "工作入口", open: "打开", retry: "重试", unavailable: "暂不可用", entries: { accounts: { title: "账号", description: "查看账号和清单" }, operations: { title: "操作", description: "查看持久任务和操作入口" }, problems: { title: "问题", description: "查看已确认问题" } }, capacityStatus: { ready: "可用", capacity_exceeded: "容量不足", disabled: "已禁用" } },
-  nodes: { title: "节点", description: "节点管理与生命周期操作", ...stage3AssetsZh, ...stage3NodesZh },
+  nodes: { title: "节点", description: "节点管理与生命周期操作", ...stage3NodesZh },
   monitoring: { title: "监控", description: "只读诊断页面基础结构" },
   settings: { title: "设置", description: "管理员设置页面基础结构" },
   management: {
@@ -305,7 +307,7 @@ export const resources = {
         assets: "Assets / Gateway auxiliary",
       },
       dashboard: { title: "Dashboard", description: "Authoritative system overview and work entries", overview: "Authoritative overview", control: "Control service", gatewayAssets: "Gateway assets", nodeAssets: "Relay Node assets", pollCapacity: "Inventory poll capacity", status: "Status", available: "Available", version: "Version", total: "Total", active: "Active", retired: "Retired", eligibleNodes: "Eligible Nodes", effectiveCapacity: "Effective capacity", evaluatedAt: "Evaluated at", workEntries: "Work entries", open: "Open", retry: "Retry", unavailable: "Unavailable", entries: { accounts: { title: "Accounts", description: "View accounts and Inventory" }, operations: { title: "Operations", description: "View durable jobs and operation entry points" }, problems: { title: "Problems", description: "View confirmed problems" } }, capacityStatus: { ready: "Ready", capacity_exceeded: "Capacity exceeded", disabled: "Disabled" } },
-      nodes: { title: "Relay Nodes", description: "Relay Node management and lifecycle operations", ...stage3AssetsEn, ...stage3NodesEn },
+      nodes: { title: "Relay Nodes", description: "Relay Node management and lifecycle operations", ...stage3NodesEn },
       monitoring: { title: "Monitoring", description: "Read-only diagnostics foundation" },
       settings: { title: "Settings", description: "Administrator settings foundation" },
       management: {

@@ -110,7 +110,7 @@ export default function LoginPage() {
             )}
             <Input.Password
               aria-label={method === "totp" ? t("auth.login.totp") : t("auth.login.recoveryCode")}
-              data-testid="login-mfa-code"
+              data-testid={method === "totp" ? "login-totp" : "recovery-code"}
               value={code}
               onChange={(event) => setCode(event.target.value)}
               autoComplete="one-time-code"
