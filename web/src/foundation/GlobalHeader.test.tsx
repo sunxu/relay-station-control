@@ -86,4 +86,19 @@ describe("GlobalHeader logout semantics", () => {
     expect(authState.clearSession).not.toHaveBeenCalled();
     expect(await screen.findByTestId("global-logout-error")).toHaveTextContent("安全凭据已变化");
   });
+
+  it("clears the session when the CSRF refresh fails", async () => {
+    authState.api.logout.mockRejectedValue(new AuthApiError(403, {
+      code: "csrf_invalid",
+      message: "stale csrf",
+      request_id: "request-csrf-refresh-failed",
+    }));
+    authState.refreshSession.mockRejectedValue(new Error("refresh failed"));
+    renderHeader();
+
+    fireEvent.click(screen.getByTestId("global-logout"));
+
+    await waitFor(() => expect(authState.clearSession).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("global-logout-error")).toHaveTextContent("安全凭据已变化");
+  });
 });

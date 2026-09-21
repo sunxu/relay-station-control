@@ -27,7 +27,7 @@ export function GlobalHeader() {
       auth.clearSession();
     } catch (cause) {
       if (cause instanceof AuthApiError && cause.detail.code === "csrf_invalid") {
-        await auth.refreshSession().catch(() => null);
+        await auth.refreshSession().catch(() => auth.clearSession());
       } else {
         handleSessionError(cause, auth.clearSession);
         if (cause instanceof AuthApiError && cause.status === 401) return;
