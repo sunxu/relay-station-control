@@ -590,6 +590,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           <Space wrap aria-label={t("assets.nodeFilter")}>
 			<Select data-testid="node-lifecycle-filter" aria-label={t("assets.nodeLifecycle")} value={lifecycle} options={[{ value: "active", label: t("assets.currentNode") }, { value: "retired", label: t("assets.retiredNode") }, { value: "all", label: t("assets.allNodes") }]} onChange={(value) => { setLifecycle(value); resetCursor(); }} style={{ minWidth: 150 }} />
             <Select
+              data-testid="node-type-filter"
               aria-label={t("assets.nodeType")}
               allowClear
               placeholder={t("assets.allNodeTypes")}
@@ -599,6 +600,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
               style={{ minWidth: 180 }}
             />
             <Select
+              data-testid="node-capability-filter"
               aria-label={t("assets.capability")}
               allowClear
               placeholder={t("assets.allCapabilities")}
@@ -611,6 +613,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
               style={{ minWidth: 280 }}
             />
             <Select
+              data-testid="node-monitoring-filter"
               aria-label={t("assets.monitoringStatus")}
               allowClear
               placeholder={t("assets.monitoringStatus")}
@@ -620,7 +623,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
               style={{ minWidth: 180 }}
             />
           </Space>
-			{lifecycle === "active" && api.registerNode && <Button type="primary" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("register")}>{t("assets.registerNode")}</Button>}
+			{lifecycle === "active" && api.registerNode && <Button data-testid="node-register" type="primary" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("register")}>{t("assets.registerNode")}</Button>}
 			</Flex>
 			{drivers.error && <Alert type="warning" showIcon message={t("assets.driverUnavailable")} />}
           <ResourceFrame loading={nodes.isPending} error={nodes.error} retry={() => void nodes.refetch()} labels={labels}>

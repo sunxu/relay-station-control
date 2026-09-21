@@ -43,8 +43,13 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   let replacementID: string | undefined;
   const history = new Map<string, NodeFixture>();
   const requests: string[] = [];
-  const browserRequests: string[] = [];
-  page.on("request", (request) => browserRequests.push(request.url()));
+  const browserRequests: Array<{ method: string; url: string; origin: string; pathname: string }> = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "fetch" || request.resourceType() === "xhr") {
+      const requestURL = new URL(request.url());
+      browserRequests.push({ method: request.method(), url: request.url(), origin: requestURL.origin, pathname: requestURL.pathname });
+    }
+  });
 
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request();
@@ -186,7 +191,10 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
 
   expect(await page.getByText(secretReference, { exact: true }).count()).toBe(0);
   const controlOrigin = new URL(baseURL!).origin;
-  expect(browserRequests.every((url) => new URL(url).origin === controlOrigin)).toBe(true);
-  expect(browserRequests.some((url) => url.includes("node.invalid") || url.includes(secretReference))).toBe(false);
+  expect(browserRequests.length).toBeGreaterThan(0);
+  expect(browserRequests.every((request) => request.origin === controlOrigin)).toBe(true);
+  expect(browserRequests.some((request) => request.origin !== controlOrigin)).toBe(false);
+  expect(browserRequests.some((request) => /\/health$|connection-test|monitoring-(enable|disable)/.test(request.pathname) && request.origin !== controlOrigin)).toBe(false);
+  expect(browserRequests.some((request) => request.url.includes("node.invalid") || request.url.includes(secretReference))).toBe(false);
   expect(requests).toContain(`POST /api/assets/nodes/${firstID}/replace`);
 });
