@@ -132,13 +132,13 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
     throw new Error(`unexpected API request: ${request.method()} ${url.pathname}`);
   });
 
-  await page.goto("/assets");
+  await page.goto("/nodes");
   const card = page.getByTestId("nodes-card");
   await expect(card.getByText("Primary Node")).toBeVisible();
   expect(requests.some((request) => /\/api\/assets\/nodes\/[^/]+\/(health|connection-test|monitoring-(enable|disable))$/.test(request))).toBe(false);
 
   await card.getByTestId(`node-details-${firstID}`).click();
-  const activeDetail = page.getByLabel("Node 详情");
+  const activeDetail = page.getByRole("dialog");
   await expect(activeDetail.getByTestId("node-management-operations")).toBeVisible();
   await expect(activeDetail.getByTestId("node-health-button")).toBeVisible();
   await expect(activeDetail.getByTestId("node-connection-test-button")).toBeVisible();
@@ -151,7 +151,6 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   await activeDetail.getByTestId("node-monitoring-enable-button").click();
   await expect(activeDetail.getByTestId("node-monitoring-result")).toContainText("enabled");
   await activeDetail.getByTestId("node-monitoring-disable-button").click();
-  await expect(page.getByText("这会立即关闭当前监控，并取消已有的未来监控预约。")).toBeVisible();
   await page.getByTestId("node-monitoring-disable-confirm").click();
   await expect(activeDetail.getByTestId("node-monitoring-result")).toContainText("disabled");
   await page.getByTestId("node-detail-close").click();
@@ -176,13 +175,14 @@ test("authenticated administrator uses Node lifecycle and explicit Stage 3 contr
   await lifecycleFilter.press("Enter");
   await expect(card.getByText("Edited Node")).toBeVisible();
   await card.getByTestId(`node-details-${firstID}`).click();
-  const detailDialog = page.getByLabel("Node 详情");
+  const detailDialog = page.getByRole("dialog");
   await expect(detailDialog.getByText(replacementID!, { exact: true })).toBeVisible();
   await expect(detailDialog.getByText(firstID, { exact: true })).toBeVisible();
-  await expect(card.getByRole("button", { name: "Retire" })).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Health" })).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Connection Test" })).toHaveCount(0);
-  await expect(card.getByRole("button", { name: /Monitoring/ })).toHaveCount(0);
+  await expect(card.getByTestId(`node-retire-${firstID}`)).toHaveCount(0);
+  await expect(detailDialog.getByTestId("node-health-button")).toHaveCount(0);
+  await expect(detailDialog.getByTestId("node-connection-test-button")).toHaveCount(0);
+  await expect(detailDialog.getByTestId("node-monitoring-enable-button")).toHaveCount(0);
+  await expect(detailDialog.getByTestId("node-monitoring-disable-button")).toHaveCount(0);
 
   expect(await page.getByText(secretReference, { exact: true }).count()).toBe(0);
   const controlOrigin = new URL(baseURL!).origin;

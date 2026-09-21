@@ -104,6 +104,27 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("asset registry read-only view", () => {
+	it("supports auxiliary-only ownership without mounting the Node registry", async () => {
+		const api = makeApi();
+		render(<AssetRegistryView api={api} mode="auxiliary" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+
+		expect(await screen.findByTestId("gateway-card")).toBeInTheDocument();
+		expect(screen.getByTestId("drivers-card")).toBeInTheDocument();
+		expect(screen.queryByTestId("nodes-card")).not.toBeInTheDocument();
+		expect(api.nodes).not.toHaveBeenCalled();
+	});
+
+	it("supports Node-only ownership without mounting auxiliary cards", async () => {
+		const api = makeApi();
+		render(<AssetRegistryView api={api} mode="nodes" onUnauthorized={vi.fn()} />, { wrapper: Wrapper });
+
+		expect(await screen.findByTestId("nodes-card")).toBeInTheDocument();
+		expect(screen.getByTestId("nodes-registry")).toBeInTheDocument();
+		expect(screen.queryByTestId("gateway-card")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("environment-card")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("policy-card")).not.toBeInTheDocument();
+	});
+
 	it("builds explicit credential tri-state without truthiness coercion", () => {
 		expect(buildCredentialPatch("management_credential", "keep", "stale-secret")).toEqual({});
 		expect(buildCredentialPatch("management_credential", "set", "new-secret")).toEqual({ management_credential: "new-secret" });

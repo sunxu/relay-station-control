@@ -273,9 +273,12 @@ function capabilities(values: string[]) {
   return values.length > 0 ? <Space size={[0, 4]} wrap>{values.map((value) => <Tag key={value}>{value}</Tag>)}</Space> : "—";
 }
 
-export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthorized }: { api: AssetApi; gatewayApi?: GatewayAdminApi; csrfToken?: string; onUnauthorized(): void }) {
-	const { t } = useTranslation();
+export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthorized, mode = "all" }: { api: AssetApi; gatewayApi?: GatewayAdminApi; csrfToken?: string; onUnauthorized(): void; mode?: "all" | "auxiliary" | "nodes" }) {
+	const { t: translate } = useTranslation();
 	const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
+	const showNodes = mode !== "auxiliary";
+	const showAuxiliary = mode !== "nodes";
+	const t = (key: string, options?: Record<string, unknown>): string => translate(mode === "nodes" && key.startsWith("assets.") ? `nodes.${key.slice("assets.".length)}` : key, options as never) as unknown as string;
 	const labels = { readFailed: t("assets.readFailed"), unavailable: t("assets.unavailable"), retry: t("assets.retry") };
 	const [lifecycle, setLifecycle] = useState<"active" | "retired" | "all">("active");
   const [nodeType, setNodeType] = useState<string>();
@@ -306,16 +309,16 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
     limit: pageSize,
   }), [lifecycle, nodeType, capability, monitoringActive, cursor]);
 
-  const environment = useEnvironmentAsset(api);
-  const gateway = useGatewayAsset(api);
-  const drivers = useDriverAssets(api);
+  const environment = useEnvironmentAsset(api, showAuxiliary);
+  const gateway = useGatewayAsset(api, showAuxiliary);
+  const drivers = useDriverAssets(api, showAuxiliary || showNodes);
   const activeDrivers = useMemo(() => selectableDrivers(drivers.data), [drivers.data]);
   const nodeTypeOptions = useMemo(() => [...new Set(activeDrivers.map((driver) => driver.nodeType))].map((value) => ({ value, label: value })), [activeDrivers]);
   const contractOptions = useMemo(() => activeDrivers.filter((driver) => driver.nodeType === nodeTypeValue).map((driver) => ({ value: driver.driverContractVersion, label: driver.driverContractVersion })), [activeDrivers, nodeTypeValue]);
   const selectedDriver = activeDrivers.find((driver) => driver.nodeType === nodeTypeValue && driver.driverContractVersion === driverContractValue);
   const nodeRegistrationDisabled = drivers.isPending || Boolean(drivers.error) || activeDrivers.length === 0;
-  const policy = useCurrentProviderPolicy(api, policyScope);
-  const nodes = useNodeAssets(api, filters);
+  const policy = useCurrentProviderPolicy(api, policyScope, showAuxiliary);
+  const nodes = useNodeAssets(api, filters, showNodes);
   const errors = [environment.error, gateway.error, drivers.error, policy.error, nodes.error];
 
   useEffect(() => {
@@ -324,12 +327,12 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 
   useEffect(() => {
     const firstDriver = drivers.data?.[0];
-    if (policyScope || !firstDriver) return;
+    if (!showAuxiliary || policyScope || !firstDriver) return;
     setPolicyScope({
       nodeType: firstDriver.nodeType,
       driverContractVersion: firstDriver.driverContractVersion,
     });
-  }, [drivers.data, policyScope]);
+  }, [drivers.data, policyScope, showAuxiliary]);
 
 	const resetCursor = () => setCursorHistory([undefined]);
 	const openNodeForm = (mode: "register" | "edit" | "replace", node?: NodeAsset) => {
@@ -491,18 +494,19 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 		{ title: t("assets.lifecycle"), dataIndex: "lifecycleStatus", key: "lifecycleStatus", render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{value === "active" ? t("assets.currentNode") : t("assets.retiredNode")}</Tag> },
 		{ title: t("assets.revision"), dataIndex: "revision", key: "revision" },
 		{ title: t("assets.operationLabel"), key: "actions", render: (_: unknown, node: NodeAsset) => <Space wrap>
-			<Button data-testid={`node-details-${node.instanceId}`} size="small" onClick={() => void showNodeDetail(node)}>{t("assets.details")}</Button>
+				<Button data-testid={`node-details-${node.instanceId}`} size="small" onClick={() => void showNodeDetail(node)}>{t("assets.details")}</Button>
 			{node.lifecycleStatus === "active" && <>
 				<Button data-testid={`node-edit-${node.instanceId}`} size="small" onClick={() => openNodeForm("edit", node)}>{t("assets.edit")}</Button>
 				<Button data-testid={`node-replace-${node.instanceId}`} size="small" disabled={nodeRegistrationDisabled} onClick={() => openNodeForm("replace", node)}>{t("assets.replace")}</Button>
-				<Popconfirm title={t("assets.retireNodeTitle")} onConfirm={() => void retireNode(node)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button size="small" danger disabled={nodeBusy}>{t("assets.retire")}</Button></Popconfirm>
+				<Popconfirm title={t("assets.retireNodeTitle")} onConfirm={() => void retireNode(node)} okText={t("assets.confirmRetire")} cancelText={t("assets.cancel")}><Button data-testid={`node-retire-${node.instanceId}`} size="small" danger disabled={nodeBusy}>{t("assets.retire")}</Button></Popconfirm>
 			</>}
 		</Space> },
   ], [api, csrfToken, locale, nodeBusy, t]);
 
   return (
     <Flex vertical gap={20} data-testid="asset-registry-view">
-      {gatewayApi && <GatewayManagement api={gatewayApi} csrfToken={csrfToken} onUnauthorized={onUnauthorized} />}
+      {showAuxiliary && gatewayApi && <GatewayManagement api={gatewayApi} csrfToken={csrfToken} onUnauthorized={onUnauthorized} />}
+      {showAuxiliary && <>
       <div className="asset-card-grid">
         <Card title={t("assets.environment")} data-testid="environment-card">
           <ResourceFrame loading={environment.isPending} error={environment.error} retry={() => void environment.refetch()} labels={labels}>
@@ -577,8 +581,9 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
           ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("assets.emptyDriver")} />}
         </ResourceFrame>
       </Card>
+      </>}
 
-      <Card title={t("assets.nodes")} data-testid="nodes-card">
+      {showNodes && <div data-testid="nodes-registry"><Card title={t("assets.nodes")} data-testid="nodes-card">
         <Flex vertical gap={16}>
 			{nodeMessage && <Alert type="warning" showIcon message={nodeMessage} closable onClose={() => setNodeMessage(undefined)} />}
 			<Flex justify="space-between" align="center" wrap gap={8}>
@@ -670,7 +675,7 @@ export function AssetRegistryView({ api, gatewayApi, csrfToken = "", onUnauthori
 			</Flex>}
 			</>}
 		</Modal>
-      </Card>
+      </Card></div>}
     </Flex>
   );
 }

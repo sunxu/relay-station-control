@@ -18,7 +18,7 @@ export default function AssetsPage() {
       description={t("assets.description")}
       actions={<Button onClick={() => auth.navigate("management")}>{t("assets.management")}</Button>}
     >
-      <AssetRegistryView api={generatedAssetApi} gatewayApi={generatedGatewayAdminApi} csrfToken={auth.session?.csrf_token ?? ""} onUnauthorized={auth.clearSession} />
+      <AssetRegistryView api={generatedAssetApi} gatewayApi={generatedGatewayAdminApi} csrfToken={auth.session?.csrf_token ?? ""} onUnauthorized={auth.clearSession} mode="auxiliary" />
     </PageShell>
   );
 }
