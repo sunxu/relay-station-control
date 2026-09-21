@@ -58,7 +58,7 @@ function toAccountRow(item: TopologyApi["accountList"] extends (...args: never[]
   };
 }
 
-export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanceId, providers, providerError, onUnauthorized, copyOverrides, operationCopyOverrides, queryTestId = "accounts-query" }: {
+export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanceId, providers, providerError, onUnauthorized, surface = "accounts", queryTestId = "accounts-query" }: {
   api: TopologyApi;
   accountOperationsApi?: AccountOperationsApi;
   csrfToken: string;
@@ -66,12 +66,11 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
   providers: TopologyProviderState[];
   providerError: boolean;
   onUnauthorized: () => void;
-  copyOverrides?: Partial<Record<keyof typeof resources["zh-CN"]["translation"]["accounts"], string>>;
-  operationCopyOverrides?: Partial<Record<keyof typeof resources["zh-CN"]["translation"]["operations"], string>>;
+  surface?: "accounts" | "topology";
   queryTestId?: string;
 }) {
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
-  const copy = { ...resources[locale].translation.accounts, ...copyOverrides };
+  const copy = surface === "topology" ? { ...resources[locale].translation.topology, readingAccounts: resources[locale].translation.topology.readingQuality } : resources[locale].translation.accounts;
   const [qualityWindow, setQualityWindow] = useState<AccountQualityWindow>("15m");
   const [qualityProvider, setQualityProvider] = useState<string>();
   const [qualityFilter, setQualityFilter] = useState<AccountQualityFilter>();
@@ -141,7 +140,7 @@ export function AccountWorkspace({ api, accountOperationsApi, csrfToken, instanc
 
   return <Flex vertical gap={16} data-testid="accounts-workspace">
     <Card title={copy.accountQuality} role="region" aria-label={copy.accountQuality} data-testid="accounts-list-card">
-      {accountOperationsApi && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={onUnauthorized} copyOverrides={operationCopyOverrides} /></Flex>}
+      {accountOperationsApi && <Flex justify="end" style={{ marginBottom: 12 }}><UploadNewAccountAction api={accountOperationsApi} csrf={csrfToken} nodeInstanceId={instanceId} onUnauthorized={onUnauthorized} surface={surface} /></Flex>}
       <Flex gap={8} wrap>
         <Input data-testid="accounts-provider-filter" aria-label={copy.providerExact} placeholder={copy.providerPlaceholder} value={qualityProvider ?? ""} disabled={accountQuery.isPending} maxLength={64} onChange={(event) => updateFilter(setQualityProvider, event.target.value || undefined)} style={{ width: 190 }} />
         <Select data-testid="accounts-lifecycle-filter" allowClear aria-label={copy.lifecycle} placeholder={copy.allLifecycle} value={qualityLifecycle} disabled={accountQuery.isPending} options={accountInventoryLifecycles.map((value) => ({ value, label: value }))} onChange={(value) => updateFilter(setQualityLifecycle, value)} style={{ width: 180 }} />

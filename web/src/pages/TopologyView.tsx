@@ -131,7 +131,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
         <Button data-testid="node-pagination-next" disabled={!nodes.data?.nextCursor || nodes.isFetching || nodes.isError} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>{copy.nodeNextPage}</Button>
       </Flex>
     </Card>
-    {inventoryApi && <AccountInventoryCapacity api={inventoryApi} csrfToken={csrfToken} onUnauthorized={expireSession} />}
+    {inventoryApi && <AccountInventoryCapacity api={inventoryApi} csrfToken={csrfToken} onUnauthorized={expireSession} surface="topology" />}
     {!instanceId && <Empty description={copy.noInstance} />}
     {instanceId && <>
       <Card className="topology-card" title={copy.inventoryEvidence}>
@@ -143,40 +143,7 @@ export function TopologyView({ api, assetApi, inventoryApi, accountOperationsApi
           <Text>{copy.monitoring}：{node ? node.monitoringActive ? "active" : "inactive" : copy.unknown}</Text>
         </Flex>
       </Card>
-      <AccountWorkspace key={instanceId} api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} queryTestId="account-query" copyOverrides={{
-        accountQuality: copy.accountQuality,
-        providerExact: copy.providerExact,
-        providerPlaceholder: copy.providerPlaceholder,
-        lifecycle: copy.lifecycle,
-        allLifecycle: copy.allLifecycle,
-        basicStatus: copy.basicStatus,
-        allBasicStatus: copy.allBasicStatus,
-        emailExact: copy.emailExact,
-        emailPlaceholder: copy.emailPlaceholder,
-        qualityWindow: copy.qualityWindow,
-        recent15m: copy.recent15m,
-        recent1h: copy.recent1h,
-        quality: copy.quality,
-        allQuality: copy.allQuality,
-        good: copy.good,
-        degraded: copy.degraded,
-        bad: copy.bad,
-        unknown: copy.unknown,
-        perPage: copy.perPage,
-        pageSuffix: copy.pageSuffix,
-        query: copy.query,
-        readingAccounts: copy.readingQuality,
-        readUnavailable: copy.readUnavailable,
-        unavailableAccountList: copy.unavailableAccountList,
-        invalidAccountFilter: copy.invalidAccountFilter,
-        forbiddenAccountList: copy.forbiddenAccountList,
-        selectedNodeNotFound: "所选 Node 不存在",
-        unsupportedAccountList: copy.unsupportedAccountList,
-        noAccounts: copy.noAccounts,
-        previousAccounts: copy.previousAccounts,
-        nextAccounts: copy.nextAccounts,
-        retry: copy.retry,
-      }} />
+      <AccountWorkspace key={instanceId} api={api} accountOperationsApi={accountOperationsApi} csrfToken={csrfToken} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} queryTestId="account-query" surface="topology" />
       <Card className="topology-card" title={copy.providerSnapshot} extra={<Button data-testid="topology-refresh-provider" onClick={() => void providers.refetch()} loading={providers.isFetching}>{copy.refreshProvider}</Button>}>
         {providers.isPending && <Spin />}
         {providers.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void providers.refetch()} />}

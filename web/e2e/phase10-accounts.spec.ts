@@ -11,7 +11,7 @@ async function installAccountsFixture(page: Page) {
   const requests: CapturedRequest[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if ((request.resourceType() === "fetch" || request.resourceType() === "xhr") && url.pathname.startsWith("/api/")) requests.push({ method: request.method(), url: request.url(), origin: url.origin, pathname: url.pathname });
+    if (request.resourceType() === "fetch" || request.resourceType() === "xhr") requests.push({ method: request.method(), url: request.url(), origin: url.origin, pathname: url.pathname });
   });
   await page.route("**/api/bootstrap/status", (route) => route.fulfill({ json: { status: "completed" } }));
   await page.route("**/api/auth/session", (route) => route.fulfill({ json: session }));

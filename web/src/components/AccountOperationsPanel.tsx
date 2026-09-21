@@ -8,7 +8,6 @@ import { AccountOperationApiError, accountOperationErrorMessage } from "../api/a
 import { formatDateTime } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
-import type { TranslationResource } from "../foundation/resources";
 
 const maxCredentialBytes = 1024 * 1024;
 function statePresentation(operation: AccountOperationProjection, t: (key: "operations.applied" | "operations.noop" | "operations.unknown" | "operations.failed") => string) {
@@ -131,11 +130,12 @@ export function AccountOperationsPanel({ api, csrf, nodeInstanceId, accountKey, 
   </Flex>;
 }
 
-export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthorized, copyOverrides }: { api: AccountOperationsApi; csrf: string; nodeInstanceId: string; onUnauthorized?: () => void; copyOverrides?: Partial<TranslationResource["operations"]> }) {
+export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthorized, surface = "topology" }: { api: AccountOperationsApi; csrf: string; nodeInstanceId: string; onUnauthorized?: () => void; surface?: "accounts" | "topology" }) {
   const { t: translate } = useTranslation();
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
-  const operationCopy = { ...resources[locale].translation.operations, ...copyOverrides };
-  const t = (key: string, options?: Record<string, unknown>) => { const leaf = key.slice("operations.".length) as keyof typeof operationCopy; const fallback = typeof operationCopy[leaf] === "string" ? operationCopy[leaf].replace(/{{(\w+)}}/g, (_, name: string) => String(options?.[name] ?? `{{${name}}}`)) : fallbackOperationCopy(locale, key, options); const value = translate(key, { ...options, defaultValue: fallback }); return value === key ? fallback : value; };
+  const operationCopy = resources[locale].translation.operations;
+  const accountOperationCopy = surface === "accounts" ? { ...operationCopy, uploadAccount: operationCopy.accountsUploadAccount, uploadDescription: operationCopy.accountsUploadDescription, uploadProvider: operationCopy.accountsUploadProvider, uploadEmail: operationCopy.accountsUploadEmail } : operationCopy;
+  const t = (key: string, options?: Record<string, unknown>) => { const leaf = key.slice("operations.".length) as keyof typeof accountOperationCopy; const fallback = typeof accountOperationCopy[leaf] === "string" ? accountOperationCopy[leaf].replace(/{{(\w+)}}/g, (_, name: string) => String(options?.[name] ?? `{{${name}}}`)) : fallbackOperationCopy(locale, key, options); const value = translate(key, { ...options, defaultValue: fallback }); return value === key ? fallback : value; };
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);

@@ -144,3 +144,34 @@ change Control HTTP behavior; fixing that backend contract is outside the
 Stage 3A frontend scope. Existing accepted production evidence above remains
 unchanged; this run is recorded as a revalidation environment blocker rather
 than a new PASS claim.
+
+## Final closeout corrective
+
+The Accounts Browser transport capture now records every fetch/xhr request,
+including non-`/api/` requests, with method, full URL, origin, and pathname.
+The owning proof passed with every fetch/xhr on the Control page origin;
+direct Node calls, direct Gateway calls, health probes, and connection tests
+were zero.
+
+Accounts canonical copy now comes from stable `accounts.*` and
+`operations.accounts*` resource keys. Component-level translated copy
+override props were removed; the legacy Topology surface keeps its existing
+wording through an explicit surface selection.
+
+```text
+FULL_ORIGIN_TRANSPORT_CAPTURE = PASS
+CONTROL_ORIGIN_ONLY_FETCH_XHR = PASS
+DIRECT_NODE_BROWSER_CALLS = ZERO
+DIRECT_GATEWAY_BROWSER_CALLS = ZERO
+AUTOMATIC_PROBES = ZERO
+LOCAL_ACCOUNTS_I18N_OVERRIDE_PLUMBING = ZERO
+ACCOUNTS_HARDCODED_ORDINARY_COPY = ZERO
+RESOURCE_PARITY = PASS
+```
+
+The focused Accounts, Dashboard, Foundation, and representative-locale
+Browser proof passed 15/15. The existing authentication owning Browser test
+requires its externally provisioned `CONTROL_E2E_BOOTSTRAP_SECRET_FILE`; it
+was not run with an invented or repository-stored secret. The production-like
+revalidation remains blocked by the pre-existing
+`bootstrap status lacks Cache-Control: no-store` backend gate.

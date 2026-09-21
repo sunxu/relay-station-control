@@ -25,30 +25,6 @@ export default function AccountsPage() {
   const cache = useQueryClient();
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
   const copy = resources[locale].translation.accounts;
-  const topologyCopy = resources[locale].translation.topology;
-  const nodeCopy = locale === "zh-CN" ? {
-    ...topologyCopy,
-    node: "节点",
-    selectNode: "选择节点",
-    nodeListUnavailable: "节点清单读取不可用",
-    nodeNotFound: "节点不存在",
-    empty: "当前没有登记节点",
-    nodeFirstPage: "节点首页",
-    nodeNextPage: "下一页节点",
-  } : topologyCopy;
-  const accountCopyOverrides = locale === "zh-CN" ? {
-    noInstance: "请选择节点查看账号",
-    selectedNodeNotFound: "所选节点不存在",
-    unsupportedAccountList: "所选节点不支持账号清单查询。",
-    eligibleNodes: "符合采集条件的节点",
-    capacityExceededDescription: "请调整采集并发，或通过监控管理流程减少监控节点；完成后刷新容量诊断。已有账号证据保留。",
-  } : undefined;
-  const operationCopyOverrides = locale === "zh-CN" ? {
-    uploadAccount: "上传新账号",
-    uploadDescription: "无需已有采集账号。服务端会根据逻辑身份生成并验证远端目标。",
-    uploadProvider: "上传新 Provider",
-    uploadEmail: "上传新邮箱",
-  } : undefined;
   const [instanceId, setInstanceId] = useState(initialInstanceId);
   const [nodeCursor, setNodeCursor] = useState<string>();
   const nodes = useNodeAssets(generatedAssetApi, { limit: 200, cursor: nodeCursor });
@@ -90,19 +66,19 @@ export default function AccountsPage() {
   if (!auth.session) return null;
   return <PageShell className="management-page" testId="accounts-page" title={copy.title} description={copy.description}>
     <Flex vertical gap={16}>
-      <Card title={nodeCopy.node} data-testid="accounts-node-context">
+      <Card title={copy.node} data-testid="accounts-node-context">
         {nodes.isPending && <Flex justify="center"><Spin /></Flex>}
-        {nodes.error && <Alert type="error" title={nodeCopy.nodeListUnavailable} action={<Button data-testid="accounts-node-retry" onClick={() => void nodes.refetch()}>{nodeCopy.retry}</Button>} />}
-        <Select data-testid="accounts-node-selector" aria-label={nodeCopy.selectNode} placeholder={nodeCopy.selectNode} value={instanceId} onChange={selectNode} options={nodeOptions} style={{ width: "100%", maxWidth: 620 }} />
-        {!nodes.error && nodes.data?.items.length === 0 && <div data-testid="accounts-node-empty"><Alert type="info" message={nodeCopy.empty} /></div>}
+        {nodes.error && <Alert type="error" title={copy.nodeListUnavailable} action={<Button data-testid="accounts-node-retry" onClick={() => void nodes.refetch()}>{copy.retry}</Button>} />}
+        <Select data-testid="accounts-node-selector" aria-label={copy.selectNode} placeholder={copy.selectNode} value={instanceId} onChange={selectNode} options={nodeOptions} style={{ width: "100%", maxWidth: 620 }} />
+        {!nodes.error && nodes.data?.items.length === 0 && <div data-testid="accounts-node-empty"><Alert type="info" message={copy.empty} /></div>}
         <Flex justify="end" gap={8} style={{ marginTop: 8 }}>
-          <Button data-testid="accounts-node-first" disabled={!nodeCursor} onClick={() => setNodeCursor(undefined)}>{nodeCopy.nodeFirstPage}</Button>
-          <Button data-testid="accounts-node-next" disabled={!nodes.data?.nextCursor || nodes.isFetching} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>{nodeCopy.nodeNextPage}</Button>
+          <Button data-testid="accounts-node-first" disabled={!nodeCursor} onClick={() => setNodeCursor(undefined)}>{copy.nodeFirstPage}</Button>
+          <Button data-testid="accounts-node-next" disabled={!nodes.data?.nextCursor || nodes.isFetching} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>{copy.nodeNextPage}</Button>
         </Flex>
-        {selectedNode.error && (selectedNode.error as AssetApiError).status === 404 && <Alert type="warning" message={nodeCopy.nodeNotFound} />}
+        {selectedNode.error && (selectedNode.error as AssetApiError).status === 404 && <Alert type="warning" message={copy.selectedNodeNotFound} />}
       </Card>
-      <AccountInventoryCapacity api={generatedAccountInventoryApi} csrfToken={auth.session.csrf_token} onUnauthorized={expireSession} copyOverrides={accountCopyOverrides} />
-      <AccountWorkspace key={instanceId ?? "none"} api={generatedTopologyApi} accountOperationsApi={generatedAccountOperationsApi} csrfToken={auth.session.csrf_token} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} copyOverrides={accountCopyOverrides} operationCopyOverrides={operationCopyOverrides} />
+      <AccountInventoryCapacity api={generatedAccountInventoryApi} csrfToken={auth.session.csrf_token} onUnauthorized={expireSession} surface="accounts" />
+      <AccountWorkspace key={instanceId ?? "none"} api={generatedTopologyApi} accountOperationsApi={generatedAccountOperationsApi} csrfToken={auth.session.csrf_token} instanceId={instanceId} providers={providers.data?.providers ?? []} providerError={Boolean(providers.error)} onUnauthorized={expireSession} surface="accounts" />
     </Flex>
   </PageShell>;
 }
