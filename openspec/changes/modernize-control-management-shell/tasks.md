@@ -97,15 +97,18 @@ Stage 3C = READY FOR AUTHORIZATION
 
 ```text
 Stage 3C = COMPLETE / PASS
-Stage 3D = READY FOR AUTHORIZATION
+Stage 3D = COMPLETE / PASS
 ```
 
 ## 6. Stage 3D — Monitoring
 
-- [ ] 3D.1 建立 `/monitoring` read-only cross-domain diagnostic view。
-- [ ] 3D.2 组合已有 health/context/inventory/quality/capacity/problems/evidence，只读跳转。
-- [ ] 3D.3 Browser transport proof：Monitoring 不发送业务 mutation。
-- [ ] 3D.4 focused proof + commit。
+- [x] 3D.1 建立 `/monitoring` read-only cross-domain diagnostic view。
+- [x] 3D.2 组合已有 health/context/inventory/quality/capacity/problems/evidence，只读跳转。
+- [x] 3D.3 Browser transport proof：Monitoring 不发送业务 mutation。
+- [x] 3D.4 focused proof + commit。
+
+Stage 3D = COMPLETE / PASS
+Stage 3E = READY FOR AUTHORIZATION
 
 ## 7. Stage 3E — Problems
 
