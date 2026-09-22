@@ -29,7 +29,7 @@ export function AccountInventoryCapacity({ api, csrfToken, onUnauthorized, surfa
   return <Card title={copy.capacityTitle} data-testid="account-inventory-capacity">
     <Flex justify="space-between" align="center" gap={12} wrap>
       <Text type="secondary">{copy.capacityDescription}</Text>
-      <Button data-testid="account-inventory-capacity-refresh" onClick={() => capacity.mutate()} loading={capacity.isPending}>{copy.refreshCapacity}</Button>
+      <Button data-testid={surface === "monitoring" ? "monitoring-capacity-refresh" : "account-inventory-capacity-refresh"} onClick={() => capacity.mutate()} loading={capacity.isPending}>{copy.refreshCapacity}</Button>
     </Flex>
     {capacity.isPending && <Flex role="status" aria-label={copy.readingCapacity} justify="center" style={{ marginTop: 12 }}><Spin /></Flex>}
     {capacity.error && <Alert style={{ marginTop: 12 }} type="error" showIcon message={copy.capacityUnavailable} />}

@@ -28,7 +28,7 @@ function Evidence({ api, occurrenceId, onUnauthorized, copy }: { api: TopologyAp
   const query = useTopologyEvidence(api, occurrenceId, cursor);
   useEffect(() => { if (unauthorized(query.error)) onUnauthorized(); }, [query.error, onUnauthorized]);
   if (query.isPending) return <Spin size="small" />;
-  if (query.error) return <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void query.refetch()} />;
+  if (query.error) return <ReadError message={copy.readUnavailable} retryLabel={copy.retry} testId="monitoring-retry-evidence" retry={() => void query.refetch()} />;
   return <Flex vertical gap={8}>
     <Text>{copy.evidenceNote}</Text>
     <Table className="topology-table" size="small" scroll={{ x: 1050 }} pagination={false} rowKey="observation_id" dataSource={query.data.items} columns={[
@@ -114,18 +114,18 @@ export function MonitoringView({ api, assetApi, inventoryApi, initialInstanceId,
     dataSource={items} columns={occurrenceColumns}
     expandable={{
       expandedRowRender: (row) => <Evidence api={api} occurrenceId={row.occurrence_id} onUnauthorized={expireSession} copy={copy} />,
-      expandIcon: ({ expanded, onExpand, record }) => <Button type="text" data-testid={`topology-evidence-expand-${record.occurrence_id}`} onClick={(event) => onExpand(record, event)}>{expanded ? "−" : "+"}</Button>,
+      expandIcon: ({ expanded, onExpand, record }) => <Button type="text" data-testid={`monitoring-evidence-expand-${record.occurrence_id}`} onClick={(event) => onExpand(record, event)}>{expanded ? "−" : "+"}</Button>,
     }}
     locale={{ emptyText: copy.emptyOccurrence }}
   />;
   return <Flex vertical gap={16} data-testid="monitoring-view" className="monitoring-view" style={{ minWidth: 0 }}>
     <Card className="topology-card" title={copy.node}>
       {nodes.isPending && <Spin />}
-      {nodes.error && <ReadError message={copy.nodeListUnavailable} retryLabel={copy.retry} retry={() => void nodes.refetch()} />}
+      {nodes.error && <ReadError message={copy.nodeListUnavailable} retryLabel={copy.retry} testId="monitoring-retry-node-list" retry={() => void nodes.refetch()} />}
       <Select data-testid="monitoring-node-selector" aria-label={copy.relayNode} placeholder={copy.selectNode} value={instanceId} onChange={select} options={nodeOptions} optionRender={(option) => <span data-testid={`monitoring-node-option-${option.value}`}>{option.label}</span>} style={{ width: "100%", maxWidth: 560 }} />
       {!nodes.error && nodes.data?.items.length === 0 && <Empty description={copy.empty} />}
       <Flex justify="end" gap={8} style={{ marginTop: 8 }}>
-        <Button disabled={!nodeCursor} onClick={() => setNodeCursor(undefined)}>{copy.nodeFirstPage}</Button>
+        <Button data-testid="monitoring-node-first" disabled={!nodeCursor} onClick={() => setNodeCursor(undefined)}>{copy.nodeFirstPage}</Button>
         <Button data-testid="monitoring-node-next" disabled={!nodes.data?.nextCursor || nodes.isFetching || nodes.isError} onClick={() => setNodeCursor(nodes.data?.nextCursor ?? undefined)}>{copy.nodeNextPage}</Button>
       </Flex>
     </Card>
@@ -142,7 +142,7 @@ export function MonitoringView({ api, assetApi, inventoryApi, initialInstanceId,
     {instanceId && <>
       <Card className="topology-card" title={copy.inventoryEvidence}>
         {selected.isPending && <Spin />}
-        {selected.error && <ReadError message={selected.error instanceof AssetApiError && selected.error.status === 404 ? copy.nodeNotFound : copy.nodeReadUnavailable} retryLabel={copy.retry} retry={() => void selected.refetch()} />}
+        {selected.error && <ReadError message={selected.error instanceof AssetApiError && selected.error.status === 404 ? copy.nodeNotFound : copy.nodeReadUnavailable} retryLabel={copy.retry} testId="monitoring-retry-node" retry={() => void selected.refetch()} />}
         <Flex vertical>
           <Text>{copy.node}：{node?.displayName ?? instanceId}</Text>
           <Text style={{ overflowWrap: "anywhere" }}>{copy.instanceId}：{instanceId}</Text>
@@ -151,7 +151,7 @@ export function MonitoringView({ api, assetApi, inventoryApi, initialInstanceId,
       </Card>
       <Card className="topology-card" title={copy.providerSnapshot} extra={<Button data-testid="monitoring-provider-refresh" onClick={() => void providers.refetch()} loading={providers.isFetching}>{copy.refreshProvider}</Button>}>
         {providers.isPending && <Spin />}
-        {providers.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void providers.refetch()} />}
+        {providers.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} testId="monitoring-retry-provider" retry={() => void providers.refetch()} />}
         {providers.data && !providers.error && <>
           <Text type="secondary">{copy.observedAt}：{formatDateTime(providers.data.observed_at, locale)}</Text>
           <Table className="topology-table" rowKey="provider" size="small" scroll={{ x: 1100 }} pagination={false} dataSource={providers.data.providers} columns={providerColumns} locale={{ emptyText: copy.noProviders }} />
@@ -159,7 +159,7 @@ export function MonitoringView({ api, assetApi, inventoryApi, initialInstanceId,
       </Card>
       <Card className="topology-card" title={copy.gatewayContext} extra={<Button data-testid="monitoring-binding-refresh" onClick={() => void binding.refetch()} loading={binding.isFetching}>{copy.refreshBinding}</Button>}>
         {binding.isPending && <Spin />}
-        {binding.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void binding.refetch()} />}
+        {binding.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} testId="monitoring-retry-binding" retry={() => void binding.refetch()} />}
         {binding.data && !binding.error && <Flex vertical gap={6} style={{ overflowWrap: "anywhere" }}>
           <Text>{copy.bindingTruth}：<Tag>{binding.data.current_binding ? "BOUND" : "UNBOUND"}</Tag></Text>
           <Text>{copy.bindingResolution}：<Tag>{binding.data.resolution}</Tag></Text>
@@ -175,7 +175,7 @@ export function MonitoringView({ api, assetApi, inventoryApi, initialInstanceId,
       </Card>
       <Card className="topology-card" data-testid="monitoring-current-ownership" title={copy.ownershipCurrent} extra={<Button data-testid="monitoring-current-refresh" onClick={() => void current.refetch()} loading={current.isFetching}>{copy.refreshCurrent}</Button>}>
         {current.isPending && <Spin />}
-        {current.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void current.refetch()} />}
+        {current.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} testId="monitoring-retry-current" retry={() => void current.refetch()} />}
         {current.data && !current.error && <>
           {occurrenceTable(current.data.items)}
           <Flex justify="end" gap={8}><Button data-testid="monitoring-current-first" disabled={!currentCursor} onClick={() => setCurrentCursor(undefined)}>{copy.firstPage}</Button><Button data-testid="monitoring-current-next" disabled={!current.data.next_cursor || current.isFetching} onClick={() => setCurrentCursor(current.data?.next_cursor ?? undefined)}>{copy.nextPage}</Button></Flex>
@@ -183,11 +183,11 @@ export function MonitoringView({ api, assetApi, inventoryApi, initialInstanceId,
       </Card>
       <Card className="topology-card" data-testid="monitoring-history-ownership" title={copy.ownershipHistory}>
         <Flex gap={8} wrap>
-          <Select data-testid="monitoring-history-status" allowClear aria-label={copy.historyStatus} placeholder={copy.historyPlaceholder} value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: <span data-testid="monitoring-history-status-active">ACTIVE</span> }, { value: "RESOLVED", label: <span data-testid="monitoring-history-status-resolved">Resolved</span> }]} style={{ minWidth: 170 }} />
-          <Button onClick={() => void history.refetch()} loading={history.isFetching}>{copy.refreshHistory}</Button>
+          <Select data-testid="monitoring-history-status" allowClear aria-label={copy.historyStatus} placeholder={copy.historyPlaceholder} value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryCursor(undefined); }} options={[{ value: "ACTIVE", label: <span data-testid="monitoring-history-status-active">ACTIVE</span> }, { value: "RESOLVED", label: <span data-testid="monitoring-history-status-resolved">RESOLVED</span> }]} style={{ minWidth: 170 }} />
+          <Button data-testid="monitoring-history-refresh" onClick={() => void history.refetch()} loading={history.isFetching}>{copy.refreshHistory}</Button>
         </Flex>
         {history.isPending && <Spin />}
-        {history.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} retry={() => void history.refetch()} />}
+        {history.error && <ReadError message={copy.readUnavailable} retryLabel={copy.retry} testId="monitoring-retry-history" retry={() => void history.refetch()} />}
         {history.data && !history.error && <>
           <Text type="secondary">{copy.historicalInvolvement} · {formatDateTime(history.data.observed_at, locale)}</Text>
           {occurrenceTable(history.data.items)}

@@ -174,6 +174,8 @@ const canonicalTranslation = {
     provider: "Provider",
     readUnavailable: "读取不可用",
     evidenceNote: "证据记录权威关系评估，不等于历史已确认归属。",
+    unknown: "未知",
+    historyPlaceholder: "全部历史状态",
     type: "类型",
     account: "账号标识",
     snapshot: "快照",
