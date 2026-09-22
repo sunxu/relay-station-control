@@ -10,8 +10,8 @@ STAGE3F_READINESS = READY FOR AUTHORIZATION
 Implementation candidate:
 
 ```text
-a5adac245770ac0f232583d6511a60abdc142058
-feat(phase10): modernize problems workspace
+ab80406d0a1292a58a02a6ff8e2e390edd37a6ff
+fix(phase10): preserve problem issue evidence
 ```
 
 No backend, OpenAPI, migration, query, Gateway, Relay Node, or generated-client
@@ -23,9 +23,9 @@ files were changed.
 Bootstrap no-store source proof = PASS
 go test ./internal/api = PASS
 go test ./tools (nested module) = PASS
-Candidate source SHA = a5adac245770ac0f232583d6511a60abdc142058
-Candidate image revision = a5adac245770ac0f232583d6511a60abdc142058
-Candidate image ID = sha256:1e3d9a5cfb3c6286ac1d21cf25d6275903d653c4d7a3534b75734f002baa4aa1
+Candidate source SHA = ab80406d0a1292a58a02a6ff8e2e390edd37a6ff
+Candidate image revision = ab80406d0a1292a58a02a6ff8e2e390edd37a6ff
+Candidate image ID = sha256:b42a12bef4e4733c9f9076f3614a67cbe2d6c95d8d36f289c0489d3afe1d1467
 Candidate image platform = linux/arm64
 Node artifact identity = PASS
 ```
@@ -45,6 +45,8 @@ ordinary Issues label = ZERO
 Problem query semantics = PASS
 Issue taxonomy preserved = PASS
 Machine-value reclassification = ZERO
+Problem issue evidence completeness = PASS
+Issue reason machine values preserved = PASS
 Initial query = PASS ({limit:25})
 Filter transport = PASS
 Cursor pagination = PASS
@@ -77,7 +79,7 @@ cases, with all fetch/XHR traffic remaining on the Control origin.
 ```text
 Playwright interaction testid policy = PASS
 Accessibility = PASS
-Unit/component = PASS (47 files / 322 tests)
+Unit/component = PASS (47 files / 323 tests)
 Typecheck = PASS
 Build = PASS
 Translation audit = PASS
