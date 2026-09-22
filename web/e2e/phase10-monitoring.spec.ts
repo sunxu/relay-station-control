@@ -44,12 +44,12 @@ async function assertInteractiveDiagnostics(page: Page) {
   await page.getByTestId("monitoring-provider-refresh").click();
   await page.getByTestId("monitoring-binding-refresh").click();
   await page.getByTestId("monitoring-current-refresh").click();
-  const evidenceToggle = page.getByTestId("monitoring-evidence-expand-current-1").first();
+  const evidenceToggle = page.getByTestId("monitoring-evidence-expand-current-1");
   await expect(evidenceToggle).toBeVisible();
   await evidenceToggle.click();
   await expect(evidenceToggle).toHaveText("−");
   await expect(page.getByText("provider_snapshot", { exact: true })).toBeVisible();
-  await page.getByTestId("monitoring-evidence-next").first().click();
+  await page.getByTestId("monitoring-evidence-next").click();
   await page.getByTestId("monitoring-current-next").click();
   await page.getByTestId("monitoring-history-status").click();
   await page.getByTestId("monitoring-history-status-resolved").click();
@@ -80,7 +80,7 @@ for (const [name, viewport, locale] of [["zh-CN 1280", { width: 1280, height: 72
       const text = await page.getByTestId("monitoring-page").innerText();
       expect(text).not.toMatch(/\b(?:Unknown|History|Evidence|Health|Node|Account|Problems|Connection Test|Monitoring|Credential|Retry|Previous|Next)\b/u);
     } else {
-      await expect(page.getByText("Monitoring", { exact: true }).first()).toBeVisible();
+      await expect(page.getByTestId("monitoring-page")).toContainText("Monitoring");
     }
   });
 }
