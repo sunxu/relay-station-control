@@ -26,7 +26,9 @@ async function installFixture(page: Page, locale: "zh-CN" | "en") {
     if (url.pathname === "/api/admins") return json({ items: [{ id: "settings-admin", login_name: "settings.operator", display_name: "设置验收", auth_source: "local", role: "super_admin", status: "enabled", created_at: "2026-09-22T00:00:00Z", updated_at: "2026-09-22T00:00:00Z", last_login_at: null }], next_cursor: null });
     throw new Error(`unexpected API request: ${route.request().method()} ${url.pathname}`);
   });
-  await page.addInitScript((value) => localStorage.setItem("relay-control.locale", value), locale);
+  await page.addInitScript((value) => {
+    if (!localStorage.getItem("relay-control.locale")) localStorage.setItem("relay-control.locale", value);
+  }, locale);
   return requests;
 }
 
@@ -58,6 +60,7 @@ async function assertDesktop(page: Page, locale: "zh-CN" | "en", width: number, 
   if (locale === "zh-CN") {
     await page.reload();
     await expect(page.getByTestId("settings-page")).toBeVisible();
+    await page.getByTestId("settings-tab-interface").click();
     await expect(page.getByTestId("locale-selector")).toHaveValue("en");
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   }
