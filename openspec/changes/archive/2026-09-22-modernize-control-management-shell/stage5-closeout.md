@@ -109,3 +109,12 @@ git diff --check = PASS
 P0 = 0
 P1 = 0
 P2 = 0
+
+ARCHIVE_STATUS = ARCHIVED
+ARCHIVE_PATH = openspec/changes/archive/2026-09-22-modernize-control-management-shell
+ARCHIVE_COMMAND = openspec archive modernize-control-management-shell --yes
+
+Canonical control-management-shell = SYNCED
+Canonical asset-registry = SYNCED
+Canonical node-centric-topology-ui = SYNCED
+Canonical relay-node-management-operations = SYNCED
