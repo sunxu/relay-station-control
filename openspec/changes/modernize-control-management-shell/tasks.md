@@ -112,9 +112,14 @@ Stage 3E = READY FOR AUTHORIZATION
 
 ## 7. Stage 3E — Problems
 
-- [ ] 3E.1 将现有 Problems surface 接入统一 App Shell；英文统一 `Problems`。
-- [ ] 3E.2 保留 issue taxonomy/machine values，优化 filter/status/evidence presentation。
-- [ ] 3E.3 focused proof + commit。
+- [x] 3E.1 将现有 Problems surface 接入统一 App Shell；英文统一 `Problems`。
+- [x] 3E.2 保留 issue taxonomy/machine values，优化 filter/status/evidence presentation。
+- [x] 3E.3 focused proof + commit。
+
+```text
+Stage 3E = COMPLETE / PASS
+Stage 3F = READY FOR AUTHORIZATION
+```
 
 ## 8. Stage 3F — Settings
 
