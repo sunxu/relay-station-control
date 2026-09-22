@@ -49,8 +49,18 @@ async function assertDesktop(page: Page, locale: "zh-CN" | "en", width: number, 
   expect(requests.filter((request) => /health|connection-test|monitoring-(enable|disable)/i.test(request.pathname)).length).toBe(0);
   expect(requests.filter((request) => request.method !== "GET").length).toBe(0);
   await page.getByTestId("settings-tab-interface").click();
-  await expect(page.getByTestId("locale-selector")).toHaveCount(1);
-  await page.getByTestId(locale === "zh-CN" ? "locale-option-en" : "locale-option-zh-CN").click();
+  const selector = page.getByTestId("locale-selector");
+  await expect(selector).toHaveCount(1);
+  const nextLocale = locale === "zh-CN" ? "en" : "zh-CN";
+  await selector.selectOption(nextLocale);
+  await expect(selector).toHaveValue(nextLocale);
+  await expect(page.getByRole("heading", { name: nextLocale === "en" ? "Settings" : "设置" })).toBeVisible();
+  if (locale === "zh-CN") {
+    await page.reload();
+    await expect(page.getByTestId("settings-page")).toBeVisible();
+    await expect(page.getByTestId("locale-selector")).toHaveValue("en");
+    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  }
   await expect(page.getByTestId("locale-selector")).toHaveCount(1);
   expect(requests.filter((request) => request.method !== "GET").length).toBe(0);
 }

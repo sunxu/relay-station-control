@@ -88,7 +88,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadAdministrators();
-  }, [loadAdministrators]);
+  }, [auth.api]);
 
   const csrf = session?.csrf_token ?? "";
   const requireFresh = () => {

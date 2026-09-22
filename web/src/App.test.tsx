@@ -258,6 +258,58 @@ describe("login MFA", () => {
 });
 
 describe("session rotation and high-risk operations", () => {
+  async function prepareDisable(api: AuthApi, beforeAction?: (client: QueryClient) => void) {
+    const rendered = renderSettings(<App api={api} />);
+    await screen.findByTestId("settings-page");
+    beforeAction?.(rendered.client);
+    fireEvent.click(screen.getByTestId("settings-tab-administrators"));
+    fireEvent.click(await screen.findByRole("radio", { name: "选择管理员 admin.one" }));
+    fireEvent.change(screen.getByTestId("settings-admin-action-reason"), { target: { value: "安全测试禁用管理员操作" } });
+    fireEvent.click(screen.getByTestId("settings-admin-disable"));
+    const dialogs = await screen.findAllByRole("dialog");
+    const dialog = dialogs.at(-1)!;
+    fireEvent.click(within(dialog).getByText("确 定").closest("button")!);
+    return rendered;
+  }
+
+  it("refreshes CSRF once without replaying a rejected high-risk mutation", async () => {
+    const freshSession = { ...session, reauthenticated_until: "2099-08-25T00:05:00Z" };
+    const refreshedSession = { ...freshSession, csrf_token: "r".repeat(32) };
+    const api = makeApi("completed", freshSession);
+    let sessionCalls = 0;
+    vi.mocked(api.session).mockImplementation(async () => sessionCalls++ === 0 ? freshSession : refreshedSession);
+    vi.mocked(api.disableAdministrator).mockRejectedValueOnce(new AuthApiError(409, {
+      code: "csrf_invalid", message: "csrf changed", request_id: "csrf-once",
+    }));
+
+    await prepareDisable(api);
+
+    expect(api.disableAdministrator).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(api.session).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent).join(" ")).toContain("自动重放");
+    expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+  });
+
+  it("expires the session when CSRF refresh fails without replaying the mutation", async () => {
+    const freshSession = { ...session, reauthenticated_until: "2099-08-25T00:05:00Z" };
+    const api = makeApi("completed", freshSession);
+    let sessionCalls = 0;
+    vi.mocked(api.session).mockImplementation(async () => {
+      sessionCalls += 1;
+      if (sessionCalls === 1) return freshSession;
+      throw new Error("session refresh unavailable");
+    });
+    vi.mocked(api.disableAdministrator).mockRejectedValueOnce(new AuthApiError(409, {
+      code: "csrf_invalid", message: "csrf changed", request_id: "csrf-failure",
+    }));
+    const rendered = await prepareDisable(api, (client) => client.setQueryData(["settings-private"], { secret: "must-clear" }));
+
+    expect(api.disableAdministrator).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("login-page")).toBeInTheDocument();
+    await waitFor(() => expect(api.session).toHaveBeenCalledTimes(2));
+    expect(rendered.client.getQueryCache().getAll()).toHaveLength(0);
+  });
+
   it("uses the rotated CSRF proof for the next high-risk mutation", async () => {
     const api = makeApi("completed", session);
     const rotated = { ...session, csrf_token: "r".repeat(32), reauthenticated_until: "2099-08-25T00:05:00Z" };
