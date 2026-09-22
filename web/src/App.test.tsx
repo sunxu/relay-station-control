@@ -1,4 +1,5 @@
 import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { Modal } from "antd";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +10,8 @@ import type { Administrator, BootstrapState, SessionResponse } from "./api/gener
 import { FrontendFoundationProvider } from "./foundation/FrontendFoundationProvider";
 
 function render(ui: ReactElement, locale: "zh-CN" | "en" = "zh-CN") {
-  return rtlRender(<FrontendFoundationProvider initialLocale={locale}>{ui}</FrontendFoundationProvider>);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return { client, ...rtlRender(<FrontendFoundationProvider initialLocale={locale}><QueryClientProvider client={client}>{ui}</QueryClientProvider></FrontendFoundationProvider>) };
 }
 
 function renderSettings(ui: ReactElement, locale: "zh-CN" | "en" = "zh-CN") {
@@ -87,7 +89,7 @@ describe("authentication shell routing", () => {
 
   it("localizes both management MFA selectors in English", async () => {
     renderSettings(<App api={makeApi("completed", session)} />, "en");
-    await screen.findByTestId("management-page");
+    await screen.findByTestId("settings-page");
 
     fireEvent.click(screen.getByRole("tab", { name: "Reauthentication" }));
     const reauthSelect = screen.getByRole("combobox", { name: "MFA method" });
@@ -102,6 +104,31 @@ describe("authentication shell routing", () => {
     fireEvent.mouseDown(passwordSelect);
     expect(await screen.findByText("Recovery code")).toBeInTheDocument();
     expect(screen.queryByText("恢复码")).not.toBeInTheDocument();
+  });
+
+  it("uses one canonical Settings page and owns locale selection in Interface", async () => {
+    renderSettings(<App api={makeApi("completed", session)} />);
+    await screen.findByTestId("settings-page");
+    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("settings-tab-interface"));
+    expect(screen.getAllByTestId("locale-selector")).toHaveLength(1);
+    expect(screen.getByTestId("settings-interface")).toHaveTextContent("仅保存在当前浏览器");
+  });
+
+  it("canonicalizes the legacy management path to Settings", async () => {
+    window.history.replaceState(null, "", "/management");
+    render(<App api={makeApi("completed", session)} />);
+    await screen.findByTestId("settings-page");
+    expect(window.location.pathname).toBe("/settings");
+  });
+
+  it("expires the authenticated session and clears the query cache on a Settings 401", async () => {
+    const api = makeApi("completed", session);
+    vi.mocked(api.administrators).mockRejectedValue(new AuthApiError(401, { code: "unauthorized", message: "expired", request_id: "settings-401" }));
+    const rendered = renderSettings(<App api={api} />);
+    rendered.client.setQueryData(["settings-private"], { secret: "must-clear" });
+    await screen.findByTestId("login-page");
+    expect(rendered.client.getQueryCache().getAll()).toHaveLength(0);
   });
 
   it("fails closed when bootstrap state cannot be read", async () => {
@@ -149,7 +176,7 @@ describe("secret lifecycle", () => {
     expect(screen.getByRole("button", { name: "确认并离开" })).toBeDisabled();
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "确认并离开" }));
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
     expect(screen.queryByText("recovery-0-onlyonce")).not.toBeInTheDocument();
   });
 
@@ -161,7 +188,7 @@ describe("secret lifecycle", () => {
     await startAndComplete(api);
     expect(screen.getByText("recovery-0-onlyonce")).toBeInTheDocument();
     dispatchPageTransition(eventName, persisted);
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
     expect(screen.queryByText("recovery-0-onlyonce")).not.toBeInTheDocument();
     expect(api.bootstrapComplete).toHaveBeenCalledTimes(1);
   });
@@ -170,7 +197,7 @@ describe("secret lifecycle", () => {
     const api = makeApi("required");
     await startAndComplete(api);
     fireEvent(window, new Event("beforeunload"));
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
     expect(screen.queryByText("recovery-0-onlyonce")).not.toBeInTheDocument();
     expect(api.bootstrapComplete).toHaveBeenCalledTimes(1);
   });
@@ -191,7 +218,7 @@ describe("login MFA", () => {
     expect(recoveryInput).toBeDefined();
     fireEvent.change(recoveryInput!, { target: { value: "one-time-recovery-code" } });
     fireEvent.click(screen.getByRole("button", { name: "验证并登录" }));
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
     expect(screen.getByText("剩余恢复码：7")).toBeInTheDocument();
     expect(screen.queryByText("one-time-recovery-code")).not.toBeInTheDocument();
   });
@@ -238,7 +265,7 @@ describe("session rotation and high-risk operations", () => {
     vi.mocked(api.administrators).mockResolvedValue({ items: [administrator, secondAdministrator], next_cursor: null });
     vi.mocked(api.createAdministrator).mockResolvedValue({ administrator: secondAdministrator, activation_token: "activation-once-".repeat(4), expires_at: "2099-08-26T00:00:00Z" });
     renderSettings(<App api={api} />);
-    await screen.findByTestId("management-page");
+    await screen.findByTestId("settings-page");
 
     fireEvent.click(screen.getByRole("tab", { name: "重新认证" }));
     fireEvent.change(screen.getByLabelText("当前密码"), { target: { value: "correct horse battery staple" } });
@@ -255,7 +282,7 @@ describe("session rotation and high-risk operations", () => {
     expect(await screen.findByTestId("one-time-page")).toBeInTheDocument();
 
     dispatchPageTransition("pagehide", true);
-    expect(await screen.findByTestId("management-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
     expect(screen.queryByText("activation-once-".repeat(4))).not.toBeInTheDocument();
     expect(api.createAdministrator).toHaveBeenCalledTimes(1);
   });
@@ -272,11 +299,11 @@ describe("session rotation and high-risk operations", () => {
       request_id: "request-protected",
     }));
     renderSettings(<App api={api} />);
-    await screen.findByTestId("management-page");
+    await screen.findByTestId("settings-page");
     fireEvent.click(screen.getByRole("tab", { name: "管理员" }));
     fireEvent.click(await screen.findByRole("radio", { name: "选择管理员 admin.one" }));
     fireEvent.change(screen.getByPlaceholderText("操作原因（10–500 字符）"), { target: { value: "安全测试禁用管理员操作" } });
-    fireEvent.click(screen.getByTestId("disable-administrator"));
+    fireEvent.click(screen.getByTestId("settings-admin-disable"));
     const dialogs = await screen.findAllByRole("dialog");
     const dialog = dialogs.at(-1)!;
     fireEvent.click(within(dialog).getByText("确 定").closest("button")!);

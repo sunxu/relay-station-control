@@ -10,7 +10,7 @@ import { isAuthenticatedRoute, type AuthenticatedRoute } from "./foundation/navi
 const BootstrapPage = lazy(() => import("./pages/BootstrapPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ActivationPage = lazy(() => import("./pages/ActivationPage"));
-const ManagementPage = lazy(() => import("./pages/ManagementPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const AssetsPage = lazy(() => import("./pages/AssetsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
 const MonitoringPage = lazy(() => import("./pages/MonitoringPage"));
@@ -41,7 +41,7 @@ function AuthShell() {
       {auth.route === "bootstrap" && <BootstrapPage />}
       {auth.route === "login" && <LoginPage />}
       {auth.route === "activation" && <ActivationPage />}
-      {(auth.route === "management" || auth.route === "settings") && <ManagementPage />}
+      {(auth.route === "management" || auth.route === "settings") && <SettingsPage />}
       {auth.route === "assets" && <AssetsPage />}
       {(auth.route === "operations" || auth.route === "jobs") && <OperationsPage />}
       {(auth.route === "monitoring" || auth.route === "topology") && <MonitoringPage />}

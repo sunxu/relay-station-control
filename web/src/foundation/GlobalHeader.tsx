@@ -64,7 +64,7 @@ export function GlobalHeader() {
       <div className="global-header-actions">
         {logoutError ? <div role="alert" data-testid="global-logout-error">{logoutError}</div> : null}
         <span data-testid="admin-identity">{auth.session?.administrator.display_name} · {auth.session?.administrator.login_name}</span>
-        <LocaleSwitcher />
+        {auth.route !== "management" && auth.route !== "settings" ? <LocaleSwitcher /> : null}
         <button type="button" data-testid="global-logout" onClick={() => void logout()}>{t("common.shell.logout")}</button>
       </div>
     </header>

@@ -37,6 +37,7 @@ export function authenticatedRouteFromPath(pathname: string): AuthenticatedRoute
   if (path === "/assets") return "assets";
   if (path === "/jobs") return "jobs";
   if (path === "/topology") return "topology";
+  if (path === "/management") return "management";
   const entry = primaryNavigation.find((item) => item.path === path);
   return entry?.route ?? "dashboard";
 }

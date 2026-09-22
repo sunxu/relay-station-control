@@ -70,7 +70,14 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
 
     const request = api.session().then((current) => {
       setSession(current);
-      if (current) setRoute(authenticatedRouteRef.current);
+      if (current) {
+        const next = authenticatedRouteRef.current === "management" ? "settings" : authenticatedRouteRef.current;
+        authenticatedRouteRef.current = next;
+        if (next === "settings" && window.location.pathname === "/management") {
+          window.history.replaceState(null, "", navigationPath("settings"));
+        }
+        setRoute(next);
+      }
       else setRoute("login");
       return current;
     });
@@ -96,7 +103,14 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
         const current = await api.session();
         if (!active) return;
         setSession(current);
-        setRoute(current ? authenticatedRouteRef.current : "login");
+        if (current) {
+          const next = authenticatedRouteRef.current === "management" ? "settings" : authenticatedRouteRef.current;
+          authenticatedRouteRef.current = next;
+          if (next === "settings" && window.location.pathname === "/management") {
+            window.history.replaceState(null, "", navigationPath("settings"));
+          }
+          setRoute(next);
+        } else setRoute("login");
       } catch {
         if (active) setRoute("unavailable");
       }
@@ -109,8 +123,11 @@ export function AuthProvider({ children, api = generatedAuthApi }: { children: R
   const navigate = useCallback((next: AuthRoute) => {
     wipeOneTime();
     if (next === "assets" || next === "jobs" || next === "topology" || next === "problems" || next === "management" || next === "dashboard" || next === "accounts" || next === "nodes" || next === "operations" || next === "monitoring" || next === "settings") {
-      authenticatedRouteRef.current = next;
-      window.history.pushState(null, "", navigationPath(next));
+      const canonicalNext = next === "management" ? "settings" : next;
+      authenticatedRouteRef.current = canonicalNext;
+      window.history.pushState(null, "", navigationPath(canonicalNext));
+      setRoute(canonicalNext);
+      return;
     }
     setRoute(next);
   }, [wipeOneTime]);

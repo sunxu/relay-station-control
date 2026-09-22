@@ -62,7 +62,7 @@ async function json(response: APIResponse): Promise<Record<string, unknown>> {
 async function leaveOneTimePage(page: Page): Promise<void> {
   await page.getByTestId("one-time-confirmation").check();
   await page.getByTestId("one-time-leave").click();
-  await expect(page.getByTestId("management-page")).toBeVisible();
+  await expect(page.getByTestId("settings-page")).toBeVisible();
 }
 
 async function logout(page: Page): Promise<void> {
@@ -149,7 +149,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
     }
   }, { timeout: 60_000 }).toBe(200);
   await primary.reload();
-  await expect(primary.getByTestId("management-page")).toBeVisible();
+  await expect(primary.getByTestId("settings-page")).toBeVisible();
   const persistedBootstrap = await primary.request.get("/api/bootstrap/status");
   const persistedBootstrapBody = await json(persistedBootstrap);
   expect(persistedBootstrapBody.status).toBe("completed");
@@ -161,7 +161,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await passwordLogin(primary, bootstrapLogin, primaryPassword);
   await primary.getByTestId("login-totp").fill(await freshTotp(primaryTotpURI, bootstrapTotp));
   await primary.getByTestId("login-mfa-submit").click();
-  await expect(primary.getByTestId("management-page")).toBeVisible();
+  await expect(primary.getByTestId("settings-page")).toBeVisible();
   console.log("[e2e] TOTP login completed");
   await logout(primary);
 
@@ -169,7 +169,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   await primary.getByTestId("login-method-recovery_code").click();
   await primary.getByTestId("recovery-code").fill(recoveryCodes[0]);
   await primary.getByTestId("login-mfa-submit").click();
-  await expect(primary.getByTestId("management-page")).toBeVisible();
+  await expect(primary.getByTestId("settings-page")).toBeVisible();
   console.log("[e2e] recovery-code login completed");
 
   const browserAssetRequests: Array<{ method: string; url: string }> = [];
@@ -267,7 +267,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   const expectAssetRegistry = async () => {
     await expect(primary.getByTestId("assets-page")).toBeVisible();
     await expect(primary.getByRole("heading", { name: "资产注册表" })).toBeVisible();
-    await expect(primary.getByTestId("management-page")).toHaveCount(0);
+  await expect(primary.getByTestId("settings-page")).toHaveCount(0);
   };
 
   browserAssetRequests.length = 0;
@@ -312,7 +312,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   expect(APIHealth.status()).toBe(200);
   expect(await APIHealth.text()).not.toContain('<div id="root">');
   await primary.getByTestId("assets-management").click();
-  await expect(primary.getByTestId("management-page")).toBeVisible();
+  await expect(primary.getByTestId("settings-page")).toBeVisible();
   await primary.unrouteAll({ behavior: "wait" });
   console.log("[e2e] assets page stayed on same-origin read APIs and omitted Secret references");
 
@@ -364,7 +364,7 @@ test("real administrator lifecycle survives restart and keeps one-time material 
   expect(Array.isArray(activated.body.recovery_codes)).toBe(true);
   expect((activated.body.recovery_codes as unknown[]).length).toBe(10);
   await secondary.reload();
-  await expect(secondary.getByTestId("management-page")).toBeVisible();
+  await expect(secondary.getByTestId("settings-page")).toBeVisible();
   console.log("[e2e] second administrator activated");
 
   current = await sameOriginJSON(primary, "/api/auth/session", "GET");

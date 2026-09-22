@@ -68,7 +68,7 @@ it.each(["/assets", "/assets/"])("restores an authenticated direct visit to %s",
   window.history.replaceState(null, "", pathname);
   render(<App api={api()} />);
   expect(await screen.findByTestId("mock-assets-page")).toBeInTheDocument();
-  expect(screen.queryByTestId("management-page")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("settings-page")).not.toBeInTheDocument();
 });
 
 it("keeps the canonical default route on the dashboard shell", async () => {

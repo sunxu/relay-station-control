@@ -99,7 +99,11 @@ const canonicalTranslation = {
   },
   dashboard: { title: "仪表盘", description: "系统概览与主要工作入口", overview: "权威概览", control: "控制服务", gatewayAssets: "网关资产", nodeAssets: "节点资产", pollCapacity: "采集容量", status: "状态", available: "正常", version: "版本", total: "总数", active: "活跃", retired: "已退役", eligibleNodes: "符合采集条件的节点", effectiveCapacity: "有效容量", evaluatedAt: "评估时间", workEntries: "工作入口", open: "打开", retry: "重试", unavailable: "暂不可用", entries: { accounts: { title: "账号", description: "查看账号和清单" }, operations: { title: "操作", description: "查看持久任务和操作入口" }, problems: { title: "问题", description: "查看已确认问题" } }, capacityStatus: { ready: "可用", capacity_exceeded: "容量不足", disabled: "已禁用" } },
   nodes: { title: "节点", description: "节点管理与生命周期操作", ...stage3NodesZh },
-  settings: { title: "设置", description: "管理员设置页面基础结构" },
+  settings: {
+    title: "设置", description: "会话、安全与管理员设置",
+    tabs: { interface: "界面" },
+    interface: { title: "界面", description: "语言仅保存在当前浏览器，不会同步到其他浏览器或设备。" },
+  },
   management: {
     title: "Relay Station Control",
     sessionDescription: "{{displayName}} · {{loginName}}",
@@ -377,7 +381,11 @@ export const resources = {
       },
       dashboard: { title: "Dashboard", description: "Authoritative system overview and work entries", overview: "Authoritative overview", control: "Control service", gatewayAssets: "Gateway assets", nodeAssets: "Relay Node assets", pollCapacity: "Inventory poll capacity", status: "Status", available: "Available", version: "Version", total: "Total", active: "Active", retired: "Retired", eligibleNodes: "Eligible Nodes", effectiveCapacity: "Effective capacity", evaluatedAt: "Evaluated at", workEntries: "Work entries", open: "Open", retry: "Retry", unavailable: "Unavailable", entries: { accounts: { title: "Accounts", description: "View accounts and Inventory" }, operations: { title: "Operations", description: "View durable jobs and operation entry points" }, problems: { title: "Problems", description: "View confirmed problems" } }, capacityStatus: { ready: "Ready", capacity_exceeded: "Capacity exceeded", disabled: "Disabled" } },
       nodes: { title: "Relay Nodes", description: "Relay Node management and lifecycle operations", ...stage3NodesEn },
-      settings: { title: "Settings", description: "Administrator settings foundation" },
+      settings: {
+        title: "Settings", description: "Session, security, and administrator settings",
+        tabs: { interface: "Interface" },
+        interface: { title: "Interface", description: "Language is stored only in this browser and is not synchronized to other browsers or devices." },
+      },
       management: {
         title: "Relay Station Control",
         sessionDescription: "{{displayName}} · {{loginName}}",

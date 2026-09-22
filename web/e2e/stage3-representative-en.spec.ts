@@ -124,14 +124,13 @@ test.describe("Stage 3 representative English surfaces", () => {
     await expect(page.locator("body")).not.toContainText(/auth\.|common\.|topology\./u);
   });
 
-  test("renders Management, data, operation, and Jobs surfaces in English", async ({ page }) => {
+  test("renders Settings, data, operation, and Jobs surfaces in English", async ({ page }) => {
     await installAuthenticatedRoutes(page);
     await page.goto("/settings");
-    await expect(page.getByTestId("management-page")).toBeVisible();
-    await expect(page.getByTestId("locale-selector")).toHaveValue("en");
-    await expect(page.getByTestId("management-page")).toContainText("Persistent jobs");
+    await expect(page.getByTestId("settings-page")).toBeVisible();
+    await expect(page.getByTestId("settings-page")).toContainText("Settings");
 
-    await page.getByTestId("management-nav-jobs").click();
+    await page.getByTestId("sidebar-operations").click();
     await expect(page.getByTestId("operations-page")).toBeVisible();
     await expect(page.getByTestId("jobs-card")).toContainText("Persistent jobs");
     await expect(page.getByTestId(/job-row-/)).toBeVisible();
@@ -152,15 +151,15 @@ test.describe("Stage 3 representative English surfaces", () => {
 test.describe("Stage 3 live locale transition", () => {
   test.use({ locale: "zh-CN" });
 
-  test("updates a mounted management shell from Chinese to English", async ({ page }) => {
+  test("updates a mounted Settings shell from Chinese to English", async ({ page }) => {
     await installAuthenticatedRoutes(page);
     await page.goto("/settings");
-    await expect(page.getByTestId("management-page")).toBeVisible();
-    await expect(page.getByTestId("management-nav-jobs")).toHaveText("持久任务");
+    await expect(page.getByTestId("settings-page")).toBeVisible();
+    await page.getByTestId("settings-tab-interface").click();
 
     await page.getByTestId("locale-selector").selectOption("en");
 
-    await expect(page.getByTestId("management-nav-jobs")).toHaveText("Persistent jobs");
+    await expect(page.getByTestId("settings-page")).toContainText("Settings");
     await expect(page.getByTestId("locale-selector")).toHaveValue("en");
   });
 });
