@@ -25,7 +25,7 @@ function RequestError({ error, retry, copy }: { error: unknown; retry: () => voi
   const status = error instanceof ProblemAccountsApiError ? error.status : undefined;
   if (status === 400) return <Alert type="error" showIcon message={copy.invalidFilter} />;
   if (status === 403) return <Alert type="error" showIcon message={copy.forbidden} />;
-  return <Alert type="error" showIcon message={copy.unavailable} action={<Button onClick={retry}>{copy.retry}</Button>} />;
+  return <Alert type="error" showIcon message={copy.unavailable} action={<Button data-testid="problems-retry" onClick={retry}>{copy.retry}</Button>} />;
 }
 
 export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemAccountsApi; csrfToken: string; onUnauthorized: () => void }) {
@@ -86,9 +86,9 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
   };
 
   const columns = useMemo<ColumnsType<ProblemAccountItem>>(() => [
-    { title: "Node", key: "node", width: 220, render: (_, row) => <Flex vertical><Text>{row.node_name || "—"}</Text><Text type="secondary" code>{row.instance_id}</Text></Flex> },
-    { title: "Account", key: "account", width: 250, render: (_, row) => <Flex vertical><Text>{row.email}</Text><Text type="secondary" code>{row.account_key}</Text></Flex> },
-    { title: "Provider", dataIndex: "provider", key: "provider", width: 130, render: (value: string) => <Tag>{value}</Tag> },
+    { title: copy.node, key: "node", width: 220, render: (_, row) => <Flex vertical><Text>{row.node_name || "—"}</Text><Text type="secondary" code>{row.instance_id}</Text></Flex> },
+    { title: copy.account, key: "account", width: 250, render: (_, row) => <Flex vertical><Text>{row.email}</Text><Text type="secondary" code>{row.account_key}</Text></Flex> },
+    { title: copy.provider, dataIndex: "provider", key: "provider", width: 130, render: (value: string) => <Tag>{value}</Tag> },
     { title: copy.issues, key: "issues", width: 360, render: (_, row) => <Flex vertical gap={4}>{row.issues.map((issue) => <Space key={`${issue.occurrence_id}:${issue.type}`} wrap><Tag color={issueColor(issue.severity)}>{issue.severity}</Tag><Tag>{issue.type}</Tag><Text type="secondary">{copy.since} {formatDateTime(issue.since, locale)}</Text><Text type="secondary" code>{issue.occurrence_id}</Text></Space>)}</Flex> },
     { title: copy.availability, key: "availability", width: 220, render: (_, row) => row.availability ? <Flex vertical><Text>{row.availability.state}</Text><Text type="secondary">{row.availability.reason}</Text><Text type="secondary">{formatDateTime(row.availability.since, locale)}</Text></Flex> : "—" },
     { title: copy.token, key: "token", width: 190, render: (_, row) => <Flex vertical><Tag color={row.token_state === "VALID" ? "green" : row.token_state === "INVALID" ? "red" : undefined}>{row.token_state ?? "—"}</Tag><Text type="secondary">{copy.expectedValidUntil}</Text><Text type="secondary">{formatDateTime(row.expected_valid_until, locale)}</Text></Flex> },
@@ -102,13 +102,13 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
     <Flex vertical gap={16} data-testid="problems-view">
       <Card title={copy.filters}>
         <Space wrap>
-          <Select disabled={list.isPending} aria-label={copy.provider} allowClear placeholder={copy.provider} value={provider} options={[{ value: "antigravity", label: "antigravity" }]} onChange={(value) => updateFilter(setProvider, value)} style={{ width: 150 }} />
-          <Input disabled={list.isPending} aria-label={copy.nodeUuid} placeholder={copy.nodeUuid} maxLength={36} value={node} onChange={(event) => updateFilter(setNode, event.target.value)} style={{ width: 280 }} />
-          <Select disabled={list.isPending} aria-label={copy.severity} allowClear placeholder={copy.severity} value={severity} options={["Critical", "Warning"].map((value) => ({ value, label: value }))} onChange={(value) => updateFilter(setSeverity, value)} style={{ width: 150 }} />
-          <Select disabled={list.isPending} aria-label={copy.reason} allowClear placeholder={copy.reason} value={reason} options={issueLabels.map(([value, label]) => ({ value, label }))} onChange={(value) => updateFilter(setReason, value)} style={{ width: 260 }} />
-          <Input disabled={list.isPending} aria-label={copy.email} placeholder={copy.email} autoComplete="off" maxLength={320} value={email} onChange={(event) => updateFilter(setEmail, event.target.value)} style={{ width: 260 }} />
-          <Select disabled={list.isPending} aria-label={copy.pageSize} value={pageSize} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: `${value}${copy.pageSuffix}` }))} onChange={(value) => { setPageSize(value); setCursorHistory([undefined]); reset(); mutate({ ...request, limit: value, cursor: undefined }); }} style={{ width: 130 }} />
-          <Button type="primary" loading={list.isPending} onClick={() => { setCursorHistory([undefined]); query({ ...request, cursor: undefined }); }} disabled={list.isPending}>{copy.query}</Button>
+          <Select data-testid="problems-provider-filter" disabled={list.isPending} aria-label={copy.provider} allowClear placeholder={copy.provider} value={provider} options={[{ value: "antigravity", label: <span data-testid="problems-provider-antigravity">antigravity</span> }]} onChange={(value) => updateFilter(setProvider, value)} style={{ width: 150 }} />
+          <Input data-testid="problems-node-filter" disabled={list.isPending} aria-label={copy.nodeUuid} placeholder={copy.nodeUuid} maxLength={64} value={node} onChange={(event) => updateFilter(setNode, event.target.value)} style={{ width: 280 }} />
+          <Select data-testid="problems-severity-filter" disabled={list.isPending} aria-label={copy.severity} allowClear placeholder={copy.severity} value={severity} options={["Critical", "Warning"].map((value) => ({ value, label: <span data-testid={`problems-severity-${value.toLowerCase()}`}>{value}</span> }))} onChange={(value) => updateFilter(setSeverity, value)} style={{ width: 150 }} />
+          <Select data-testid="problems-reason-filter" disabled={list.isPending} aria-label={copy.reason} allowClear placeholder={copy.reason} value={reason} options={issueLabels.map(([value, label]) => ({ value, label: <span data-testid={`problems-reason-${value.replaceAll("_", "-")}`}>{label}</span> }))} onChange={(value) => updateFilter(setReason, value)} style={{ width: 260 }} />
+          <Input data-testid="problems-email-filter" disabled={list.isPending} aria-label={copy.email} placeholder={copy.email} autoComplete="off" maxLength={320} value={email} onChange={(event) => updateFilter(setEmail, event.target.value)} style={{ width: 260 }} />
+          <Select data-testid="problems-page-size" disabled={list.isPending} aria-label={copy.pageSize} value={pageSize} options={[25, 50, 100].map((value) => ({ value: value as PageSize, label: <span data-testid={`problems-page-size-${value}`}>{value}{copy.pageSuffix}</span> }))} onChange={(value) => { setPageSize(value); setCursorHistory([undefined]); reset(); mutate({ ...request, limit: value, cursor: undefined }); }} style={{ width: 130 }} />
+          <Button data-testid="problems-query" type="primary" loading={list.isPending} onClick={() => { setCursorHistory([undefined]); query({ ...request, cursor: undefined }); }} disabled={list.isPending}>{copy.query}</Button>
         </Space>
       </Card>
       <Card title={copy.title} data-testid="problems-card">
@@ -116,7 +116,7 @@ export function ProblemsView({ api, csrfToken, onUnauthorized }: { api: ProblemA
         {list.error && <RequestError error={list.error} retry={() => query()} copy={copy} />}
         {!list.isPending && !list.error && list.data?.items.length === 0 && <Empty description={emptyText} />}
         {!list.error && list.data && list.data.items.length > 0 && <Table<ProblemAccountItem> rowKey={(row) => `${row.instance_id}:${row.account_key}`} onRow={(row): HTMLAttributes<HTMLTableRowElement> => ({ "data-testid": "problem-row", "data-instance-id": row.instance_id, "data-account-key": row.account_key } as unknown as HTMLAttributes<HTMLTableRowElement>)} size="small" scroll={{ x: 1500 }} pagination={false} dataSource={list.data.items} columns={columns} />}
-        {!list.error && <Flex justify="end" gap={8} style={{ marginTop: 16 }}><Button disabled={list.isPending || cursorHistory.length === 1} onClick={previousPage}>{copy.previous}</Button><Button disabled={list.isPending || !list.data?.next_cursor} onClick={nextPage}>{copy.next}</Button></Flex>}
+        {!list.error && <Flex justify="end" gap={8} style={{ marginTop: 16 }}><Button data-testid="problems-previous" disabled={list.isPending || cursorHistory.length === 1} onClick={previousPage}>{copy.previous}</Button><Button data-testid="problems-next" disabled={list.isPending || !list.data?.next_cursor} onClick={nextPage}>{copy.next}</Button></Flex>}
       </Card>
     </Flex>
   );

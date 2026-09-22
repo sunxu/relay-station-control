@@ -60,7 +60,7 @@ describe("ProblemsView", () => {
     expect(screen.getAllByText("TOKEN_INVALID").length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4);
-    expect(screen.getByText("Expected Valid Until")).toBeInTheDocument();
+    expect(screen.getByText("预计有效至")).toBeInTheDocument();
   });
 
   it("uses opaque cursor history for next and previous", async () => {
@@ -69,27 +69,27 @@ describe("ProblemsView", () => {
       .mockResolvedValue({ items: [], next_cursor: null }) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
     await screen.findByText("a@example.invalid");
-    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    fireEvent.click(screen.getByTestId("problems-next"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 25, cursor: "opaque-2" }, "csrf", expect.any(AbortSignal)));
-    fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+    fireEvent.click(screen.getByTestId("problems-previous"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 25 }, "csrf", expect.any(AbortSignal)));
   });
 
   it("does not expose mutation controls", async () => {
     const api = makeApi({ items: [], next_cursor: null });
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    await screen.findByText("当前没有 confirmed problems");
+    await screen.findByText("当前没有已确认问题");
     expect(screen.queryByText(/Ack|Resolve|Repair|Move|Reassign|Refresh Token|Upload Credential|Actions|Operations|Manage/)).not.toBeInTheDocument();
   });
 
   it("normalizes email and trims node before querying", async () => {
     const api = makeApi({ items: [], next_cursor: null });
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    await screen.findByText("当前没有 confirmed problems");
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "  User@Example.INVALID " } });
-    fireEvent.change(screen.getByLabelText("Node UUID"), { target: { value: "  node-id  " } });
+    await screen.findByText("当前没有已确认问题");
+    fireEvent.change(screen.getByTestId("problems-email-filter"), { target: { value: "  User@Example.INVALID " } });
+    fireEvent.change(screen.getByTestId("problems-node-filter"), { target: { value: "  node-id  " } });
     await waitFor(() => expect(api.query).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
+    fireEvent.click(screen.getByTestId("problems-query"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ email: "user@example.invalid", node: "node-id", limit: 25 }, "csrf", expect.any(AbortSignal)));
   });
 
@@ -106,12 +106,12 @@ describe("ProblemsView", () => {
       .mockResolvedValueOnce({ items: [], next_cursor: "opaque-next" })
       .mockRejectedValueOnce(new ProblemAccountsApiError(403, { code: "forbidden", message: "no", request_id: "request-2" })) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("问题读取暂不可用")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("problems-retry"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 25 }, "csrf", expect.any(AbortSignal)));
     await waitFor(() => expect(api.query).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
-    expect(await screen.findByText("当前会话无权读取 Problems。")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("problems-query"));
+    expect(await screen.findByText("当前会话无权读取问题。")).toBeInTheDocument();
   });
 
   it("clears stale rows and session on 401", async () => {
@@ -122,33 +122,63 @@ describe("ProblemsView", () => {
       .mockImplementationOnce(async (_request, _csrf, signal) => { failedSignal = signal; throw new ProblemAccountsApiError(401, { code: "unauthorized", message: "expired", request_id: "request-1" }); }) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={onUnauthorized} />, { wrapper });
     expect(await screen.findByText("old@example.invalid")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "old@example.invalid" } });
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
+    fireEvent.change(screen.getByTestId("problems-email-filter"), { target: { value: "old@example.invalid" } });
+    fireEvent.click(screen.getByTestId("problems-query"));
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
     expect(failedSignal?.aborted).toBe(true);
     expect(screen.queryByText("old@example.invalid")).not.toBeInTheDocument();
     expect(screen.queryByText("occ")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toHaveValue("");
+    expect(screen.getByTestId("problems-email-filter")).toHaveValue("");
+  });
+
+  it("aborts an older query and never lets its late result replace the newer query", async () => {
+    let resolveA!: (response: ProblemAccountResponse) => void;
+    let resolveB!: (response: ProblemAccountResponse) => void;
+    let call = 0;
+    let signalA!: AbortSignal;
+    const api: ProblemAccountsApi = {
+      query: vi.fn((_request, _csrf, signal) => {
+        call += 1;
+        if (call === 1) {
+          signalA = signal!;
+          return new Promise<ProblemAccountResponse>((resolve) => { resolveA = resolve; });
+        }
+        return new Promise<ProblemAccountResponse>((resolve) => { resolveB = resolve; });
+      }),
+    };
+    render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
+    await waitFor(() => expect(api.query).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByTestId("problems-email-filter"), { target: { value: "b@example.invalid" } });
+    fireEvent.click(screen.getByTestId("problems-query"));
+    await waitFor(() => expect(api.query).toHaveBeenCalledTimes(2));
+    resolveB({ items: [row("00000000-0000-4000-8000-000000000002", "b", "b@example.invalid", [issue("FORBIDDEN", "forbidden", "Warning", "b-occ")])], next_cursor: null });
+    expect(await screen.findByText("b@example.invalid")).toBeInTheDocument();
+    resolveA({ items: [row("00000000-0000-4000-8000-000000000001", "a", "a@example.invalid", [issue("TOKEN_INVALID", "token_invalid", "Critical", "a-occ")])], next_cursor: null });
+    await waitFor(() => expect(screen.getByText("b@example.invalid")).toBeInTheDocument());
+    expect(screen.queryByText("a@example.invalid")).not.toBeInTheDocument();
+    expect(signalA.aborted).toBe(true);
   });
 
   it("uses the real select controls for provider, severity, every reason, and clearable values", async () => {
     const api = makeApi({ items: [], next_cursor: null });
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    await screen.findByText("当前没有 confirmed problems");
+    await screen.findByText("当前没有已确认问题");
     const choose = async (label: string, option: string) => {
-      fireEvent.mouseDown(screen.getByLabelText(label));
-      fireEvent.click(await screen.findByText(option, { selector: ".ant-select-item-option-content" }));
+      const testId = label === "Provider" ? "problems-provider-filter" : label === "Severity" ? "problems-severity-filter" : "problems-reason-filter";
+      fireEvent.mouseDown(screen.getByTestId(testId));
+      const optionId = label === "Provider" ? "problems-provider-antigravity" : label === "Severity" ? `problems-severity-${option.toLowerCase()}` : `problems-reason-${option.toLowerCase().replaceAll("_", "-")}`;
+      fireEvent.click(await screen.findByTestId(optionId));
     };
     await choose("Provider", "antigravity");
     await choose("Severity", "Critical");
     for (const reason of ["TOKEN_INVALID", "ACCOUNT_BLOCKED", "FORBIDDEN", "CROSS_NODE_DUPLICATE_OWNERSHIP"]) await choose("Reason", reason);
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
+    fireEvent.click(screen.getByTestId("problems-query"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ provider: "antigravity", severity: "Critical", reason: "cross_node_duplicate_ownership", limit: 25 }, "csrf", expect.any(AbortSignal)));
-    const provider = screen.getByLabelText("Provider").closest(".ant-select");
+    const provider = screen.getByTestId("problems-provider-filter");
     const clear = provider?.querySelector(".ant-select-clear");
     expect(clear).toBeTruthy();
     fireEvent.click(clear!);
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
+    fireEvent.click(screen.getByTestId("problems-query"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ severity: "Critical", reason: "cross_node_duplicate_ownership", limit: 25 }, "csrf", expect.any(AbortSignal)));
   });
 
@@ -158,13 +188,13 @@ describe("ProblemsView", () => {
       .mockResolvedValue({ items: [], next_cursor: null }) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
     await screen.findByText("a@example.invalid");
-    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    fireEvent.click(screen.getByTestId("problems-next"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 25, cursor: "cursor-2" }, "csrf", expect.any(AbortSignal)));
-    expect(screen.getByRole("button", { name: "上一页" })).toBeEnabled();
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new@example.invalid" } });
-    expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
+    expect(screen.getByTestId("problems-previous")).toBeEnabled();
+    fireEvent.change(screen.getByTestId("problems-email-filter"), { target: { value: "new@example.invalid" } });
+    expect(screen.getByTestId("problems-previous")).toBeDisabled();
     expect(screen.queryByText("a@example.invalid")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
+    fireEvent.click(screen.getByTestId("problems-query"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ email: "new@example.invalid", limit: 25 }, "csrf", expect.any(AbortSignal)));
   });
 
@@ -176,13 +206,13 @@ describe("ProblemsView", () => {
       .mockResolvedValue({ items: [], next_cursor: null }) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
     await screen.findByText("a@example.invalid");
-    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    fireEvent.click(screen.getByTestId("problems-next"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 25, cursor: "cursor-2" }, "csrf", expect.any(AbortSignal)));
-    fireEvent.mouseDown(screen.getByLabelText("Page size"));
-    fireEvent.click(await screen.findByText("50 / 页", { selector: ".ant-select-item-option-content" }));
+    fireEvent.mouseDown(screen.getByTestId("problems-page-size"));
+    fireEvent.click(await screen.findByTestId("problems-page-size-50"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 50 }, "csrf", expect.any(AbortSignal)));
-    fireEvent.mouseDown(screen.getByLabelText("Page size"));
-    fireEvent.click(await screen.findByText("100 / 页", { selector: ".ant-select-item-option-content" }));
+    fireEvent.mouseDown(screen.getByTestId("problems-page-size"));
+    fireEvent.click(await screen.findByTestId("problems-page-size-100"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ limit: 100 }, "csrf", expect.any(AbortSignal)));
   });
 
@@ -203,16 +233,16 @@ describe("ProblemsView", () => {
     let resolve!: (response: ProblemAccountResponse) => void;
     const api: ProblemAccountsApi = { query: vi.fn().mockReturnValue(new Promise<ProblemAccountResponse>((done) => { resolve = done; })) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    expect(await screen.findByRole("status", { name: "正在读取 Problems" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Provider")).toBeDisabled();
-    expect(screen.getByLabelText("Node UUID")).toBeDisabled();
-    expect(screen.getByLabelText("Severity")).toBeDisabled();
-    expect(screen.getByLabelText("Reason")).toBeDisabled();
-    expect(screen.getByLabelText("Email")).toBeDisabled();
-    expect(screen.getByLabelText("Page size").closest(".ant-select")).toHaveClass("ant-select-disabled");
-    expect(screen.getByRole("button", { name: /Query/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
+    expect(await screen.findByRole("status", { name: "正在读取问题" })).toBeInTheDocument();
+    expect(screen.getByTestId("problems-provider-filter")).toHaveClass("ant-select-disabled");
+    expect(screen.getByTestId("problems-node-filter")).toBeDisabled();
+    expect(screen.getByTestId("problems-severity-filter")).toHaveClass("ant-select-disabled");
+    expect(screen.getByTestId("problems-reason-filter")).toHaveClass("ant-select-disabled");
+    expect(screen.getByTestId("problems-email-filter")).toBeDisabled();
+    expect(screen.getByTestId("problems-page-size")).toHaveClass("ant-select-disabled");
+    expect(screen.getByTestId("problems-query")).toBeDisabled();
+    expect(screen.getByTestId("problems-previous")).toBeDisabled();
+    expect(screen.getByTestId("problems-next")).toBeDisabled();
     resolve({ items: [], next_cursor: null });
   });
 
@@ -220,7 +250,7 @@ describe("ProblemsView", () => {
     const api: ProblemAccountsApi = { query: vi.fn().mockRejectedValue(new ProblemAccountsApiError(400, { code: "validation_failed", message: "invalid", request_id: "request-400" })) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
     expect(await screen.findByText("筛选条件或分页凭据无效，请清除筛选并重新查询。")).toBeInTheDocument();
-    expect(screen.queryByText("当前没有 confirmed problems")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前没有已确认问题")).not.toBeInTheDocument();
   });
 
   it("retries a 503 with the current email and opaque cursor", async () => {
@@ -231,25 +261,25 @@ describe("ProblemsView", () => {
       .mockResolvedValueOnce({ items: [], next_cursor: null }) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
     await screen.findByText("a@example.invalid");
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: " a@example.invalid " } });
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
+    fireEvent.change(screen.getByTestId("problems-email-filter"), { target: { value: " a@example.invalid " } });
+    fireEvent.click(screen.getByTestId("problems-query"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ email: "a@example.invalid", limit: 25 }, "csrf", expect.any(AbortSignal)));
-    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await waitFor(() => expect(screen.getByText("读取不可用（unavailable）")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByTestId("problems-next"));
+    await waitFor(() => expect(screen.getByText("问题读取暂不可用")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("problems-retry"));
     await waitFor(() => expect(api.query).toHaveBeenLastCalledWith({ email: "a@example.invalid", limit: 25, cursor: "cursor-2" }, "csrf", expect.any(AbortSignal)));
   });
 
   it("shows unavailable for network errors and both empty-state variants", async () => {
     const api: ProblemAccountsApi = { query: vi.fn().mockRejectedValue(new Error("network")) };
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    expect(await screen.findByText("读取不可用（unavailable）")).toBeInTheDocument();
+    expect(await screen.findByText("问题读取暂不可用")).toBeInTheDocument();
     const emptyApi = makeApi({ items: [], next_cursor: null });
     cleanup();
     render(<ProblemsView api={emptyApi} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    expect(await screen.findByText("当前没有 confirmed problems")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "filter@example.invalid" } });
-    fireEvent.click(screen.getByRole("button", { name: /Query/ }));
-    expect(await screen.findByText("当前过滤条件下没有 confirmed problems")).toBeInTheDocument();
+    expect(await screen.findByText("当前没有已确认问题")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("problems-email-filter"), { target: { value: "filter@example.invalid" } });
+    fireEvent.click(screen.getByTestId("problems-query"));
+    expect(await screen.findByText("当前筛选条件下没有已确认问题")).toBeInTheDocument();
   });
 });
