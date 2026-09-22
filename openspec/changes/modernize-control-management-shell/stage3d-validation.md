@@ -39,6 +39,14 @@ Problems owner navigation = OWNER_NAVIGATION
 
 The focused Monitoring component proof covers fresh/stale/unknown/degraded provider state, binding and duplicate state, evidence expansion/pagination, capacity refresh, independent failures, selected-node pagination, and A-to-B stale-context isolation.
 
+```text
+STALE_MONITORING_CONTEXT_ISOLATION = PASS
+BINDING_RESOLUTION_VARIANTS = PASS
+BINDING_LAST_KNOWN_CONTEXT = PASS
+CAPACITY_503_FAILURE_ISOLATION = PASS
+NON_401_SESSION_PRESERVATION = PASS
+```
+
 ## Safety and transport
 
 ```text
@@ -76,7 +84,7 @@ Monitoring focused Browser proof passed 3/3. Cross-stage frontend Browser regres
 ## Validation
 
 ```text
-Unit/component = PASS (46 files / 313 tests)
+Unit/component = PASS (46 files / 320 tests)
 Typecheck = PASS
 Build = PASS
 Translation audit = PASS (resource parity/completeness tests and locale Browser audit)

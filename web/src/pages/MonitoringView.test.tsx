@@ -14,6 +14,12 @@ const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
 const observedAt = "2026-09-07T00:00:00Z";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}
+
 function node(instanceId: string, displayName: string): NodeAsset {
   return { instanceId, displayName, nodeType: "relay", driverContractVersion: "v1", managementEndpoint: "https://node.invalid", secretConfigured: true, capabilities: [], monitoringActive: true, monitoringEffectiveFrom: null, monitoringEffectiveTo: null, lifecycleStatus: "active", revision: "1", retiredAt: null, retiredBy: null, retireReason: null };
 }
@@ -65,6 +71,40 @@ describe("MonitoringView", () => {
     expect(await screen.findByText(B)).toBeInTheDocument();
     expect(screen.queryByTestId("account-workspace")).not.toBeInTheDocument();
   });
+  it("does not let late Node A diagnostics replace selected Node B", async () => {
+    const nodeAResult = deferred<NodeAsset>();
+    const nodeBResult = deferred<NodeAsset>();
+    const providerAResult = deferred<{ instance_id: string; observed_at: string; providers: unknown[] }>();
+    const providerBResult = deferred<{ instance_id: string; observed_at: string; providers: unknown[] }>();
+    let providerASignal!: AbortSignal;
+    const api = topology();
+    api.providers = vi.fn((id: string, signal?: AbortSignal) => {
+      if (id === A) { providerASignal = signal!; return providerAResult.promise; }
+      return providerBResult.promise;
+    }) as never;
+    const assetApi = {
+      nodes: vi.fn().mockResolvedValue({ items: [node(A, "A"), node(B, "B")], nextCursor: null }),
+      node: vi.fn((id: string) => {
+        if (id === A) return nodeAResult.promise;
+        return nodeBResult.promise;
+      }),
+    } as unknown as AssetApi;
+    renderView(api, assetApi);
+    await screen.findByTestId("monitoring-node-selector");
+    fireEvent.mouseDown(screen.getByTestId("monitoring-node-selector"));
+    fireEvent.click(await screen.findByTestId(`monitoring-node-option-${B}`));
+    nodeBResult.resolve(node(B, "B"));
+    providerBResult.resolve({ instance_id: B, observed_at: observedAt, providers: [{ provider: "provider-b" }] });
+    expect(await screen.findByText(B)).toBeInTheDocument();
+    expect(await screen.findByText("provider-b")).toBeInTheDocument();
+    expect(providerASignal.aborted).toBe(true);
+    nodeAResult.resolve(node(A, "A"));
+    providerAResult.resolve({ instance_id: A, observed_at: observedAt, providers: [{ provider: "provider-a" }] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText(B)).toBeInTheDocument();
+    expect(screen.getByText("provider-b")).toBeInTheDocument();
+    expect(screen.queryByText("provider-a")).not.toBeInTheDocument();
+  });
   it("expires the authenticated session when the node list returns 401", async () => {
     const assetApi = { nodes: vi.fn().mockRejectedValue(new AssetApiError(401)), node: vi.fn() } as unknown as AssetApi;
     const { client, onUnauthorized } = renderView(topology(), assetApi);
@@ -97,6 +137,38 @@ describe("MonitoringView", () => {
     expect(api.currentDuplicates).toHaveBeenCalledWith(A, "current-2", expect.any(AbortSignal));
     expect(api.history).toHaveBeenCalledWith(A, undefined, "history-2", expect.any(AbortSignal));
   });
+  it.each([
+    ["resolved", "resolved"],
+    ["unresolved", "unresolved"],
+    ["unknown", "unknown"],
+    ["unbound", "unbound"],
+  ] as const)("preserves binding resolution %s", async (_label, resolution) => {
+    const api = topology();
+    api.binding = vi.fn().mockResolvedValue({ relay_node_id: A, resolution, directory_freshness: "fresh", context_source: "none", observed_at: observedAt });
+    const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [node(A, "A")], nextCursor: null }), node: vi.fn().mockResolvedValue(node(A, "A")) } as unknown as AssetApi;
+    renderView(api, assetApi);
+    expect(await screen.findByText(resolution)).toBeInTheDocument();
+  });
+  it("preserves last-known binding context without reinterpreting machine values", async () => {
+    const api = topology();
+    api.binding = vi.fn().mockResolvedValue({
+      relay_node_id: A,
+      resolution: "resolved",
+      directory_freshness: "stale",
+      context_source: "last_known",
+      gateway_instance_id: "gateway-1",
+      gateway_account_id: "9223372036854775807",
+      account_context: { name: "account-context", platform: "provider", status: "active" },
+      observed_at: observedAt,
+    });
+    const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [node(A, "A")], nextCursor: null }), node: vi.fn().mockResolvedValue(node(A, "A")) } as unknown as AssetApi;
+    renderView(api, assetApi);
+    expect(await screen.findByText("resolved")).toBeInTheDocument();
+    expect(screen.getAllByText(/last_known/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/gateway-1/)).toBeInTheDocument();
+    expect(screen.getByText(/9223372036854775807/)).toBeInTheDocument();
+    expect(screen.getByText(/account-context/)).toBeInTheDocument();
+  });
   it("uses explicit capacity refresh and keeps capacity failure isolated", async () => {
     const api = topology();
     const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [node(A, "A")], nextCursor: null }), node: vi.fn().mockResolvedValue(node(A, "A")) } as unknown as AssetApi;
@@ -106,6 +178,25 @@ describe("MonitoringView", () => {
     fireEvent.click(screen.getByTestId("monitoring-capacity-refresh"));
     await waitFor(() => expect(capacity).toHaveBeenCalledTimes(1));
     expect(screen.getByText(/已禁用|Disabled/)).toBeInTheDocument();
+  });
+  it("isolates a capacity 503 and preserves the authenticated session", async () => {
+    const api = topology();
+    api.providers = vi.fn().mockResolvedValue({ instance_id: A, observed_at: observedAt, providers: [{ provider: "provider-visible" }] });
+    api.binding = vi.fn().mockResolvedValue({ relay_node_id: A, resolution: "resolved", directory_freshness: "fresh", context_source: "none", observed_at: observedAt });
+    api.currentDuplicates = vi.fn().mockResolvedValue({ items: [{ occurrence_id: "occ-503", account_key: "account-503", status: "ACTIVE", severity: "high", evidence_state: "fresh", last_fully_verified_at: observedAt, last_seen_at: observedAt, resolved_at: null, affected_nodes: [] }], next_cursor: null });
+    const assetApi = { nodes: vi.fn().mockResolvedValue({ items: [node(A, "A")], nextCursor: null }), node: vi.fn().mockResolvedValue(node(A, "A")) } as unknown as AssetApi;
+    const onUnauthorized = vi.fn();
+    const capacity = vi.fn().mockRejectedValue(new AccountInventoryApiError(503, { code: "temporarily_unavailable", message: "unavailable", request_id: "fixture" }));
+    renderView(api, assetApi, A, onUnauthorized, inventory(capacity));
+    expect(await screen.findByText("provider-visible")).toBeInTheDocument();
+    expect(screen.getByText("resolved")).toBeInTheDocument();
+    expect(screen.getByText("account-503")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("monitoring-capacity-refresh"));
+    expect(await screen.findByText(/容量诊断暂不可用|Capacity diagnostics unavailable/)).toBeInTheDocument();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(screen.getByText("provider-visible")).toBeInTheDocument();
+    expect(screen.getByText("resolved")).toBeInTheDocument();
+    expect(screen.getByText("account-503")).toBeInTheDocument();
   });
   it("expands evidence explicitly and expires the session for evidence 401", async () => {
     const api = topology();
