@@ -118,15 +118,16 @@ Stage 3E = READY FOR AUTHORIZATION
 
 ```text
 Stage 3E = COMPLETE / PASS
-Stage 3F = READY FOR AUTHORIZATION
+Stage 3F = COMPLETE / PASS
+Stage 4 = READY FOR AUTHORIZATION
 ```
 
 ## 8. Stage 3F — Settings
 
-- [ ] 3F.1 将 ManagementPage 既有 session/admin/password/MFA/reauth/recovery/locale 能力迁入 `/settings`。
-- [ ] 3F.2 UI preference 仅 browser-local；不得增加 backend persistence。
-- [ ] 3F.3 高风险操作继续使用现有 reauth/CSRF/MFA 契约。
-- [ ] 3F.4 focused proof + commit。
+- [x] 3F.1 将 ManagementPage 既有 session/admin/password/MFA/reauth/recovery/locale 能力迁入 `/settings`。
+- [x] 3F.2 UI preference 仅 browser-local；不得增加 backend persistence。
+- [x] 3F.3 高风险操作继续使用现有 reauth/CSRF/MFA 契约。
+- [x] 3F.4 focused proof + commit。
 
 ## 9. Stage 4 — Unified Acceptance
 
