@@ -78,6 +78,7 @@ cases, with all fetch/XHR traffic remaining on the Control origin.
 
 ```text
 Playwright interaction testid policy = PASS
+DOM-order-dependent locator = ZERO
 Accessibility = PASS
 Unit/component = PASS (47 files / 323 tests)
 Typecheck = PASS
