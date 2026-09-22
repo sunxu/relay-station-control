@@ -148,7 +148,13 @@ Stage 5 = READY FOR AUTHORIZATION
 
 ## 10. Stage 5 — Final Independent Review / Closeout
 
-- [ ] 10.1 独立检查 IA、truth-source、业务/安全边界、跨 slice presentation consistency。
-- [ ] 10.2 确认 Backend/API/Migration/Gateway/Node contract change = NONE。
-- [ ] 10.3 reconcile durable decisions 与 acceptance evidence。
-- [ ] 10.4 OpenSpec strict validation、clean worktree、final closeout。
+- [x] 10.1 独立检查 IA、truth-source、业务/安全边界、跨 slice presentation consistency。
+- [x] 10.2 确认 Backend/API/Migration/Gateway/Node contract change = NONE。
+- [x] 10.3 reconcile durable decisions 与 acceptance evidence。
+- [x] 10.4 OpenSpec strict validation、clean worktree、final closeout。
+
+```text
+Stage 5 = COMPLETE / PASS
+Phase 10 = CLOSED / IMPLEMENTED / ACCEPTED
+OpenSpec Archive = READY
+```
