@@ -131,15 +131,20 @@ Stage 4 = READY FOR AUTHORIZATION
 
 ## 9. Stage 4 — Unified Acceptance
 
-- [ ] 9.1 `npm test`、`npm run typecheck`、`npm run build` PASS。
-- [ ] 9.2 RESOURCE_PARITY / REFERENCED_KEY_COMPLETENESS / TRANSLATION_SOURCE_AUDIT PASS。
-- [ ] 9.3 ZH_CN_PC_BROWSER / EN_PC_BROWSER / LIVE_LOCALE_SWITCH PASS。
-- [ ] 9.4 `1280×720`、`1440×900` semantic/layout invariants PASS。
-- [ ] 9.5 ZH_CN_NAVIGATION_ENGLISH_LEAK = ZERO。
-- [ ] 9.6 ZH_CN_UI_UNINTENDED_ENGLISH_LEAK = ZERO（约定例外除外）。
-- [ ] 9.7 RELEVANT_BROWSER_E2E PASS，所有交互 locator 使用 `getByTestId()`。
-- [ ] 9.8 GENERATED_DRIFT = NONE。
-- [ ] 9.9 `make test build` 完整回归 PASS。
+- [x] 9.1 `npm test`、`npm run typecheck`、`npm run build` PASS。
+- [x] 9.2 RESOURCE_PARITY / REFERENCED_KEY_COMPLETENESS / TRANSLATION_SOURCE_AUDIT PASS。
+- [x] 9.3 ZH_CN_PC_BROWSER / EN_PC_BROWSER / LIVE_LOCALE_SWITCH PASS。
+- [x] 9.4 `1280×720`、`1440×900` semantic/layout invariants PASS。
+- [x] 9.5 ZH_CN_NAVIGATION_ENGLISH_LEAK = ZERO。
+- [x] 9.6 ZH_CN_UI_UNINTENDED_ENGLISH_LEAK = ZERO（约定例外除外）。
+- [x] 9.7 RELEVANT_BROWSER_E2E PASS，所有交互 locator 使用 `getByTestId()`。
+- [x] 9.8 GENERATED_DRIFT = NONE。
+- [x] 9.9 `make test build` 完整回归 PASS。
+
+```text
+Stage 4 = COMPLETE / PASS
+Stage 5 = READY FOR AUTHORIZATION
+```
 
 ## 10. Stage 5 — Final Independent Review / Closeout
 
