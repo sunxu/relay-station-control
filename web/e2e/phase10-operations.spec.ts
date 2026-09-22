@@ -73,10 +73,10 @@ async function assertFilterQueryTransport(page: Page, requests: Array<{ method: 
   await page.getByTestId("job-kind-filter").fill("dingtalk_alert_delivery");
   await page.getByTestId("job-created-from").fill("2026-09-20T00:00");
   await page.getByTestId("job-created-to").fill("2026-09-20T02:00");
-  await page.getByTestId("job-status-filter").click();
-  const runningOption = page.getByTestId("job-status-option-running");
-  await runningOption.scrollIntoViewIfNeeded();
-  await runningOption.click();
+  const statusFilter = page.getByTestId("job-status-filter");
+  await statusFilter.click();
+  await statusFilter.press("ArrowDown");
+  await statusFilter.press("Enter");
   await page.getByTestId("job-page-size").click();
   await page.getByTestId("job-page-size-option-200").click();
   await expect.poll(() => requests.filter((request) => request.pathname === "/api/jobs").length).toBeGreaterThan(1);
