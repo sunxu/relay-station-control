@@ -63,6 +63,27 @@ describe("ProblemsView", () => {
     expect(screen.getByText("预计有效至")).toBeInTheDocument();
   });
 
+  it("renders issue type and raw reason in backend order with occurrence IDs", async () => {
+    const api = makeApi({ items: [row("00000000-0000-4000-8000-000000000001", "account", "account@example.invalid", [
+      issue("TOKEN_INVALID", "token_invalid", "Critical", "occ-token"),
+      issue("FORBIDDEN", "forbidden", "Warning", "occ-forbidden"),
+      issue("CROSS_NODE_DUPLICATE_OWNERSHIP", "cross_node_duplicate_ownership", "Critical", "occ-duplicate"),
+    ])], next_cursor: null });
+    render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
+    const problemRow = await screen.findByTestId("problem-row");
+    expect(problemRow).toHaveTextContent("TOKEN_INVALID");
+    expect(problemRow).toHaveTextContent("原因: token_invalid");
+    expect(problemRow).toHaveTextContent("FORBIDDEN");
+    expect(problemRow).toHaveTextContent("原因: forbidden");
+    expect(problemRow).toHaveTextContent("CROSS_NODE_DUPLICATE_OWNERSHIP");
+    expect(problemRow).toHaveTextContent("原因: cross_node_duplicate_ownership");
+    expect(problemRow).toHaveTextContent("occ-token");
+    expect(problemRow).toHaveTextContent("occ-forbidden");
+    expect(problemRow).toHaveTextContent("occ-duplicate");
+    expect(problemRow.textContent?.indexOf("token_invalid")).toBeLessThan(problemRow.textContent?.indexOf("forbidden") ?? 0);
+    expect(problemRow.textContent?.indexOf("forbidden")).toBeLessThan(problemRow.textContent?.indexOf("cross_node_duplicate_ownership") ?? 0);
+  });
+
   it("uses opaque cursor history for next and previous", async () => {
     const api: ProblemAccountsApi = { query: vi.fn()
       .mockResolvedValueOnce({ items: [row("00000000-0000-4000-8000-000000000001", "a", "a@example.invalid", [issue("FORBIDDEN", "forbidden", "Warning", "occ")])], next_cursor: "opaque-2" })

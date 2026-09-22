@@ -48,6 +48,8 @@ async function runProblemsCase(page: Page, locale: "zh-CN" | "en", viewport: { w
   await page.goto("/problems");
   await expect(page.getByTestId("problems-page")).toBeVisible();
   await expect(page.getByTestId("problem-row").first()).toBeVisible();
+  await expect(page.getByTestId("problems-card")).toContainText("token_invalid");
+  await expect(page.getByTestId("problems-card")).toContainText("forbidden");
   expect(problemRequests[0].body).toEqual({ limit: 25 });
   expect(problemRequests[0].headers["x-csrf-token"]).toBe("c");
   expect(requests.every((request) => request.origin === controlOrigin)).toBe(true);
