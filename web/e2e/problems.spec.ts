@@ -47,7 +47,7 @@ async function runProblemsCase(page: Page, locale: "zh-CN" | "en", viewport: { w
   await page.getByTestId("login-submit").click();
   await page.goto("/problems");
   await expect(page.getByTestId("problems-page")).toBeVisible();
-  await expect(page.getByTestId("problem-row").first()).toBeVisible();
+  await expect(page.getByTestId(`problem-row-${nodeA}-${encodeURIComponent("antigravity:user@example.invalid")}`)).toBeVisible();
   await expect(page.getByTestId("problems-card")).toContainText("token_invalid");
   await expect(page.getByTestId("problems-card")).toContainText("forbidden");
   expect(problemRequests[0].body).toEqual({ limit: 25 });

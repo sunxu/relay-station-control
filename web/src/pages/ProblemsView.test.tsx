@@ -33,7 +33,7 @@ describe("ProblemsView", () => {
   it("updates mounted table columns when locale changes", async () => {
     const api = makeApi({ items: [row("00000000-0000-4000-8000-000000000001", "same", "same@example.invalid", [issue("TOKEN_INVALID", "token_invalid", "Critical", "occ-1")])], next_cursor: null });
     render(<><LocaleSwitcher /><ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} /></>, { wrapper });
-    const problemRow = await screen.findByTestId("problem-row");
+    const problemRow = await screen.findByTestId("problem-row-00000000-0000-4000-8000-000000000001-same");
     expect(problemRow).toHaveTextContent(formatDateTime("2026-09-10T01:02:03Z", "zh-CN"));
     fireEvent.change(screen.getByTestId("locale-selector"), { target: { value: "en" } });
     await waitFor(() => expect(problemRow).toHaveTextContent(formatDateTime("2026-09-10T01:02:03Z", "en")));
@@ -70,7 +70,7 @@ describe("ProblemsView", () => {
       issue("CROSS_NODE_DUPLICATE_OWNERSHIP", "cross_node_duplicate_ownership", "Critical", "occ-duplicate"),
     ])], next_cursor: null });
     render(<ProblemsView api={api} csrfToken="csrf" onUnauthorized={vi.fn()} />, { wrapper });
-    const problemRow = await screen.findByTestId("problem-row");
+    const problemRow = await screen.findByTestId("problem-row-00000000-0000-4000-8000-000000000001-account");
     expect(problemRow).toHaveTextContent("TOKEN_INVALID");
     expect(problemRow).toHaveTextContent("原因: token_invalid");
     expect(problemRow).toHaveTextContent("FORBIDDEN");
