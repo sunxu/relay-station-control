@@ -27,7 +27,8 @@ async function installFixture(page: Page, locale: "zh-CN" | "en") {
     throw new Error(`unexpected API request: ${route.request().method()} ${url.pathname}`);
   });
   await page.addInitScript((value) => {
-    if (!localStorage.getItem("relay-control.locale")) localStorage.setItem("relay-control.locale", value);
+    const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (navigation?.type !== "reload") localStorage.setItem("relay-control.locale", value);
   }, locale);
   return requests;
 }

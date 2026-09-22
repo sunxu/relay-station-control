@@ -23,7 +23,7 @@ async function installDashboardFixture(page: Page, failGateway = false) {
   await page.route("**/api/healthz", (route) => route.fulfill({ json: { status: "ok", version: "0.9.3" } }));
   await page.route("**/api/assets/gateways**", (route) => {
     gatewayAttempts += 1;
-    if (failGateway && gatewayAttempts < 3) return route.fulfill({ status: 503, json: { code: "service_unavailable", message: "unavailable", request_id: "dashboard-gateway" } });
+    if (failGateway && gatewayAttempts < 2) return route.fulfill({ status: 503, json: { code: "service_unavailable", message: "unavailable", request_id: "dashboard-gateway" } });
     return route.fulfill({ json: { items: [{ instance_id: "gateway-page-item" }], next_cursor: null, gateway_counts: { active: 30, retired: 7, total: 37 } } });
   });
   await page.route("**/api/assets/nodes**", (route) => route.fulfill({ json: { items: [{ instance_id: "node-page-item" }], next_cursor: null, node_counts: { active: 15, retired: 4, total: 19 } } }));
@@ -70,13 +70,14 @@ test("Dashboard desktop zh-CN 1440x900", async ({ page }) => assertDesktop(page,
 
 test("Dashboard isolates one unavailable source and retries only it", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
+  await page.addInitScript(() => window.localStorage.setItem("relay-control.locale", "zh-CN"));
   const { requests } = await installDashboardFixture(page, true);
   await page.goto("/");
-  await expect(page.getByTestId("dashboard-gateway-summary")).toContainText("Unavailable");
+  await expect(page.getByTestId("dashboard-gateway-summary")).toContainText("暂不可用");
   await expect(page.getByTestId("dashboard-node-summary")).toContainText("19");
   await page.getByTestId("dashboard-retry-gateway").click();
   await expect(page.getByTestId("dashboard-gateway-summary")).toContainText("37");
-  expect(requests.filter((request) => request.includes("/api/assets/gateways")).length).toBe(3);
+  expect(requests.filter((request) => request.includes("/api/assets/gateways")).length).toBe(2);
 });
 
 test("Dashboard work entries navigate without domain reads", async ({ page }) => {

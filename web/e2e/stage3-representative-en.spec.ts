@@ -114,6 +114,7 @@ test.describe("Stage 3 representative English surfaces", () => {
   test.use({ locale: "en" });
 
   test("renders the Auth surface in English", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("relay-control.locale", "en"));
     await page.route("**/api/bootstrap/status", (route) => json(route, { status: "completed" }));
     await page.route("**/api/auth/session", (route) => json(route, { code: "unauthorized", message: "unauthorized", request_id: "english-auth" }, 401));
     await page.goto("/settings");
@@ -125,6 +126,7 @@ test.describe("Stage 3 representative English surfaces", () => {
   });
 
   test("renders Settings, data, operation, and Jobs surfaces in English", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("relay-control.locale", "en"));
     await installAuthenticatedRoutes(page);
     await page.goto("/settings");
     await expect(page.getByTestId("settings-page")).toBeVisible();
