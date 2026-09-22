@@ -32,8 +32,8 @@ test("uploads a new account through the real Control and pinned Node", async ({ 
     }
   });
 
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
 
   const nodeSelector = page.getByTestId("relay-node-selector");
   await expect(nodeSelector).toBeVisible();

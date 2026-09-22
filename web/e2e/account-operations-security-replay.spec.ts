@@ -40,8 +40,8 @@ async function openAccount(page: Page, email: string): Promise<void> {
 test("prevents duplicate browser Disable submission", async ({ page }) => {
   const requests: string[] = [];
   page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/account-operations/disable") requests.push(request.method()); });
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
   await selectNode(page);
   await openAccount(page, disableEmail);
   const responsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/account-operations/disable");

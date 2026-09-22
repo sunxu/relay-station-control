@@ -36,8 +36,8 @@ async function openAccount(page: Page, accountKey: string, responses: InventoryR
 }
 
 test("completes the real Enable operation", async ({ page }) => {
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
   const inventoryResponses: InventoryResponse[] = [];
   page.on("response", (response) => {
     if (!new URL(response.url()).pathname.includes("/account-quality/query")) return;

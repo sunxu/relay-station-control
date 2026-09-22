@@ -5,7 +5,6 @@ import type { AuthApi } from "./api/auth-api";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LocaleSwitcher } from "./foundation/LocaleSwitcher";
 import { AppShell } from "./foundation/AppShell";
-import { FoundationPage, type FoundationPlaceholderRoute } from "./foundation/FoundationPage";
 import { isAuthenticatedRoute, type AuthenticatedRoute } from "./foundation/navigation";
 
 const BootstrapPage = lazy(() => import("./pages/BootstrapPage"));
@@ -14,7 +13,7 @@ const ActivationPage = lazy(() => import("./pages/ActivationPage"));
 const ManagementPage = lazy(() => import("./pages/ManagementPage"));
 const AssetsPage = lazy(() => import("./pages/AssetsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
-const TopologyPage = lazy(() => import("./pages/TopologyPage"));
+const MonitoringPage = lazy(() => import("./pages/MonitoringPage"));
 const ProblemsPage = lazy(() => import("./pages/ProblemsPage"));
 const OneTimeMaterialPage = lazy(() => import("./pages/OneTimeMaterialPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -45,12 +44,11 @@ function AuthShell() {
       {(auth.route === "management" || auth.route === "settings") && <ManagementPage />}
       {auth.route === "assets" && <AssetsPage />}
       {(auth.route === "operations" || auth.route === "jobs") && <OperationsPage />}
-      {auth.route === "topology" && <TopologyPage />}
+      {(auth.route === "monitoring" || auth.route === "topology") && <MonitoringPage />}
       {auth.route === "problems" && <ProblemsPage />}
       {auth.route === "dashboard" && <DashboardPage />}
       {auth.route === "accounts" && <AccountsPage />}
       {auth.route === "nodes" && <NodesPage />}
-      {authenticated && auth.route === "monitoring" && <FoundationPage route={auth.route as FoundationPlaceholderRoute} />}
       {auth.route === "one-time" && <OneTimeMaterialPage />}
     </Suspense>;
 

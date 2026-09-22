@@ -43,8 +43,8 @@ test("performs a lifecycle override with closed-set reasons", async ({ page }) =
     if (path.includes("/lifecycle-override")) requests.push(`${request.method()} ${path}`);
   });
 
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
   await selectNode(page);
 
   await openAccount(page, `antigravity:${lifecycleEmail}`);

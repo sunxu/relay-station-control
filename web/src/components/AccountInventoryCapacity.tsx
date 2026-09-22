@@ -18,11 +18,11 @@ function capacityStatusLabel(value: AccountInventoryPollCapacity["status"], copy
 
 export function AccountInventoryCapacity({ api, csrfToken, onUnauthorized, surface = "topology" }: {
   api: AccountInventoryApi; csrfToken: string; onUnauthorized: () => void;
-  surface?: "accounts" | "topology";
+  surface?: "accounts" | "monitoring" | "topology";
 }) {
   const capacity = useAccountInventoryPollCapacity(api, csrfToken);
   const locale = useOptionalAppLocale()?.locale ?? "zh-CN";
-  const copy = surface === "topology" ? { ...resources[locale].translation.accounts, ...resources[locale].translation.topology } : resources[locale].translation.accounts;
+  const copy = surface === "monitoring" ? { ...resources[locale].translation.accounts, ...resources[locale].translation.monitoring } : surface === "topology" ? { ...resources[locale].translation.accounts, ...resources[locale].translation.topology } : resources[locale].translation.accounts;
   useEffect(() => {
     if (capacity.error instanceof AccountInventoryApiError && capacity.error.status === 401) onUnauthorized();
   }, [capacity.error, onUnauthorized]);

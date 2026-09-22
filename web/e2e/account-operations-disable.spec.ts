@@ -33,8 +33,8 @@ async function openAccount(page: Page, accountKey: string) {
 }
 
 test("renders the real Disable operation result", async ({ page }) => {
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
   const node = page.getByTestId("relay-node-selector");
   await node.click();
   await node.press("ArrowDown");

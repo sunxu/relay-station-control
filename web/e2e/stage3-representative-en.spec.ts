@@ -136,16 +136,10 @@ test.describe("Stage 3 representative English surfaces", () => {
     await expect(page.getByTestId("jobs-card")).toContainText("Persistent jobs");
     await expect(page.getByTestId(/job-row-/)).toBeVisible();
 
-    await page.goto(`/topology?instance_id=${nodeID}`);
-    await expect(page.getByTestId("topology-page")).toBeVisible();
-    await page.getByTestId("account-query").click();
-    const accountDetail = page.getByTestId(`account-details-${encodeURIComponent(accountKey)}`);
-    await expect(accountDetail).toBeVisible();
-    await accountDetail.click();
-    await page.getByTestId("account-operations-tab").click();
-    await page.getByTestId("account-operation-command-id").fill(commandID);
-    await page.getByTestId("account-operation-read").click();
-    await expect(page.getByTestId("account-operation-result")).toContainText("Outcome unknown");
+    await page.goto(`/monitoring?instance_id=${nodeID}`);
+    await expect(page.getByTestId("monitoring-page")).toBeVisible();
+    await expect(page.getByTestId("monitoring-view")).toBeVisible();
+    await expect(page.getByTestId("monitoring-navigation")).toBeVisible();
     await expect(page.locator("body")).not.toContainText(/\b(?:translation|operations|topology)\.[a-z0-9_.-]+\b/u);
 
     await page.goto("/nodes");

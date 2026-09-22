@@ -56,8 +56,8 @@ test("proves the disabled Enable fixture through Node, Inventory, and Browser", 
   expect(nodeResponse.status()).toBe(200);
   expect(nodeAccount).toMatchObject({ provider: "antigravity", email: enableEmail, source: "file", runtime_only: false, disabled: true });
 
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
   const inventoryResponses: Array<{ status: number; items: Array<{ account_key?: string; email?: string; provider?: string; inventory?: { basic_status?: string; lifecycle?: string } }> }> = [];
   page.on("response", (response) => {
     if (!new URL(response.url()).pathname.includes("/account-quality/query")) return;

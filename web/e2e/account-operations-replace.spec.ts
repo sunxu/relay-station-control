@@ -77,8 +77,8 @@ test("replaces an existing account through the real Control and pinned Node", as
   expect(beforeNode.status()).toBe(200);
   expect(beforeBody.files?.find((file) => file.email?.trim().toLowerCase() === replaceEmail.trim().toLowerCase())).toMatchObject({ provider: "antigravity", email: replaceEmail, source: "file", runtime_only: false, disabled: false });
 
-  await page.goto("/topology");
-  await expect(page.getByTestId("topology-page")).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByTestId("accounts-page")).toBeVisible();
   await selectNode(page);
   await openAccount(page, responses, accountKey);
 
