@@ -1,7 +1,7 @@
 # control-management-shell Specification
 
 ## Purpose
-TBD - created by archiving change modernize-control-management-shell. Update Purpose after archive.
+为 Relay Station Control Web 定义统一的 PC 管理控制台、一级信息架构、领域 presentation ownership、Dashboard truth-source 约束、国际化与 Desktop Browser 验收边界，同时保持既有业务真相源、安全契约与 Control/Gateway/Relay Node 职责不变。
 
 ## Requirements
 

@@ -1,8 +1,9 @@
 # Phase 10 Stage 5 Final Independent Review / Closeout
 
 PHASE10_STAGE5 = CLOSED / PASS
-PHASE10_STATUS = CLOSED / IMPLEMENTED / ACCEPTED
-ARCHIVE_READINESS = READY
+PHASE10_STATUS = CLOSED / IMPLEMENTED / ACCEPTED / ARCHIVED
+ARCHIVE_STATUS = ARCHIVED
+ARCHIVE_READINESS = SATISFIED
 
 Final implementation HEAD = f892d4712ece2ea6fe2982f3797bd49c69ed372f
 Stage 4 acceptance SHA = 07fce9351cfb94b49168c84391f0a5306ed943fc
@@ -110,7 +111,6 @@ P0 = 0
 P1 = 0
 P2 = 0
 
-ARCHIVE_STATUS = ARCHIVED
 ARCHIVE_PATH = openspec/changes/archive/2026-09-22-modernize-control-management-shell
 ARCHIVE_COMMAND = openspec archive modernize-control-management-shell --yes
 
@@ -118,3 +118,8 @@ Canonical control-management-shell = SYNCED
 Canonical asset-registry = SYNCED
 Canonical node-centric-topology-ui = SYNCED
 Canonical relay-node-management-operations = SYNCED
+
+POST_ARCHIVE_OPENSPEC_STRICT = PASS (32/32)
+POST_ARCHIVE_GENERATED_DRIFT = NONE
+POST_ARCHIVE_GIT_DIFF_CHECK = PASS
+POST_ARCHIVE_TRACKED_WORKTREE = CLEAN
