@@ -65,7 +65,7 @@ Failure isolation = PASS
 Empty / Unknown / Unavailable semantics = PASS
 ```
 
-The Browser fixture captures every fetch/XHR with method, full URL, origin, and pathname. The repository-owned production-like HTTPS harness also passed its five general suites: authentication, Gateway management, Node lifecycle, Problems, and the Topology/Monitoring compatibility surface.
+The Browser fixture captures every fetch/XHR with method, full URL, origin, and pathname. The repository-owned production-like HTTPS harness passed 5/5 general suites: authentication, Gateway management, Node lifecycle, Problems, and the Topology/Monitoring compatibility surface.
 
 ## Browser matrix
 
@@ -79,7 +79,7 @@ Playwright interaction testid policy = PASS
 Browser proof = PASS
 ```
 
-Monitoring focused Browser proof passed 3/3. Cross-stage frontend Browser regression passed 19/19 across Dashboard, Foundation, Accounts, Nodes, Operations, and representative locale. Browser execution used the project-pinned Playwright Chromium 1.62.1 in host execution with normal security settings and no proxy variables.
+Monitoring focused Browser proof passed 3/3. Cross-stage frontend Browser regression passed 22/22 across Monitoring, Dashboard, Foundation, Accounts, Nodes, Operations, and representative locale. Browser execution used the project-pinned Playwright Chromium 1.62.1 in host execution with normal security settings and no proxy variables.
 
 ## Validation
 
