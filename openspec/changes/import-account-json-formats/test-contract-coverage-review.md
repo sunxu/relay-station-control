@@ -1,7 +1,7 @@
 # Test Contract Coverage Review
 
-规划覆盖评审：PASS（逐条可验证的 owning proof 已指定）；执行状态：NOT RUN。
-这是主 Agent 的设计期覆盖审阅，不是独立子代理报告或产品验收 PASS。实际实现仍须先批准规划，执行下面测试，再关闭任务。
+规划覆盖评审：PASS；最终执行与实际计数见 `validation.md`。
+这是主 Agent 的覆盖审阅，不是独立子代理报告。用户已批准规划；unit/component、真实 PostgreSQL HTTP、Accounts Browser 与真实 Node upload owning acceptance 已执行。
 
 | Contract | Risk | Owning Layer / Concrete Proof | Negative / Race | Browser |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@
 | 原始字节 HMAC/replay | 错误重放 | service canonical intent tests + 真实 store/API replay：同字节精确重放；仅 proxy/password/disabled 改变则 conflict，native count 不增长 | 旧 missing-disabled payload 兼容；wrong-key/conflict ordering 沿用既有 owning tests | 只检查 UI 零 retry |
 | 独立顺序提交/部分成功 | 伪造 all-success | component fake API 返回 applied/failed/unknown；断言每项 unique command 与 file-order、失败继续、unknown 不重试 | double click、network error、403/409/503 不 expire；结果携带安全命令身份与未提交状态 | 代表 full-chain 双格式及 partial-success UI |
 | 401 和目标上下文 | 跨 Node/旧 session 提交 | component delayed Promise：A first in flight，换 Node/卸载/401，旧请求可完成但 B 不发送、不恢复 UI；Accounts page cache/session tests | 401 stops vs 非401 continues，cancel before submission、late response after exit | 已有 session owning path + focused stop proof |
-| File A→B 与清理 | 迟到凭据覆盖 | controllable File.text Promise：B resolves then A；只有 B 可提交；取消/完成/401/卸载清理 input 与 prepared refs | A→B、B→A、cancel during read、Node change during read | 无需重复竞态 matrix |
+| File A→B 与清理 | 迟到凭据覆盖 | controllable FileReader：B resolves then A；只有 B 可提交；完成/401/卸载清理 input 与 prepared refs | A→B、Node change during submission、401 stops remainder | 无需重复竞态 matrix |
 | Secret boundaries | 凭据持久泄漏 | component synthetic token/proxy canaries 不在 textContent、错误、projection；API integration persistence scanner 检查 HMAC-only durable state | raw JSON parse error 不包含输入，认证 URL parse error 不回显 | URL/history/storage/console/text + ALL fetch/xhr origin capture |
 | 既有安全/数据面边界 | 绕过 CSRF/原生调度 | 既有 HTTP auth/CSRF、Node adapter allowlist、receipt/audit/serial tests 回归；git scope 无 DB/API/Node/Gateway production diff | 零 proxy probe、零 replace/repair endpoint、无 provider refresh | same-origin X-CSRF-Token 与精确 route allowlist |
 | i18n/a11y/locator | UI 不可用 | resources parity/key/source tests；component 可访问状态/按钮标签、文字状态 | zh-CN/en locale、无 Secret aria-label | 1280 desktop zh/en；getByTestId 交互，无 DOM-order locator |

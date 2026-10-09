@@ -1,6 +1,7 @@
 # Implementation candidate progress
 
-Status: IN PROGRESS — formal real-Node acceptance and full Make gate are not closed.
+Historical candidate status: IN PROGRESS at the first implementation commit.
+Final real-Node acceptance and full Make disposition are recorded in `validation.md`.
 
 The user approved the revised import boundary and authorized implementation and
 Git commits; no push, archive or deployment is authorized.

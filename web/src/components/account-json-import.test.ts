@@ -51,4 +51,21 @@ describe("account JSON import", () => {
     expect(() => parseAccountImport(" ".repeat(1048577))).toThrow("tooLarge");
     expect(() => parse({ accounts: Array.from({ length: 101 }, (_, i) => ({ ...account, proxy_key: null, credentials: { email: `u${i}@example.invalid`, refresh_token: "synthetic" } })) })).toThrow("tooMany");
   });
+  it("accepts exact file/account limits and rejects an unsafe oversized identity", () => {
+    const text = JSON.stringify(single);
+    expect(parseAccountImport(text + " ".repeat(1048576 - new TextEncoder().encode(text).length))).toHaveLength(1);
+    const accounts = Array.from({ length: 100 }, (_, i) => ({ ...account, proxy_key: null, credentials: { email: `u${i}@example.invalid`, refresh_token: "synthetic" } }));
+    expect(parse({ accounts })).toHaveLength(100);
+    expect(parse({ ...single, email: "a".repeat(222) + "@example.invalid" })[0]!.email).toHaveLength(238);
+    expect(() => parse({ ...single, email: "a".repeat(223) + "@example.invalid" })).toThrow("invalidAccount");
+  });
+  it("preserves native optional fields and normalizes batch duplicate identities before admission", () => {
+    const native = { ...single, expired: null, project_id: "native-project", provider_native_field: "synthetic-value" };
+    expect(JSON.parse(parse(native)[0]!.json)).toMatchObject({ expired: null, project_id: "native-project", provider_native_field: "synthetic-value" });
+    const variants = [account, { ...account, credentials: { ...account.credentials, email: " BATCH@EXAMPLE.INVALID " } }];
+    expect(() => parse({ accounts: variants, proxies: [proxy] })).toThrow("duplicateIdentity");
+  });
+  it.each([null, "false", 0])("rejects batch nonboolean disabled %s", (disabled) => {
+    expect(() => parse({ accounts: [{ ...account, disabled }], proxies: [proxy] })).toThrow("invalidAccount");
+  });
 });
