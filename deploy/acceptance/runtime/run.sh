@@ -431,7 +431,7 @@ if [[ "$MODE" == "upload" ]]; then
     compose logs --no-color control node node-counter >&2 || true
     exit 1
   fi
-  upload_command_id="$(sed -n 's/.*"command_id":"\([0-9a-f-]*\)".*/\1/p' "$RUNTIME_DIR/upload-evidence.json")"
+  upload_command_id="$(node -e 'const fs=require("fs");const evidence=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(typeof evidence.command_id!=="string")process.exit(1);process.stdout.write(evidence.command_id)' "$RUNTIME_DIR/upload-evidence.json")"
   [[ "$upload_command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "upload_evidence_missing_command_id" >&2; exit 1; }
   assert_upload_count() {
     local label="$1" query="$2" got
