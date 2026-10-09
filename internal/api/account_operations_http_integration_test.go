@@ -54,6 +54,8 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 	var artifact atomic.Value
 	artifact.Store(true)
 	var mutationCount atomic.Int32
+	var uploadedCredential atomic.Value
+	uploadedCredential.Store([]byte{})
 	var snapshotCount atomic.Int32
 	var mutationStatus atomic.Int32
 	var mutationMode atomic.Int32
@@ -69,6 +71,10 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 			return
 		}
 		mutationCount.Add(1)
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			uploadedCredential.Store(body)
+		}
 		if mutationMode.Load() == 2 {
 			connection, _, hijackErr := w.(http.Hijacker).Hijack()
 			if hijackErr == nil {
@@ -254,6 +260,24 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 		t.Fatalf("invalid upload status/body=%d/%s retry=%d/%s", invalidUpload.Code, invalidUpload.Body.String(), invalidUploadRetry.Code, invalidUploadRetry.Body.String())
 	}
 	var registryRows, operationRows, receiptRows int
+	for _, test := range []struct{ path, extra string }{
+		{"upload-new", `,"proxy_url":"http://proxy.invalid?secret"`},
+		{"upload-new", `,"disabled":"false"`},
+		{"replace-existing", `,"disabled":false`},
+	} {
+		id := uuid.New()
+		before := mutationCount.Load()
+		response := postUploadCredential("/api/account-operations/"+test.path, id, token, csrf, `{"type":"antigravity","email":"user@example.invalid","refresh_token":"synthetic"`+test.extra+`}`)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid imported configuration status=%d", response.Code)
+		}
+		if err := owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM admin_command_registry WHERE command_id=$1), (SELECT count(*) FROM account_admin_operations WHERE command_id=$1), (SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1)`, id).Scan(&registryRows, &operationRows, &receiptRows); err != nil {
+			t.Fatal(err)
+		}
+		if registryRows+operationRows+receiptRows != 0 || mutationCount.Load() != before {
+			t.Fatal("invalid configuration crossed acceptance boundary")
+		}
+	}
 	if err = owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM admin_command_registry WHERE command_id=$1), (SELECT count(*) FROM account_admin_operations WHERE command_id=$1), (SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1)`, invalidUploadID).Scan(&registryRows, &operationRows, &receiptRows); err != nil {
 		t.Fatal(err)
 	}
@@ -341,6 +365,34 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 		}
 	}
 
+	t.Run("import proxy disabled bytes and replay", func(t *testing.T) {
+		snapshot.Store(`{"files":[]}`)
+		id := uuid.New()
+		credential := `{"type":"antigravity","email":"user@example.invalid","refresh_token":"synthetic-import-refresh","proxy_url":"socks5h://user:synthetic-proxy-password@proxy.invalid:1080","disabled":false}`
+		before := mutationCount.Load()
+		first := postUploadCredential("/api/account-operations/upload-new", id, token, csrf, credential)
+		if first.Code != http.StatusOK || mutationCount.Load() != before+1 {
+			t.Fatal("import did not dispatch exactly once")
+		}
+		if !bytes.Contains(uploadedCredential.Load().([]byte), []byte(credential)) {
+			t.Fatal("import credential bytes changed before native dispatch")
+		}
+		assertOperation(t, id, "remote_applied", "", true, true)
+		replay := postUploadCredential("/api/account-operations/upload-new", id, token, csrf, credential)
+		if replay.Code != first.Code || replay.Body.String() != first.Body.String() {
+			t.Fatal("exact import replay changed receipt")
+		}
+		for _, changed := range []string{strings.Replace(credential, "proxy.invalid", "other.invalid", 1), strings.Replace(credential, `"disabled":false`, `"disabled":true`, 1)} {
+			response := postUploadCredential("/api/account-operations/upload-new", id, token, csrf, changed)
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"command_conflict"`) {
+				t.Fatal("changed import intent did not conflict")
+			}
+		}
+		if mutationCount.Load() != before+1 {
+			t.Fatal("import replay or conflict redispatched")
+		}
+	})
+
 	// Pre-dispatch failures are durable and never issue a mutation.
 	for _, tc := range []struct{ name, code, files string }{
 		{"not-found", "account_target_not_found", `{"files":[]}`},
@@ -383,18 +435,19 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 		t.Fatalf("oversized upload reserved command=%d times", oversizedReservations)
 	}
 
-	// Invalid artifact is also pre-dispatch.
+	// Phase 9 removed runtime header identity gating. Missing observational
+	// headers do not invalidate an otherwise eligible authenticated snapshot.
 	artifact.Store(false)
 	snapshot.Store(`{"files":[{"name":"account.json","provider":"antigravity","email":"user@example.invalid","source":"file","runtime_only":false,"auth_index":"1","disabled":false}]}`)
 	id := uuid.New()
 	before := mutationCount.Load()
 	response := post("/api/account-operations/remove", `{"command_id":"`+id.String()+`","node_instance_id":"`+nodeID.String()+`","account_key":"antigravity:user@example.invalid","confirmation":"REMOVE"}`)
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("artifact status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf("missing observation headers status=%d", response.Code)
 	}
-	assertOperation(t, id, "failed", "unsupported_node_version", true, true)
-	if mutationCount.Load() != before {
-		t.Fatal("artifact failure mutated native state")
+	assertOperation(t, id, "remote_applied", "", true, true)
+	if mutationCount.Load() != before+1 {
+		t.Fatal("missing observation headers changed native dispatch count")
 	}
 	artifact.Store(true)
 

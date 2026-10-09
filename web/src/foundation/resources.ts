@@ -231,6 +231,9 @@ const canonicalTranslation = {
     openAssets: "Gateway 与环境资产",
   },
   operations: {
+    importScope: "支持单账号 JSON 或 Sub2API 批量导出（最多 100 个账号）。从文件读取邮箱，仅导入凭据、代理与初始启用状态，不导入调度或模型配置。",
+    importEnabled: "启用", importDisabled: "禁用", importProxy: "代理已配置", importNoProxy: "未配置账号代理", importPending: "未提交", importReading: "正在解析文件",
+    importErrors: { invalidJson: "JSON 文件格式无效", invalidAccount: "账号身份、凭据或初始状态无效", invalidProxy: "代理配置或引用无效", duplicateIdentity: "文件包含重复账号", tooLarge: "文件超过 1 MiB 限制", tooMany: "一次最多导入 100 个账号", forbiddenConfiguration: "文件包含不允许导入的运行配置" },
     title: "操作",
     description: "持久任务运行历史与操作入口",
     guidance: "操作只提交逻辑账号身份；物理目标由服务端基于最新 Node 快照选择。",
@@ -475,6 +478,9 @@ export const resources = {
         openAssets: "Gateway and environment assets",
       },
       operations: {
+        importScope: "Supports single-account JSON or a Sub2API export (up to 100 accounts). Email comes from the file. Only credentials, proxy and initial enabled state are imported, not scheduling or model configuration.",
+        importEnabled: "Enabled", importDisabled: "Disabled", importProxy: "Proxy configured", importNoProxy: "No account proxy", importPending: "Not submitted", importReading: "Reading file",
+        importErrors: { invalidJson: "Invalid JSON file", invalidAccount: "Invalid account identity, credentials or initial state", invalidProxy: "Invalid proxy configuration or reference", duplicateIdentity: "Duplicate accounts in file", tooLarge: "File exceeds 1 MiB", tooMany: "Import at most 100 accounts", forbiddenConfiguration: "File contains unsupported runtime configuration" },
         title: "Operations",
         description: "Durable job history and operation entry points",
         guidance: "Operations submit only the logical account identity; the server selects the physical target from the latest Node snapshot.",

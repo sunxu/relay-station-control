@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -323,6 +325,15 @@ func validateCommandRequest(command Command) error {
 		if err := validateCredential(command.Credential, email); err != nil {
 			return err
 		}
+		if command.Kind == store.AccountReplaceExisting {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(command.Credential, &fields) != nil {
+				return ErrInvalidCommand
+			}
+			if _, present := fields["disabled"]; present {
+				return ErrInvalidCommand
+			}
+		}
 	}
 	return nil
 }
@@ -351,8 +362,8 @@ func canonicalNonUploadIntent(command Command) ([]byte, error) {
 }
 
 var deniedCredentialMetadata = map[string]struct{}{
-	"disabled": {}, "weight": {}, "priority": {}, "headers": {}, "request_retry": {},
-	"excluded_models": {}, "proxy_url": {}, "note": {}, "websockets": {}, "prefix": {},
+	"weight": {}, "priority": {}, "headers": {}, "request_retry": {},
+	"excluded_models": {}, "note": {}, "websockets": {}, "prefix": {},
 	"models": {}, "disable_cooling": {}, "fingerprint_profile": {}, "base_url": {},
 	"model_aliases": {}, "request_scoped_errors": {}, "tool_prefix_disabled": {},
 }
@@ -378,6 +389,25 @@ func validateCredential(raw []byte, expectedEmail string) error {
 	if err := json.Unmarshal(fields["email"], &email); err != nil || strings.ToLower(strings.TrimSpace(email)) != expectedEmail {
 		return ErrInvalidCommand
 	}
+	if value, present := fields["disabled"]; present {
+		if string(value) != "true" && string(value) != "false" {
+			return ErrInvalidCommand
+		}
+	}
+	proxy, hasProxy := fields["proxy_url"]
+	alias, hasAlias := fields["proxy-url"]
+	if hasProxy && hasAlias {
+		return ErrInvalidCommand
+	}
+	if hasAlias {
+		proxy = alias
+	}
+	if hasProxy || hasAlias {
+		var value string
+		if json.Unmarshal(proxy, &value) != nil || !validAccountProxyURL(value) {
+			return ErrInvalidCommand
+		}
+	}
 	for key := range fields {
 		canonical := key
 		if mapped, ok := credentialMetadataAliases[key]; ok {
@@ -388,6 +418,45 @@ func validateCredential(raw []byte, expectedEmail string) error {
 		}
 	}
 	return nil
+}
+
+// Validate only; do not connect, rewrite credential bytes or expose URL errors.
+func validAccountProxyURL(value string) bool {
+	if value == "" || strings.ContainsAny(value, "?#") {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return false
+		}
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.Opaque != "" || u.Hostname() == "" || (u.Path != "" && u.Path != "/") {
+		return false
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return false
+	}
+	if strings.HasSuffix(u.Host, ":") {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return false
+		}
+	}
+	if u.User != nil {
+		password, _ := u.User.Password()
+		for _, r := range u.User.Username() + password {
+			if unicode.IsControl(r) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func validOverrideDetail(detail string) bool {

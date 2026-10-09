@@ -93,7 +93,7 @@ REPLACE_SECRET_MARKER="PHASE7_REPLACE_SECRET_${PROJECT##*-}"
 REMOVE_EMAIL="phase7-remove-${PROJECT}@example.invalid"
 OVERRIDE_LIFECYCLE_EMAIL="phase7-override-lifecycle-${PROJECT}@example.invalid"
 setup_upload_fixture() {
-  printf '{"type":"antigravity","email":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
+  printf '{"type":"antigravity","email":"%s","refresh_token":"%s","phase7_marker":"%s"}\n' "$UPLOAD_EMAIL" "$UPLOAD_SECRET_MARKER" "$UPLOAD_SECRET_MARKER" > "$RUNTIME_DIR/upload-credential.json"
 }
 setup_upload_seed_fixture() {
   printf '{"type":"antigravity","email":"phase7-seed-%s@example.invalid","access_token":"phase7-disposable-seed-token"}\n' "$PROJECT" > "$RUNTIME_DIR/node/auths/phase7-seed.json"
@@ -442,10 +442,18 @@ if [[ "$MODE" == "upload" ]]; then
   assert_upload_count operation "SELECT count(*) FROM account_admin_operations WHERE command_id='$upload_command_id' AND operation_kind='upload_new' AND account_key='antigravity:$UPLOAD_EMAIL' AND execution_state='remote_applied'"
   assert_upload_count receipt "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$upload_command_id'"
   assert_upload_count audit "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$upload_command_id'"
+  while IFS=$'\t' read -r batch_command_id batch_email; do
+    [[ "$batch_command_id" =~ ^[0-9a-f-]{36}$ && "$batch_email" =~ ^batch-(enabled|disabled)-phase7-[a-zA-Z0-9-]+@example.invalid$ ]] || { echo "batch_evidence_invalid" >&2; exit 1; }
+    assert_upload_count batch_registry "SELECT count(*) FROM admin_command_registry WHERE command_id='$batch_command_id' AND command_kind='account.upload_new'"
+    assert_upload_count batch_operation "SELECT count(*) FROM account_admin_operations WHERE command_id='$batch_command_id' AND account_key='antigravity:$batch_email' AND execution_state='remote_applied'"
+    assert_upload_count batch_receipt "SELECT count(*) FROM account_admin_command_receipts WHERE command_id='$batch_command_id'"
+    assert_upload_count batch_audit "SELECT count(*) FROM audit_logs WHERE category='account_admin' AND details->>'command_id'='$batch_command_id'"
+  done < <(node -e 'const fs=require("fs");const e=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(e.batch?.length!==2)process.exit(1);for(const b of e.batch)console.log(b.command_id+"\t"+b.email)' "$RUNTIME_DIR/upload-evidence.json")
+  node -e 'const fs=require("fs"),path=require("path");const e=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const marker=JSON.parse(fs.readFileSync(process.argv[3],"utf8")).refresh_token;if(e.batch?.length!==2)process.exit(1);for(const b of e.batch){const c=JSON.parse(fs.readFileSync(path.join(process.argv[2],"antigravity-"+b.email+".json"),"utf8"));if(c.disabled!==b.disabled||c.proxy_url!=="socks5h://synthetic:"+encodeURIComponent(marker)+"@proxy.example.invalid:1080")process.exit(1)}' "$RUNTIME_DIR/upload-evidence.json" "$RUNTIME_DIR/node/auths" "$RUNTIME_DIR/upload-credential.json"
   mkdir -p "$RUNTIME_DIR/logs"
   capture_compose_logs "$RUNTIME_DIR/logs/compose.log" control node node-counter
   native_post_count="$(native_mutation_count "$RUNTIME_DIR/logs/compose.log" POST "/v0/management/auth-files")"
-  [[ "$native_post_count" == 1 ]] || { echo "native_upload_post_count_mismatch:${native_post_count:-0}" >&2; exit 1; }
+  [[ "$native_post_count" == 3 ]] || { echo "native_upload_post_count_mismatch:${native_post_count:-0}" >&2; exit 1; }
   node_observation="$RUNTIME_DIR/node-observation.json"
   curl --noproxy '*' --silent --show-error --fail --header "Authorization: Bearer $NODE_MANAGEMENT_PASSWORD" "http://127.0.0.1:${NODE_PORT}/v0/management/auth-files" -o "$node_observation"
   grep -Fq "$UPLOAD_EMAIL" "$node_observation" || { echo "node_upload_observation_missing" >&2; exit 1; }
@@ -466,6 +474,7 @@ if [[ "$MODE" == "upload" ]]; then
   echo "UPLOAD_NEW_CONTROL=PASS"
   echo "UPLOAD_NEW_POSTGRES=PASS"
   echo "UPLOAD_NEW_NODE=PASS"
+  echo "UPLOAD_BATCH_PROXY_DISABLED=PASS"
   echo "UPLOAD_NEW_NATIVE_MUTATIONS=$native_post_count"
   exit 0
 fi

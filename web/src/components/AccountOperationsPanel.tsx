@@ -1,6 +1,6 @@
 import { Alert, Button, Descriptions, Divider, Flex, Input, Modal, Select, Space, Tag, Typography, Upload } from "antd";
 import type { UploadFile } from "antd";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AccountOperationProjection, OverrideReason } from "../api/generated/control";
 import type { AccountMutationKind, AccountOperationsApi } from "../api/account-operations-api";
@@ -8,6 +8,8 @@ import { AccountOperationApiError, accountOperationErrorMessage } from "../api/a
 import { formatDateTime } from "../foundation/format";
 import { useOptionalAppLocale } from "../foundation/FrontendFoundationProvider";
 import { resources } from "../foundation/resources";
+import { AccountImportError, parseAccountImport } from "./account-json-import";
+import type { PreparedAccountImport } from "./account-json-import";
 
 const maxCredentialBytes = 1024 * 1024;
 function statePresentation(operation: AccountOperationProjection, t: (key: "operations.applied" | "operations.noop" | "operations.unknown" | "operations.failed") => string) {
@@ -139,42 +141,94 @@ export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthoriz
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  const [email, setEmail] = useState("");
   const [credential, setCredential] = useState<File>();
+  const prepared = useRef<PreparedAccountImport[]>([]);
+  const generation = useRef(0);
+  const [reading, setReading] = useState(false);
+  const [preview, setPreview] = useState<Array<Omit<PreparedAccountImport, "json">>>([]);
+  const [results, setResults] = useState<Array<{ email: string; commandId?: string; operation?: AccountOperationProjection; error?: string }>>([]);
   const [credentialInputKey, setCredentialInputKey] = useState(0);
-  const [operation, setOperation] = useState<AccountOperationProjection>();
   const [error, setError] = useState("");
 
   const clearCredential = () => {
+    generation.current += 1;
+    for (const account of prepared.current) account.json = "";
+    prepared.current = [];
+    setPreview([]);
+    setReading(false);
     setCredential(undefined);
     setCredentialInputKey((value) => value + 1);
+  };
+  useEffect(() => {
+    clearCredential();
+    setResults([]);
+    setError("");
+    setOpen(false);
+    return () => { generation.current += 1; for (const account of prepared.current) account.json = ""; prepared.current = []; };
+  }, [nodeInstanceId, csrf]);
+  const read = async (file: File) => {
+    clearCredential();
+    setError("");
+    if (file.size > maxCredentialBytes) { setError(operationCopy.importErrors.tooLarge); return; }
+    const current = generation.current;
+    setReading(true);
+    setCredential(file);
+    try {
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new AccountImportError("invalidJson"));
+        reader.readAsText(file);
+      });
+      if (current !== generation.current) return;
+      const accounts = parseAccountImport(text);
+      prepared.current = accounts;
+      setPreview(accounts.map(({ email, disabled, proxyConfigured }) => ({ email, disabled, proxyConfigured })));
+    } catch (cause) {
+      if (current !== generation.current) return;
+      clearCredential();
+      setError(operationCopy.importErrors[cause instanceof AccountImportError ? cause.code : "invalidJson"]);
+    } finally { if (current === generation.current) setReading(false); }
   };
   const close = () => {
     if (busyRef.current) return;
     clearCredential();
-    setEmail("");
     setError("");
     setOpen(false);
   };
   const submit = async () => {
-    if (busyRef.current || !credential || !email.trim()) return;
+    if (busyRef.current || reading || !prepared.current.length) return;
     busyRef.current = true;
     setBusy(true);
     setError("");
+    const current = generation.current;
+    const accounts = prepared.current;
+    const nextResults: typeof results = accounts.map(({ email }) => ({ email }));
+    setResults([...nextResults]);
     try {
-      const next = await api.mutate("upload_new", {
-        commandId: crypto.randomUUID(),
-        nodeInstanceId,
-        accountKey: `antigravity:${email.trim().toLowerCase()}`,
-        credential,
-      }, csrf);
-      setOperation(next);
-      setEmail("");
-      setOpen(false);
-    } catch (cause) {
-      if (cause instanceof AccountOperationApiError && cause.status === 401) onUnauthorized?.();
-      setError(accountOperationErrorMessage(cause));
+      for (const [index, account] of accounts.entries()) {
+        if (current !== generation.current) break;
+        const commandId = crypto.randomUUID();
+        nextResults[index] = { email: account.email, commandId };
+        try {
+          const next = await api.mutate("upload_new", { commandId, nodeInstanceId, accountKey: `antigravity:${account.email}`, credential: new File([account.json], "credential.json", { type: "application/json" }) }, csrf);
+          if (current !== generation.current) break;
+          nextResults[index] = { email: account.email, commandId, operation: next };
+        } catch (cause) {
+          if (current !== generation.current) break;
+          if (cause instanceof AccountOperationApiError && cause.status === 401) {
+            clearCredential(); setResults([]); setOpen(false); onUnauthorized?.(); break;
+          }
+          const message = accountOperationErrorMessage(cause);
+          nextResults[index] = { email: account.email, commandId, error: message };
+          setError(message);
+        }
+        account.json = "";
+        setResults([...nextResults]);
+      }
+      if (current === generation.current && nextResults.every((result) => result.operation && !result.error)) setOpen(false);
     } finally {
+      for (const account of accounts) account.json = "";
       clearCredential();
       busyRef.current = false;
       setBusy(false);
@@ -182,15 +236,16 @@ export function UploadNewAccountAction({ api, csrf, nodeInstanceId, onUnauthoriz
   };
 
   return <Flex vertical gap={12} align="flex-start">
-    <Button data-testid="account-upload-new" type="primary" onClick={() => { setError(""); setOpen(true); }}>{t("operations.uploadAccount")}</Button>
-    {operation && <AccountOperationResult operation={operation} />}
-    <Modal title={t("operations.uploadAccount")} open={open} onCancel={close} onOk={() => void submit()} okText={t("operations.uploadNew")} confirmLoading={busy} okButtonProps={{ "data-testid": "account-upload-new-submit", disabled: busy || !credential || !email.trim() }} cancelButtonProps={{ disabled: busy }} destroyOnHidden>
+    <Button data-testid="account-upload-new" type="primary" disabled={busy} onClick={() => { setError(""); setOpen(true); }}>{t("operations.uploadAccount")}</Button>
+    {results.map((result) => <Flex vertical gap={8} key={result.email} data-testid={`account-import-result-${result.email}`}><Typography.Text>{result.email}</Typography.Text>{result.operation ? <AccountOperationResult operation={result.operation} /> : result.error ? <Alert type="error" title={result.error} /> : <Typography.Text>{result.commandId ? result.commandId : operationCopy.importPending}</Typography.Text>}</Flex>)}
+    <Modal title={t("operations.uploadAccount")} open={open} onCancel={close} onOk={() => void submit()} okText={t("operations.uploadNew")} confirmLoading={busy} okButtonProps={{ "data-testid": "account-upload-new-submit", disabled: busy || reading || !preview.length }} cancelButtonProps={{ "data-testid": "account-upload-new-cancel", disabled: busy }} destroyOnHidden>
       <Flex vertical gap={12}>
-        <Typography.Text type="secondary">{t("operations.uploadDescription")}</Typography.Text>
+        <Typography.Text type="secondary">{operationCopy.importScope}</Typography.Text>
         {error && <Alert type="error" showIcon title={error} />}
         <Input aria-label={t("operations.uploadProvider")} value="antigravity" disabled />
-        <Input data-testid="account-upload-new-email" aria-label={t("operations.uploadEmail")} type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={t("operations.accountEmail")} />
-        <Upload data-testid="account-upload-new-file" key={credentialInputKey} beforeUpload={(file) => { if (file.size > maxCredentialBytes) { setError(t("operations.credentialTooLarge")); return Upload.LIST_IGNORE; } setCredential(file); setError(""); return false; }} fileList={credential ? [{ uid: "new-account-credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
+        {reading && <Typography.Text role="status" aria-label={operationCopy.importReading}>{operationCopy.importReading}</Typography.Text>}
+        {preview.map((account) => <Flex vertical key={account.email} data-testid={`account-import-preview-${account.email}`}><Typography.Text>{account.email}</Typography.Text><Typography.Text>{account.disabled ? operationCopy.importDisabled : operationCopy.importEnabled} · {account.proxyConfigured ? operationCopy.importProxy : operationCopy.importNoProxy}</Typography.Text></Flex>)}
+        <Upload data-testid="account-upload-new-file" disabled={busy} key={credentialInputKey} beforeUpload={(file) => { void read(file); return false; }} fileList={credential ? [{ uid: "new-account-credential", name: credential.name, status: "done" } as UploadFile] : []} onRemove={() => { clearCredential(); return true; }} maxCount={1} accept="application/json,.json">
           <Button data-testid="account-upload-new-file-button" disabled={busy}>{t("operations.chooseCredential")}</Button>
         </Upload>
       </Flex>

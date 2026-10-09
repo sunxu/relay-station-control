@@ -1,4 +1,4 @@
-import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { Modal } from "antd";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountOperationsApi } from "../api/account-operations-api";
@@ -196,17 +196,79 @@ describe("AccountOperationsPanel", () => {
 });
 
 describe("UploadNewAccountAction", () => {
+  const batchFile = () => new File([JSON.stringify({ accounts: ["a", "b", "c"].map((name) => ({ platform: "antigravity", type: "oauth", credentials: { email: `${name}@example.invalid`, refresh_token: "batch-secret" } })) })], "batch.json", { type: "application/json" });
+  async function selectBatch() {
+    fireEvent.click(screen.getByTestId("account-upload-new"));
+    const dialog = await dialogWithTitle("Upload New Account");
+    fireEvent.change(dialog.querySelector("input[type=file]")!, { target: { files: [batchFile()] } });
+    await screen.findByTestId("account-import-preview-a@example.invalid");
+    return dialog;
+  }
+  it("preserves independent ordered partial results without retry or duplicate submit", async () => {
+    const mutate = vi.fn().mockResolvedValueOnce(operation("remote_applied")).mockRejectedValueOnce(new AccountOperationApiError(503, { code: "service_unavailable", message: "ignored", request_id: "test" })).mockResolvedValueOnce(operation("outcome_unknown"));
+    render(<UploadNewAccountAction api={mockApi({ mutate })} csrf="csrf" nodeInstanceId="node" />);
+    await selectBatch();
+    fireEvent.click(screen.getByTestId("account-upload-new-submit"));
+    fireEvent.click(screen.getByTestId("account-upload-new-submit"));
+    await within(screen.getByTestId("account-import-result-c@example.invalid")).findByText("远端结果不确定");
+    expect(within(screen.getByTestId("account-import-result-a@example.invalid")).getByText("已应用")).toBeInTheDocument();
+    expect(within(screen.getByTestId("account-import-result-b@example.invalid")).getByText("账户操作服务不可用")).toBeInTheDocument();
+    expect(mutate).toHaveBeenCalledTimes(3);
+    expect(mutate.mock.calls.map((call) => call[1].accountKey)).toEqual(["antigravity:a@example.invalid", "antigravity:b@example.invalid", "antigravity:c@example.invalid"]);
+    expect(new Set(mutate.mock.calls.map((call) => call[1].commandId)).size).toBe(3);
+    expect(document.body.textContent).not.toContain("batch-secret");
+  });
+  it("stops remaining accounts and removes private presentation on 401", async () => {
+    const unauthorized = vi.fn();
+    const mutate = vi.fn().mockRejectedValue(new AccountOperationApiError(401, { code: "unauthenticated" as never, message: "ignored", request_id: "test" }));
+    render(<UploadNewAccountAction api={mockApi({ mutate })} csrf="csrf" nodeInstanceId="node" onUnauthorized={unauthorized} />);
+    await selectBatch(); fireEvent.click(screen.getByTestId("account-upload-new-submit"));
+    await waitFor(() => expect(unauthorized).toHaveBeenCalledTimes(1));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("account-import-result-a@example.invalid")).not.toBeInTheDocument();
+  });
+  it("does not send remaining accounts to old or new Node after context changes", async () => {
+    let resolve!: (value: AccountOperationProjection) => void;
+    const mutate = vi.fn(() => new Promise<AccountOperationProjection>((done) => { resolve = done; }));
+    const ui = (node: string) => <FrontendFoundationProvider initialLocale="zh-CN"><UploadNewAccountAction api={mockApi({ mutate })} csrf="csrf" nodeInstanceId={node} /></FrontendFoundationProvider>;
+    const view = rtlRender(ui("node-a"));
+    await selectBatch(); fireEvent.click(screen.getByTestId("account-upload-new-submit"));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    view.rerender(ui("node-b"));
+    await act(async () => resolve(operation("remote_applied")));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("account-import-result-a@example.invalid")).not.toBeInTheDocument();
+  });
+  it("ignores late file A parsing after B is selected", async () => {
+    const readers: FileReader[] = [];
+    const spy = vi.spyOn(FileReader.prototype, "readAsText").mockImplementation(function (this: FileReader) { readers.push(this); });
+    try {
+      render(<UploadNewAccountAction api={mockApi()} csrf="csrf" nodeInstanceId="node" />);
+      fireEvent.click(screen.getByTestId("account-upload-new"));
+      const dialog = await dialogWithTitle("Upload New Account");
+      fireEvent.change(dialog.querySelector("input[type=file]")!, { target: { files: [new File([""], "a.json")] } });
+      await waitFor(() => expect(readers).toHaveLength(1));
+      fireEvent.change(dialog.querySelector("input[type=file]")!, { target: { files: [new File([""], "b.json")] } });
+      await waitFor(() => expect(readers).toHaveLength(2));
+      const resolve = (reader: FileReader, email: string) => { Object.defineProperty(reader, "result", { value: JSON.stringify({ type: "antigravity", email, refresh_token: "synthetic" }), configurable: true }); reader.onload?.call(reader, new ProgressEvent("load") as ProgressEvent<FileReader>); };
+      await act(async () => resolve(readers[1]!, "b@example.invalid"));
+      await act(async () => resolve(readers[0]!, "a@example.invalid"));
+      expect(screen.getByTestId("account-import-preview-b@example.invalid")).toBeInTheDocument();
+      expect(screen.queryByTestId("account-import-preview-a@example.invalid")).not.toBeInTheDocument();
+    } finally { spy.mockRestore(); }
+  });
   it("is reachable without an Inventory account and submits one logical Upload New", async () => {
     const api = mockApi();
     render(<UploadNewAccountAction api={api} csrf="csrf" nodeInstanceId="node" />);
     fireEvent.click(screen.getByRole("button", { name: "Upload New Account" }));
     const dialog = await dialogWithTitle("Upload New Account");
-    fireEvent.change(within(dialog).getByLabelText("Upload New Email"), { target: { value: " New@Example.Invalid " } });
-    const secret = '{"type":"antigravity","refresh_token":"global-secret"}';
+    expect(screen.queryByTestId("account-upload-new-email")).not.toBeInTheDocument();
+    const secret = '{"type":"antigravity","email":" New@Example.Invalid ","refresh_token":"global-secret"}';
     const file = new File([secret], "new.json", { type: "application/json" });
     fireEvent.change(dialog.querySelector("input[type=file]")!, { target: { files: [file] } });
+    await within(dialog).findByText("new@example.invalid");
     fireEvent.click(within(dialog).getByRole("button", { name: "Upload New" }));
-    await waitFor(() => expect(api.mutate).toHaveBeenCalledWith("upload_new", expect.objectContaining({ nodeInstanceId: "node", accountKey: "antigravity:new@example.invalid", credential: file }), "csrf"));
+    await waitFor(() => expect(api.mutate).toHaveBeenCalledWith("upload_new", expect.objectContaining({ nodeInstanceId: "node", accountKey: "antigravity:new@example.invalid", credential: expect.any(File) }), "csrf"));
     expect(api.mutate).toHaveBeenCalledTimes(1);
     expect(screen.getByText("已应用")).toBeInTheDocument();
     expect(screen.queryByText(/global-secret/)).not.toBeInTheDocument();
@@ -222,9 +284,9 @@ describe("UploadNewAccountAction", () => {
     render(<UploadNewAccountAction api={api} csrf="csrf" nodeInstanceId="node" />);
     fireEvent.click(screen.getByRole("button", { name: "Upload New Account" }));
     const dialog = await dialogWithTitle("Upload New Account");
-    fireEvent.change(within(dialog).getByLabelText("Upload New Email"), { target: { value: "new@example.invalid" } });
-    const file = new File(['{"api_key":"error-secret"}'], "error.json", { type: "application/json" });
+    const file = new File(['{"type":"antigravity","email":"new@example.invalid","refresh_token":"error-secret"}'], "error.json", { type: "application/json" });
     fireEvent.change(dialog.querySelector("input[type=file]")!, { target: { files: [file] } });
+    await within(dialog).findByText("new@example.invalid");
     fireEvent.click(within(dialog).getByRole("button", { name: "Upload New" }));
     expect(await within(dialog).findByText("该 Provider 不支持账户操作")).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).queryByText("error.json")).not.toBeInTheDocument());

@@ -53,6 +53,62 @@ test("Accounts zh-CN desktop 1280", async ({ page }) => assertAccounts(page, "zh
 test("Accounts en desktop 1280", async ({ page }) => assertAccounts(page, "en", 1280, 720));
 test("Accounts zh-CN desktop 1440", async ({ page }) => assertAccounts(page, "zh-CN", 1440, 900));
 
+for (const locale of ["zh-CN", "en"] as const) test(`Accounts JSON import ${locale} preserves proxy and partial results`, async ({ page }) => {
+  await page.addInitScript((value) => localStorage.setItem("relay-control.locale", value), locale);
+  const requests = await installAccountsFixture(page);
+  const uploads: Array<{ command: string; account: string; body: string; csrf: string | undefined }> = [];
+  await page.route("**/api/account-operations/upload-new", async (route) => {
+    const request = route.request();
+    const body = request.postDataBuffer()?.toString("utf8") ?? "";
+    const command = body.match(/"command_id":"([a-f0-9-]+)"/u)?.[1] ?? "";
+    const account = body.match(/"account_key":"([^"]+)"/u)?.[1] ?? "";
+    uploads.push({ command, account, body, csrf: request.headers()["x-csrf-token"] });
+    await route.fulfill(account.includes("second") ? { status: 503, json: { code: "service_unavailable", message: "Unavailable", request_id: "fixture" } } : { json: { operation: { command_id: command, node_instance_id: NODE, account_key: account, operation_kind: "upload_new", execution_state: "remote_applied", result: "applied", error_code: null, lifecycle_overridden: false, same_account_overridden: false, created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z" } } });
+  });
+  const proxyPassword = "synthetic-proxy-canary";
+  const token = "synthetic-import-canary";
+  const consoleMessages: string[] = [];
+  page.on("console", (message) => consoleMessages.push(message.text()));
+  await page.goto(`/accounts?instance_id=${NODE}`);
+  await page.getByTestId("account-upload-new").click();
+  await expect(page.getByTestId("account-upload-new-email")).toHaveCount(0);
+  const chooseFile = async (json: unknown) => {
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByTestId("account-upload-new-file-button").click();
+    await (await chooser).setFiles({ name: "not-the-account.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(json)) });
+  };
+  await chooseFile({ type: "antigravity", email: "single@example.invalid", refresh_token: token, proxy_url: `socks5h://user:${proxyPassword}@proxy.example.invalid:1080`, disabled: true });
+  await expect(page.getByTestId("account-import-preview-single@example.invalid")).toContainText(locale === "zh-CN" ? "禁用" : "Disabled");
+  await page.getByTestId("account-upload-new-submit").click();
+  await expect(page.getByTestId("account-import-result-single@example.invalid")).toContainText(locale === "zh-CN" ? "已应用" : "Applied");
+  await page.getByTestId("account-upload-new").click();
+  await chooseFile({ accounts: ["first", "second"].map((name) => ({ platform: "antigravity", type: "oauth", credentials: { email: `${name}@example.invalid`, refresh_token: token }, proxy_key: "p", auto_pause_on_expired: true })), proxies: [{ proxy_key: "p", protocol: "socks5h", host: "proxy.example.invalid", port: 1080, username: "user", password: proxyPassword }] });
+  await expect(page.getByTestId("account-import-preview-first@example.invalid")).toContainText(locale === "zh-CN" ? "启用" : "Enabled");
+  await page.getByTestId("account-upload-new-submit").click();
+  await expect(page.getByTestId("account-import-result-second@example.invalid")).toBeVisible();
+  await expect(page.getByTestId("account-import-result-second@example.invalid")).toContainText("不可用");
+  expect(uploads.map((item) => item.account)).toEqual(["antigravity:single@example.invalid", "antigravity:first@example.invalid", "antigravity:second@example.invalid"]);
+  expect(new Set(uploads.map((item) => item.command)).size).toBe(3);
+  for (const item of uploads) { expect(item.csrf).toBe(session.csrf_token); expect(item.body).toContain(`socks5h://user:${proxyPassword}@proxy.example.invalid:1080`); }
+  expect(uploads[0]?.body).toContain('"disabled":true');
+  expect(uploads[1]?.body).toContain('"disabled":false');
+  for (const secret of [token, proxyPassword]) {
+    expect(await page.locator("body").innerText()).not.toContain(secret);
+    expect(page.url()).not.toContain(secret);
+    expect(await page.evaluate(() => JSON.stringify({ local: localStorage, session: sessionStorage, history: history.state }))).not.toContain(secret);
+    expect(consoleMessages.join("\n")).not.toContain(secret);
+  }
+  expect(requests.every((item) => item.origin === new URL(page.url()).origin)).toBe(true);
+  expect(requests.filter((item) => item.method !== "GET").map(({ method, pathname }) => ({ method, pathname }))).toEqual([
+    // Account quality is an existing owning read transported with POST.
+    { method: "POST", pathname: `/api/topology/nodes/${NODE}/account-quality/query` },
+    { method: "POST", pathname: "/api/account-operations/upload-new" },
+    { method: "POST", pathname: "/api/account-operations/upload-new" },
+    { method: "POST", pathname: "/api/account-operations/upload-new" },
+  ]);
+  expect(requests.some((item) => /health|connection-test|monitoring-enable|monitoring-disable/u.test(item.pathname))).toBe(false);
+});
+
 test("Accounts canonical operation wiring preserves outcome-unknown safeguards", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.addInitScript((value) => window.localStorage.setItem("relay-control.locale", value), "zh-CN");
