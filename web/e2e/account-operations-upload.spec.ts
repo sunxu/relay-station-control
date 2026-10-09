@@ -35,7 +35,7 @@ test("uploads a new account through the real Control and pinned Node", async ({ 
   await page.goto("/accounts");
   await expect(page.getByTestId("accounts-page")).toBeVisible();
 
-  const nodeSelector = page.getByTestId("relay-node-selector");
+  const nodeSelector = page.getByTestId("accounts-node-selector");
   await expect(nodeSelector).toBeVisible();
   await nodeSelector.click();
   await nodeSelector.press("ArrowDown");
