@@ -30,11 +30,15 @@
 
 ### Requirement: Import SHALL convert credential fields without importing scheduler configuration
 
-单账号 SHALL 保留原生允许的凭据字段，不静默剥离其它禁止字段。批量 SHALL 映射 email、access_token、refresh_token、project_id（缺失时用 antigravity_project_id）及可用 expires_at 到原生 expired；两个 project ID 同时存在且不同 MUST 拒绝。非空 refresh_token MUST 存在；可选 access_token/project ID MUST 为字符串，expires_at MUST 为可解析时间并保持同一 instant。批量外层并发、优先级、rate multiplier、auto_pause_on_expired，以及 credentials 中模型映射、自定义错误规则、版本信息和 extra MUST NOT 变为 Node 运行配置；界面 SHALL 说明仅导入凭据、代理与初始状态。MUST NOT 发起 OAuth refresh 或虚构有效期。
+单账号 SHALL 保留原生允许的凭据字段，不静默剥离其它禁止字段。批量 SHALL 映射 email、access_token、refresh_token、project_id（缺失、null 或空字符串时用 antigravity_project_id）及可用 expires_at 到原生 expired；两个 project ID 字符串同时存在且不同 MUST 使用 project_id，不因此拒绝。非空 refresh_token MUST 存在；可选 access_token/project ID MUST 为字符串，expires_at MUST 为可解析时间并保持同一 instant。批量外层并发、优先级、rate multiplier、auto_pause_on_expired，以及 credentials 中模型映射、自定义错误规则、版本信息和 extra MUST NOT 变为 Node 运行配置；界面 SHALL 说明仅导入凭据、代理与初始状态。MUST NOT 发起 OAuth refresh 或虚构有效期。
 
 #### Scenario: Export includes scheduling settings
 - **WHEN** Sub2API 文件带有 priority、model_mapping 和 auto_pause_on_expired
 - **THEN** 生成凭据不包含这些配置，界面说明转换范围且不新增调度请求
+
+#### Scenario: Batch contains two different project IDs
+- **WHEN** credentials.project_id 与 credentials.antigravity_project_id 都是非空字符串且值不同
+- **THEN** 导入成功并只将 project_id 写入生成凭据的 project_id，忽略备用字段的值，不修改来源文件
 
 ### Requirement: Import SHALL use independent explicit account commands
 

@@ -22,6 +22,18 @@ describe("account JSON import", () => {
     const result = parse({ accounts: [{ ...account, credentials: { ...account.credentials, expires_at: "1791547200" } }], proxies: [proxy] })[0]!;
     expect(JSON.parse(result.json).expired).toBe("2026-10-09T12:00:00.000Z");
   });
+  it("uses project_id when the exported alternate project ID differs", () => {
+    const result = parse({ accounts: [{ ...account, credentials: { ...account.credentials, project_id: "primary-project", antigravity_project_id: "alternate-project" } }], proxies: [proxy] })[0]!;
+    const credential = JSON.parse(result.json);
+    expect(credential.project_id).toBe("primary-project");
+    expect(credential).not.toHaveProperty("antigravity_project_id");
+    expect(credential.proxy_url).toBe("socks5h://u%40x:p%3A%2Fx@proxy.example.invalid:1080");
+    expect(credential.disabled).toBe(false);
+  });
+  it.each([undefined, null, ""])("uses the alternate project ID when project_id is absent: %s", (project_id) => {
+    const result = parse({ accounts: [{ ...account, credentials: { ...account.credentials, project_id, antigravity_project_id: "fallback-project" } }], proxies: [proxy] })[0]!;
+    expect(JSON.parse(result.json).project_id).toBe("fallback-project");
+  });
   it.each([true, false])("preserves explicit disabled=%s", (disabled) => {
     expect(parse({ ...single, disabled })[0]!.disabled).toBe(disabled);
     expect(parse({ accounts: [{ ...account, disabled }], proxies: [proxy] })[0]!.disabled).toBe(disabled);
@@ -37,7 +49,6 @@ describe("account JSON import", () => {
     { accounts: [account], proxies: [proxy, proxy] },
     { accounts: [account], proxies: [{ ...proxy, port: 0 }] },
     { accounts: [account], proxies: [{ ...proxy, host: "evil@proxy.invalid" }] },
-    { accounts: [{ ...account, credentials: { ...account.credentials, antigravity_project_id: "different" } }], proxies: [proxy] },
     { accounts: [{ ...account, credentials: { ...account.credentials, expires_at: "invalid" } }], proxies: [proxy] },
     { accounts: [account, account], proxies: [proxy] },
     { ...single, priority: 1 }, { ...single, "request-retry": 1 },

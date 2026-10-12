@@ -9,7 +9,7 @@
 
 ## 3. JSON 转换与上传 UI
 
-- [x] 3.1 先写 synthetic parser tests，再实现双格式纯转换；验证身份来源/规范化/重复/边界、字段映射、expiry instant、project ID conflict、proxy_key 关联/认证编码/IPv6、disabled 默认与 strict boolean，禁止配置不混入。
+- [x] 3.1 先写 synthetic parser tests，再实现双格式纯转换；验证身份来源/规范化/重复/边界、字段映射、expiry instant、project ID precedence、proxy_key 关联/认证编码/IPv6、disabled 默认与 strict boolean，禁止配置不混入。
 - [x] 3.2 删除邮箱输入，增加安全只读预览、逐账号结果与本地化说明；component tests 验证文件不匹配身份仍用 JSON、结果顺序和真实状态、重复点击零额外调用、生成 File <=1 MiB。
 - [x] 3.3 实现解析 generation 与固定 Node 提交上下文、取消/401/卸载清理；delayed Promise focused tests 验证 A→B、Node 切换、401 中断余下项、迟到响应不恢复 Secret，非 401 保留 session。
 
@@ -23,3 +23,7 @@
 
 - [x] 5.1 独立复核真实 diff 与 coverage matrix，修复 P0/P1/P2 finding；将规范、测试、实现逐项核对并记录实际计数，不把计划测试写成已 PASS。
 - [x] 5.2 捕获 validation evidence、更新 durable 契约与任务状态，git diff --check 和 tracked worktree 检查；保留用户样例与 swap，不提交 Secret，不自动 push/archive/deploy。
+
+## 6. 项目 ID 优先级修订（2026-10-12 用户授权）
+
+- [x] 6.1 先补失败回归，再取消双 project ID 不同的拒绝分支，保持 project_id 优先及原有备用字段回退；用真实文件做只读内存解析，复核代理/disabled 不变，运行 make test build、OpenSpec strict 与 generated drift 检查并追加本轮证据。不修改来源文件，不上传真实账号，不移动已有镜像/tag。

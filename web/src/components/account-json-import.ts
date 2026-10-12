@@ -80,7 +80,6 @@ export function parseAccountImport(text: string): PreparedAccountImport[] {
     const credential = object(account.credentials);
     const project = optionalString(credential.project_id);
     const alternate = optionalString(credential.antigravity_project_id);
-    if (project && alternate && project !== alternate) return fail("invalidAccount");
     const fields: Record<string, unknown> = { type: "antigravity", email: credential.email, refresh_token: credential.refresh_token, disabled: disabledState(account.disabled) };
     const access = optionalString(credential.access_token);
     if (access !== undefined) fields.access_token = access;

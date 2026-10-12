@@ -25,12 +25,13 @@ Accounts 的 Upload New Account 当前要求手填邮箱，只接收一个原生
 
 ## Readiness
 
-用户已批准账号代理与新账号初始 disabled 边界修订，原 `BACKEND_CONTRACT_REQUIRED` 范围阻碍解除。design、两项 capability delta specs、tasks 与 Test Contract Coverage Review 已补齐；当前为规划待审阅状态，产品尚未实现，测试尚未运行。批量上限 100、输入 1 MiB 是本方案明确提出的保守边界，不冒充用户先前指定值。
+双格式导入已完成实现及首次验收，历史结果见 validation.md。2026-10-12 用户进一步授权：批量项目 ID 优先使用 project_id，不再因 antigravity_project_id 字符串与其不同而拒绝；仅在 project_id 缺失、null 或空字符串时回退。本轮执行状态以任务 6.1 与追加证据为准。批量上限 100、输入 1 MiB 保持原已批准边界。
 
 ## Frozen Boundary
 
 - Node 支持账号代理作为用户确认的前提，不另行调研该能力。
 - 单账号从顶层 email，批量从 credentials.email 派生身份；不从文件名、账号 name 猜测身份。
+- 批量优先使用 credentials.project_id；其缺失、null 或空字符串时才使用 credentials.antigravity_project_id。两字段字符串不同仍以 project_id 为准，其余类型校验保持不变。
 - 单账号代理来自 proxy_url；批量按 proxy_key 关联 proxies，保留协议、地址、端口及可选认证信息；无效引用不能静默丢弃或直连。
 - 单账号 JSON 中的 disabled 必须是布尔值并原样保留；缺失时生成 disabled=false，非布尔值明确拒绝。Sub2API 批量没有明确禁用状态时生成 disabled=false，不从 auto_pause_on_expired 或其它调度字段推导；有明确 disabled 时同样只接受布尔值。
 - 预览展示实际将导入的启用/禁用状态。disabled 仅用于 Upload New 的新账号初始状态，不能通过 Replace Existing 修改已有账号；已有账号状态继续由 Enable/Disable 命令管理。

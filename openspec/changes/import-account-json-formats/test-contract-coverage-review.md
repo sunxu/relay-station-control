@@ -6,7 +6,7 @@
 | Contract | Risk | Owning Layer / Concrete Proof | Negative / Race | Browser |
 |---|---|---|---|---|
 | 双格式、无邮箱输入、JSON-derived identity | 错账号 | 新纯 parser unit：相反文件名仍按 email；AccountOperationsPanel component：输入不存在、preview/account_key 一致 | null/array/非法 JSON、unsupported platform/type、空邮箱、unsafe basename、238/239 bytes、大小 1 MiB/1 MiB+1、100/101 accounts、规范化重复；零 mutate | 单账号和批量真实路径 |
-| 凭据映射、expiry、project ID | 丢凭据/伪造时间 | parser unit 精确比较生成对象；expires_at 转 ISO 同 instant，原生未知 provider 字段保留 | 两 ID 冲突、refresh 缺失、可选类型错误、null/缺失、非法时间；不生成当前时间 | 代表生成 payload assertion |
+| 凭据映射、expiry、project ID | 丢凭据/伪造时间 | parser unit 精确比较生成对象；expires_at 转 ISO 同 instant，原生未知 provider 字段保留 | 两 ID 不同仍优先 project_id、主 ID 缺失时回退、refresh 缺失、可选类型错误、null/缺失、非法时间；不生成当前时间 | 代表生成 payload assertion |
 | 代理关联与编码 | 默认直连/Secret 泄漏 | parser unit：http/https/socks5/socks5h、IPv4/domain/IPv6、特殊字符 user/password roundtrip | missing/duplicate reference、空 key、端口 0/65536、错误类型、host 注入；无引用不生成代理 | 用 synthetic proxy canary，preview 只显示 configured |
 | disabled 默认及不推导 | 状态误写 | parser unit：true/false/缺失，auto_pause_on_expired=true 仍 false；component 状态预览 | null/string/number 拒绝；server service table 按 upload_new/replace 区分 | preview 与 payload |
 | 后端 proxy/alias/denylist | 越权扩大配置 | internal/accountadmin/service_test.go 表驱动；覆盖两个 alias 单独合法、共同出现失败、所有剩余 canonical/alias 禁止键 | proxy null/object/空、unsupported protocol、query/fragment/path/control/invalid port；Replace disabled true/false 都拒绝 | 不重复完整矩阵 |

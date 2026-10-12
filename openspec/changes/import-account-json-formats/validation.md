@@ -81,3 +81,25 @@ OpenAPI / database / migration changes = NO.
 Gateway / Node source changes = NO.
 Real user credential samples were not added to Git.
 Acceptance Compose resources were cleaned up.
+
+## 2026-10-12 项目 ID 优先级修订
+
+用户明确决定批量导入使用 project_id：两 project ID 字符串不同不再拒绝。
+project_id 缺失、null 或空字符串时继续回退 antigravity_project_id；其余
+字段类型校验、代理、disabled、命令/安全契约均保持不变。
+
+- TDD RED：新增不同 project ID 的真实 parser test 在旧逻辑下以
+  invalidAccount 失败；其余 37 个 parser tests 通过。
+- TDD GREEN：取消一个冲突拒绝分支后，parser 与上传组件 2 文件 / 65 测试通过。
+- 全量 make test build：在已有 Linux 非 root 验证工具容器执行，PASS；
+  前端 48 文件 / 370 测试，typecheck、前端 build、Go tests/build 均通过。
+- OpenSpec strict 与 git diff --check：PASS；generated drift：NONE。
+- 用户指定的本地文件仅在内存解析：20 个账号全部 PASS，project_id 优先。
+  与旧 parser 在内存中移除冲突备用字段后的完整生成 JSON 对照一致，
+  证明代理/凭据/disabled 未受影响。来源文件未改，未复制到仓库，未发起上传。
+
+本轮 production diff 仅删除 parser 的双 project ID 冲突拒绝分支；测试与
+planning artifacts 同步。没有 backend/OpenAPI/database/migration/Node/Gateway
+修改。此前正式 runtime evidence 保持为原候选的历史证据，不冒充本次新 artifact
+验收；本次没有重新运行 Browser/full-chain acceptance、发布镜像或部署。
+既有 deploy-v-test-5f27476 tag/image 没有被移动或更新，不包含本轮修订。
