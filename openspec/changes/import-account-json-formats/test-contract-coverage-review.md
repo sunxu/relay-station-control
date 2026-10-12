@@ -21,6 +21,8 @@
 
 ## State-space review
 
+- 只读 intent key corrective owning proof：Store tests 表驱动覆盖 0400/0600 与其它权限、空路径、missing、directory、symlink、0/31/33 bytes；跨权限 HMAC 完全一致且不 chmod/write。真实 PostgreSQL HTTP 与 production wiring 使用 0400 fixture，保持非法 admission 零 durable/native mutation 和已有 replay/conflict/CSRF proof。无新增 crypto/provisioning 或 Secret 日志输出。
+
 - 校验阶段：合法/非法单文件；有/无 proxy；disabled 缺失/true/false/非法；upload_new/replace_existing 独立覆盖，不能只测一个 happy path。
 - 提交阶段：applied/noop/failed/outcome_unknown/HTTP error/401；尚未提交与已 dispatch 分开，不声称可取消远程 mutation。
 - 竞态：A 先完成、B 先完成、cancel/Node-change/unmount 先于读取或提交完成；不得让另一目标继承旧 batch。

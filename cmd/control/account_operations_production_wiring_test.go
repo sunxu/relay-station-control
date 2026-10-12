@@ -72,7 +72,7 @@ func TestProductionAccountNodeResolverUsesMigratedCapabilitySchema(t *testing.T)
 	assetResolver := testAccountAssetResolver{}
 	resolver := productionAccountNodeResolverWithPolicy{pool: runtime, management: management, assetSecrets: assetResolver, policies: policies}
 	intentKeyPath := filepath.Join(secretDirectory, "account-operation-intent-key")
-	if err := os.WriteFile(intentKeyPath, []byte("01234567890123456789012345678901"), 0o600); err != nil {
+	if err := os.WriteFile(intentKeyPath, []byte("01234567890123456789012345678901"), 0o400); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CONTROL_ACCOUNT_OPERATION_INTENT_KEY_FILE", intentKeyPath)

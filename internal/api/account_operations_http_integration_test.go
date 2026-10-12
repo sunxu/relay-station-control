@@ -148,7 +148,7 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 	}
 
 	keyFile := t.TempDir() + "/intent.key"
-	if err = os.WriteFile(keyFile, []byte(strings.Repeat("k", 32)), 0600); err != nil {
+	if err = os.WriteFile(keyFile, []byte(strings.Repeat("k", 32)), 0400); err != nil {
 		t.Fatal(err)
 	}
 	repo, err := assetstore.NewAccountOperationRepository(runtime)
@@ -250,6 +250,50 @@ func TestAccountOperationsHTTPPostgreSQLIntegration(t *testing.T) {
 			t.Fatalf("receipt/audit=%d/%d", receipts, audits)
 		}
 	}
+
+	t.Run("unsafe intent key rejects before durable acceptance", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			mode   os.FileMode
+			length int
+		}{
+			{"group readable", 0640, 32}, {"world readable", 0644, 32}, {"wrong length", 0400, 31},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				if err := os.Chmod(keyFile, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(keyFile, bytes.Repeat([]byte("k"), tc.length), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(keyFile, tc.mode); err != nil {
+					t.Fatal(err)
+				}
+				id := uuid.New()
+				before := mutationCount.Load()
+				response := postUpload("/api/account-operations/upload-new", id)
+				if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), `"service_unavailable"`) {
+					t.Fatal("unsafe intent key was not rejected as unavailable")
+				}
+				var reservations, operations, receipts int
+				if err := owner.QueryRow(ctx, `SELECT (SELECT count(*) FROM admin_command_registry WHERE command_id=$1), (SELECT count(*) FROM account_admin_operations WHERE command_id=$1), (SELECT count(*) FROM account_admin_command_receipts WHERE command_id=$1)`, id).Scan(&reservations, &operations, &receipts); err != nil {
+					t.Fatal(err)
+				}
+				if reservations != 0 || operations != 0 || receipts != 0 || mutationCount.Load() != before {
+					t.Fatal("unsafe intent key reached durable admission or native mutation")
+				}
+			})
+		}
+		if err := os.Chmod(keyFile, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(keyFile, bytes.Repeat([]byte("k"), 32), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(keyFile, 0400); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	// Upload New identity admission occurs before durable acceptance.
 	longEmail := strings.Repeat("a", 239-len("@example.invalid")) + "@example.invalid"

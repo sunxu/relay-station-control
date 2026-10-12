@@ -103,3 +103,33 @@ planning artifacts 同步。没有 backend/OpenAPI/database/migration/Node/Gatew
 修改。此前正式 runtime evidence 保持为原候选的历史证据，不冒充本次新 artifact
 验收；本次没有重新运行 Browser/full-chain acceptance、发布镜像或部署。
 既有 deploy-v-test-5f27476 tag/image 没有被移动或更新，不包含本轮修订。
+
+## 2026-10-12 只读账号操作指纹密钥兼容修复
+
+用户确认实际环境密钥为 mode=400、owner=65532:65532、可读且 32 字节。
+原读取函数将权限不等于 0600 的文件拒绝，导致上传接受前的 service_unavailable。
+本次修复仅允许恰好 0400 或 0600，继续拒绝其它权限、非普通文件、符号链接、
+缺失、不可读和错误长度；读取不写入、chmod、生成或轮换密钥。
+
+- TDD RED：0400 读取与跨权限 HMAC regression 均在旧代码下失败。
+- TDD GREEN：Store/accountadmin tests PASS；覆盖 0400/0600 与
+  0000/0200/0500/0700/0640/0644/0660/0666，以及空路径、missing、directory、
+  symlink、0/31/33 bytes。相同密钥/凭据在 0600/0400 下的 fingerprint/key version
+  完全一致，读取不改权限。
+- 真 PostgreSQL HTTP：TestAccountOperationsHTTPPostgreSQLIntegration PASS，
+  完整既有上传/替换/receipt/audit/CSRF/replay/conflict 流程使用 0400 fixture。
+  0640/0644 和 31 bytes 仍返回 503；registry、operation、receipt 和 native
+  mutation 均为零。只使用隔离 fixture，不调用实际部署的账号操作 API。
+- 真 PostgreSQL production wiring：
+  TestProductionAccountNodeResolverUsesMigratedCapabilitySchema PASS，使用
+  0400 fixture 及部署控制的密钥路径，无 request-controlled key path。
+- make test build：Linux 非 root 独立工具容器 PASS；前端 48 文件 / 370 测试，
+  全量 Go/tool tests、typecheck、前端 build 与 Go build PASS。
+- OpenSpec strict / git diff --check：PASS；generated drift：NONE。
+
+实际 production diff 仅扩展一个权限判断，不改变 HMAC、key version、
+命令 intent/replay/receipt/audit、数据库 schema 或 API schema。
+Ops Secret provisioning 与只读挂载保持不变；Gateway/Node source 不变。
+隔离测试资源已清理，不读取/修改/重新生成用户部署的密钥。
+本轮未执行 Browser/full-chain artifact acceptance、push、镜像发布或部署；
+已有 deploy-v-test-80636c3 不包含本轮修复，需要新 artifact 才能应用。

@@ -27,3 +27,8 @@
 ## 6. 项目 ID 优先级修订（2026-10-12 用户授权）
 
 - [x] 6.1 先补失败回归，再取消双 project ID 不同的拒绝分支，保持 project_id 优先及原有备用字段回退；用真实文件做只读内存解析，复核代理/disabled 不变，运行 make test build、OpenSpec strict 与 generated drift 检查并追加本轮证据。不修改来源文件，不上传真实账号，不移动已有镜像/tag。
+
+## 7. 只读指纹密钥兼容修订（2026-10-12 用户授权）
+
+- [x] 7.1 TDD 证明 0400/0600 密钥读取通过、其它权限/类型/长度/缺失/符号链接拒绝，修正共享读取校验；证明 HMAC/文件内容与权限不变。
+- [x] 7.2 使用 0400 密钥运行真实 PostgreSQL account-operations HTTP 集成及 production wiring，完成 make test build、strict/generated/diff 检查，记录本轮证据；不修改部署密钥、Ops/Node/Gateway source，不自动发布镜像或部署。

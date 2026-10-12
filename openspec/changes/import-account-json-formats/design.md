@@ -20,6 +20,8 @@ Non-Goals：多文件选择、通用 Provider importer、Node/Gateway 配置管�
 
 ## Risks / Trade-offs
 
+2026-10-12 用户授权的部署兼容 corrective：LoadAccountOperationIntentKey 只需读权限，允许恰好 0400/0600。沿用 regular/non-symlink/readability/32 bytes 校验，不自动 chmod 或轮换；统一修正共享读取函数，而不是提高生产 Secret 写权限。HMAC、key version、数据库事务和命令重放不变。Owning proof 为 Store 权限/类型/长度负例与跨权限指纹一致性，以及真实 PostgreSQL HTTP 上传使用 0400 的集成回归；不通过再次上传用户凭据复现。
+
 - [文件中非法条目] → 全文件预检失败，不出现解析阶段部分上传；partial success 只指已校验条目的独立服务端执行。
 - [代理参数丢失/Secret 泄漏] → 精确关联、严格格式、编码测试、安全 preview 和 synthetic canary。
 - [放开已有状态修改] → 操作种类传给校验，Replace disabled negative proof。

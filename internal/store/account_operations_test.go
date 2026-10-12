@@ -45,31 +45,56 @@ func TestNewAccountFailurePhaseAwareMapping(t *testing.T) {
 	}
 }
 
+func TestLoadAccountOperationIntentKeyPermissions(t *testing.T) {
+	key := []byte("01234567890123456789012345678901")
+	for _, mode := range []os.FileMode{0400, 0600, 0000, 0200, 0500, 0700, 0640, 0644, 0660, 0666} {
+		t.Run(mode.String(), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "intent.key")
+			if err := os.WriteFile(path, key, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, mode); err != nil {
+				t.Fatal(err)
+			}
+			got, err := LoadAccountOperationIntentKey(path)
+			if mode == 0400 || mode == 0600 {
+				if err != nil || string(got) != string(key) {
+					t.Fatal("owner-only readable key rejected or changed")
+				}
+			} else if !errors.Is(err, ErrAccountIntentKeyUnavailable) {
+				t.Fatal("unsafe permissions accepted")
+			}
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm() != mode {
+				t.Fatal("key reader changed permissions")
+			}
+		})
+	}
+}
+
 func TestLoadAccountOperationIntentKeyRejectsUnsafeInputs(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "intent.key")
-	key := []byte("01234567890123456789012345678901")
-	if err := os.WriteFile(path, key, 0600); err != nil {
+	keyPath := filepath.Join(dir, "intent.key")
+	if err := os.WriteFile(keyPath, []byte("01234567890123456789012345678901"), 0400); err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadAccountOperationIntentKey(path)
-	if err != nil || string(got) != string(key) {
-		t.Fatalf("valid key = %q, %v", got, err)
-	}
-	if err := os.Chmod(path, 0644); err != nil {
+	link := filepath.Join(dir, "intent.link")
+	if err := os.Symlink(keyPath, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadAccountOperationIntentKey(path); !errors.Is(err, ErrAccountIntentKeyUnavailable) {
-		t.Fatalf("unsafe permissions error = %v", err)
+	for _, path := range []string{"", filepath.Join(dir, "missing"), dir, link} {
+		if _, err := LoadAccountOperationIntentKey(path); !errors.Is(err, ErrAccountIntentKeyUnavailable) {
+			t.Fatal("unsafe key path accepted")
+		}
 	}
-	if err := os.Chmod(path, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadAccountOperationIntentKey(path); !errors.Is(err, ErrAccountIntentKeyUnavailable) {
-		t.Fatalf("missing key error = %v", err)
+	for _, length := range []int{0, 31, 33} {
+		path := filepath.Join(t.TempDir(), "wrong-length.key")
+		if err := os.WriteFile(path, make([]byte, length), 0400); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadAccountOperationIntentKey(path); !errors.Is(err, ErrAccountIntentKeyUnavailable) {
+			t.Fatal("wrong key length accepted")
+		}
 	}
 }
 
@@ -92,5 +117,16 @@ func TestAccountUploadIntentFingerprintUsesExactCredentialBytes(t *testing.T) {
 	}
 	if versionA != 1 || versionB != 1 || versionA2 != 1 || !hmac.Equal(fingerprintA, fingerprintA2) || hmac.Equal(fingerprintA, fingerprintB) {
 		t.Fatalf("fingerprints did not bind exact bytes: versions=%d/%d/%d equal=%v/%v", versionA, versionB, versionA2, hmac.Equal(fingerprintA, fingerprintA2), hmac.Equal(fingerprintA, fingerprintB))
+	}
+	if err := os.Chmod(path, 0400); err != nil {
+		t.Fatal(err)
+	}
+	versionReadOnly, fingerprintReadOnly, err := AccountUploadIntentFingerprint(path, []byte(`{"type":"antigravity","email":"a@example.invalid"}`))
+	if err != nil || versionReadOnly != versionA || !hmac.Equal(fingerprintA, fingerprintReadOnly) {
+		t.Fatal("read-only key changed or rejected exact credential fingerprint")
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0400 {
+		t.Fatal("fingerprinting changed read-only key mode")
 	}
 }

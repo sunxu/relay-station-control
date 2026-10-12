@@ -587,7 +587,7 @@ func LoadAccountOperationIntentKey(path string) ([]byte, error) {
 		return nil, ErrAccountIntentKeyUnavailable
 	}
 	info, err := os.Lstat(filepath.Clean(path))
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || (info.Mode().Perm() != 0400 && info.Mode().Perm() != 0600) {
 		return nil, ErrAccountIntentKeyUnavailable
 	}
 	key, err := os.ReadFile(path)
